@@ -292,6 +292,7 @@ export default function ClinicaApp() {
     ...(usuario?.rol === "admin" ? [{ id: "gerencia", label: "Gerencia", icon: BarChart3 }] : []),
     { id: "agenda", label: "Agenda", icon: Calendar },
     { id: "pacientes", label: "Pacientes", icon: Users },
+    { id: "profesionales", label: "Profesionales", icon: HeartPulse },
     { id: "mensajes", label: "Mensajes", icon: MessageCircle },
     { id: "marketing", label: "Marketing", icon: Megaphone },
     { id: "finanzas", label: "Finanzas", icon: TrendingUp },
@@ -504,6 +505,9 @@ export default function ClinicaApp() {
         .ca-sub { color:var(--ink-soft); font-size:14px; margin-top:5px; }
         .ca-stats { display:flex; gap:12px; margin:26px 0 34px; flex-wrap:wrap; }
         .ca-stats { display:flex; gap:12px; flex-wrap:wrap; }
+        .ca-profgrid { display:grid; grid-template-columns:repeat(auto-fill, minmax(300px, 1fr)); gap:14px; margin-top:16px; }
+        .ca-profcard { background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:16px; }
+        .ca-proffoto { width:54px; height:54px; border-radius:12px; object-fit:cover; flex-shrink:0; }
         .ca-demo { display:grid; grid-template-columns:1fr 1fr; gap:18px; }
         @media (max-width:760px){ .ca-demo { grid-template-columns:1fr; } }
         .ca-stat { flex:1; min-width:130px; background:var(--surface); border:1px solid var(--line);
@@ -815,6 +819,8 @@ export default function ClinicaApp() {
         {view === "gerencia" && <Gerencia showToast={showToast} />}
 
         {view === "equipo" && <Equipo showToast={showToast} miId={usuario?.id} />}
+
+        {view === "profesionales" && <Profesionales showToast={showToast} esAdmin={usuario?.rol === "admin"} />}
 
         {view === "mensajes" && <Mensajes mensajes={mensajes} />}
 
@@ -2693,6 +2699,146 @@ const ROL_COLOR = {
   medico: { bg: "#E3F0E8", fg: "#2F6B4F" },
   asistente: { bg: "#E2ECF5", fg: "#2E5C86" },
 };
+
+const SEDES = [{ v: "piura", l: "Piura" }, { v: "lima", l: "Lima" }];
+const MODALIDADES = [
+  { v: "presencial", l: "Presencial" }, { v: "virtual", l: "Virtual" }, { v: "ambas", l: "Presencial y virtual" },
+];
+
+function Profesionales({ showToast, esAdmin }) {
+  const [lista, setLista] = useState(null);
+  const [editar, setEditar] = useState(null);
+  const [sede, setSede] = useState(null);
+
+  async function cargar() { setLista(await api.profesionales()); }
+  useEffect(() => { cargar().catch((e) => showToast("Error: " + e.message)); }, []);
+
+  async function guardar(data, foto) {
+    try {
+      const prof = data.id ? await api.actualizarProfesional(data.id, data) : await api.crearProfesional(data);
+      if (foto) await api.subirFotoProfesional(prof.id, foto);
+      await cargar();
+      setEditar(null);
+      showToast(data.id ? "Ficha actualizada ✓" : "Profesional agregado ✓");
+    } catch (e) { showToast("Error: " + e.message); }
+  }
+  async function eliminar(p) {
+    if (!window.confirm(`¿Eliminar a ${p.nombre} del directorio?`)) return;
+    try { await api.eliminarProfesional(p.id); await cargar(); showToast("Profesional eliminado"); }
+    catch (e) { showToast("Error: " + e.message); }
+  }
+
+  const filtradas = (lista || []).filter((p) => !sede || p.sede === sede);
+
+  return (
+    <div>
+      <div className="ca-tophead">
+        <div>
+          <h1 className="ca-h1">Profesionales</h1>
+          <div className="ca-sub">Directorio del equipo{lista ? ` · ${lista.length}` : ""}</div>
+        </div>
+        {esAdmin && <button className="ca-btn" onClick={() => setEditar({ new: true })}><Plus size={16} strokeWidth={2.2} /> Nuevo profesional</button>}
+      </div>
+
+      <div className="ca-fchips" style={{ marginTop: 18 }}>
+        <button className={`ca-fchip ${!sede ? "on" : ""}`} onClick={() => setSede(null)}>Todos</button>
+        {SEDES.map((s) => <button key={s.v} className={`ca-fchip ${sede === s.v ? "on" : ""}`} onClick={() => setSede(s.v)}>{s.l}</button>)}
+      </div>
+
+      {!lista ? <div className="ca-empty">Cargando…</div> : filtradas.length === 0 ? (
+        <div className="ca-empty">No hay profesionales{sede ? " en esta sede" : ""} todavía.</div>
+      ) : (
+        <div className="ca-profgrid">
+          {filtradas.map((p) => (
+            <div key={p.id} className="ca-profcard" style={{ opacity: p.activo ? 1 : 0.55 }}>
+              <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 10 }}>
+                {p.foto_url
+                  ? <img src={p.foto_url} alt={p.nombre} className="ca-proffoto" />
+                  : <div className="ca-avatar" style={{ width: 54, height: 54, fontSize: 18, borderRadius: 12 }}>{iniciales(p.nombre)}</div>}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 600, fontSize: 15.5 }}>{p.nombre}</div>
+                  <div className="ca-pmeta">{p.titulo}{p.colegiatura ? ` · C.PS.P ${p.colegiatura}` : ""}</div>
+                  <div style={{ display: "flex", gap: 6, marginTop: 5, flexWrap: "wrap" }}>
+                    <Tag colors={{ bg: "var(--accent-soft)", fg: "var(--accent)" }}>{p.sede_label}</Tag>
+                    <Tag colors={{ bg: "#EFEDE8", fg: "#7C7870" }}>{p.modalidad_label}</Tag>
+                    {!p.activo && <Tag colors={{ bg: "#F7E5E5", fg: "#9C4646" }}>Inactivo</Tag>}
+                  </div>
+                </div>
+              </div>
+              {p.enfoque && <div style={{ fontSize: 13, color: "var(--ink-soft)", lineHeight: 1.5, marginBottom: 6 }}>{p.enfoque}</div>}
+              {p.poblaciones && <div className="ca-pmeta" style={{ marginBottom: 6 }}><b>Atiende:</b> {p.poblaciones}</div>}
+              {p.frase && <div style={{ fontSize: 12.5, fontStyle: "italic", color: "var(--muted)", marginTop: 4 }}>“{p.frase}”</div>}
+              {esAdmin && (
+                <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+                  <button className="ca-mini" onClick={() => setEditar(p)}><Pencil size={13} strokeWidth={2} /> Editar ficha</button>
+                  <button className="ca-iconbtn" title="Eliminar" onClick={() => eliminar(p)}><Trash2 size={14} strokeWidth={2} /></button>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {editar && <ProfesionalModal prof={editar.new ? null : editar} onClose={() => setEditar(null)} onSave={guardar} />}
+    </div>
+  );
+}
+
+function ProfesionalModal({ prof, onClose, onSave }) {
+  const [f, setF] = useState({
+    nombre: prof?.nombre || "", titulo: prof?.titulo || "Lic. Psicología", colegiatura: prof?.colegiatura || "",
+    sede: prof?.sede || "piura", modalidad: prof?.modalidad || "ambas",
+    enfoque: prof?.enfoque || "", poblaciones: prof?.poblaciones || "",
+    problematicas: prof?.problematicas || "", formacion: prof?.formacion || "", trayectoria: prof?.trayectoria || "",
+    frase: prof?.frase || "", activo: prof?.activo ?? true,
+  });
+  const [foto, setFoto] = useState(null);
+  const set = (k) => (e) => setF((prev) => ({ ...prev, [k]: e.target.value }));
+  const canSave = f.nombre.trim().length > 0;
+  const ta = { minHeight: 70, resize: "vertical", lineHeight: 1.5 };
+
+  return (
+    <div className="ca-modal-bg" onClick={onClose}>
+      <div className="ca-modal" style={{ maxWidth: 560 }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+          <strong style={{ fontSize: 16 }}>{prof ? "Editar ficha" : "Nuevo profesional"}</strong>
+          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)" }}><X size={18} /></button>
+        </div>
+
+        <div style={{ display: "flex", gap: 11, marginBottom: 12 }}>
+          <div style={{ flex: 2 }}><div className="ca-label">Nombre</div><input className="ca-input" value={f.nombre} onChange={set("nombre")} autoFocus /></div>
+          <div style={{ flex: 1 }}><div className="ca-label">C.PS.P</div><input className="ca-input" value={f.colegiatura} onChange={set("colegiatura")} placeholder="25662" /></div>
+        </div>
+        <div style={{ display: "flex", gap: 11, marginBottom: 12 }}>
+          <div style={{ flex: 1.4 }}><div className="ca-label">Título</div><input className="ca-input" value={f.titulo} onChange={set("titulo")} /></div>
+          <div style={{ flex: 1 }}><div className="ca-label">Sede</div><select className="ca-input" value={f.sede} onChange={set("sede")}>{SEDES.map((s) => <option key={s.v} value={s.v}>{s.l}</option>)}</select></div>
+          <div style={{ flex: 1 }}><div className="ca-label">Modalidad</div><select className="ca-input" value={f.modalidad} onChange={set("modalidad")}>{MODALIDADES.map((m) => <option key={m.v} value={m.v}>{m.l}</option>)}</select></div>
+        </div>
+        <div style={{ marginBottom: 12 }}><div className="ca-label">Enfoque</div><textarea className="ca-input" style={ta} value={f.enfoque} onChange={set("enfoque")} placeholder="Psicoterapeuta clínica con enfoque…" /></div>
+        <div style={{ marginBottom: 12 }}><div className="ca-label">Poblaciones que atiende</div><input className="ca-input" value={f.poblaciones} onChange={set("poblaciones")} placeholder="Niños, adolescentes, adultos, parejas" /></div>
+        <div style={{ marginBottom: 12 }}><div className="ca-label">Problemáticas que acompaña</div><textarea className="ca-input" style={ta} value={f.problematicas} onChange={set("problematicas")} /></div>
+        <div style={{ marginBottom: 12 }}><div className="ca-label">Formación / especialidades</div><textarea className="ca-input" style={ta} value={f.formacion} onChange={set("formacion")} /></div>
+        <div style={{ marginBottom: 12 }}><div className="ca-label">Trayectoria</div><textarea className="ca-input" style={ta} value={f.trayectoria} onChange={set("trayectoria")} /></div>
+        <div style={{ marginBottom: 12 }}><div className="ca-label">Frase / lema</div><input className="ca-input" value={f.frase} onChange={set("frase")} /></div>
+        <div style={{ display: "flex", gap: 16, alignItems: "center", marginBottom: 18, flexWrap: "wrap" }}>
+          <label className="ca-upload" style={{ cursor: "pointer" }}>
+            <Paperclip size={14} strokeWidth={2} /> {foto ? foto.name : "Subir foto"}
+            <input type="file" accept="image/*" hidden onChange={(e) => setFoto(e.target.files[0] || null)} />
+          </label>
+          <label style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 13.5, color: "var(--ink-soft)", cursor: "pointer" }}>
+            <input type="checkbox" checked={f.activo} onChange={(e) => setF((prev) => ({ ...prev, activo: e.target.checked }))} /> Activo
+          </label>
+        </div>
+
+        <div style={{ display: "flex", gap: 9, justifyContent: "flex-end" }}>
+          <button className="ca-btn ghost" onClick={onClose}>Cancelar</button>
+          <button className="ca-btn" style={{ opacity: canSave ? 1 : 0.5, pointerEvents: canSave ? "auto" : "none" }}
+            onClick={() => onSave({ ...(prof?.id ? { id: prof.id } : {}), ...f, nombre: f.nombre.trim() }, foto)}>Guardar</button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function CambiarPasswordModal({ onClose, onSave }) {
   const [actual, setActual] = useState("");

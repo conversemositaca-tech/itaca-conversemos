@@ -21,6 +21,7 @@ from usuarios.api import (
     LogoutView,
     MedicosView,
     MeView,
+    ProfesionalViewSet,
     UsuarioViewSet,
 )
 
@@ -32,6 +33,7 @@ router.register(r"servicios", ServicioViewSet, basename="servicio")
 router.register(r"cobros", CobroViewSet, basename="cobro")
 router.register(r"egresos", EgresoViewSet, basename="egreso")
 router.register(r"usuarios", UsuarioViewSet, basename="usuario")
+router.register(r"profesionales", ProfesionalViewSet, basename="profesional")
 router.register(r"mensajes", MensajeViewSet, basename="mensaje")
 router.register(r"leads", LeadViewSet, basename="lead")
 

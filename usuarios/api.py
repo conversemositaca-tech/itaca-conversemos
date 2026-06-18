@@ -1,16 +1,18 @@
 from django.contrib.auth import authenticate, login, logout
+from django.http import FileResponse
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import ensure_csrf_cookie
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.permissions import AllowAny, BasePermission, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from core.tenant import get_clinica_actual
 
-from .models import Usuario
-from .serializers import UsuarioSerializer
+from .models import Profesional, Usuario
+from .serializers import ProfesionalSerializer, UsuarioSerializer
 
 
 class EsAdmin(BasePermission):
@@ -176,3 +178,49 @@ class MeView(APIView):
         if not request.user.is_authenticated:
             return Response({"autenticado": False})
         return Response({"autenticado": True, **datos_usuario(request.user)})
+
+
+class ProfesionalViewSet(viewsets.ModelViewSet):
+    """Directorio de profesionales (psicólogos). Lo VEN todos los del equipo;
+    crear/editar/eliminar y subir foto es solo del gerente (admin)."""
+
+    serializer_class = ProfesionalSerializer
+
+    def get_queryset(self):
+        return Profesional.objects.del_tenant_actual().order_by("orden", "nombre")
+
+    def _solo_admin(self):
+        if getattr(self.request.user, "rol", None) != Usuario.Rol.ADMIN:
+            raise PermissionDenied("Solo el gerente (admin) puede editar el directorio de profesionales.")
+
+    def perform_create(self, serializer):
+        self._solo_admin()
+        serializer.save(clinica=get_clinica_actual())
+
+    def perform_update(self, serializer):
+        self._solo_admin()
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        self._solo_admin()
+        if instance.foto:
+            instance.foto.delete(save=False)
+        instance.delete()
+
+    @action(detail=True, methods=["get", "post"])
+    def foto(self, request, pk=None):
+        prof = self.get_object()
+        if request.method == "POST":
+            self._solo_admin()
+            archivo = request.FILES.get("foto")
+            if archivo is None:
+                return Response({"detail": "No se recibió ninguna imagen."}, status=status.HTTP_400_BAD_REQUEST)
+            if archivo.size > 8 * 1024 * 1024:
+                return Response({"detail": "La imagen supera el límite de 8 MB."}, status=status.HTTP_400_BAD_REQUEST)
+            prof.foto = archivo
+            prof.save(update_fields=["foto"])
+            return Response(ProfesionalSerializer(prof).data)
+        # GET: sirve la imagen para mostrarla (inline)
+        if not prof.foto:
+            return Response({"detail": "Sin foto."}, status=status.HTTP_404_NOT_FOUND)
+        return FileResponse(prof.foto.open("rb"))

@@ -104,6 +104,18 @@ export const api = {
   cambiarMiPassword: (actual, nueva) =>
     req("/api/auth/cambiar-password/", { method: "POST", body: JSON.stringify({ actual, nueva }) }),
 
+  // Directorio de profesionales (psicólogos)
+  profesionales: () => req("/api/profesionales/"),
+  crearProfesional: (data) => req("/api/profesionales/", { method: "POST", body: JSON.stringify(data) }),
+  actualizarProfesional: (id, data) => req(`/api/profesionales/${id}/`, { method: "PATCH", body: JSON.stringify(data) }),
+  eliminarProfesional: (id) => req(`/api/profesionales/${id}/`, { method: "DELETE" }),
+  subirFotoProfesional: (id, file) => {
+    const fd = new FormData();
+    fd.append("foto", file);
+    return req(`/api/profesionales/${id}/foto/`, { method: "POST", body: fd });
+  },
+  urlFotoProfesional: (id) => `/api/profesionales/${id}/foto/`,
+
   // Finanzas (catálogo de precios + cobros)
   servicios: () => req("/api/servicios/"),
   crearServicio: (data) => req("/api/servicios/", { method: "POST", body: JSON.stringify(data) }),
