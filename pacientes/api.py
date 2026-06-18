@@ -68,11 +68,17 @@ class PacienteViewSet(viewsets.ModelViewSet):
     serializer_class = PacienteSerializer
 
     def get_queryset(self):
-        return (
+        qs = (
             Paciente.objects.del_tenant_actual()
             .prefetch_related("atenciones__adjuntos", "adjuntos", "cobros", "citas")
-            .order_by("nombre")
         )
+        prof = self.request.query_params.get("profesional")
+        if prof:
+            qs = qs.filter(profesional_id=prof)
+        sede = self.request.query_params.get("sede")
+        if sede:
+            qs = qs.filter(sede=sede)
+        return qs.order_by("nombre")
 
     def perform_create(self, serializer):
         serializer.save(clinica=get_clinica_actual())

@@ -16,6 +16,7 @@ class ProfesionalSerializer(serializers.ModelSerializer):
     sede_label = serializers.CharField(source="get_sede_display", read_only=True)
     modalidad_label = serializers.CharField(source="get_modalidad_display", read_only=True)
     foto_url = serializers.SerializerMethodField()
+    n_pacientes = serializers.SerializerMethodField()
 
     class Meta:
         model = Profesional
@@ -23,7 +24,11 @@ class ProfesionalSerializer(serializers.ModelSerializer):
             "id", "nombre", "titulo", "colegiatura", "enfoque", "poblaciones",
             "problematicas", "formacion", "trayectoria", "sede", "sede_label",
             "modalidad", "modalidad_label", "frase", "foto_url", "usuario", "activo", "orden",
+            "n_pacientes",
         ]
 
     def get_foto_url(self, obj):
         return f"/api/profesionales/{obj.id}/foto/" if obj.foto else None
+
+    def get_n_pacientes(self, obj):
+        return obj.pacientes.count()

@@ -115,6 +115,7 @@ export const api = {
     return req(`/api/profesionales/${id}/foto/`, { method: "POST", body: fd });
   },
   urlFotoProfesional: (id) => `/api/profesionales/${id}/foto/`,
+  pacientesDeProfesional: (profId) => req(`/api/pacientes/?profesional=${profId}`),
 
   // Histórico mensual de marketing por sede (Gerencia)
   metricas: () => req("/api/metricas/"),

@@ -2744,6 +2744,7 @@ function Profesionales({ showToast, esAdmin }) {
   const [lista, setLista] = useState(null);
   const [editar, setEditar] = useState(null);
   const [sede, setSede] = useState(null);
+  const [verPacientes, setVerPacientes] = useState(null);
 
   async function cargar() { setLista(await api.profesionales()); }
   useEffect(() => { cargar().catch((e) => showToast("Error: " + e.message)); }, []);
@@ -2803,18 +2804,59 @@ function Profesionales({ showToast, esAdmin }) {
               {p.enfoque && <div style={{ fontSize: 13, color: "var(--ink-soft)", lineHeight: 1.5, marginBottom: 6 }}>{p.enfoque}</div>}
               {p.poblaciones && <div className="ca-pmeta" style={{ marginBottom: 6 }}><b>Atiende:</b> {p.poblaciones}</div>}
               {p.frase && <div style={{ fontSize: 12.5, fontStyle: "italic", color: "var(--muted)", marginTop: 4 }}>“{p.frase}”</div>}
-              {esAdmin && (
-                <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-                  <button className="ca-mini" onClick={() => setEditar(p)}><Pencil size={13} strokeWidth={2} /> Editar ficha</button>
-                  <button className="ca-iconbtn" title="Eliminar" onClick={() => eliminar(p)}><Trash2 size={14} strokeWidth={2} /></button>
-                </div>
-              )}
+              <div style={{ display: "flex", gap: 8, marginTop: 12, alignItems: "center", flexWrap: "wrap" }}>
+                <button className="ca-mini" onClick={() => setVerPacientes(p)}>
+                  <Users size={13} strokeWidth={2} /> {p.n_pacientes} paciente{p.n_pacientes === 1 ? "" : "s"}
+                </button>
+                {esAdmin && <button className="ca-mini" onClick={() => setEditar(p)}><Pencil size={13} strokeWidth={2} /> Editar ficha</button>}
+                {esAdmin && <button className="ca-iconbtn" title="Eliminar" onClick={() => eliminar(p)}><Trash2 size={14} strokeWidth={2} /></button>}
+              </div>
             </div>
           ))}
         </div>
       )}
 
       {editar && <ProfesionalModal prof={editar.new ? null : editar} onClose={() => setEditar(null)} onSave={guardar} />}
+      {verPacientes && <PacientesDeProfesionalModal prof={verPacientes} onClose={() => setVerPacientes(null)} showToast={showToast} />}
+    </div>
+  );
+}
+
+function PacientesDeProfesionalModal({ prof, onClose, showToast }) {
+  const [pacs, setPacs] = useState(null);
+  useEffect(() => {
+    api.pacientesDeProfesional(prof.id)
+      .then(setPacs)
+      .catch((e) => { showToast("Error: " + e.message); setPacs([]); });
+  }, [prof.id]);
+
+  return (
+    <div className="ca-modal-bg" onClick={onClose}>
+      <div className="ca-modal" style={{ maxWidth: 480, maxHeight: "85vh", overflowY: "auto" }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+          <strong style={{ fontSize: 16 }}>Pacientes de {prof.nombre}</strong>
+          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)" }}><X size={18} /></button>
+        </div>
+        <div className="ca-pmeta" style={{ marginBottom: 14 }}>{prof.sede_label} · {pacs ? `${pacs.length} en proceso` : "…"}</div>
+        {!pacs ? <div className="ca-empty">Cargando…</div> : pacs.length === 0 ? (
+          <div className="ca-empty">Sin pacientes asignados.</div>
+        ) : (
+          pacs.map((p) => {
+            const meta = p.proceso === "consulta"
+              ? "Consulta inicial"
+              : `${p.n_sesion ? `Sesión ${p.n_sesion}` : ""}${p.n_sesion && p.proceso_label ? " · " : ""}${p.proceso_label || ""}`;
+            return (
+              <div key={p.id} className="ca-row" style={{ cursor: "default" }}>
+                <div className="ca-avatar" style={{ width: 36, height: 36, fontSize: 13 }}>{iniciales(p.nombre)}</div>
+                <div style={{ flex: 1 }}>
+                  <div className="ca-pname" style={{ fontSize: 14 }}>{p.nombre}</div>
+                  <div className="ca-pmeta">{meta || "—"}</div>
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
     </div>
   );
 }
