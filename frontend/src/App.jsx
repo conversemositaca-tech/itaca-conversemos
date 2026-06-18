@@ -230,6 +230,8 @@ export default function ClinicaApp() {
   const [iniciando, setIniciando] = useState(true);
   const [query, setQuery] = useState("");
   const [filterEsp, setFilterEsp] = useState(null);
+  const [filterSede, setFilterSede] = useState(null);
+  const [filterProf, setFilterProf] = useState("");
   const [soloSinProxima, setSoloSinProxima] = useState(false);
   const [selectedId, setSelectedId] = useState(null);
   const [adding, setAdding] = useState(false);
@@ -283,8 +285,16 @@ export default function ClinicaApp() {
     return pacientes.filter((p) =>
       (!q || p.nombre.toLowerCase().includes(q) || (p.tel || "").toLowerCase().includes(q) || (p.numero_documento || "").toLowerCase().includes(q)) &&
       (!filterEsp || p.especialidad === filterEsp) &&
+      (!filterSede || p.sede === filterSede) &&
+      (!filterProf || p.profesional_nombre === filterProf) &&
       (!soloSinProxima || !p.proxima));
-  }, [pacientes, query, filterEsp, soloSinProxima]);
+  }, [pacientes, query, filterEsp, filterSede, filterProf, soloSinProxima]);
+
+  // Psicólogos presentes en la lista de pacientes (para el filtro).
+  const profsEnPacientes = useMemo(
+    () => [...new Set(pacientes.map((p) => p.profesional_nombre).filter(Boolean))].sort(),
+    [pacientes]
+  );
 
   const nav = [
     { id: "hoy", label: "Hoy", icon: Home },
@@ -772,7 +782,7 @@ export default function ClinicaApp() {
             <div className="ca-tophead">
               <div>
                 <h1 className="ca-h1">Pacientes</h1>
-                <div className="ca-sub">{pacientes.length} en total</div>
+                <div className="ca-sub">{filtered.length === pacientes.length ? `${pacientes.length} en total` : `${filtered.length} de ${pacientes.length}`}</div>
               </div>
               <div style={{ display: "flex", gap: 9, alignItems: "center" }}>
                 <button className="ca-btn ghost" disabled={filtered.length === 0}
@@ -790,27 +800,37 @@ export default function ClinicaApp() {
               <input placeholder="Buscar por nombre o teléfono…" value={query} onChange={(e) => setQuery(e.target.value)} />
             </div>
             <div className="ca-fchips">
-              <button className={`ca-fchip ${!filterEsp ? "on" : ""}`} onClick={() => setFilterEsp(null)}>Todas</button>
-              {Object.keys(SPECIALTY).map((s) => (
-                <button key={s} className={`ca-fchip ${filterEsp === s ? "on" : ""}`} onClick={() => setFilterEsp(s)}>{s}</button>
-              ))}
+              <button className={`ca-fchip ${!filterSede ? "on" : ""}`} onClick={() => setFilterSede(null)}>Todas las sedes</button>
+              <button className={`ca-fchip ${filterSede === "piura" ? "on" : ""}`} onClick={() => setFilterSede("piura")}>Piura</button>
+              <button className={`ca-fchip ${filterSede === "lima" ? "on" : ""}`} onClick={() => setFilterSede("lima")}>Lima</button>
+              {profsEnPacientes.length > 0 && (
+                <select className="ca-input" style={{ width: "auto", padding: "6px 10px", marginLeft: 6 }} value={filterProf} onChange={(e) => setFilterProf(e.target.value)}>
+                  <option value="">Todos los psicólogos</option>
+                  {profsEnPacientes.map((n) => <option key={n} value={n}>{n}</option>)}
+                </select>
+              )}
               <button className={`ca-fchip ${soloSinProxima ? "on" : ""}`} onClick={() => setSoloSinProxima((v) => !v)}
                 style={{ marginLeft: 6, color: soloSinProxima ? undefined : "#B0822F" }}>⏰ Sin próxima sesión</button>
             </div>
             {filtered.length === 0 ? (
-              <div className="ca-empty">No encontramos a nadie con ese nombre. Prueba con otro o agrégalo arriba.</div>
+              <div className="ca-empty">No encontramos a nadie con ese filtro. Prueba con otro o agrégalo arriba.</div>
             ) : (
-              filtered.map((p) => (
-                <div key={p.id} className="ca-row click" onClick={() => setSelectedId(p.id)}>
-                  <div className="ca-avatar">{iniciales(p.nombre)}</div>
-                  <div style={{ flex: 1 }}>
-                    <div className="ca-pname">{p.nombre}</div>
-                    <div className="ca-pmeta">{p.numero_documento ? `${p.tipo_documento_label} ${p.numero_documento} · ` : ""}{p.edad != null ? `${p.edad} años · ` : ""}{p.proxima ? `próxima ${p.proxima.fecha}` : `última visita ${p.ultima}`}</div>
+              filtered.map((p) => {
+                const meta = p.proceso === "consulta"
+                  ? "Consulta inicial"
+                  : `${p.n_sesion ? `Sesión ${p.n_sesion}` : ""}${p.n_sesion && p.proceso_label ? " · " : ""}${p.proceso_label || ""}`;
+                return (
+                  <div key={p.id} className="ca-row click" onClick={() => setSelectedId(p.id)}>
+                    <div className="ca-avatar">{iniciales(p.nombre)}</div>
+                    <div style={{ flex: 1 }}>
+                      <div className="ca-pname">{p.nombre}</div>
+                      <div className="ca-pmeta">{p.profesional_nombre ? `${p.profesional_nombre} · ` : ""}{meta || `última visita ${p.ultima}`}</div>
+                    </div>
+                    {p.cuenta?.pendiente > 0 && <Tag colors={ESTADO_COBRO_COLOR.pendiente}>Debe {money(p.cuenta.pendiente)}</Tag>}
+                    {p.sede_label && <Tag colors={p.sede === "piura" ? { bg: "#D7F4FA", fg: "#0A7D92" } : { bg: "#FBE9D6", fg: "#B5701F" }}>{p.sede_label}</Tag>}
                   </div>
-                  {p.cuenta?.pendiente > 0 && <Tag colors={ESTADO_COBRO_COLOR.pendiente}>Debe {money(p.cuenta.pendiente)}</Tag>}
-                  <SpecialtyTag name={p.especialidad} />
-                </div>
-              ))
+                );
+              })
             )}
           </>
         )}
@@ -1284,6 +1304,9 @@ function Ficha({ p, onBack, onEdit, onWhatsApp, onSubirAdjunto, onEliminarAdjunt
       </div>
 
       <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 26 }}>
+        {p.profesional_nombre && <div className="ca-field"><HeartPulse size={15} strokeWidth={1.9} style={{ color: "var(--accent)" }} /> {p.profesional_nombre}</div>}
+        {p.sede_label && <div className="ca-field"><MapPin size={15} strokeWidth={1.9} style={{ color: "var(--muted)" }} /> Sede {p.sede_label}</div>}
+        {(p.n_sesion > 0 || p.proceso_label) && <div className="ca-field"><Activity size={15} strokeWidth={1.9} style={{ color: "var(--muted)" }} /> {p.proceso === "consulta" ? "Consulta inicial" : `Sesión ${p.n_sesion}${p.proceso_label ? ` · ${p.proceso_label}` : ""}`}</div>}
         <div className="ca-field"><Cake size={15} strokeWidth={1.9} style={{ color: "var(--muted)" }} /> {p.edad != null ? `${p.edad} años` : "Edad no registrada"}{p.genero_label ? ` · ${p.genero_label}` : ""}</div>
         {p.numero_documento && <div className="ca-field"><FileText size={15} strokeWidth={1.9} style={{ color: "var(--muted)" }} /> {p.tipo_documento_label} {p.numero_documento}</div>}
         <div className="ca-field"><Phone size={15} strokeWidth={1.9} style={{ color: "var(--muted)" }} /> {p.tel || "Sin teléfono"}</div>
@@ -2709,6 +2732,7 @@ const ROL_COLOR = {
 };
 
 const SEDES = [{ v: "piura", l: "Piura" }, { v: "lima", l: "Lima" }];
+const PROCESOS = ["", "consulta", "primero", "segundo", "tercero", "cuarto", "quinto", "sexto", "septimo", "octavo", "noveno", "decimo", "quincenal", "mensual"];
 const MODALIDADES = [
   { v: "presencial", l: "Presencial" }, { v: "virtual", l: "Virtual" }, { v: "ambas", l: "Presencial y virtual" },
 ];
@@ -3286,6 +3310,12 @@ function PacienteModal({ paciente, onClose, onSave }) {
   const [alergias, setAlergias] = useState(paciente?.alergias || "");
   const [antecedentes, setAntecedentes] = useState(paciente?.antecedentes || "");
   const [medicacion, setMedicacion] = useState(paciente?.medicacion_habitual || "");
+  const [sede, setSede] = useState(paciente?.sede || "");
+  const [profId, setProfId] = useState(paciente?.profesional || "");
+  const [nSesion, setNSesion] = useState(paciente?.n_sesion ?? 0);
+  const [proceso, setProceso] = useState(paciente?.proceso || "");
+  const [profs, setProfs] = useState([]);
+  useEffect(() => { api.profesionales().then(setProfs).catch(() => {}); }, []);
   const canSave = nombre.trim().length > 0;
 
   return (
@@ -3314,6 +3344,36 @@ function PacienteModal({ paciente, onClose, onSave }) {
           <select className="ca-input" value={esp} onChange={(e) => setEsp(e.target.value)}>
             {Object.keys(SPECIALTY).map((s) => <option key={s}>{s}</option>)}
           </select>
+        </div>
+
+        <div className="ca-secth" style={{ margin: "4px 0 12px" }}>Sede y proceso</div>
+        <div style={{ display: "flex", gap: 11, marginBottom: 13 }}>
+          <div style={{ flex: 1 }}>
+            <div className="ca-label">Sede</div>
+            <select className="ca-input" value={sede} onChange={(e) => setSede(e.target.value)}>
+              <option value="">—</option>
+              {SEDES.map((s) => <option key={s.v} value={s.v}>{s.l}</option>)}
+            </select>
+          </div>
+          <div style={{ flex: 1.6 }}>
+            <div className="ca-label">Psicólogo</div>
+            <select className="ca-input" value={profId} onChange={(e) => setProfId(e.target.value)}>
+              <option value="">Sin asignar</option>
+              {profs.map((pr) => <option key={pr.id} value={pr.id}>{pr.nombre} ({pr.sede_label})</option>)}
+            </select>
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 11, marginBottom: 16 }}>
+          <div style={{ width: 120 }}>
+            <div className="ca-label">N° de sesión</div>
+            <input className="ca-input" value={nSesion} onChange={(e) => setNSesion(e.target.value.replace(/[^\d]/g, ""))} inputMode="numeric" />
+          </div>
+          <div style={{ flex: 1 }}>
+            <div className="ca-label">Proceso</div>
+            <select className="ca-input" value={proceso} onChange={(e) => setProceso(e.target.value)}>
+              {PROCESOS.map((p) => <option key={p || "none"} value={p}>{p ? p.charAt(0).toUpperCase() + p.slice(1) : "—"}</option>)}
+            </select>
+          </div>
         </div>
 
         <div className="ca-secth" style={{ margin: "4px 0 12px" }}>Identificación</div>
@@ -3362,7 +3422,7 @@ function PacienteModal({ paciente, onClose, onSave }) {
         <div style={{ display: "flex", gap: 9, justifyContent: "flex-end" }}>
           <button className="ca-btn ghost" onClick={onClose}>Cancelar</button>
           <button className="ca-btn" style={{ opacity: canSave ? 1 : 0.5, pointerEvents: canSave ? "auto" : "none" }}
-            onClick={() => onSave({ ...(paciente?.id ? { id: paciente.id } : {}), nombre: nombre.trim(), fecha_nacimiento: fechaNac || null, tel: tel.trim(), especialidad: esp, tipo_documento: tipoDoc, numero_documento: numDoc.trim(), direccion: direccion.trim(), genero, alergias: alergias.trim(), antecedentes: antecedentes.trim(), medicacion_habitual: medicacion.trim() })}>
+            onClick={() => onSave({ ...(paciente?.id ? { id: paciente.id } : {}), nombre: nombre.trim(), fecha_nacimiento: fechaNac || null, tel: tel.trim(), especialidad: esp, sede, profesional: profId ? Number(profId) : null, n_sesion: Number(nSesion) || 0, proceso, tipo_documento: tipoDoc, numero_documento: numDoc.trim(), direccion: direccion.trim(), genero, alergias: alergias.trim(), antecedentes: antecedentes.trim(), medicacion_habitual: medicacion.trim() })}>
             Guardar
           </button>
         </div>

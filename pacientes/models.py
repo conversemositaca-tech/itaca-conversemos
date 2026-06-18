@@ -22,10 +22,31 @@ class Paciente(ModeloTenant):
         MASCULINO = "masculino", "Masculino"
         OTRO = "otro", "Otro"
 
+    class Sede(models.TextChoices):
+        PIURA = "piura", "Piura"
+        LIMA = "lima", "Lima"
+
     nombre = models.CharField(max_length=200)
     fecha_nacimiento = models.DateField(null=True, blank=True)
     telefono = models.CharField(max_length=40, blank=True)
     especialidad_habitual = models.CharField(max_length=120, blank=True)
+
+    # --- Sede y psicólogo a cargo (clínica con dos sedes: Piura y Lima) ---
+    sede = models.CharField(max_length=10, choices=Sede.choices, blank=True, default="")
+    profesional = models.ForeignKey(
+        "usuarios.Profesional",
+        on_delete=models.SET_NULL,
+        related_name="pacientes",
+        null=True,
+        blank=True,
+        help_text="Psicólogo del directorio que atiende a este paciente.",
+    )
+    # Estado del proceso terapéutico (foto actual; el seguimiento semanal va aparte).
+    n_sesion = models.PositiveIntegerField("N° de sesión actual", default=0)
+    proceso = models.CharField(
+        max_length=24, blank=True, default="",
+        help_text="Etapa del proceso: consulta, primero, segundo, … o quincenal.",
+    )
 
     # --- Identificación (estilo peruano: para boletas y búsqueda por documento) ---
     tipo_documento = models.CharField(max_length=12, choices=TipoDoc.choices, default=TipoDoc.DNI)

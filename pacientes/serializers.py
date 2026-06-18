@@ -57,6 +57,9 @@ class PacienteSerializer(serializers.ModelSerializer):
     edad = serializers.IntegerField(read_only=True)
     tipo_documento_label = serializers.CharField(source="get_tipo_documento_display", read_only=True)
     genero_label = serializers.CharField(source="get_genero_display", read_only=True)
+    sede_label = serializers.CharField(source="get_sede_display", read_only=True)
+    profesional_nombre = serializers.CharField(source="profesional.nombre", read_only=True, default="")
+    proceso_label = serializers.SerializerMethodField()
     ultima = serializers.SerializerMethodField()
     proxima = serializers.SerializerMethodField()
     historial = serializers.SerializerMethodField()
@@ -69,9 +72,14 @@ class PacienteSerializer(serializers.ModelSerializer):
             "id", "nombre", "fecha_nacimiento", "edad", "tel",
             "tipo_documento", "tipo_documento_label", "numero_documento", "direccion",
             "genero", "genero_label",
+            "sede", "sede_label", "profesional", "profesional_nombre",
+            "n_sesion", "proceso", "proceso_label",
             "especialidad", "alergias", "antecedentes", "medicacion_habitual",
             "ultima", "proxima", "historial", "adjuntos", "cuenta",
         ]
+
+    def get_proceso_label(self, obj):
+        return obj.proceso.capitalize() if obj.proceso else ""
 
     def get_proxima(self, obj):
         prox = (
