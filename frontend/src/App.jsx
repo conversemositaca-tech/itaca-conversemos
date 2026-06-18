@@ -301,6 +301,7 @@ export default function ClinicaApp() {
     // El panel de Gerencia lo ve solo el dueño/admin.
     ...(usuario?.rol === "admin" ? [{ id: "gerencia", label: "Gerencia", icon: BarChart3 }] : []),
     ...(usuario?.rol === "admin" ? [{ id: "historico", label: "Histórico", icon: Activity }] : []),
+    ...(usuario?.rol === "admin" ? [{ id: "reporte", label: "Reporte", icon: FileText }] : []),
     { id: "agenda", label: "Agenda", icon: Calendar },
     { id: "pacientes", label: "Pacientes", icon: Users },
     { id: "profesionales", label: "Profesionales", icon: HeartPulse },
@@ -845,6 +846,8 @@ export default function ClinicaApp() {
         {view === "gerencia" && <Gerencia showToast={showToast} />}
 
         {view === "historico" && <Historico showToast={showToast} esAdmin={usuario?.rol === "admin"} />}
+
+        {view === "reporte" && <ReporteSemanal showToast={showToast} esAdmin={usuario?.rol === "admin"} />}
 
         {view === "equipo" && <Equipo showToast={showToast} miId={usuario?.id} />}
 
@@ -3063,6 +3066,204 @@ function MetricaModal({ metrica, anioDefault, onClose, onSave }) {
           <div style={{ flex: 1 }}><div className="ca-label">Pacientes nuevos</div><input className="ca-input" value={f.pacientes} onChange={num("pacientes")} /></div>
         </div>
         <div style={{ marginBottom: 18 }}><div className="ca-label">Nota (opcional)</div><input className="ca-input" value={f.nota} onChange={set("nota")} /></div>
+        <div style={{ display: "flex", gap: 9, justifyContent: "flex-end" }}>
+          <button className="ca-btn ghost" onClick={onClose}>Cancelar</button>
+          <button className="ca-btn" onClick={guardar}>Guardar</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const SEM = {
+  verde: { bg: "#E4F3E8", fg: "#1E7D45", dot: "#2BA35A", l: "Verde" },
+  amarillo: { bg: "#FBF0D4", fg: "#8A6D14", dot: "#E0A82E", l: "Amarillo" },
+  rojo: { bg: "#FAE2E2", fg: "#B23B3B", dot: "#D85656", l: "Rojo" },
+};
+
+function RepCard({ label, valor, sub }) {
+  return (
+    <div className="ca-card" style={{ flex: 1, minWidth: 170 }}>
+      <div className="ca-pmeta">{label}</div>
+      <div style={{ fontSize: 22, fontWeight: 600, margin: "4px 0 2px" }}>{valor}</div>
+      <div className="ca-pmeta">{sub}</div>
+    </div>
+  );
+}
+
+function ReporteSemanal({ showToast, esAdmin }) {
+  const [lista, setLista] = useState(null);
+  const [selId, setSelId] = useState(null);
+  const [editar, setEditar] = useState(null);
+
+  async function cargar() {
+    const r = await api.reportesSemanales();
+    setLista(r);
+    setSelId((id) => id || (r[0]?.id ?? null));
+  }
+  useEffect(() => { cargar().catch((e) => showToast("Error: " + e.message)); }, []);
+
+  async function guardar(data) {
+    try {
+      const r = data.id ? await api.actualizarReporte(data.id, data) : await api.crearReporte(data);
+      await cargar(); setEditar(null); setSelId(r.id);
+      showToast(data.id ? "Reporte actualizado ✓" : "Reporte creado ✓");
+    } catch (e) { showToast("Error: " + e.message); }
+  }
+  async function eliminar(r) {
+    if (!window.confirm(`¿Eliminar ${r.periodo_label}?`)) return;
+    try { await api.eliminarReporte(r.id); setSelId(null); await cargar(); showToast("Reporte eliminado"); }
+    catch (e) { showToast("Error: " + e.message); }
+  }
+
+  if (!lista) return <div className="ca-empty">Cargando…</div>;
+  const rep = lista.find((r) => r.id === selId) || lista[0];
+
+  return (
+    <div>
+      <div className="ca-tophead">
+        <div>
+          <h1 className="ca-h1">Reporte semanal</h1>
+          <div className="ca-sub">Tablero ejecutivo para el directorio</div>
+        </div>
+        {esAdmin && <button className="ca-btn" onClick={() => setEditar({ new: true })}><Plus size={16} strokeWidth={2.2} /> Nuevo reporte</button>}
+      </div>
+
+      {lista.length === 0 ? (
+        <div className="ca-empty">Aún no hay reportes.{esAdmin ? " Crea el primero arriba." : ""}</div>
+      ) : (
+        <>
+          <div className="ca-fchips" style={{ marginTop: 18 }}>
+            {lista.map((r) => (
+              <button key={r.id} className={`ca-fchip ${rep.id === r.id ? "on" : ""}`} onClick={() => setSelId(r.id)}>{r.periodo_label}</button>
+            ))}
+          </div>
+
+          <div className="ca-card" style={{ marginTop: 14, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
+            <div>
+              <div style={{ fontWeight: 600, fontSize: 16 }}>{rep.periodo_label}</div>
+              <div className="ca-pmeta">Del {rep.fecha_inicio} al {rep.fecha_fin}</div>
+            </div>
+            {esAdmin && (
+              <div style={{ display: "flex", gap: 8 }}>
+                <button className="ca-mini" onClick={() => setEditar(rep)}><Pencil size={13} strokeWidth={2} /> Editar</button>
+                <button className="ca-iconbtn" title="Eliminar" onClick={() => eliminar(rep)}><Trash2 size={14} strokeWidth={2} /></button>
+              </div>
+            )}
+          </div>
+
+          <div className="ca-stats" style={{ marginTop: 14 }}>
+            <RepCard label="Facturación del mes" valor={money(rep.fact_total)} sub={`Meta ${money(Number(rep.meta_min_sede) * 2)}`} />
+            <RepCard label="Leads de la semana" valor={rep.leads_total} sub={`${rep.conv_consulta}% pasó a consulta`} />
+            <RepCard label="Pacientes activos" valor={rep.pac_activos_lima + rep.pac_activos_piura} sub={`${rep.pac_activos_piura} Piura · ${rep.pac_activos_lima} Lima`} />
+            <RepCard label="Proyección de cierre" valor={money(rep.proy_total)} sub={`Sin próxima sesión: ${rep.sin_proxima}`} />
+          </div>
+
+          <div className="ca-secth" style={{ marginTop: 22 }}>Semáforo para el directorio</div>
+          <div className="ca-card" style={{ overflowX: "auto" }}>
+            <table className="ca-table">
+              <thead><tr><th>Indicador</th><th>Valor</th><th>Meta</th><th>Estado</th></tr></thead>
+              <tbody>
+                {rep.semaforo.map((s, i) => {
+                  const c = SEM[s.estado] || SEM.rojo;
+                  return (
+                    <tr key={i}>
+                      <td>{s.area}</td>
+                      <td style={{ fontWeight: 600 }}>{s.valor}</td>
+                      <td style={{ color: "var(--muted)" }}>{s.meta}</td>
+                      <td><span style={{ display: "inline-flex", alignItems: "center", gap: 6, background: c.bg, color: c.fg, padding: "2px 10px", borderRadius: 20, fontSize: 12, fontWeight: 600 }}><span style={{ width: 8, height: 8, borderRadius: "50%", background: c.dot }} /> {c.l}</span></td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {rep.novedades && (<><div className="ca-secth" style={{ marginTop: 22 }}>Novedades de la semana</div><div className="ca-card" style={{ whiteSpace: "pre-wrap", lineHeight: 1.6 }}>{rep.novedades}</div></>)}
+          {rep.decisiones && (<><div className="ca-secth" style={{ marginTop: 22 }}>Decisiones requeridas</div><div className="ca-card" style={{ whiteSpace: "pre-wrap", lineHeight: 1.6 }}>{rep.decisiones}</div></>)}
+        </>
+      )}
+
+      {editar && <ReporteModal reporte={editar.new ? null : editar} onClose={() => setEditar(null)} onSave={guardar} />}
+    </div>
+  );
+}
+
+function ReporteModal({ reporte, onClose, onSave }) {
+  const r = reporte || {};
+  const [f, setF] = useState({
+    semana: r.semana ?? 1, mes: r.mes ?? 6, anio: r.anio ?? 2026,
+    fecha_inicio: r.fecha_inicio || "", fecha_fin: r.fecha_fin || "", novedades: r.novedades || "",
+    fact_lima: r.fact_lima ?? 0, fact_piura: r.fact_piura ?? 0,
+    meta_min_sede: r.meta_min_sede ?? 20000, meta_ideal_sede: r.meta_ideal_sede ?? 30000,
+    proy_lima: r.proy_lima ?? 0, proy_piura: r.proy_piura ?? 0,
+    leads_lima: r.leads_lima ?? 0, leads_piura: r.leads_piura ?? 0,
+    consultas_agendadas: r.consultas_agendadas ?? 0, pacientes_iniciaron: r.pacientes_iniciaron ?? 0,
+    videos_publicados: r.videos_publicados ?? 0, videos_planificados: r.videos_planificados ?? 0,
+    invertido_lima: r.invertido_lima ?? 0, invertido_piura: r.invertido_piura ?? 0,
+    pac_activos_lima: r.pac_activos_lima ?? 0, pac_activos_piura: r.pac_activos_piura ?? 0,
+    retencion_lima: r.retencion_lima ?? 0, retencion_piura: r.retencion_piura ?? 0,
+    sin_proxima: r.sin_proxima ?? 0, ocupacion_lima: r.ocupacion_lima ?? 0, ocupacion_piura: r.ocupacion_piura ?? 0,
+    decisiones: r.decisiones || "", compromisos: r.compromisos || "",
+  });
+  const set = (k) => (e) => setF((p) => ({ ...p, [k]: e.target.value }));
+
+  // Campo numérico compacto
+  const N = (k, label, w) => (
+    <div style={{ flex: w || 1, minWidth: 80 }}>
+      <div className="ca-label">{label}</div>
+      <input className="ca-input" value={f[k]} onChange={(e) => setF((p) => ({ ...p, [k]: e.target.value.replace(/[^\d.]/g, "") }))} inputMode="decimal" />
+    </div>
+  );
+
+  function guardar() {
+    const numK = ["semana", "mes", "anio", "fact_lima", "fact_piura", "meta_min_sede", "meta_ideal_sede",
+      "proy_lima", "proy_piura", "leads_lima", "leads_piura", "consultas_agendadas", "pacientes_iniciaron",
+      "videos_publicados", "videos_planificados", "invertido_lima", "invertido_piura", "pac_activos_lima",
+      "pac_activos_piura", "retencion_lima", "retencion_piura", "sin_proxima", "ocupacion_lima", "ocupacion_piura"];
+    const out = { ...(reporte?.id ? { id: reporte.id } : {}) };
+    numK.forEach((k) => { out[k] = Number(f[k]) || 0; });
+    ["fecha_inicio", "fecha_fin", "novedades", "decisiones", "compromisos"].forEach((k) => { out[k] = f[k]; });
+    onSave(out);
+  }
+  const sec = { margin: "14px 0 10px" };
+
+  return (
+    <div className="ca-modal-bg" onClick={onClose}>
+      <div className="ca-modal" style={{ maxWidth: 580, maxHeight: "88vh", overflowY: "auto" }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+          <strong style={{ fontSize: 16 }}>{reporte ? "Editar reporte" : "Nuevo reporte semanal"}</strong>
+          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)" }}><X size={18} /></button>
+        </div>
+
+        <div className="ca-secth" style={sec}>Período</div>
+        <div style={{ display: "flex", gap: 10, marginBottom: 10 }}>
+          {N("semana", "Semana", 0.7)}{N("mes", "Mes (1-12)", 0.8)}{N("anio", "Año", 1)}
+        </div>
+        <div style={{ display: "flex", gap: 10, marginBottom: 6 }}>
+          <div style={{ flex: 1 }}><div className="ca-label">Inicio</div><input className="ca-input" type="date" value={f.fecha_inicio} onChange={set("fecha_inicio")} /></div>
+          <div style={{ flex: 1 }}><div className="ca-label">Fin</div><input className="ca-input" type="date" value={f.fecha_fin} onChange={set("fecha_fin")} /></div>
+        </div>
+
+        <div className="ca-secth" style={sec}>Facturación del mes (S/)</div>
+        <div style={{ display: "flex", gap: 10, marginBottom: 8 }}>{N("fact_lima", "Lima")}{N("fact_piura", "Piura")}{N("meta_min_sede", "Meta x sede")}</div>
+        <div style={{ display: "flex", gap: 10, marginBottom: 6 }}>{N("proy_lima", "Proy. Lima")}{N("proy_piura", "Proy. Piura")}</div>
+
+        <div className="ca-secth" style={sec}>Captación</div>
+        <div style={{ display: "flex", gap: 10, marginBottom: 6 }}>{N("leads_lima", "Leads Lima")}{N("leads_piura", "Leads Piura")}{N("consultas_agendadas", "Consultas")}{N("pacientes_iniciaron", "Iniciaron")}</div>
+
+        <div className="ca-secth" style={sec}>Marketing / pauta</div>
+        <div style={{ display: "flex", gap: 10, marginBottom: 6 }}>{N("videos_publicados", "Videos pub.")}{N("videos_planificados", "Planificados")}{N("invertido_lima", "Pauta Lima")}{N("invertido_piura", "Pauta Piura")}</div>
+
+        <div className="ca-secth" style={sec}>Clínica y retención</div>
+        <div style={{ display: "flex", gap: 10, marginBottom: 8 }}>{N("pac_activos_lima", "Activos Lima")}{N("pac_activos_piura", "Activos Piura")}{N("sin_proxima", "Sin próxima")}</div>
+        <div style={{ display: "flex", gap: 10, marginBottom: 8 }}>{N("retencion_lima", "Retenc. Lima %")}{N("retencion_piura", "Retenc. Piura %")}</div>
+        <div style={{ display: "flex", gap: 10, marginBottom: 6 }}>{N("ocupacion_lima", "Ocup. Lima %")}{N("ocupacion_piura", "Ocup. Piura %")}</div>
+
+        <div className="ca-secth" style={sec}>Novedades y decisiones</div>
+        <div style={{ marginBottom: 10 }}><div className="ca-label">Novedades de la semana</div><textarea className="ca-input" style={{ minHeight: 56, resize: "vertical", lineHeight: 1.5 }} value={f.novedades} onChange={set("novedades")} /></div>
+        <div style={{ marginBottom: 18 }}><div className="ca-label">Decisiones requeridas</div><textarea className="ca-input" style={{ minHeight: 70, resize: "vertical", lineHeight: 1.5 }} value={f.decisiones} onChange={set("decisiones")} /></div>
+
         <div style={{ display: "flex", gap: 9, justifyContent: "flex-end" }}>
           <button className="ca-btn ghost" onClick={onClose}>Cancelar</button>
           <button className="ca-btn" onClick={guardar}>Guardar</button>

@@ -122,6 +122,12 @@ export const api = {
   actualizarMetrica: (id, data) => req(`/api/metricas/${id}/`, { method: "PATCH", body: JSON.stringify(data) }),
   eliminarMetrica: (id) => req(`/api/metricas/${id}/`, { method: "DELETE" }),
 
+  // Reporte semanal ejecutivo (Directorio)
+  reportesSemanales: () => req("/api/reportes-semanales/"),
+  crearReporte: (data) => req("/api/reportes-semanales/", { method: "POST", body: JSON.stringify(data) }),
+  actualizarReporte: (id, data) => req(`/api/reportes-semanales/${id}/`, { method: "PATCH", body: JSON.stringify(data) }),
+  eliminarReporte: (id) => req(`/api/reportes-semanales/${id}/`, { method: "DELETE" }),
+
   // Finanzas (catálogo de precios + cobros)
   servicios: () => req("/api/servicios/"),
   crearServicio: (data) => req("/api/servicios/", { method: "POST", body: JSON.stringify(data) }),

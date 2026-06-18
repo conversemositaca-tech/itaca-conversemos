@@ -138,3 +138,68 @@ class MetricaMensual(ModeloTenant):
     def ratio_paciente(self):
         """% de citas nuevas que se vuelven paciente."""
         return self.pacientes / self.citas_nuevas if self.citas_nuevas else 0.0
+
+
+class ReporteSemanal(ModeloTenant):
+    """Reporte ejecutivo semanal para el directorio (lo llena la gerencia).
+
+    Guarda los indicadores de la semana por sede y arma el 'semáforo' (verde /
+    amarillo / rojo) comparando cada número con su meta. Es la foto que el
+    directorio revisa en la reunión semanal.
+    """
+
+    MESES = MetricaMensual.MESES
+
+    # --- Identificación del período ---
+    semana = models.PositiveSmallIntegerField(help_text="N° de semana del mes (1-5)")
+    mes = models.PositiveSmallIntegerField()
+    anio = models.PositiveIntegerField()
+    fecha_inicio = models.DateField()
+    fecha_fin = models.DateField()
+    novedades = models.TextField(blank=True, default="")
+
+    # --- Facturación real acumulada del mes (S/) ---
+    fact_lima = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    fact_piura = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    meta_min_sede = models.DecimalField("meta mínima por sede (S/)", max_digits=10, decimal_places=2, default=20000)
+    meta_ideal_sede = models.DecimalField("meta ideal por sede (S/)", max_digits=10, decimal_places=2, default=30000)
+    proy_lima = models.DecimalField("proyección cierre Lima (S/)", max_digits=10, decimal_places=2, default=0)
+    proy_piura = models.DecimalField("proyección cierre Piura (S/)", max_digits=10, decimal_places=2, default=0)
+
+    # --- Captación ---
+    leads_lima = models.PositiveIntegerField(default=0)
+    leads_piura = models.PositiveIntegerField(default=0)
+    consultas_agendadas = models.PositiveIntegerField(default=0)
+    pacientes_iniciaron = models.PositiveIntegerField(default=0)
+
+    # --- Marketing / pauta ---
+    videos_publicados = models.PositiveIntegerField(default=0)
+    videos_planificados = models.PositiveIntegerField(default=0)
+    invertido_lima = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    invertido_piura = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+
+    # --- Clínica y retención (porcentajes 0-999) ---
+    pac_activos_lima = models.PositiveIntegerField(default=0)
+    pac_activos_piura = models.PositiveIntegerField(default=0)
+    retencion_lima = models.DecimalField("retención S3+ Lima (%)", max_digits=6, decimal_places=2, default=0)
+    retencion_piura = models.DecimalField("retención S3+ Piura (%)", max_digits=6, decimal_places=2, default=0)
+    sin_proxima = models.PositiveIntegerField("pacientes sin próxima sesión", default=0)
+    ocupacion_lima = models.DecimalField("ocupación agenda Lima (%)", max_digits=6, decimal_places=2, default=0)
+    ocupacion_piura = models.DecimalField("ocupación agenda Piura (%)", max_digits=6, decimal_places=2, default=0)
+
+    # --- Cierre ---
+    decisiones = models.TextField(blank=True, default="", help_text="Decisiones requeridas esta semana.")
+    compromisos = models.TextField(blank=True, default="")
+
+    class Meta:
+        verbose_name = "Reporte semanal"
+        verbose_name_plural = "Reportes semanales"
+        ordering = ["-anio", "-mes", "-semana"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["clinica", "anio", "mes", "semana"], name="uniq_reporte_semana"
+            )
+        ]
+
+    def __str__(self):
+        return f"Semana {self.semana} · {self.MESES[self.mes]} {self.anio}"
