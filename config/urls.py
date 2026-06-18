@@ -5,6 +5,7 @@ from django.views.generic import TemplateView
 from rest_framework.routers import DefaultRouter
 
 from core.gerencia import ClinicaConfigView, GerenciaResumenView, HoyResumenView
+from core.metricas import MetricaMensualViewSet
 from finanzas.api import CajaView, CobroViewSet, EgresoViewSet, ServicioViewSet
 from leads.api import LeadViewSet
 from leads.captacion import (
@@ -34,6 +35,7 @@ router.register(r"cobros", CobroViewSet, basename="cobro")
 router.register(r"egresos", EgresoViewSet, basename="egreso")
 router.register(r"usuarios", UsuarioViewSet, basename="usuario")
 router.register(r"profesionales", ProfesionalViewSet, basename="profesional")
+router.register(r"metricas", MetricaMensualViewSet, basename="metrica")
 router.register(r"mensajes", MensajeViewSet, basename="mensaje")
 router.register(r"leads", LeadViewSet, basename="lead")
 

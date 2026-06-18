@@ -290,6 +290,7 @@ export default function ClinicaApp() {
     { id: "hoy", label: "Hoy", icon: Home },
     // El panel de Gerencia lo ve solo el dueño/admin.
     ...(usuario?.rol === "admin" ? [{ id: "gerencia", label: "Gerencia", icon: BarChart3 }] : []),
+    ...(usuario?.rol === "admin" ? [{ id: "historico", label: "Histórico", icon: Activity }] : []),
     { id: "agenda", label: "Agenda", icon: Calendar },
     { id: "pacientes", label: "Pacientes", icon: Users },
     { id: "profesionales", label: "Profesionales", icon: HeartPulse },
@@ -508,6 +509,11 @@ export default function ClinicaApp() {
         .ca-profgrid { display:grid; grid-template-columns:repeat(auto-fill, minmax(300px, 1fr)); gap:14px; margin-top:16px; }
         .ca-profcard { background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:16px; }
         .ca-proffoto { width:54px; height:54px; border-radius:12px; object-fit:cover; flex-shrink:0; }
+        .ca-charts2 { display:grid; grid-template-columns:repeat(auto-fit, minmax(320px, 1fr)); gap:14px; margin-top:14px; }
+        .ca-table { width:100%; border-collapse:collapse; font-size:13.5px; }
+        .ca-table th { text-align:left; font-weight:600; color:var(--muted); font-size:12px; padding:7px 10px; border-bottom:1px solid var(--line); white-space:nowrap; }
+        .ca-table td { padding:8px 10px; border-bottom:1px solid var(--line); }
+        .ca-table tr:last-child td { border-bottom:none; }
         .ca-demo { display:grid; grid-template-columns:1fr 1fr; gap:18px; }
         @media (max-width:760px){ .ca-demo { grid-template-columns:1fr; } }
         .ca-stat { flex:1; min-width:130px; background:var(--surface); border:1px solid var(--line);
@@ -817,6 +823,8 @@ export default function ClinicaApp() {
         )}
 
         {view === "gerencia" && <Gerencia showToast={showToast} />}
+
+        {view === "historico" && <Historico showToast={showToast} esAdmin={usuario?.rol === "admin"} />}
 
         {view === "equipo" && <Equipo showToast={showToast} miId={usuario?.id} />}
 
@@ -2834,6 +2842,206 @@ function ProfesionalModal({ prof, onClose, onSave }) {
           <button className="ca-btn ghost" onClick={onClose}>Cancelar</button>
           <button className="ca-btn" style={{ opacity: canSave ? 1 : 0.5, pointerEvents: canSave ? "auto" : "none" }}
             onClick={() => onSave({ ...(prof?.id ? { id: prof.id } : {}), ...f, nombre: f.nombre.trim() }, foto)}>Guardar</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const MES_ABBR = ["", "Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
+const MESES_FULL = ["", "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
+const COL_PIURA = "#0A7D92";
+const COL_LIMA = "#E08D3C";
+
+function Historico({ showToast, esAdmin }) {
+  const [rows, setRows] = useState(null);
+  const [anio, setAnio] = useState(null);
+  const [editar, setEditar] = useState(null);
+
+  async function cargar() {
+    const r = await api.metricas();
+    setRows(r);
+    setAnio((a) => a || (r.length ? Math.max(...r.map((x) => x.anio)) : null));
+  }
+  useEffect(() => { cargar().catch((e) => showToast("Error: " + e.message)); }, []);
+
+  async function guardar(data) {
+    try {
+      if (data.id) await api.actualizarMetrica(data.id, data);
+      else await api.crearMetrica(data);
+      await cargar();
+      setEditar(null);
+      showToast(data.id ? "Mes actualizado ✓" : "Mes agregado ✓");
+    } catch (e) { showToast("Error: " + e.message); }
+  }
+  async function eliminar(r) {
+    if (!window.confirm(`¿Eliminar ${r.sede_label} · ${r.mes_label} ${r.anio}?`)) return;
+    try { await api.eliminarMetrica(r.id); await cargar(); showToast("Mes eliminado"); }
+    catch (e) { showToast("Error: " + e.message); }
+  }
+
+  if (!rows) return <div className="ca-empty">Cargando…</div>;
+
+  const anios = [...new Set(rows.map((r) => r.anio))].sort((a, b) => b - a);
+  const delAnio = rows.filter((r) => r.anio === anio);
+  const piura = {}, lima = {};
+  delAnio.forEach((r) => { (r.sede === "piura" ? piura : lima)[r.mes] = r; });
+  const meses = [...new Set(delAnio.map((r) => r.mes))].sort((a, b) => a - b);
+  const serie = meses.map((m) => ({ abbr: MES_ABBR[m], p: piura[m], l: lima[m] }));
+
+  const tot = (map) => {
+    const arr = Object.values(map);
+    const inv = arr.reduce((s, r) => s + Number(r.invertido), 0);
+    const cit = arr.reduce((s, r) => s + r.citas_nuevas, 0);
+    const pac = arr.reduce((s, r) => s + r.pacientes, 0);
+    return { inv, cit, pac, cac: pac ? inv / pac : 0 };
+  };
+  const tp = tot(piura), tl = tot(lima);
+  const filas = [...delAnio].sort((a, b) => a.mes - b.mes || (a.sede < b.sede ? -1 : 1));
+  const ent = (v) => String(Math.round(v));
+
+  return (
+    <div>
+      <div className="ca-tophead">
+        <div>
+          <h1 className="ca-h1">Histórico de marketing</h1>
+          <div className="ca-sub">Inversión, captación y CAC por sede · {anio}</div>
+        </div>
+        {esAdmin && <button className="ca-btn" onClick={() => setEditar({ new: true, anio })}><Plus size={16} strokeWidth={2.2} /> Agregar mes</button>}
+      </div>
+
+      <div className="ca-fchips" style={{ marginTop: 18 }}>
+        {anios.map((a) => (
+          <button key={a} className={`ca-fchip ${anio === a ? "on" : ""}`} onClick={() => setAnio(a)}>{a}</button>
+        ))}
+      </div>
+
+      {/* Resumen del año por sede */}
+      <div className="ca-stats" style={{ marginTop: 18, marginBottom: 6 }}>
+        {[["Piura", tp, COL_PIURA], ["Lima", tl, COL_LIMA]].map(([nombre, t, color]) => (
+          <div key={nombre} className="ca-card" style={{ flex: 1, minWidth: 240, borderTop: `3px solid ${color}` }}>
+            <div style={{ fontWeight: 600, marginBottom: 10 }}>{nombre} · {anio}</div>
+            <div style={{ display: "flex", gap: 18, flexWrap: "wrap" }}>
+              <div><div className="ca-pmeta">Invertido</div><div style={{ fontWeight: 600 }}>{money(t.inv)}</div></div>
+              <div><div className="ca-pmeta">Citas nuevas</div><div style={{ fontWeight: 600 }}>{t.cit}</div></div>
+              <div><div className="ca-pmeta">Pacientes</div><div style={{ fontWeight: 600 }}>{t.pac}</div></div>
+              <div><div className="ca-pmeta">CAC promedio</div><div style={{ fontWeight: 600 }}>{money(t.cac)}</div></div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {serie.length === 0 ? <div className="ca-empty">No hay datos para {anio}.</div> : (
+        <div className="ca-charts2">
+          <div className="ca-card">
+            <div className="ca-secth" style={{ marginTop: 0 }}>Inversión mensual (S/)</div>
+            <MiniBarsDuo data={serie} a={(d) => (d.p ? Number(d.p.invertido) : 0)} b={(d) => (d.l ? Number(d.l.invertido) : 0)}
+              etiqueta={(d) => d.abbr} labelA="Piura" labelB="Lima" colorA={COL_PIURA} colorB={COL_LIMA} fmt={money} />
+          </div>
+          <div className="ca-card">
+            <div className="ca-secth" style={{ marginTop: 0 }}>CAC — costo por paciente (S/)</div>
+            <MiniBarsDuo data={serie} a={(d) => (d.p ? d.p.cac : 0)} b={(d) => (d.l ? d.l.cac : 0)}
+              etiqueta={(d) => d.abbr} labelA="Piura" labelB="Lima" colorA={COL_PIURA} colorB={COL_LIMA} fmt={money} />
+          </div>
+          <div className="ca-card">
+            <div className="ca-secth" style={{ marginTop: 0 }}>Citas nuevas</div>
+            <MiniBarsDuo data={serie} a={(d) => (d.p ? d.p.citas_nuevas : 0)} b={(d) => (d.l ? d.l.citas_nuevas : 0)}
+              etiqueta={(d) => d.abbr} labelA="Piura" labelB="Lima" colorA={COL_PIURA} colorB={COL_LIMA} fmt={ent} />
+          </div>
+          <div className="ca-card">
+            <div className="ca-secth" style={{ marginTop: 0 }}>Pacientes nuevos</div>
+            <MiniBarsDuo data={serie} a={(d) => (d.p ? d.p.pacientes : 0)} b={(d) => (d.l ? d.l.pacientes : 0)}
+              etiqueta={(d) => d.abbr} labelA="Piura" labelB="Lima" colorA={COL_PIURA} colorB={COL_LIMA} fmt={ent} />
+          </div>
+        </div>
+      )}
+
+      {/* Tabla detalle */}
+      <div className="ca-card" style={{ marginTop: 16, overflowX: "auto" }}>
+        <table className="ca-table">
+          <thead>
+            <tr>
+              <th>Mes</th><th>Sede</th><th style={{ textAlign: "right" }}>Invertido</th>
+              <th style={{ textAlign: "right" }}>Msjs</th><th style={{ textAlign: "right" }}>Citas</th>
+              <th style={{ textAlign: "right" }}>Pac.</th><th style={{ textAlign: "right" }}>CAC</th>
+              {esAdmin && <th></th>}
+            </tr>
+          </thead>
+          <tbody>
+            {filas.map((r) => (
+              <tr key={r.id}>
+                <td>{r.mes_label}</td>
+                <td><span style={{ color: r.sede === "piura" ? COL_PIURA : COL_LIMA, fontWeight: 600 }}>{r.sede_label}</span></td>
+                <td style={{ textAlign: "right" }}>{money(Number(r.invertido))}</td>
+                <td style={{ textAlign: "right" }}>{r.mensajes}</td>
+                <td style={{ textAlign: "right" }}>{r.citas_nuevas}</td>
+                <td style={{ textAlign: "right" }}>{r.pacientes}</td>
+                <td style={{ textAlign: "right" }}>{money(r.cac)}</td>
+                {esAdmin && (
+                  <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+                    <button className="ca-iconbtn" title="Editar" onClick={() => setEditar(r)}><Pencil size={13} strokeWidth={2} /></button>
+                    <button className="ca-iconbtn" title="Eliminar" onClick={() => eliminar(r)}><Trash2 size={13} strokeWidth={2} /></button>
+                  </td>
+                )}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {editar && <MetricaModal metrica={editar.new ? null : editar} anioDefault={editar.anio || anio} onClose={() => setEditar(null)} onSave={guardar} />}
+    </div>
+  );
+}
+
+function MetricaModal({ metrica, anioDefault, onClose, onSave }) {
+  const [f, setF] = useState({
+    sede: metrica?.sede || "piura",
+    anio: metrica?.anio || anioDefault || 2026,
+    mes: metrica?.mes || 1,
+    invertido: metrica?.invertido ?? "",
+    mensajes: metrica?.mensajes ?? "",
+    citas_nuevas: metrica?.citas_nuevas ?? "",
+    pacientes: metrica?.pacientes ?? "",
+    nota: metrica?.nota || "",
+  });
+  const set = (k) => (e) => setF((p) => ({ ...p, [k]: e.target.value }));
+  const num = (k) => (e) => setF((p) => ({ ...p, [k]: e.target.value.replace(/[^\d.]/g, "") }));
+
+  function guardar() {
+    onSave({
+      ...(metrica?.id ? { id: metrica.id } : {}),
+      sede: f.sede, anio: Number(f.anio), mes: Number(f.mes),
+      invertido: Number(f.invertido || 0), mensajes: Number(f.mensajes || 0),
+      citas_nuevas: Number(f.citas_nuevas || 0), pacientes: Number(f.pacientes || 0),
+      nota: f.nota,
+    });
+  }
+
+  return (
+    <div className="ca-modal-bg" onClick={onClose}>
+      <div className="ca-modal" style={{ maxWidth: 440 }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+          <strong style={{ fontSize: 16 }}>{metrica ? "Editar mes" : "Agregar mes"}</strong>
+          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)" }}><X size={18} /></button>
+        </div>
+        <div style={{ display: "flex", gap: 11, marginBottom: 12 }}>
+          <div style={{ flex: 1 }}><div className="ca-label">Sede</div><select className="ca-input" value={f.sede} onChange={set("sede")}>{SEDES.map((s) => <option key={s.v} value={s.v}>{s.l}</option>)}</select></div>
+          <div style={{ flex: 1 }}><div className="ca-label">Mes</div><select className="ca-input" value={f.mes} onChange={set("mes")}>{MESES_FULL.slice(1).map((m, i) => <option key={i + 1} value={i + 1}>{m}</option>)}</select></div>
+          <div style={{ width: 90 }}><div className="ca-label">Año</div><input className="ca-input" value={f.anio} onChange={num("anio")} /></div>
+        </div>
+        <div style={{ display: "flex", gap: 11, marginBottom: 12 }}>
+          <div style={{ flex: 1 }}><div className="ca-label">Invertido S/</div><input className="ca-input" value={f.invertido} onChange={num("invertido")} placeholder="1453.25" /></div>
+          <div style={{ flex: 1 }}><div className="ca-label">Mensajes</div><input className="ca-input" value={f.mensajes} onChange={num("mensajes")} /></div>
+        </div>
+        <div style={{ display: "flex", gap: 11, marginBottom: 12 }}>
+          <div style={{ flex: 1 }}><div className="ca-label">Citas nuevas</div><input className="ca-input" value={f.citas_nuevas} onChange={num("citas_nuevas")} /></div>
+          <div style={{ flex: 1 }}><div className="ca-label">Pacientes nuevos</div><input className="ca-input" value={f.pacientes} onChange={num("pacientes")} /></div>
+        </div>
+        <div style={{ marginBottom: 18 }}><div className="ca-label">Nota (opcional)</div><input className="ca-input" value={f.nota} onChange={set("nota")} /></div>
+        <div style={{ display: "flex", gap: 9, justifyContent: "flex-end" }}>
+          <button className="ca-btn ghost" onClick={onClose}>Cancelar</button>
+          <button className="ca-btn" onClick={guardar}>Guardar</button>
         </div>
       </div>
     </div>

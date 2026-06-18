@@ -116,6 +116,12 @@ export const api = {
   },
   urlFotoProfesional: (id) => `/api/profesionales/${id}/foto/`,
 
+  // Histórico mensual de marketing por sede (Gerencia)
+  metricas: () => req("/api/metricas/"),
+  crearMetrica: (data) => req("/api/metricas/", { method: "POST", body: JSON.stringify(data) }),
+  actualizarMetrica: (id, data) => req(`/api/metricas/${id}/`, { method: "PATCH", body: JSON.stringify(data) }),
+  eliminarMetrica: (id) => req(`/api/metricas/${id}/`, { method: "DELETE" }),
+
   // Finanzas (catálogo de precios + cobros)
   servicios: () => req("/api/servicios/"),
   crearServicio: (data) => req("/api/servicios/", { method: "POST", body: JSON.stringify(data) }),

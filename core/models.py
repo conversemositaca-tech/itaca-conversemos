@@ -78,3 +78,63 @@ class ModeloTenant(models.Model):
 
     class Meta:
         abstract = True
+
+
+class MetricaMensual(ModeloTenant):
+    """Histórico mensual de marketing/captación por sede.
+
+    Guarda datos que el sistema NO genera por sí solo (gasto de pauta externo,
+    mensajes recibidos, etc.). El CAC, el coste por mensaje y los ratios NO se
+    almacenan: se calculan a partir de estos campos. Una fila por sede/año/mes.
+    """
+
+    class Sede(models.TextChoices):
+        PIURA = "piura", "Piura"
+        LIMA = "lima", "Lima"
+
+    MESES = [
+        "", "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+        "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
+    ]
+
+    sede = models.CharField(max_length=10, choices=Sede.choices)
+    anio = models.PositiveIntegerField()
+    mes = models.PositiveSmallIntegerField(help_text="1 = Enero … 12 = Diciembre")
+    invertido = models.DecimalField("invertido en pauta (S/)", max_digits=10, decimal_places=2, default=0)
+    mensajes = models.PositiveIntegerField(default=0)
+    citas_nuevas = models.PositiveIntegerField(default=0)
+    pacientes = models.PositiveIntegerField("pacientes/clientes nuevos", default=0)
+    nota = models.CharField(max_length=200, blank=True, default="")
+
+    class Meta:
+        verbose_name = "Métrica mensual"
+        verbose_name_plural = "Métricas mensuales"
+        ordering = ["-anio", "-mes", "sede"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["clinica", "sede", "anio", "mes"], name="uniq_metrica_sede_mes"
+            )
+        ]
+        indexes = [models.Index(fields=["clinica", "anio"])]
+
+    def __str__(self):
+        return f"{self.get_sede_display()} {self.MESES[self.mes]} {self.anio}"
+
+    @property
+    def coste_mensaje(self):
+        return float(self.invertido) / self.mensajes if self.mensajes else 0.0
+
+    @property
+    def cac(self):
+        """Costo de adquisición = inversión / pacientes nuevos."""
+        return float(self.invertido) / self.pacientes if self.pacientes else 0.0
+
+    @property
+    def ratio_cita(self):
+        """% de mensajes que se convierten en cita nueva."""
+        return self.citas_nuevas / self.mensajes if self.mensajes else 0.0
+
+    @property
+    def ratio_paciente(self):
+        """% de citas nuevas que se vuelven paciente."""
+        return self.pacientes / self.citas_nuevas if self.citas_nuevas else 0.0
