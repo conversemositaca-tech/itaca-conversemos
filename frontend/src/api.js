@@ -116,6 +116,7 @@ export const api = {
   },
   urlFotoProfesional: (id) => `/api/profesionales/${id}/foto/`,
   pacientesDeProfesional: (profId) => req(`/api/pacientes/?profesional=${profId}`),
+  registrarSesion: (id, data) => req(`/api/pacientes/${id}/registrar-sesion/`, { method: "POST", body: JSON.stringify(data) }),
 
   // Histórico mensual de marketing por sede (Gerencia)
   metricas: () => req("/api/metricas/"),

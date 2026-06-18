@@ -10,7 +10,7 @@ from core.tenant import get_clinica_actual
 from mensajes.models import Mensaje
 from mensajes.services import registrar_y_enviar
 
-from .models import Adjunto, Atencion, Cita, Paciente
+from .models import Adjunto, Atencion, Cita, Paciente, SeguimientoSesion
 from .serializers import AdjuntoSerializer, CitaSerializer, PacienteSerializer
 
 # Tipos de archivo permitidos para adjuntos clínicos.
@@ -70,7 +70,7 @@ class PacienteViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         qs = (
             Paciente.objects.del_tenant_actual()
-            .prefetch_related("atenciones__adjuntos", "adjuntos", "cobros", "citas")
+            .prefetch_related("atenciones__adjuntos", "adjuntos", "cobros", "citas", "seguimientos")
         )
         prof = self.request.query_params.get("profesional")
         if prof:
@@ -82,6 +82,41 @@ class PacienteViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         serializer.save(clinica=get_clinica_actual())
+
+    @action(detail=True, methods=["post"], url_path="registrar-sesion")
+    def registrar_sesion(self, request, pk=None):
+        """Registra (o actualiza) la sesión del paciente para una semana. Deja el
+        'actual' del paciente sincronizado con la última semana registrada.
+        Solo psicólogos (médicos) y administradores."""
+        from usuarios.models import Usuario
+
+        if getattr(request.user, "rol", None) not in (Usuario.Rol.MEDICO, Usuario.Rol.ADMIN):
+            return Response({"detail": "Solo psicólogos y administradores pueden registrar sesiones."},
+                            status=status.HTTP_403_FORBIDDEN)
+        paciente = self.get_object()
+        try:
+            anio = int(request.data.get("anio"))
+            mes = int(request.data.get("mes"))
+            semana = int(request.data.get("semana"))
+            n_sesion = int(request.data.get("n_sesion") or 0)
+        except (TypeError, ValueError):
+            return Response({"detail": "Año, mes, semana y N° de sesión deben ser números."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        proceso = (request.data.get("proceso") or "").strip()
+
+        SeguimientoSesion.objects.update_or_create(
+            clinica=paciente.clinica, paciente=paciente, anio=anio, mes=mes, semana=semana,
+            defaults={"n_sesion": n_sesion, "proceso": proceso},
+        )
+        # Sincronizar el 'actual' con la última semana registrada.
+        ultimo = paciente.seguimientos.order_by("-anio", "-mes", "-semana").first()
+        if ultimo:
+            paciente.n_sesion = ultimo.n_sesion
+            paciente.proceso = ultimo.proceso
+            paciente.save(update_fields=["n_sesion", "proceso"])
+        # Re-consultar (con prefetch fresco) para devolver el seguimiento actualizado.
+        fresco = self.get_queryset().get(pk=paciente.pk)
+        return Response(PacienteSerializer(fresco).data)
 
     @action(detail=True, methods=["post"])
     def mensaje(self, request, pk=None):

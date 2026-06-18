@@ -60,6 +60,7 @@ class PacienteSerializer(serializers.ModelSerializer):
     sede_label = serializers.CharField(source="get_sede_display", read_only=True)
     profesional_nombre = serializers.CharField(source="profesional.nombre", read_only=True, default="")
     proceso_label = serializers.SerializerMethodField()
+    seguimiento = serializers.SerializerMethodField()
     ultima = serializers.SerializerMethodField()
     proxima = serializers.SerializerMethodField()
     historial = serializers.SerializerMethodField()
@@ -73,13 +74,21 @@ class PacienteSerializer(serializers.ModelSerializer):
             "tipo_documento", "tipo_documento_label", "numero_documento", "direccion",
             "genero", "genero_label",
             "sede", "sede_label", "profesional", "profesional_nombre",
-            "n_sesion", "proceso", "proceso_label",
+            "n_sesion", "proceso", "proceso_label", "seguimiento",
             "especialidad", "alergias", "antecedentes", "medicacion_habitual",
             "ultima", "proxima", "historial", "adjuntos", "cuenta",
         ]
 
     def get_proceso_label(self, obj):
         return obj.proceso.capitalize() if obj.proceso else ""
+
+    def get_seguimiento(self, obj):
+        MES = ["", "Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
+        return [
+            {"anio": s.anio, "mes": s.mes, "semana": s.semana, "n_sesion": s.n_sesion,
+             "proceso": s.proceso, "etiqueta": f"S{s.semana} {MES[s.mes]}"}
+            for s in obj.seguimientos.all()
+        ]
 
     def get_proxima(self, obj):
         prox = (

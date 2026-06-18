@@ -83,6 +83,36 @@ class Paciente(ModeloTenant):
         )
 
 
+class SeguimientoSesion(ModeloTenant):
+    """Registro semanal del proceso terapéutico de un paciente.
+
+    Una fila por paciente por semana: guarda el N° de sesión y el proceso de esa
+    semana. Permite ver la evolución (serie de tiempo) en vez de solo una foto.
+    El 'actual' del paciente (Paciente.n_sesion/proceso) refleja la última semana.
+    """
+
+    paciente = models.ForeignKey("pacientes.Paciente", on_delete=models.CASCADE, related_name="seguimientos")
+    anio = models.PositiveIntegerField()
+    mes = models.PositiveSmallIntegerField()
+    semana = models.PositiveSmallIntegerField(help_text="N° de semana del mes (1-5)")
+    n_sesion = models.PositiveIntegerField(default=0)
+    proceso = models.CharField(max_length=24, blank=True, default="")
+
+    class Meta:
+        verbose_name = "Seguimiento de sesión"
+        verbose_name_plural = "Seguimientos de sesión"
+        ordering = ["anio", "mes", "semana"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["clinica", "paciente", "anio", "mes", "semana"], name="uniq_seg_paciente_semana"
+            )
+        ]
+        indexes = [models.Index(fields=["clinica", "paciente"])]
+
+    def __str__(self):
+        return f"{self.paciente} · S{self.semana} {self.mes}/{self.anio} · sesión {self.n_sesion}"
+
+
 class Cita(ModeloTenant):
     """Cita agendada. El estado sigue el flujo del prototipo."""
 

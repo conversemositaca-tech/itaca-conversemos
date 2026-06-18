@@ -245,6 +245,7 @@ export default function ClinicaApp() {
   const [agendaFecha, setAgendaFecha] = useState(HOY_ISO);
   const [agendaVista, setAgendaVista] = useState("dia");
   const [editingPaciente, setEditingPaciente] = useState(null);
+  const [registrandoSesion, setRegistrandoSesion] = useState(null);
   const [toast, setToast] = useState("");
 
   async function cargarDatos() {
@@ -276,6 +277,14 @@ export default function ClinicaApp() {
   }
 
   const refrescarPacientes = async () => setPacientes(await api.pacientes());
+  const guardarRegistroSesion = async (paciente, datos) => {
+    try {
+      await api.registrarSesion(paciente.id, datos);
+      await refrescarPacientes();
+      setRegistrandoSesion(null);
+      showToast("Sesión de la semana registrada ✓");
+    } catch (e) { showToast("Error: " + e.message); }
+  };
   const refrescarCitas = async () => setCitas(await api.citas());
   const refrescarMensajes = async () => setMensajes(await api.mensajes());
 
@@ -839,6 +848,7 @@ export default function ClinicaApp() {
         {view === "pacientes" && selected && (
           <Ficha p={selected} onBack={() => setSelectedId(null)} onEdit={() => setEditingPaciente(selected)}
             onWhatsApp={() => setWaPaciente(selected)} clinica={nombreClinica} onAgendar={() => setAgendarPara(selected)}
+            onRegistrarSesion={() => setRegistrandoSesion(selected)} puedeRegistrar={usuario?.rol === "medico" || usuario?.rol === "admin"}
             onSubirAdjunto={(file) => subirAdjunto(selected, file)}
             onEliminarAdjunto={eliminarAdjunto} puedeEliminar={usuario?.rol === "medico" || usuario?.rol === "admin"} />
         )}
@@ -881,6 +891,10 @@ export default function ClinicaApp() {
         {editingPaciente && (
           <PacienteModal paciente={editingPaciente.new ? null : editingPaciente}
             onClose={() => setEditingPaciente(null)} onSave={guardarPaciente} />
+        )}
+        {registrandoSesion && (
+          <RegistrarSesionModal paciente={registrandoSesion}
+            onClose={() => setRegistrandoSesion(null)} onSave={(d) => guardarRegistroSesion(registrandoSesion, d)} />
         )}
       </main>
 
@@ -1290,7 +1304,7 @@ function AdjuntoRow({ a, puedeEliminar, onEliminar }) {
   );
 }
 
-function Ficha({ p, onBack, onEdit, onWhatsApp, onSubirAdjunto, onEliminarAdjunto, puedeEliminar, clinica, onAgendar }) {
+function Ficha({ p, onBack, onEdit, onWhatsApp, onSubirAdjunto, onEliminarAdjunto, puedeEliminar, clinica, onAgendar, onRegistrarSesion, puedeRegistrar }) {
   return (
     <div>
       <button className="ca-back" onClick={onBack}><ChevronLeft size={16} strokeWidth={2} /> Pacientes</button>
@@ -1300,6 +1314,7 @@ function Ficha({ p, onBack, onEdit, onWhatsApp, onSubirAdjunto, onEliminarAdjunt
           <h1 className="ca-h1" style={{ fontSize: 22 }}>{p.nombre}</h1>
           <div style={{ marginTop: 7 }}><SpecialtyTag name={p.especialidad} /></div>
         </div>
+        {puedeRegistrar && <button className="ca-mini" onClick={onRegistrarSesion}><Activity size={13} strokeWidth={2} /> Registrar sesión</button>}
         <button className="ca-mini" onClick={onAgendar}><Calendar size={13} strokeWidth={2} /> Agendar</button>
         <button className="ca-mini wa" onClick={onWhatsApp}><MessageCircle size={13} strokeWidth={2} /> WhatsApp</button>
         <button className="ca-mini" onClick={() => imprimirHistoria(p, clinica)}><FileText size={13} strokeWidth={2} /> Imprimir</button>
@@ -1333,6 +1348,31 @@ function Ficha({ p, onBack, onEdit, onWhatsApp, onSubirAdjunto, onEliminarAdjunt
           </div>
         );
       })()}
+
+      {p.seguimiento && p.seguimiento.length > 0 && (
+        <>
+          <h2 className="ca-secth">Evolución de sesiones</h2>
+          <div className="ca-card" style={{ marginBottom: 26 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 22, flexWrap: "wrap" }}>
+              <div>
+                <div className="ca-antlabel"><Activity size={14} strokeWidth={2} style={{ color: "var(--muted)" }} /> Sesión actual</div>
+                <div style={{ fontSize: 20, fontWeight: 600, marginTop: 4 }}>
+                  {p.proceso === "consulta" ? "Consulta inicial" : `Sesión ${p.n_sesion}`}
+                  {p.proceso_label && p.proceso !== "consulta" ? <span style={{ fontSize: 12, color: "var(--muted)", fontWeight: 400 }}> · {p.proceso_label}</span> : null}
+                </div>
+              </div>
+              {p.seguimiento.length >= 2 && <Sparkline valores={p.seguimiento.map((s) => s.n_sesion)} color="var(--accent)" />}
+            </div>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 14 }}>
+              {p.seguimiento.map((s, i) => (
+                <div key={i} style={{ background: "var(--accent-soft)", borderRadius: 8, padding: "5px 10px", fontSize: 12.5 }}>
+                  <span style={{ color: "var(--muted)" }}>{s.etiqueta}:</span> <b>{s.proceso === "consulta" ? "Consulta" : `Ses. ${s.n_sesion}`}</b>
+                </div>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
 
       <h2 className="ca-secth">Antecedentes</h2>
       <div className="ca-card" style={{ marginBottom: 26 }}>
@@ -3309,6 +3349,44 @@ function ReporteModal({ reporte, onClose, onSave }) {
         <div style={{ display: "flex", gap: 9, justifyContent: "flex-end" }}>
           <button className="ca-btn ghost" onClick={onClose}>Cancelar</button>
           <button className="ca-btn" onClick={guardar}>Guardar</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RegistrarSesionModal({ paciente, onClose, onSave }) {
+  const ult = paciente.seguimiento && paciente.seguimiento.length ? paciente.seguimiento[paciente.seguimiento.length - 1] : null;
+  const [f, setF] = useState({
+    anio: ult?.anio || 2026,
+    mes: ult?.mes || 6,
+    semana: ult ? Math.min(5, ult.semana + 1) : 1,
+    n_sesion: ult ? (ult.proceso === "consulta" ? 1 : ult.n_sesion + 1) : (paciente.n_sesion || 1),
+    proceso: ult && ult.proceso !== "consulta" ? ult.proceso : (paciente.proceso && paciente.proceso !== "consulta" ? paciente.proceso : "primero"),
+  });
+  const setN = (k) => (e) => setF((p) => ({ ...p, [k]: e.target.value.replace(/[^\d]/g, "") }));
+  const set = (k) => (e) => setF((p) => ({ ...p, [k]: e.target.value }));
+
+  return (
+    <div className="ca-modal-bg" onClick={onClose}>
+      <div className="ca-modal" style={{ maxWidth: 440 }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+          <strong style={{ fontSize: 16 }}>Registrar sesión</strong>
+          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)" }}><X size={18} /></button>
+        </div>
+        <div className="ca-pmeta" style={{ marginBottom: 16 }}>{paciente.nombre} · se actualiza su sesión actual.</div>
+        <div style={{ display: "flex", gap: 11, marginBottom: 13 }}>
+          <div style={{ flex: 0.8 }}><div className="ca-label">Semana</div><input className="ca-input" value={f.semana} onChange={setN("semana")} inputMode="numeric" /></div>
+          <div style={{ flex: 1.3 }}><div className="ca-label">Mes</div><select className="ca-input" value={f.mes} onChange={set("mes")}>{MESES_FULL.slice(1).map((m, i) => <option key={i + 1} value={i + 1}>{m}</option>)}</select></div>
+          <div style={{ width: 84 }}><div className="ca-label">Año</div><input className="ca-input" value={f.anio} onChange={setN("anio")} inputMode="numeric" /></div>
+        </div>
+        <div style={{ display: "flex", gap: 11, marginBottom: 20 }}>
+          <div style={{ width: 110 }}><div className="ca-label">N° de sesión</div><input className="ca-input" value={f.n_sesion} onChange={setN("n_sesion")} inputMode="numeric" /></div>
+          <div style={{ flex: 1 }}><div className="ca-label">Proceso</div><select className="ca-input" value={f.proceso} onChange={set("proceso")}>{PROCESOS.map((p) => <option key={p || "none"} value={p}>{p ? p.charAt(0).toUpperCase() + p.slice(1) : "—"}</option>)}</select></div>
+        </div>
+        <div style={{ display: "flex", gap: 9, justifyContent: "flex-end" }}>
+          <button className="ca-btn ghost" onClick={onClose}>Cancelar</button>
+          <button className="ca-btn" onClick={() => onSave({ anio: Number(f.anio), mes: Number(f.mes), semana: Number(f.semana), n_sesion: Number(f.n_sesion) || 0, proceso: f.proceso })}>Guardar</button>
         </div>
       </div>
     </div>
