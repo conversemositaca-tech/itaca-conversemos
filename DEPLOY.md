@@ -1,4 +1,4 @@
-# Desplegar el sistema en la nube (link permanente)
+# Desplegar Itaca Conversemos en la nube (link permanente)
 
 Esta guía deja el sistema con una **URL fija con HTTPS, prendida 24/7**, que no depende
 de tu PC. Plataforma recomendada: **Railway** (simple y confiable; ~US$5/mes).
@@ -6,40 +6,33 @@ de tu PC. Plataforma recomendada: **Railway** (simple y confiable; ~US$5/mes).
 El proyecto ya está **listo para producción**:
 - `Dockerfile` que compila la app React y la sirve junto con la API (un solo servicio).
 - `settings.py` lee la configuración del entorno (base de datos, seguridad, dominio).
-- WhiteNoise sirve los archivos estáticos; Gunicorn es el servidor.
+- WhiteNoise sirve los estáticos; Gunicorn es el servidor.
+- **La primera vez carga TODOS los datos solos** (clínica, equipo, directorio de psicólogos,
+  histórico de marketing, los pacientes reales por sede, su seguimiento y el reporte semanal),
+  gracias al comando `bootstrap_itaca`. En los siguientes deploys NO se vuelve a tocar la data.
 
-> Tú solo creas las cuentas y pegas unas variables. Yo (Claude) te guío en cada clic.
+> Los datos de pacientes (`db.sqlite3`) y el `.env` **no se suben** al repo (están en `.gitignore`).
+> En la nube se usa PostgreSQL y la data se genera con los seeds. 👍
 
 ---
 
 ## 0. Lo que necesitas (una sola vez)
-- Una cuenta en **GitHub** (gratis): https://github.com/signup
-- Una cuenta en **Railway** (gratis para empezar): https://railway.app  → "Login with GitHub".
+- Cuenta en **Railway**: https://railway.app  → "Login with GitHub".
 - Una tarjeta para el plan de US$5/mes (Railway lo pide para servicios que no se duermen).
 
-## 1. Subir el código a GitHub
-En la carpeta del proyecto (`C:\projects\clinica-saas`):
-
-```bash
-git add -A
-git commit -m "Listo para desplegar"
-git branch -M main
-git remote add origin https://github.com/TU_USUARIO/clinica-saas.git
-git push -u origin main
-```
-(Primero crea el repositorio vacío en GitHub: botón **New repository** → nombre `clinica-saas` → **Private**.)
-
-> El archivo `.env` (con tus claves) **no se sube** (está en `.gitignore`). 👍
+## 1. El código ya está en GitHub
+Repositorio (privado): **https://github.com/mirainishimura-maker/itaca-conversemos**
+> Cada `git push` a `main` vuelve a desplegar solo.
 
 ## 2. Crear el proyecto en Railway
-1. En Railway: **New Project** → **Deploy from GitHub repo** → elige `clinica-saas`.
+1. En Railway: **New Project** → **Deploy from GitHub repo** → elige `itaca-conversemos`.
 2. Railway detecta el **Dockerfile** y empieza a construir. (La primera vez tarda unos minutos.)
 
 ## 3. Agregar la base de datos
 1. Dentro del proyecto: **New** → **Database** → **Add PostgreSQL**.
 2. Railway crea la variable **`DATABASE_URL`** y la comparte con el servicio automáticamente.
 
-## 4. Agregar un volumen para los archivos (laboratorios, ecografías)
+## 4. Agregar un volumen para los archivos (fotos de psicólogos, adjuntos)
 1. En el servicio web: **Settings** → **Volumes** → **New Volume**.
 2. Punto de montaje (Mount path): **`/data`**
 
@@ -53,42 +46,37 @@ git push -u origin main
 | `EVOLUTION_API_KEY` | (opcional) |
 | `EVOLUTION_INSTANCE` | (opcional) |
 
-- **No** hace falta poner `DJANGO_ALLOWED_HOSTS` ni el dominio: el código toma solo el
-  dominio que Railway asigna (`RAILWAY_PUBLIC_DOMAIN`) para hosts y CSRF.
+- **No** hace falta `DJANGO_ALLOWED_HOSTS` ni el dominio: el código toma solo el dominio
+  que Railway asigna (`RAILWAY_PUBLIC_DOMAIN`) para hosts y CSRF.
 - Para generar la `DJANGO_SECRET_KEY`, en tu PC:
   ```bash
-  .\.venv\Scripts\python.exe -c "from django.core.management.utils import get_random_secret_key as g; print(g())"
+  C:\projects\clinica-saas\.venv\Scripts\python.exe -c "from django.core.management.utils import get_random_secret_key as g; print(g())"
   ```
 
 ## 6. Obtener la URL pública
 En **Settings** → **Networking** → **Generate Domain**. Te dará algo como
-`https://clinica-saas-production.up.railway.app`. **Ese es el link permanente.**
+`https://itaca-conversemos-production.up.railway.app`. **Ese es el link permanente.**
 
-## 7. Dejar la primera clínica y el usuario admin
-El despliegue corre las migraciones solo. Para tener una clínica y poder entrar, abre una
-consola del servicio (**Railway → el servicio → … → "Run a command"** o la pestaña Shell) y corre:
+## 7. Entrar (la data ya está cargada)
+No hace falta correr nada: el primer arranque ejecuta migraciones y `bootstrap_itaca`,
+que deja todo cargado. Entra con las cuentas demo (contraseña `demo1234`):
+`admin@itaca.pe` (gerente), `lucia@itaca.pe` (psicóloga), `recepcion@itaca.pe`.
 
-```bash
-python manage.py seed_demo
-```
-Eso crea la clínica y las cuentas demo (contraseña `demo1234`):
-`admin@sanrafael.pe`, `castro@sanrafael.pe`, `asistente@sanrafael.pe`.
-
-**Importante (seguridad):** entra como `admin@sanrafael.pe`, y:
+**Importante (seguridad):** entra como `admin@itaca.pe` y:
 1. Cambia tu contraseña (botón 🔑 abajo a la izquierda).
 2. En **Equipo**, crea los usuarios reales y desactiva las cuentas demo que no uses.
-3. En **Equipo → datos de la clínica**, pon el nombre real (Mont' Sinai).
 
 ## 8. (Opcional) Dominio propio
-Si compras `sistema.montsinai.com`, en Railway **Settings → Networking → Custom Domain**
-agrégalo y crea el registro CNAME que te indique. Funciona junto con el de arriba.
+Si usas un subdominio (p. ej. `sistema.conversemos.pe`), en Railway
+**Settings → Networking → Custom Domain** agrégalo y crea el CNAME que te indique.
 
 ---
 
 ## Notas importantes
-- **Datos de salud (Ley 29733):** ya queda con HTTPS, `DEBUG=False`, cookies seguras y la
-  base en la nube. Recomendado: activar **backups** de PostgreSQL en Railway.
-- **WhatsApp en vivo:** una vez con dominio fijo, en Evolution apunta el webhook de
-  captación a `https://TU-DOMINIO/api/captacion/whatsapp/<token>` (el token sale en
-  *Captación → Recibir leads automáticamente*).
-- **Actualizaciones:** cada `git push` a `main` vuelve a desplegar solo.
+- **Datos de salud (Ley 29733):** queda con HTTPS, `DEBUG=False`, cookies seguras y la base
+  en la nube. Recomendado: activar **backups** de PostgreSQL en Railway.
+- **Dos sedes:** Piura y Lima ya vienen cargadas (histórico, pacientes, ocupación, etc.).
+- **WhatsApp en vivo:** con dominio fijo, en Evolution apunta el webhook de captación a
+  `https://TU-DOMINIO/api/captacion/whatsapp/<token>` (el token sale en *Captación → Recibir leads*).
+- **Reiniciar datos desde cero** (si alguna vez quieres): borra la base, y en el próximo
+  arranque `bootstrap_itaca` la vuelve a cargar completa.

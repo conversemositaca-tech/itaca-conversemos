@@ -26,5 +26,5 @@ RUN python manage.py collectstatic --noinput
 
 EXPOSE 8000
 
-# Aplica migraciones y levanta el servidor de producción (Gunicorn).
-CMD ["sh", "-c", "python manage.py migrate --noinput && gunicorn config.wsgi --bind 0.0.0.0:${PORT:-8000} --workers 3 --timeout 120"]
+# Migra, carga los datos la primera vez (bootstrap idempotente) y levanta Gunicorn.
+CMD ["sh", "-c", "python manage.py migrate --noinput && python manage.py bootstrap_itaca && gunicorn config.wsgi --bind 0.0.0.0:${PORT:-8000} --workers 3 --timeout 120"]
