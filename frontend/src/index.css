@@ -1,0 +1,15 @@
+/* Reset mínimo. Todo el estilo de la app vive dentro de .clinica-app (App.jsx). */
+* { box-sizing: border-box; }
+html, body, #root { margin: 0; padding: 0; }
+body {
+  background: #EFEDE8;
+  min-height: 100vh;
+}
+#root {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 18px;
+}
+@media (max-width: 720px) {
+  #root { padding: 0; }
+}

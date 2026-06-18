@@ -1,0 +1,147 @@
+from decimal import Decimal
+
+from django.utils import timezone
+from rest_framework import serializers
+
+from core.utils import fecha_corta
+
+from .models import Adjunto, Atencion, Cita, Paciente
+
+
+class AdjuntoSerializer(serializers.ModelSerializer):
+    fecha = serializers.SerializerMethodField()
+    subido_por = serializers.SerializerMethodField()
+    url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Adjunto
+        fields = ["id", "nombre", "tipo", "fecha", "subido_por", "url", "atencion"]
+
+    def get_fecha(self, obj):
+        return fecha_corta(timezone.localtime(obj.creado_en))
+
+    def get_subido_por(self, obj):
+        return str(obj.subido_por) if obj.subido_por_id else ""
+
+    def get_url(self, obj):
+        # Descarga protegida (autenticada y con scope de clínica).
+        return f"/api/adjuntos/{obj.id}/descargar/"
+
+
+class AtencionSerializer(serializers.ModelSerializer):
+    fecha = serializers.SerializerMethodField()
+    medico = serializers.SerializerMethodField()
+    adjuntos = AdjuntoSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = Atencion
+        fields = [
+            "id", "fecha", "medico", "especialidad", "motivo",
+            "presion_arterial", "frecuencia_cardiaca", "temperatura", "peso", "talla",
+            "diagnostico", "indicaciones", "nota", "adjuntos",
+        ]
+
+    def get_fecha(self, obj):
+        return fecha_corta(timezone.localtime(obj.fecha))
+
+    def get_medico(self, obj):
+        return str(obj.medico) if obj.medico_id else ""
+
+
+class PacienteSerializer(serializers.ModelSerializer):
+    # Nombres alineados con el prototipo para que el frontend cambie poco.
+    tel = serializers.CharField(source="telefono", required=False, allow_blank=True)
+    especialidad = serializers.CharField(
+        source="especialidad_habitual", required=False, allow_blank=True
+    )
+    edad = serializers.IntegerField(read_only=True)
+    tipo_documento_label = serializers.CharField(source="get_tipo_documento_display", read_only=True)
+    genero_label = serializers.CharField(source="get_genero_display", read_only=True)
+    ultima = serializers.SerializerMethodField()
+    proxima = serializers.SerializerMethodField()
+    historial = serializers.SerializerMethodField()
+    adjuntos = serializers.SerializerMethodField()
+    cuenta = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Paciente
+        fields = [
+            "id", "nombre", "fecha_nacimiento", "edad", "tel",
+            "tipo_documento", "tipo_documento_label", "numero_documento", "direccion",
+            "genero", "genero_label",
+            "especialidad", "alergias", "antecedentes", "medicacion_habitual",
+            "ultima", "proxima", "historial", "adjuntos", "cuenta",
+        ]
+
+    def get_proxima(self, obj):
+        prox = (
+            obj.citas.filter(inicio__gte=timezone.now())
+            .exclude(estado=Cita.Estado.CANCELADA)
+            .order_by("inicio")
+            .first()
+        )
+        if not prox:
+            return None
+        loc = timezone.localtime(prox.inicio)
+        return {"fecha": fecha_corta(loc), "hora": loc.strftime("%H:%M"), "especialidad": prox.especialidad}
+
+    def get_cuenta(self, obj):
+        cobros = [c for c in obj.cobros.all() if c.estado != "anulado"]
+        cobrado = sum((c.monto for c in cobros if c.estado == "pagado"), Decimal("0"))
+        pendiente = sum((c.monto for c in cobros if c.estado == "pendiente"), Decimal("0"))
+        items = [
+            {
+                "id": c.id, "concepto": c.concepto, "monto": float(c.monto), "estado": c.estado,
+                "fecha": fecha_corta(timezone.localtime(c.fecha)),
+                "medio": c.get_medio_pago_display() if c.medio_pago else "",
+            }
+            for c in sorted(cobros, key=lambda x: x.fecha, reverse=True)
+        ]
+        return {"cobrado": float(cobrado), "pendiente": float(pendiente), "items": items}
+
+    def get_ultima(self, obj):
+        ult = obj.atenciones.order_by("-fecha").first()
+        return fecha_corta(timezone.localtime(ult.fecha)) if ult else "—"
+
+    def get_historial(self, obj):
+        atenciones = obj.atenciones.order_by("-fecha")
+        return AtencionSerializer(atenciones, many=True).data
+
+    def get_adjuntos(self, obj):
+        # Archivos del paciente que no cuelgan de una atención concreta.
+        sueltos = obj.adjuntos.filter(atencion__isnull=True).order_by("-creado_en")
+        return AdjuntoSerializer(sueltos, many=True).data
+
+
+class CitaSerializer(serializers.ModelSerializer):
+    pacienteId = serializers.PrimaryKeyRelatedField(
+        source="paciente", queryset=Paciente.objects.all()
+    )
+    paciente = serializers.CharField(source="paciente.nombre", read_only=True)
+    medico = serializers.SerializerMethodField()
+    fecha = serializers.SerializerMethodField()
+    hora = serializers.SerializerMethodField()
+    estado_label = serializers.CharField(source="get_estado_display", read_only=True)
+    recordado = serializers.BooleanField(source="recordatorio_enviado", read_only=True)
+    cobrada = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Cita
+        fields = [
+            "id", "pacienteId", "paciente", "medico", "especialidad",
+            "fecha", "hora", "inicio", "estado", "estado_label", "recordado", "cobrada",
+        ]
+        read_only_fields = ["inicio"]
+
+    def get_cobrada(self, obj):
+        return obj.cobros.exclude(estado="anulado").exists()
+
+    def get_medico(self, obj):
+        return str(obj.medico) if obj.medico_id else ""
+
+    def get_fecha(self, obj):
+        # Fecha local de la clínica en formato ISO (YYYY-MM-DD) para agrupar por día.
+        return timezone.localtime(obj.inicio).date().isoformat()
+
+    def get_hora(self, obj):
+        return timezone.localtime(obj.inicio).strftime("%H:%M")

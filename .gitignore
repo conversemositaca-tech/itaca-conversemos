@@ -1,0 +1,28 @@
+# Python / Django
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+*.sqlite3
+
+# Entorno y secretos
+.env
+.env.*
+!.env.example
+
+# Estáticos / media subidos
+/staticfiles/
+/media/
+
+# Editor / SO
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Herramienta de túnel temporal (binario pesado, no va al repo)
+cloudflared.exe
+# Build del frontend (se genera al desplegar)
+/frontend/dist/
