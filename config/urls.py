@@ -6,6 +6,7 @@ from rest_framework.routers import DefaultRouter
 
 from core.gerencia import ClinicaConfigView, GerenciaResumenView, HoyResumenView
 from core.metricas import MetricaMensualViewSet
+from core.ocupacion import OcupacionView
 from core.reportes import ReporteSemanalViewSet
 from finanzas.api import CajaView, CobroViewSet, EgresoViewSet, ServicioViewSet
 from leads.api import AnuncioViewSet, LeadViewSet
@@ -53,6 +54,7 @@ urlpatterns = [
     path("api/clinica/", ClinicaConfigView.as_view(), name="clinica-config"),
     path("api/gerencia/resumen/", GerenciaResumenView.as_view(), name="gerencia-resumen"),
     path("api/finanzas/caja/", CajaView.as_view(), name="finanzas-caja"),
+    path("api/ocupacion/", OcupacionView.as_view(), name="ocupacion"),
     # Captación de leads. Las rutas específicas van ANTES del comodín <token>.
     path("api/captacion/config/", CaptacionConfigView.as_view(), name="captacion-config"),
     path("api/captacion/regenerar/", RegenerarTokenView.as_view(), name="captacion-regenerar"),

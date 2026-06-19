@@ -141,11 +141,21 @@ export const api = {
   crearReporte: (data) => req("/api/reportes-semanales/", { method: "POST", body: JSON.stringify(data) }),
   actualizarReporte: (id, data) => req(`/api/reportes-semanales/${id}/`, { method: "PATCH", body: JSON.stringify(data) }),
   eliminarReporte: (id) => req(`/api/reportes-semanales/${id}/`, { method: "DELETE" }),
-  sugerirReporte: ({ desde, hasta }) => {
+  sugerirReporte: ({ desde, hasta, anio, mes, semana }) => {
     const qs = new URLSearchParams();
     if (desde) qs.set("desde", desde);
     if (hasta) qs.set("hasta", hasta);
+    if (anio) qs.set("anio", anio);
+    if (mes) qs.set("mes", mes);
+    if (semana) qs.set("semana", semana);
     return req(`/api/reportes-semanales/sugerir/?${qs.toString()}`);
+  },
+  ocupacion: ({ anio, mes, semana } = {}) => {
+    const qs = new URLSearchParams();
+    if (anio) qs.set("anio", anio);
+    if (mes) qs.set("mes", mes);
+    if (semana) qs.set("semana", semana);
+    return req(`/api/ocupacion/?${qs.toString()}`);
   },
 
   // Finanzas (catálogo de precios + cobros)

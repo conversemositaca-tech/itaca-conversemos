@@ -149,6 +149,18 @@ class ReporteSemanalViewSet(viewsets.ModelViewSet):
         factor = dias_mes / hasta.day if hasta.day else 1
         proy = {s: round(v * factor, 2) for s, v in fact.items()}
 
+        # --- Ocupación de agenda (si viene la semana del reporte) ---
+        from core.ocupacion import ocupacion_por_sede
+        ocup = {"lima": 0, "piura": 0}
+        try:
+            a = int(request.query_params.get("anio"))
+            m = int(request.query_params.get("mes"))
+            sem = int(request.query_params.get("semana"))
+            for g in ocupacion_por_sede(clinica, a, m, sem):
+                ocup[g["sede"]] = g["ocupacion"]
+        except (TypeError, ValueError):
+            pass
+
         return Response({
             "leads_lima": en_periodo.filter(sede="lima").count(),
             "leads_piura": en_periodo.filter(sede="piura").count(),
@@ -160,6 +172,8 @@ class ReporteSemanalViewSet(viewsets.ModelViewSet):
             "fact_piura": round(fact["piura"], 2),
             "proy_lima": proy["lima"],
             "proy_piura": proy["piura"],
+            "ocupacion_lima": ocup["lima"],
+            "ocupacion_piura": ocup["piura"],
         })
 
     def _solo_admin(self):

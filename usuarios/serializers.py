@@ -24,7 +24,7 @@ class ProfesionalSerializer(serializers.ModelSerializer):
             "id", "nombre", "titulo", "colegiatura", "enfoque", "poblaciones",
             "problematicas", "formacion", "trayectoria", "sede", "sede_label",
             "modalidad", "modalidad_label", "frase", "foto_url", "usuario", "activo", "orden",
-            "n_pacientes",
+            "horas_disponibles", "n_pacientes",
         ]
 
     def get_foto_url(self, obj):

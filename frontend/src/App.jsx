@@ -319,6 +319,7 @@ export default function ClinicaApp() {
     ...(usuario?.rol === "admin" ? [{ id: "gerencia", label: "Gerencia", icon: BarChart3 }] : []),
     ...(usuario?.rol === "admin" ? [{ id: "historico", label: "Histórico", icon: Activity }] : []),
     ...(usuario?.rol === "admin" ? [{ id: "reporte", label: "Reporte", icon: FileText }] : []),
+    ...(usuario?.rol === "admin" ? [{ id: "ocupacion", label: "Ocupación", icon: Clock }] : []),
     { id: "agenda", label: "Agenda", icon: Calendar },
     { id: "pacientes", label: "Pacientes", icon: Users },
     { id: "profesionales", label: "Profesionales", icon: HeartPulse },
@@ -866,6 +867,8 @@ export default function ClinicaApp() {
         {view === "historico" && <Historico showToast={showToast} esAdmin={usuario?.rol === "admin"} />}
 
         {view === "reporte" && <ReporteSemanal showToast={showToast} esAdmin={usuario?.rol === "admin"} />}
+
+        {view === "ocupacion" && <Ocupacion showToast={showToast} />}
 
         {view === "equipo" && <Equipo showToast={showToast} miId={usuario?.id} />}
 
@@ -3025,6 +3028,7 @@ function ProfesionalModal({ prof, onClose, onSave }) {
     enfoque: prof?.enfoque || "", poblaciones: prof?.poblaciones || "",
     problematicas: prof?.problematicas || "", formacion: prof?.formacion || "", trayectoria: prof?.trayectoria || "",
     frase: prof?.frase || "", activo: prof?.activo ?? true,
+    horas_disponibles: prof?.horas_disponibles ?? 0,
   });
   const [foto, setFoto] = useState(null);
   const set = (k) => (e) => setF((prev) => ({ ...prev, [k]: e.target.value }));
@@ -3047,6 +3051,7 @@ function ProfesionalModal({ prof, onClose, onSave }) {
           <div style={{ flex: 1.4 }}><div className="ca-label">Título</div><input className="ca-input" value={f.titulo} onChange={set("titulo")} /></div>
           <div style={{ flex: 1 }}><div className="ca-label">Sede</div><select className="ca-input" value={f.sede} onChange={set("sede")}>{SEDES.map((s) => <option key={s.v} value={s.v}>{s.l}</option>)}</select></div>
           <div style={{ flex: 1 }}><div className="ca-label">Modalidad</div><select className="ca-input" value={f.modalidad} onChange={set("modalidad")}>{MODALIDADES.map((m) => <option key={m.v} value={m.v}>{m.l}</option>)}</select></div>
+          <div style={{ width: 90 }}><div className="ca-label">Horas/sem</div><input className="ca-input" value={f.horas_disponibles} onChange={(e) => setF((prev) => ({ ...prev, horas_disponibles: e.target.value.replace(/[^\d]/g, "") }))} inputMode="numeric" /></div>
         </div>
         <div style={{ marginBottom: 12 }}><div className="ca-label">Enfoque</div><textarea className="ca-input" style={ta} value={f.enfoque} onChange={set("enfoque")} placeholder="Psicoterapeuta clínica con enfoque…" /></div>
         <div style={{ marginBottom: 12 }}><div className="ca-label">Poblaciones que atiende</div><input className="ca-input" value={f.poblaciones} onChange={set("poblaciones")} placeholder="Niños, adolescentes, adultos, parejas" /></div>
@@ -3067,7 +3072,7 @@ function ProfesionalModal({ prof, onClose, onSave }) {
         <div style={{ display: "flex", gap: 9, justifyContent: "flex-end" }}>
           <button className="ca-btn ghost" onClick={onClose}>Cancelar</button>
           <button className="ca-btn" style={{ opacity: canSave ? 1 : 0.5, pointerEvents: canSave ? "auto" : "none" }}
-            onClick={() => onSave({ ...(prof?.id ? { id: prof.id } : {}), ...f, nombre: f.nombre.trim() }, foto)}>Guardar</button>
+            onClick={() => onSave({ ...(prof?.id ? { id: prof.id } : {}), ...f, nombre: f.nombre.trim(), horas_disponibles: Number(f.horas_disponibles) || 0 }, foto)}>Guardar</button>
         </div>
       </div>
     </div>
@@ -3418,7 +3423,7 @@ function ReporteModal({ reporte, onClose, onSave, showToast }) {
   async function traerReales() {
     if (!f.fecha_inicio || !f.fecha_fin) { showToast && showToast("Primero pon las fechas de inicio y fin."); return; }
     try {
-      const d = await api.sugerirReporte({ desde: f.fecha_inicio, hasta: f.fecha_fin });
+      const d = await api.sugerirReporte({ desde: f.fecha_inicio, hasta: f.fecha_fin, anio: f.anio, mes: f.mes, semana: f.semana });
       setF((p) => ({ ...p, ...d }));
       showToast && showToast("Datos reales traídos ✓ (revisa y completa el resto)");
     } catch (e) { showToast && showToast("Error: " + e.message); }
@@ -3479,6 +3484,93 @@ function ReporteModal({ reporte, onClose, onSave, showToast }) {
           <button className="ca-btn" onClick={guardar}>Guardar</button>
         </div>
       </div>
+    </div>
+  );
+}
+
+function Ocupacion({ showToast }) {
+  const [data, setData] = useState(null);
+  const [sel, setSel] = useState({ anio: "", mes: "", semana: "" });
+
+  async function cargar(params) {
+    try {
+      const d = await api.ocupacion(params || {});
+      setData(d);
+      setSel({ anio: d.anio, mes: d.mes, semana: d.semana });
+    } catch (e) { showToast("Error: " + e.message); }
+  }
+  useEffect(() => { cargar(); }, []);
+  if (!data) return <div className="ca-empty">Cargando…</div>;
+
+  const badge = (estado, txt) => {
+    const c = SEM[estado] || SEM.rojo;
+    return <span style={{ display: "inline-flex", alignItems: "center", gap: 6, background: c.bg, color: c.fg, padding: "2px 10px", borderRadius: 20, fontSize: 12.5, fontWeight: 600 }}><span style={{ width: 8, height: 8, borderRadius: "50%", background: c.dot }} /> {txt}</span>;
+  };
+
+  return (
+    <div>
+      <div className="ca-tophead">
+        <div>
+          <h1 className="ca-h1">Ocupación de agenda</h1>
+          <div className="ca-sub">Horas disponibles vs. sesiones realizadas, por psicólogo</div>
+        </div>
+      </div>
+
+      <div className="ca-fchips" style={{ marginTop: 18, alignItems: "flex-end" }}>
+        <div style={{ width: 78 }}><div className="ca-label">Semana</div><input className="ca-input" value={sel.semana} onChange={(e) => setSel((s) => ({ ...s, semana: e.target.value.replace(/[^\d]/g, "") }))} inputMode="numeric" /></div>
+        <div style={{ width: 130 }}><div className="ca-label">Mes</div><select className="ca-input" value={sel.mes} onChange={(e) => setSel((s) => ({ ...s, mes: Number(e.target.value) }))}>{MESES_FULL.slice(1).map((m, i) => <option key={i + 1} value={i + 1}>{m}</option>)}</select></div>
+        <div style={{ width: 88 }}><div className="ca-label">Año</div><input className="ca-input" value={sel.anio} onChange={(e) => setSel((s) => ({ ...s, anio: e.target.value.replace(/[^\d]/g, "") }))} inputMode="numeric" /></div>
+        <button className="ca-btn" onClick={() => cargar(sel)}>Ver</button>
+      </div>
+
+      {data.sedes.length === 0 ? (
+        <div className="ca-empty">No hay sesiones registradas en esa semana.</div>
+      ) : data.sedes.map((g) => (
+        <div key={g.sede} style={{ marginTop: 24 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
+            <h2 className="ca-secth" style={{ margin: 0 }}>{g.sede_label}</h2>
+            {badge(g.estado, `${g.ocupacion}% ocupación`)}
+          </div>
+          <div className="ca-card" style={{ overflowX: "auto" }}>
+            <table className="ca-table">
+              <thead>
+                <tr>
+                  <th>Psicólogo</th>
+                  <th style={{ textAlign: "right" }}>Horas</th>
+                  <th style={{ textAlign: "right" }}>Sesiones</th>
+                  <th style={{ textAlign: "right" }}>% Ocup.</th>
+                  <th style={{ textAlign: "right" }}>Consultas</th>
+                  <th style={{ textAlign: "right" }}>1er proc.</th>
+                  <th style={{ textAlign: "right" }}>Recompra</th>
+                </tr>
+              </thead>
+              <tbody>
+                {g.psicologos.map((p) => {
+                  const pc = SEM[p.estado] || SEM.rojo;
+                  return (
+                    <tr key={p.id}>
+                      <td>{p.nombre}</td>
+                      <td style={{ textAlign: "right" }}>{p.horas_disponibles}</td>
+                      <td style={{ textAlign: "right" }}>{p.sesiones}</td>
+                      <td style={{ textAlign: "right" }}><span style={{ color: pc.fg, fontWeight: 600 }}>{p.ocupacion}%</span></td>
+                      <td style={{ textAlign: "right" }}>{p.consultas}</td>
+                      <td style={{ textAlign: "right" }}>{p.primer_proceso}</td>
+                      <td style={{ textAlign: "right" }}>{p.recompra}</td>
+                    </tr>
+                  );
+                })}
+                <tr style={{ fontWeight: 700 }}>
+                  <td>TOTAL {g.sede_label}</td>
+                  <td style={{ textAlign: "right" }}>{g.total_horas}</td>
+                  <td style={{ textAlign: "right" }}>{g.total_sesiones}</td>
+                  <td style={{ textAlign: "right" }}>{g.ocupacion}%</td>
+                  <td colSpan={3}></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

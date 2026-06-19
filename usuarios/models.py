@@ -105,6 +105,10 @@ class Profesional(ModeloTenant):
     trayectoria = models.TextField(blank=True, default="")
     sede = models.CharField(max_length=10, choices=Sede.choices, default=Sede.PIURA)
     modalidad = models.CharField(max_length=12, choices=Modalidad.choices, default=Modalidad.AMBAS)
+    horas_disponibles = models.PositiveIntegerField(
+        "horas/sesiones disponibles por semana", default=0,
+        help_text="Cupos de sesión que ofrece a la semana (para la ocupación de agenda).",
+    )
     frase = models.CharField(max_length=300, blank=True, default="")
     foto = models.FileField(upload_to=ruta_foto_profesional, null=True, blank=True)
     usuario = models.OneToOneField(
