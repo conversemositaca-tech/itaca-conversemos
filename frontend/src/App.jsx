@@ -3383,12 +3383,12 @@ function ReporteSemanal({ showToast, esAdmin }) {
         </>
       )}
 
-      {editar && <ReporteModal reporte={editar.new ? null : editar} onClose={() => setEditar(null)} onSave={guardar} />}
+      {editar && <ReporteModal reporte={editar.new ? null : editar} onClose={() => setEditar(null)} onSave={guardar} showToast={showToast} />}
     </div>
   );
 }
 
-function ReporteModal({ reporte, onClose, onSave }) {
+function ReporteModal({ reporte, onClose, onSave, showToast }) {
   const r = reporte || {};
   const [f, setF] = useState({
     semana: r.semana ?? 1, mes: r.mes ?? 6, anio: r.anio ?? 2026,
@@ -3415,6 +3415,15 @@ function ReporteModal({ reporte, onClose, onSave }) {
     </div>
   );
 
+  async function traerReales() {
+    if (!f.fecha_inicio || !f.fecha_fin) { showToast && showToast("Primero pon las fechas de inicio y fin."); return; }
+    try {
+      const d = await api.sugerirReporte({ desde: f.fecha_inicio, hasta: f.fecha_fin });
+      setF((p) => ({ ...p, ...d }));
+      showToast && showToast("Datos reales traídos ✓ (revisa y completa el resto)");
+    } catch (e) { showToast && showToast("Error: " + e.message); }
+  }
+
   function guardar() {
     const numK = ["semana", "mes", "anio", "fact_lima", "fact_piura", "meta_min_sede", "meta_ideal_sede",
       "proy_lima", "proy_piura", "leads_lima", "leads_piura", "consultas_agendadas", "pacientes_iniciaron",
@@ -3439,10 +3448,12 @@ function ReporteModal({ reporte, onClose, onSave }) {
         <div style={{ display: "flex", gap: 10, marginBottom: 10 }}>
           {N("semana", "Semana", 0.7)}{N("mes", "Mes (1-12)", 0.8)}{N("anio", "Año", 1)}
         </div>
-        <div style={{ display: "flex", gap: 10, marginBottom: 6 }}>
+        <div style={{ display: "flex", gap: 10, marginBottom: 8 }}>
           <div style={{ flex: 1 }}><div className="ca-label">Inicio</div><input className="ca-input" type="date" value={f.fecha_inicio} onChange={set("fecha_inicio")} /></div>
           <div style={{ flex: 1 }}><div className="ca-label">Fin</div><input className="ca-input" type="date" value={f.fecha_fin} onChange={set("fecha_fin")} /></div>
         </div>
+        <button className="ca-mini" onClick={traerReales}><Download size={13} strokeWidth={2} /> Traer datos reales del período</button>
+        <div className="ca-pmeta" style={{ marginTop: 5 }}>Rellena leads, consultas, procesos y pacientes activos desde el sistema. Lo demás (facturación, ocupación, retención) se completa a mano.</div>
 
         <div className="ca-secth" style={sec}>Facturación del mes (S/)</div>
         <div style={{ display: "flex", gap: 10, marginBottom: 8 }}>{N("fact_lima", "Lima")}{N("fact_piura", "Piura")}{N("meta_min_sede", "Meta x sede")}</div>

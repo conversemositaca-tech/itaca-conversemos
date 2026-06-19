@@ -141,6 +141,12 @@ export const api = {
   crearReporte: (data) => req("/api/reportes-semanales/", { method: "POST", body: JSON.stringify(data) }),
   actualizarReporte: (id, data) => req(`/api/reportes-semanales/${id}/`, { method: "PATCH", body: JSON.stringify(data) }),
   eliminarReporte: (id) => req(`/api/reportes-semanales/${id}/`, { method: "DELETE" }),
+  sugerirReporte: ({ desde, hasta }) => {
+    const qs = new URLSearchParams();
+    if (desde) qs.set("desde", desde);
+    if (hasta) qs.set("hasta", hasta);
+    return req(`/api/reportes-semanales/sugerir/?${qs.toString()}`);
+  },
 
   // Finanzas (catálogo de precios + cobros)
   servicios: () => req("/api/servicios/"),

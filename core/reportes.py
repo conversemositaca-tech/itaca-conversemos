@@ -3,12 +3,24 @@
 Lo VEN todos los del equipo; crear/editar/eliminar es solo del gerente (admin).
 El semáforo (verde/amarillo/rojo) se calcula comparando cada indicador con su meta.
 """
+from datetime import date
+
 from rest_framework import serializers, viewsets
+from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied
+from rest_framework.response import Response
 
 from core.models import ReporteSemanal
 from core.tenant import get_clinica_actual
 from usuarios.models import Usuario
+
+
+def _fecha(valor, por_defecto):
+    try:
+        y, m, d = [int(x) for x in str(valor).split("-")]
+        return date(y, m, d)
+    except (ValueError, TypeError, AttributeError):
+        return por_defecto
 
 
 def _soles(v):
@@ -97,6 +109,34 @@ class ReporteSemanalViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         return ReporteSemanal.objects.del_tenant_actual().order_by("-anio", "-mes", "-semana")
+
+    @action(detail=False, methods=["get"])
+    def sugerir(self, request):
+        """Calcula los indicadores que el sistema YA tiene (captación y pacientes
+        activos) para un período, para autocompletar el reporte. Lo demás
+        (facturación, ocupación, retención) sigue siendo manual."""
+        from leads.models import Lead
+        from pacientes.models import Paciente
+
+        clinica = get_clinica_actual()
+        hoy = date.today()
+        desde = _fecha(request.query_params.get("desde"), hoy.replace(day=1))
+        hasta = _fecha(request.query_params.get("hasta"), hoy)
+
+        leads = Lead.objects.filter(clinica=clinica)
+        en_periodo = leads.filter(creado_en__date__gte=desde, creado_en__date__lte=hasta)
+        consultas = leads.filter(fecha_consulta__gte=desde, fecha_consulta__lte=hasta)
+        procesos = leads.filter(estado=Lead.Estado.GANADO, fecha_cierre__gte=desde, fecha_cierre__lte=hasta)
+        pac = Paciente.objects.filter(clinica=clinica)
+
+        return Response({
+            "leads_lima": en_periodo.filter(sede="lima").count(),
+            "leads_piura": en_periodo.filter(sede="piura").count(),
+            "consultas_agendadas": consultas.count(),
+            "pacientes_iniciaron": procesos.count(),
+            "pac_activos_lima": pac.filter(sede="lima").count(),
+            "pac_activos_piura": pac.filter(sede="piura").count(),
+        })
 
     def _solo_admin(self):
         if getattr(self.request.user, "rol", None) != Usuario.Rol.ADMIN:
