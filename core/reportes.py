@@ -3,6 +3,7 @@
 Lo VEN todos los del equipo; crear/editar/eliminar es solo del gerente (admin).
 El semáforo (verde/amarillo/rojo) se calcula comparando cada indicador con su meta.
 """
+import calendar
 from datetime import date
 
 from rest_framework import serializers, viewsets
@@ -115,6 +116,7 @@ class ReporteSemanalViewSet(viewsets.ModelViewSet):
         """Calcula los indicadores que el sistema YA tiene (captación y pacientes
         activos) para un período, para autocompletar el reporte. Lo demás
         (facturación, ocupación, retención) sigue siendo manual."""
+        from finanzas.models import Cobro
         from leads.models import Lead
         from pacientes.models import Paciente
 
@@ -129,6 +131,24 @@ class ReporteSemanalViewSet(viewsets.ModelViewSet):
         procesos = leads.filter(estado=Lead.Estado.GANADO, fecha_cierre__gte=desde, fecha_cierre__lte=hasta)
         pac = Paciente.objects.filter(clinica=clinica)
 
+        # --- Facturación REAL del mes (cobros pagados), atribuida por la sede del paciente ---
+        mes_desde = hasta.replace(day=1)
+        cobros = (
+            Cobro.objects.filter(clinica=clinica, estado=Cobro.Estado.PAGADO,
+                                 fecha__date__gte=mes_desde, fecha__date__lte=hasta)
+            .select_related("paciente")
+        )
+        fact = {"lima": 0.0, "piura": 0.0}
+        for c in cobros:
+            sede_c = c.paciente.sede if c.paciente_id else ""
+            if sede_c in fact:
+                fact[sede_c] += float(c.monto)
+
+        # Proyección lineal a fin de mes (estimado): acumulado / días transcurridos * días del mes.
+        dias_mes = calendar.monthrange(hasta.year, hasta.month)[1]
+        factor = dias_mes / hasta.day if hasta.day else 1
+        proy = {s: round(v * factor, 2) for s, v in fact.items()}
+
         return Response({
             "leads_lima": en_periodo.filter(sede="lima").count(),
             "leads_piura": en_periodo.filter(sede="piura").count(),
@@ -136,6 +156,10 @@ class ReporteSemanalViewSet(viewsets.ModelViewSet):
             "pacientes_iniciaron": procesos.count(),
             "pac_activos_lima": pac.filter(sede="lima").count(),
             "pac_activos_piura": pac.filter(sede="piura").count(),
+            "fact_lima": round(fact["lima"], 2),
+            "fact_piura": round(fact["piura"], 2),
+            "proy_lima": proy["lima"],
+            "proy_piura": proy["piura"],
         })
 
     def _solo_admin(self):
