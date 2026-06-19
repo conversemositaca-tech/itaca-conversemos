@@ -1,3 +1,5 @@
+from datetime import date, timedelta
+
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -5,10 +7,32 @@ from rest_framework.response import Response
 from core.tenant import get_clinica_actual
 from pacientes.models import Paciente
 
-from .models import Lead
-from .serializers import LeadSerializer
+from .models import Anuncio, Lead
+from .reporte import generar_reporte_pauta
+from .serializers import AnuncioSerializer, LeadSerializer
 
 _FUENTE_LABEL = dict(Lead.Fuente.choices)
+
+
+def _parse_fecha(valor, por_defecto):
+    """'YYYY-MM-DD' -> date; si viene vacío/ inválido, usa por_defecto."""
+    try:
+        y, m, d = [int(x) for x in str(valor).split("-")]
+        return date(y, m, d)
+    except (ValueError, TypeError, AttributeError):
+        return por_defecto
+
+
+class AnuncioViewSet(viewsets.ModelViewSet):
+    """Catálogo de anuncios/publicaciones de pauta (lo gestiona el equipo de marketing)."""
+
+    serializer_class = AnuncioSerializer
+
+    def get_queryset(self):
+        return Anuncio.objects.del_tenant_actual().order_by("-creado_en")
+
+    def perform_create(self, serializer):
+        serializer.save(clinica=get_clinica_actual())
 
 
 class LeadViewSet(viewsets.ModelViewSet):
@@ -43,6 +67,24 @@ class LeadViewSet(viewsets.ModelViewSet):
         lead.save(update_fields=["paciente", "estado"])
         return Response({"paciente_id": paciente.id, "lead": LeadSerializer(lead).data},
                         status=status.HTTP_201_CREATED)
+
+    @action(detail=False, methods=["get"], url_path="reporte-pauta")
+    def reporte_pauta(self, request):
+        """Genera el reporte de captación/pauta en texto (listo para WhatsApp).
+
+        Params: sede (piura/lima, opcional), desde y hasta (YYYY-MM-DD). Por
+        defecto, del día 1 del mes actual a hoy."""
+        hoy = date.today()
+        desde = _parse_fecha(request.query_params.get("desde"), hoy.replace(day=1))
+        hasta = _parse_fecha(request.query_params.get("hasta"), hoy)
+        sede = (request.query_params.get("sede") or "").strip()
+        if sede and sede not in dict(Lead.Sede.choices):
+            return Response({"detail": "Sede inválida."}, status=status.HTTP_400_BAD_REQUEST)
+        resultado = generar_reporte_pauta(get_clinica_actual(), sede, desde, hasta)
+        resultado["sede"] = sede
+        resultado["desde"] = desde.isoformat()
+        resultado["hasta"] = hasta.isoformat()
+        return Response(resultado)
 
     @action(detail=False, methods=["get"])
     def reportes(self, request):

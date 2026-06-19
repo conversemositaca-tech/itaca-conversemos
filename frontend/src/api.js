@@ -84,6 +84,18 @@ export const api = {
   crearLead: (data) => req("/api/leads/", { method: "POST", body: JSON.stringify(data) }),
   actualizarLead: (id, data) => req(`/api/leads/${id}/`, { method: "PATCH", body: JSON.stringify(data) }),
   convertirLead: (id) => req(`/api/leads/${id}/convertir/`, { method: "POST" }),
+  reportePauta: ({ sede, desde, hasta }) => {
+    const qs = new URLSearchParams();
+    if (sede) qs.set("sede", sede);
+    if (desde) qs.set("desde", desde);
+    if (hasta) qs.set("hasta", hasta);
+    return req(`/api/leads/reporte-pauta/?${qs.toString()}`);
+  },
+  // Catálogo de anuncios (pauta)
+  anuncios: () => req("/api/anuncios/"),
+  crearAnuncio: (data) => req("/api/anuncios/", { method: "POST", body: JSON.stringify(data) }),
+  actualizarAnuncio: (id, data) => req(`/api/anuncios/${id}/`, { method: "PATCH", body: JSON.stringify(data) }),
+  eliminarAnuncio: (id) => req(`/api/anuncios/${id}/`, { method: "DELETE" }),
 
   // Inicio (datos reales del día) + panel de gerencia (solo admin)
   hoy: () => req("/api/hoy/"),

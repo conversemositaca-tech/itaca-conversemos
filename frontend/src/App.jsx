@@ -52,21 +52,29 @@ const MENSAJE_ESTADO = {
 const LEAD_ESTADOS = [
   { v: "nuevo", l: "Nuevo" },
   { v: "contactado", l: "Contactado" },
-  { v: "agendado", l: "Sesión agendada" },
-  { v: "ganado", l: "Inició tratamiento" },
+  { v: "agendado", l: "Consulta agendada" },
+  { v: "no_realizada", l: "Consulta no realizada" },
+  { v: "evaluando", l: "Evaluando inicio" },
+  { v: "pendiente_pago", l: "Pendiente de pago" },
+  { v: "ganado", l: "Inició proceso" },
   { v: "perdido", l: "Perdido" },
 ];
 const LEAD_ESTADO_COLOR = {
   nuevo: { bg: "#EFEDE8", fg: "#7C7870" },
   contactado: { bg: "#E2ECF5", fg: "#2E5C86" },
   agendado: { bg: "#F7ECDD", fg: "#9C6B2E" },
+  no_realizada: { bg: "#F0E7E7", fg: "#8A5A5A" },
+  evaluando: { bg: "#E6EEF5", fg: "#2E5C86" },
+  pendiente_pago: { bg: "#F7ECDD", fg: "#9C6B2E" },
   ganado: { bg: "#E9F1ED", fg: "#3E7A65" },
   perdido: { bg: "#F7E5E5", fg: "#9C4646" },
 };
 const FUENTES = [
   { v: "instagram", l: "Instagram" }, { v: "facebook", l: "Facebook" },
   { v: "tiktok", l: "TikTok" }, { v: "referido", l: "Referido" },
-  { v: "whatsapp", l: "WhatsApp" }, { v: "web", l: "Web" },
+  { v: "whatsapp", l: "WhatsApp directo" }, { v: "bot", l: "Bot / Chatbot" },
+  { v: "web", l: "Web" }, { v: "agendapro", l: "AgendaPro web" },
+  { v: "derivado", l: "Derivado de otra sede" }, { v: "linkedin", l: "LinkedIn" },
   { v: "convenio", l: "Convenio" }, { v: "otro", l: "Otro" },
 ];
 
@@ -2009,15 +2017,44 @@ function Marketing({ showToast, onConvertir, esAdmin }) {
   const [rep, setRep] = useState(null);
   const [medicos, setMedicos] = useState([]);
   const [cfg, setCfg] = useState(null);
+  const [anuncios, setAnuncios] = useState([]);
   const [copiado, setCopiado] = useState("");
   const [probando, setProbando] = useState(false);
   const [cargando, setCargando] = useState(true);
   const [creando, setCreando] = useState(false);
+  const [editandoLead, setEditandoLead] = useState(null);
+  const [pauta, setPauta] = useState({ sede: "lima", desde: "", hasta: "", data: null, cargando: false });
   const origen = window.location.origin;
 
   async function cargar() {
-    const [l, r, m, c] = await Promise.all([api.leads(), api.reportesLeads(), api.medicos(), api.captacionConfig()]);
-    setLeads(l); setRep(r); setMedicos(m); setCfg(c);
+    const [l, r, m, c, an] = await Promise.all([
+      api.leads(), api.reportesLeads(), api.medicos(), api.captacionConfig(), api.anuncios(),
+    ]);
+    setLeads(l); setRep(r); setMedicos(m); setCfg(c); setAnuncios(an);
+  }
+
+  async function generarPauta() {
+    setPauta((p) => ({ ...p, cargando: true }));
+    try {
+      const d = await api.reportePauta({ sede: pauta.sede, desde: pauta.desde, hasta: pauta.hasta });
+      setPauta((p) => ({ ...p, data: d, cargando: false }));
+    } catch (err) { showToast("Error: " + err.message); setPauta((p) => ({ ...p, cargando: false })); }
+  }
+  async function agregarAnuncio(data) {
+    try { await api.crearAnuncio(data); await cargar(); showToast("Anuncio agregado ✓"); }
+    catch (err) { showToast("Error: " + err.message); }
+  }
+  async function quitarAnuncio(id) {
+    if (!window.confirm("¿Eliminar este anuncio?")) return;
+    try { await api.eliminarAnuncio(id); await cargar(); }
+    catch (err) { showToast("Error: " + err.message); }
+  }
+  async function guardarLead(data) {
+    try {
+      if (data.id) await api.actualizarLead(data.id, data); else await api.crearLead(data);
+      await cargar(); setCreando(false); setEditandoLead(null);
+      showToast(data.id ? "Lead actualizado ✓" : "Lead captado ✓");
+    } catch (err) { showToast("Error: " + err.message); }
   }
   useEffect(() => {
     cargar().catch((err) => showToast("Error: " + err.message)).finally(() => setCargando(false));
@@ -2060,11 +2097,6 @@ function Marketing({ showToast, onConvertir, esAdmin }) {
       showToast(`${lead.nombre} ahora es paciente ✓`);
     } catch (err) { showToast("Error: " + err.message); }
   }
-  async function crearLead(data) {
-    try { await api.crearLead(data); await cargar(); setCreando(false); showToast("Lead captado ✓"); }
-    catch (err) { showToast("Error: " + err.message); }
-  }
-
   if (cargando) return <div className="ca-empty">Cargando…</div>;
 
   const emb = rep?.embudo || { recibidos: 0, contactados: 0, agendados: 0, iniciaron: 0, perdidos: 0 };
@@ -2093,6 +2125,38 @@ function Marketing({ showToast, onConvertir, esAdmin }) {
             <Plus size={16} strokeWidth={2.2} /> Captar lead
           </button>
         </div>
+      </div>
+
+      {/* ---- Generador del reporte de pauta (listo para WhatsApp) ---- */}
+      <div className="ca-card" style={{ marginTop: 22 }}>
+        <div className="ca-secth" style={{ marginTop: 0 }}>Generar reporte de pauta</div>
+        <div style={{ display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap", marginBottom: 12 }}>
+          <div>
+            <div className="ca-label">Sede</div>
+            <select className="ca-input" value={pauta.sede} onChange={(e) => setPauta((p) => ({ ...p, sede: e.target.value }))}>
+              <option value="">Todas</option>
+              <option value="piura">Piura</option>
+              <option value="lima">Lima</option>
+            </select>
+          </div>
+          <div><div className="ca-label">Desde</div><input className="ca-input" type="date" value={pauta.desde} onChange={(e) => setPauta((p) => ({ ...p, desde: e.target.value }))} /></div>
+          <div><div className="ca-label">Hasta</div><input className="ca-input" type="date" value={pauta.hasta} onChange={(e) => setPauta((p) => ({ ...p, hasta: e.target.value }))} /></div>
+          <button className="ca-btn" onClick={generarPauta} disabled={pauta.cargando}>
+            <FileText size={15} strokeWidth={2} /> {pauta.cargando ? "Generando…" : "Generar"}
+          </button>
+        </div>
+        {pauta.data ? (
+          <>
+            <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 6 }}>
+              <button className="ca-mini" onClick={() => copiar(pauta.data.texto, "pauta")}>
+                <Copy size={13} strokeWidth={2} /> {copiado === "pauta" ? "¡Copiado!" : "Copiar para WhatsApp"}
+              </button>
+            </div>
+            <pre style={{ whiteSpace: "pre-wrap", fontFamily: "inherit", fontSize: 13.5, lineHeight: 1.55, background: "var(--accent-soft)", borderRadius: 10, padding: 14, margin: 0 }}>{pauta.data.texto}</pre>
+          </>
+        ) : (
+          <div className="ca-pmeta">Elige sede y fechas; el sistema arma el reporte (leads, consultas por origen, embudo, procesos y publicidad) listo para pegar en WhatsApp.</div>
+        )}
       </div>
 
       {cfg && (
@@ -2192,6 +2256,23 @@ function Marketing({ showToast, onConvertir, esAdmin }) {
         </tbody>
       </table>
 
+      <h2 className="ca-secth" style={{ marginTop: 30 }}>Anuncios de pauta ({anuncios.length})</h2>
+      <div className="ca-card">
+        <AnuncioForm onSave={agregarAnuncio} />
+        {anuncios.length > 0 && (
+          <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 7 }}>
+            {anuncios.map((a) => (
+              <div key={a.id} style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 13.5 }}>
+                <span style={{ fontWeight: 600 }}>{a.nombre}</span>
+                <span className="ca-pmeta">{a.plataforma_label} · {a.n_leads} lead{a.n_leads === 1 ? "" : "s"}</span>
+                {a.link && <a href={a.link} target="_blank" rel="noreferrer" style={{ color: "var(--accent)", fontSize: 12.5 }}>ver</a>}
+                <button className="ca-iconbtn" style={{ marginLeft: "auto" }} title="Eliminar" onClick={() => quitarAnuncio(a.id)}><Trash2 size={13} strokeWidth={2} /></button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
       <h2 className="ca-secth" style={{ marginTop: 30 }}>Leads ({leads.length})</h2>
       {leads.length === 0 ? (
         <div className="ca-empty">Aún no hay leads. Capta el primero con el botón de arriba.</div>
@@ -2206,16 +2287,13 @@ function Marketing({ showToast, onConvertir, esAdmin }) {
                 )}
               </div>
               <div className="ca-pmeta">
-                {lead.fuente_label}{lead.especialidad ? ` · ${lead.especialidad}` : ""}{lead.medico_nombre ? ` · ${lead.medico_nombre}` : ""}{lead.campania ? ` · ${lead.campania}` : ""}
+                {lead.sede_label ? `${lead.sede_label} · ` : ""}{lead.fuente_label}{lead.anuncio_nombre ? ` · 📣 ${lead.anuncio_nombre}` : ""}{lead.es_pareja ? " · pareja" : ""}{lead.medico_nombre ? ` · ${lead.medico_nombre}` : ""}
               </div>
             </div>
-            <select className="ca-tplsel" value={lead.medico || ""} onChange={(ev) => asignarMedico(lead, ev.target.value)} title="Médico asignado">
-              <option value="">Sin médico</option>
-              {medicos.map((m) => <option key={m.id} value={m.id}>{m.nombre}</option>)}
-            </select>
             <select className="ca-tplsel" value={lead.estado} onChange={(ev) => moverEstado(lead, ev.target.value)}>
               {LEAD_ESTADOS.map((s) => <option key={s.v} value={s.v}>{s.l}</option>)}
             </select>
+            <button className="ca-iconbtn" title="Editar lead" onClick={() => setEditandoLead(lead)}><Pencil size={14} strokeWidth={2} /></button>
             {lead.paciente_nombre ? (
               <Tag colors={LEAD_ESTADO_COLOR.ganado}>Ya es paciente</Tag>
             ) : (
@@ -2227,72 +2305,111 @@ function Marketing({ showToast, onConvertir, esAdmin }) {
         ))
       )}
 
-      {creando && <CrearLeadModal medicos={medicos} onClose={() => setCreando(false)} onSave={crearLead} />}
+      {(creando || editandoLead) && (
+        <CrearLeadModal lead={editandoLead} medicos={medicos} anuncios={anuncios}
+          onClose={() => { setCreando(false); setEditandoLead(null); }} onSave={guardarLead} />
+      )}
     </div>
   );
 }
 
-function CrearLeadModal({ medicos, onClose, onSave }) {
+function AnuncioForm({ onSave }) {
   const [nombre, setNombre] = useState("");
-  const [telefono, setTelefono] = useState("");
-  const [fuente, setFuente] = useState("instagram");
-  const [esPauta, setEsPauta] = useState(true);
-  const [campania, setCampania] = useState("");
-  const [especialidad, setEspecialidad] = useState(Object.keys(SPECIALTY)[0]);
-  const [medico, setMedico] = useState("");
-  const canSave = nombre.trim().length > 0;
+  const [link, setLink] = useState("");
+  const [plataforma, setPlataforma] = useState("instagram");
+  const PLATS = [{ v: "instagram", l: "Instagram" }, { v: "facebook", l: "Facebook" }, { v: "tiktok", l: "TikTok" }, { v: "otro", l: "Otro" }];
+  return (
+    <div style={{ display: "flex", gap: 9, alignItems: "flex-end", flexWrap: "wrap" }}>
+      <div style={{ flex: 2, minWidth: 160 }}><div className="ca-label">Anuncio / publicación</div><input className="ca-input" value={nombre} onChange={(e) => setNombre(e.target.value)} placeholder='ej. "reaccionas y luego te arrepientes"' /></div>
+      <div style={{ flex: 2, minWidth: 160 }}><div className="ca-label">Link (opcional)</div><input className="ca-input" value={link} onChange={(e) => setLink(e.target.value)} placeholder="https://instagram.com/p/…" /></div>
+      <div style={{ flex: 1, minWidth: 110 }}><div className="ca-label">Plataforma</div><select className="ca-input" value={plataforma} onChange={(e) => setPlataforma(e.target.value)}>{PLATS.map((p) => <option key={p.v} value={p.v}>{p.l}</option>)}</select></div>
+      <button className="ca-btn" style={{ opacity: nombre.trim() ? 1 : 0.5, pointerEvents: nombre.trim() ? "auto" : "none" }}
+        onClick={() => { onSave({ nombre: nombre.trim(), link: link.trim(), plataforma }); setNombre(""); setLink(""); }}>
+        <Plus size={15} strokeWidth={2.2} /> Agregar
+      </button>
+    </div>
+  );
+}
+
+function CrearLeadModal({ lead, medicos, anuncios, onClose, onSave }) {
+  const [f, setF] = useState({
+    nombre: lead?.nombre || "",
+    telefono: lead?.telefono && lead.telefono !== "—" ? lead.telefono : "",
+    sede: lead?.sede || "lima",
+    fuente: lead?.fuente || "instagram",
+    es_pauta: lead ? lead.es_pauta : true,
+    anuncio: lead?.anuncio || "",
+    es_pareja: lead?.es_pareja || false,
+    estado: lead?.estado || "nuevo",
+    fecha_consulta: lead?.fecha_consulta || "",
+    fecha_cierre: lead?.fecha_cierre || "",
+    campania: lead?.campania || "",
+    especialidad: lead?.especialidad || Object.keys(SPECIALTY)[0],
+    medico: lead?.medico || "",
+  });
+  const set = (k) => (e) => setF((p) => ({ ...p, [k]: e.target.value }));
+  const setChk = (k) => (e) => setF((p) => ({ ...p, [k]: e.target.checked }));
+  const canSave = f.nombre.trim().length > 0;
+  const anunciosActivos = (anuncios || []).filter((a) => a.activo);
+
+  function guardar() {
+    onSave({
+      ...(lead?.id ? { id: lead.id } : {}),
+      nombre: f.nombre.trim(), telefono: f.telefono.trim(), sede: f.sede, fuente: f.fuente,
+      es_pauta: f.es_pauta, anuncio: f.anuncio ? Number(f.anuncio) : null, es_pareja: f.es_pareja,
+      estado: f.estado, fecha_consulta: f.fecha_consulta || null, fecha_cierre: f.fecha_cierre || null,
+      campania: f.campania.trim(), especialidad: f.especialidad, medico: f.medico ? Number(f.medico) : null,
+    });
+  }
 
   return (
     <div className="ca-modal-bg" onClick={onClose}>
-      <div className="ca-modal" style={{ maxWidth: 400 }} onClick={(ev) => ev.stopPropagation()}>
+      <div className="ca-modal" style={{ maxWidth: 460, maxHeight: "88vh", overflowY: "auto" }} onClick={(ev) => ev.stopPropagation()}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
-          <strong style={{ fontSize: 16 }}>Captar lead</strong>
+          <strong style={{ fontSize: 16 }}>{lead ? "Editar lead" : "Captar lead"}</strong>
           <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)" }}><X size={18} /></button>
         </div>
         <div style={{ marginBottom: 12 }}>
           <div className="ca-label">Nombre</div>
-          <input className="ca-input" value={nombre} onChange={(e) => setNombre(e.target.value)} placeholder="Nombre del interesado" autoFocus />
+          <input className="ca-input" value={f.nombre} onChange={set("nombre")} placeholder="Nombre del interesado" autoFocus />
         </div>
         <div style={{ display: "flex", gap: 11, marginBottom: 12 }}>
-          <div style={{ flex: 1 }}>
-            <div className="ca-label">Teléfono</div>
-            <input className="ca-input" value={telefono} onChange={(e) => setTelefono(e.target.value)} placeholder="987 654 321" />
-          </div>
-          <div style={{ flex: 1 }}>
-            <div className="ca-label">Fuente</div>
-            <select className="ca-input" value={fuente} onChange={(e) => setFuente(e.target.value)}>
-              {FUENTES.map((f) => <option key={f.v} value={f.v}>{f.l}</option>)}
+          <div style={{ flex: 1.4 }}><div className="ca-label">Teléfono</div><input className="ca-input" value={f.telefono} onChange={set("telefono")} placeholder="987 654 321" /></div>
+          <div style={{ flex: 1 }}><div className="ca-label">Sede</div><select className="ca-input" value={f.sede} onChange={set("sede")}><option value="">—</option>{SEDES.map((s) => <option key={s.v} value={s.v}>{s.l}</option>)}</select></div>
+        </div>
+        <div style={{ display: "flex", gap: 11, marginBottom: 12 }}>
+          <div style={{ flex: 1 }}><div className="ca-label">Origen</div><select className="ca-input" value={f.fuente} onChange={set("fuente")}>{FUENTES.map((x) => <option key={x.v} value={x.v}>{x.l}</option>)}</select></div>
+          <div style={{ flex: 1 }}><div className="ca-label">Etapa</div><select className="ca-input" value={f.estado} onChange={set("estado")}>{LEAD_ESTADOS.map((s) => <option key={s.v} value={s.v}>{s.l}</option>)}</select></div>
+        </div>
+        <div style={{ display: "flex", gap: 16, marginBottom: 12, flexWrap: "wrap" }}>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13.5, color: "var(--ink-soft)", cursor: "pointer" }}>
+            <input type="checkbox" checked={f.es_pauta} onChange={setChk("es_pauta")} /> Vino de pauta (pagado)
+          </label>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13.5, color: "var(--ink-soft)", cursor: "pointer" }}>
+            <input type="checkbox" checked={f.es_pareja} onChange={setChk("es_pareja")} /> Consulta de pareja
+          </label>
+        </div>
+        {f.es_pauta && (
+          <div style={{ marginBottom: 12 }}>
+            <div className="ca-label">Anuncio que lo atrajo</div>
+            <select className="ca-input" value={f.anuncio} onChange={set("anuncio")}>
+              <option value="">— (sin especificar)</option>
+              {anunciosActivos.map((a) => <option key={a.id} value={a.id}>{a.nombre}</option>)}
             </select>
           </div>
-        </div>
-        <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, fontSize: 13.5, color: "var(--ink-soft)", cursor: "pointer" }}>
-          <input type="checkbox" checked={esPauta} onChange={(e) => setEsPauta(e.target.checked)} />
-          Vino de pauta (anuncio pagado)
-        </label>
-        <div style={{ marginBottom: 12 }}>
-          <div className="ca-label">Campaña (opcional)</div>
-          <input className="ca-input" value={campania} onChange={(e) => setCampania(e.target.value)} placeholder="ej. Pauta Gastro Junio" />
+        )}
+        <div style={{ display: "flex", gap: 11, marginBottom: 12 }}>
+          <div style={{ flex: 1 }}><div className="ca-label">Fecha de la consulta</div><input className="ca-input" type="date" value={f.fecha_consulta || ""} onChange={set("fecha_consulta")} /></div>
+          <div style={{ flex: 1 }}><div className="ca-label">Inició proceso (fecha)</div><input className="ca-input" type="date" value={f.fecha_cierre || ""} onChange={set("fecha_cierre")} /></div>
         </div>
         <div style={{ display: "flex", gap: 11, marginBottom: 18 }}>
-          <div style={{ flex: 1 }}>
-            <div className="ca-label">Especialidad</div>
-            <select className="ca-input" value={especialidad} onChange={(e) => setEspecialidad(e.target.value)}>
-              {Object.keys(SPECIALTY).map((s) => <option key={s}>{s}</option>)}
-            </select>
-          </div>
-          <div style={{ flex: 1 }}>
-            <div className="ca-label">Doctor de la pauta</div>
-            <select className="ca-input" value={medico} onChange={(e) => setMedico(e.target.value)}>
-              <option value="">Sin asignar</option>
-              {medicos.map((m) => <option key={m.id} value={m.id}>{m.nombre}</option>)}
-            </select>
-          </div>
+          <div style={{ flex: 1 }}><div className="ca-label">Campaña (opcional)</div><input className="ca-input" value={f.campania} onChange={set("campania")} placeholder="ej. Pauta junio" /></div>
+          <div style={{ flex: 1 }}><div className="ca-label">Psicólogo</div><select className="ca-input" value={f.medico} onChange={set("medico")}><option value="">Sin asignar</option>{medicos.map((m) => <option key={m.id} value={m.id}>{m.nombre}</option>)}</select></div>
         </div>
         <div style={{ display: "flex", gap: 9, justifyContent: "flex-end" }}>
           <button className="ca-btn ghost" onClick={onClose}>Cancelar</button>
-          <button className="ca-btn" style={{ opacity: canSave ? 1 : 0.5, pointerEvents: canSave ? "auto" : "none" }}
-            onClick={() => onSave({ nombre: nombre.trim(), telefono: telefono.trim(), fuente, es_pauta: esPauta, campania: campania.trim(), especialidad, medico: medico ? Number(medico) : null })}>
-            Captar
+          <button className="ca-btn" style={{ opacity: canSave ? 1 : 0.5, pointerEvents: canSave ? "auto" : "none" }} onClick={guardar}>
+            {lead ? "Guardar" : "Captar"}
           </button>
         </div>
       </div>

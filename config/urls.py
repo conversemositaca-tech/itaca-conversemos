@@ -8,7 +8,7 @@ from core.gerencia import ClinicaConfigView, GerenciaResumenView, HoyResumenView
 from core.metricas import MetricaMensualViewSet
 from core.reportes import ReporteSemanalViewSet
 from finanzas.api import CajaView, CobroViewSet, EgresoViewSet, ServicioViewSet
-from leads.api import LeadViewSet
+from leads.api import AnuncioViewSet, LeadViewSet
 from leads.captacion import (
     CaptacionConfigView,
     IntakeWebView,
@@ -40,6 +40,7 @@ router.register(r"metricas", MetricaMensualViewSet, basename="metrica")
 router.register(r"reportes-semanales", ReporteSemanalViewSet, basename="reporte-semanal")
 router.register(r"mensajes", MensajeViewSet, basename="mensaje")
 router.register(r"leads", LeadViewSet, basename="lead")
+router.register(r"anuncios", AnuncioViewSet, basename="anuncio")
 
 urlpatterns = [
     path("admin/", admin.site.urls),
