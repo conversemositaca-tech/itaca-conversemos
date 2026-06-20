@@ -17,7 +17,7 @@ from leads.captacion import (
     RegenerarTokenView,
 )
 from mensajes.api import MensajeViewSet
-from pacientes.api import AdjuntoViewSet, CitaViewSet, PacienteViewSet
+from pacientes.api import AdjuntoViewSet, AtencionViewSet, CitaViewSet, PacienteViewSet, TranscribirView
 from usuarios.api import (
     CambiarPasswordView,
     LoginView,
@@ -31,6 +31,7 @@ from usuarios.api import (
 router = DefaultRouter()
 router.register(r"pacientes", PacienteViewSet, basename="paciente")
 router.register(r"citas", CitaViewSet, basename="cita")
+router.register(r"atenciones", AtencionViewSet, basename="atencion")
 router.register(r"adjuntos", AdjuntoViewSet, basename="adjunto")
 router.register(r"servicios", ServicioViewSet, basename="servicio")
 router.register(r"cobros", CobroViewSet, basename="cobro")
@@ -50,6 +51,7 @@ urlpatterns = [
     path("api/auth/me/", MeView.as_view(), name="me"),
     path("api/auth/cambiar-password/", CambiarPasswordView.as_view(), name="cambiar-password"),
     path("api/medicos/", MedicosView.as_view(), name="medicos"),
+    path("api/transcribir/", TranscribirView.as_view(), name="transcribir"),
     path("api/hoy/", HoyResumenView.as_view(), name="hoy-resumen"),
     path("api/clinica/", ClinicaConfigView.as_view(), name="clinica-config"),
     path("api/gerencia/resumen/", GerenciaResumenView.as_view(), name="gerencia-resumen"),

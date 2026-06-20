@@ -58,6 +58,13 @@ export const api = {
     req(`/api/citas/${id}/atender/`, { method: "POST", body: JSON.stringify(datos) }),
   recordarCita: (id, texto) =>
     req(`/api/citas/${id}/recordar/`, { method: "POST", body: JSON.stringify({ texto }) }),
+  // Transcribe un audio de la sesión (Whisper) y, si hay OpenAI, lo estructura.
+  // Devuelve { transcripcion, estructura: {motivo,diagnostico,indicaciones,nota}|null }.
+  transcribirAudio: (file) => {
+    const fd = new FormData();
+    fd.append("audio", file);
+    return req("/api/transcribir/", { method: "POST", body: fd });
+  },
   confirmarCita: (id) => req(`/api/citas/${id}/confirmar/`, { method: "POST" }),
 
   // Adjuntos (archivos clínicos: laboratorios, ecografías, PDFs, imágenes)
@@ -173,6 +180,14 @@ export const api = {
   crearEgreso: (data) => req("/api/egresos/", { method: "POST", body: JSON.stringify(data) }),
   eliminarEgreso: (id) => req(`/api/egresos/${id}/`, { method: "DELETE" }),
   cajaFinanzas: (periodo) => req(`/api/finanzas/caja/?periodo=${periodo || "mes"}`),
+
+  // --- Edición genérica tipo hoja de cálculo (cualquier endpoint del router) ---
+  hojaListar: (endpoint, qs = "") => req(`/api/${endpoint}/${qs}`),
+  hojaActualizar: (endpoint, id, data) =>
+    req(`/api/${endpoint}/${id}/`, { method: "PATCH", body: JSON.stringify(data) }),
+  hojaCrear: (endpoint, data) =>
+    req(`/api/${endpoint}/`, { method: "POST", body: JSON.stringify(data) }),
+  hojaBorrar: (endpoint, id) => req(`/api/${endpoint}/${id}/`, { method: "DELETE" }),
 
   // Ingreso automático de leads (URL/token de captación)
   captacionConfig: () => req("/api/captacion/config/"),

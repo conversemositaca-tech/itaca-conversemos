@@ -189,6 +189,21 @@ EVOLUTION_INSTANCE = os.getenv("EVOLUTION_INSTANCE", "")
 WHATSAPP_PAIS_PREFIJO = os.getenv("WHATSAPP_PAIS_PREFIJO", "51")
 
 
+# --- Google Calendar (opcional) ---
+# Sincroniza las citas con Google Calendar usando un *service account*. Si no se
+# configura, la sincronización es no-op (no rompe nada). Pasos: crear el service
+# account en Google Cloud (Calendar API activada), compartir cada calendario con
+# su email (permiso de edición) y poner aquí el ID de cada calendario por sede.
+# GOOGLE_CALENDAR_CREDENTIALS puede ser la ruta al JSON o el JSON en sí.
+GOOGLE_CALENDAR_CREDENTIALS = os.getenv("GOOGLE_CALENDAR_CREDENTIALS", "")
+GOOGLE_CALENDAR_IDS = {
+    "lima": os.getenv("GOOGLE_CALENDAR_LIMA", ""),
+    "piura": os.getenv("GOOGLE_CALENDAR_PIURA", ""),
+}
+# Calendario de respaldo si la sede no tiene uno propio.
+GOOGLE_CALENDAR_DEFAULT = os.getenv("GOOGLE_CALENDAR_ID", "")
+
+
 # --- Endurecimiento en producción (solo cuando DEBUG=False) ---
 # El proxy del proveedor (Railway/Render) termina el HTTPS; le decimos a Django
 # que confíe en la cabecera X-Forwarded-Proto para saber que la conexión es segura.

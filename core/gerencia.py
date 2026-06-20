@@ -7,7 +7,7 @@ construya 'Finanzas reales').
 """
 from datetime import datetime, time, timedelta
 
-from django.db.models import Sum
+from django.db.models import Max, Sum
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.response import Response
@@ -222,6 +222,30 @@ class GerenciaResumenView(APIView):
             ],
         }
 
+        # --- Retención (semáforo por días desde la última sesión) ---
+        # Regla de la clínica (hoja SEG): verde <8 días, amarillo 8–15, rojo >15
+        # (abandono → llamar). Sobre los pacientes con al menos una atención.
+        hoy_d = timezone.localdate()
+        ret = {"verde": 0, "amarillo": 0, "rojo": 0}
+        ultimas = (
+            Atencion.objects.del_tenant_actual()
+            .values("paciente_id").annotate(ultima=Max("fecha"))
+        )
+        for row in ultimas:
+            dias = (hoy_d - timezone.localtime(row["ultima"]).date()).days
+            if dias < 8:
+                ret["verde"] += 1
+            elif dias <= 15:
+                ret["amarillo"] += 1
+            else:
+                ret["rojo"] += 1
+        con_sesiones = ret["verde"] + ret["amarillo"] + ret["rojo"]
+        retencion = {
+            "con_sesiones": con_sesiones,
+            "verde": ret["verde"], "amarillo": ret["amarillo"], "rojo": ret["rojo"],
+            "rojo_pct": round(ret["rojo"] / con_sesiones * 100) if con_sesiones else 0,
+        }
+
         # --- Productividad por médico ---
         prod = {}
 
@@ -276,6 +300,7 @@ class GerenciaResumenView(APIView):
             "captacion": captacion,
             "pacientes": pacientes,
             "demografia": demografia,
+            "retencion": retencion,
             "atenciones": len(atenciones),
             "productividad": productividad,
             "finanzas": finanzas,

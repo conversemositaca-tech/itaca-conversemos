@@ -31,15 +31,30 @@ class AdjuntoSerializer(serializers.ModelSerializer):
 class AtencionSerializer(serializers.ModelSerializer):
     fecha = serializers.SerializerMethodField()
     medico = serializers.SerializerMethodField()
+    paciente_nombre = serializers.CharField(source="paciente.nombre", read_only=True)
+    registrado_por_nombre = serializers.SerializerMethodField()
+    ultima_edicion = serializers.SerializerMethodField()
     adjuntos = AdjuntoSerializer(many=True, read_only=True)
 
     class Meta:
         model = Atencion
         fields = [
-            "id", "fecha", "medico", "especialidad", "motivo",
+            "id", "paciente", "paciente_nombre", "fecha", "medico", "registrado_por_nombre",
+            "especialidad", "motivo",
             "presion_arterial", "frecuencia_cardiaca", "temperatura", "peso", "talla",
-            "diagnostico", "indicaciones", "nota", "adjuntos",
+            "diagnostico", "indicaciones", "nota", "ultima_edicion", "adjuntos",
         ]
+        read_only_fields = ["paciente"]
+
+    def get_registrado_por_nombre(self, obj):
+        return str(obj.registrado_por) if obj.registrado_por_id else ""
+
+    def get_ultima_edicion(self, obj):
+        e = obj.ediciones.all().first()  # ordenadas por -creado_en
+        if not e:
+            return ""
+        quien = str(e.editado_por) if e.editado_por_id else "—"
+        return f"{quien} · {fecha_corta(timezone.localtime(e.creado_en))}"
 
     def get_fecha(self, obj):
         return fecha_corta(timezone.localtime(obj.fecha))

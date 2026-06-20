@@ -196,6 +196,33 @@ class Atencion(ModeloTenant):
         return f"{self.paciente} · {timezone.localtime(self.fecha):%d/%m/%Y}"
 
 
+class EdicionAtencion(ModeloTenant):
+    """Bitácora de correcciones a una atención (historia clínica).
+
+    La historia clínica se CORRIGE, no se borra: cada cambio de campo queda
+    registrado con su valor anterior y el nuevo, quién lo hizo y cuándo. Así se
+    preserva la trazabilidad / integridad médica (Ley 29733) aun permitiendo editar.
+    """
+
+    atencion = models.ForeignKey(Atencion, on_delete=models.CASCADE, related_name="ediciones")
+    campo = models.CharField(max_length=40)
+    antes = models.TextField(blank=True, default="")
+    despues = models.TextField(blank=True, default="")
+    editado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
+        related_name="ediciones_atencion", null=True, blank=True,
+    )
+
+    class Meta:
+        verbose_name = "Edición de atención"
+        verbose_name_plural = "Ediciones de atención"
+        ordering = ["-creado_en"]
+        indexes = [models.Index(fields=["clinica", "atencion"])]
+
+    def __str__(self):
+        return f"{self.atencion_id} · {self.campo} · {self.creado_en:%d/%m/%Y %H:%M}"
+
+
 def ruta_adjunto(instance, filename):
     """Ruta en disco del archivo, también aislada por clínica y paciente."""
     return f"adjuntos/clinica_{instance.clinica_id}/paciente_{instance.paciente_id}/{filename}"

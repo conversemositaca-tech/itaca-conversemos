@@ -250,3 +250,127 @@ los feriados de Perú. Zona horaria por defecto: `America/Lima` (GMT-5).
    `enviar_recordatorios`. Otras ideas sin desplegar: notas internas del paciente,
    receta imprimible aparte, gráficos por médico, recordatorios masivos (¡envía
    WhatsApp real! pedir permiso antes), confirmación bidireccional por webhook.
+20. ✓ Importación de datos REALES de Conversemos Lima (2026-06-19). Comando
+   `pacientes/management/commands/importar_lima.py`: lee el Excel operativo
+   ("LEADS LIMA-CONVER.xlsx", hoja LEADS, 6126×151) con librería estándar (un .xlsx
+   es un zip de XML; sin openpyxl) y reparte cada fila en `Lead` (embudo),
+   `Paciente` (si convirtió) y `finanzas.Cobro` (consulta + pagos de hasta 12
+   procesos). **Reemplaza SOLO la sede Lima** (Piura queda intacta); flags `--dry-run`
+   y `--keep`. Parsea fechas-serie de Excel y montos sucios (tope S/5000 → descarta
+   fechas mal tipeadas en celdas de monto; limpia nombres tipo "(30 años)" y basura
+   "20 años"). Los psicólogos del Excel que no estaban en el directorio se crean como
+   fichas **INACTIVAS** (activo=False) para no perder el vínculo. Resultado: **710
+   pacientes, 3680 leads, 2655 cobros (S/439 358)** en Lima. Backup previo en
+   `C:\projects\db-itaca-backup-2026-06-19-pre-importlima.sqlite3`. **Pendiente**: las
+   otras 7 hojas del Excel (ingresos, Atenciones, SEG. DE PACIENTES…) y los datos de
+   Piura. (El archivo Excel tiene PII real — Ley 29733 — NO subirlo al repo.)
+21. ✓ Historial de SESIONES de Lima (línea de tiempo clínica; antes había 0) →
+   `pacientes/management/commands/importar_atenciones_lima.py`. Lee y **combina dos
+   hojas** del Excel, deduplicando por (paciente, fecha): "Atenciones" (bloques por
+   psicólogo con N° de sesión, ~feb 2024–mar 2025, 4 psicólogos) + "Atenc de pacientes"
+   (pares Fecha/Paciente, ~nov 2025–feb 2026). Crea `Atencion` **sin cobros** (el dinero
+   ya vino de LEADS → evita doble conteo). Empareja por nombre exacto y nombre+apellido;
+   los no hallados se crean como paciente nuevo de Lima. Resultado: **1352 atenciones
+   (2024–2026)** + 93 pacientes nuevos → **863 pacientes Lima**. Cobros intactos: 2655 /
+   S/439 358. (1 atención sin fecha cayó a hoy; artefacto menor.) `limpiar_nombre` quita
+   notas de agenda pegadas ("- reprogramada"). Backup previo en
+   `C:\projects\db-itaca-backup-2026-06-19-pre-atenciones.sqlite3`.
+   - **Decidido por los datos**: la hoja `ingresos` (S/56 800, oct 2024–dic 2025) es un
+     **subconjunto**, NO el ledger completo → la fuente de dinero sigue siendo LEADS;
+     `ingresos` NO se importó (evita doble/sub-conteo).
+   - **Pendiente**: `pagos adelantados a ps` (egresos a psicólogos; vienen en N° de
+     sesiones, no en S/), y todos los datos de **Piura**.
+22. ✓ Indicador de RETENCIÓN en Gerencia + fecha de registro real (2026-06-19).
+   - `core/gerencia.py`: el resumen incluye el bloque `retencion` (semáforo por días
+     desde la última atención — regla de la clínica/hoja SEG: verde <8, amarillo 8–15,
+     rojo >15), calculado de las atenciones **sin cambios de modelo**. Frontend: bloque
+     "Retención" en el componente `Gerencia` (App.jsx), guardado por `data.retencion`.
+   - Nuevo comando `fijar_fechas_registro`: pone `Paciente.creado_en` = primera
+     actividad real (lead/cobro/atención) en vez de la fecha del import → corrige el
+     "nuevos este mes = todos" en Gerencia (bajó de 925 a 78). Idempotente; solo mueve
+     la fecha hacia atrás.
+   - Nuevo comando `fusionar_duplicados`: fusiona pacientes duplicados de Lima creados
+     por las distintas importaciones (un registro "delgado" solo-atenciones cuyos tokens
+     ⊆ un registro "rico" con cobros/leads/teléfono y mismo primer nombre; salta los
+     ambiguos). Fusionó **84** (863→**779** pacientes Lima); atenciones/cobros intactos.
+     Backup en `C:\projects\db-itaca-backup-2026-06-19-pre-fusion.sqlite3`.
+   - Con datos históricos (sesiones hasta feb 2026) la retención sale casi toda "roja":
+     en la práctica es la lista de pacientes a reactivar; en uso en vivo será real.
+   - OJO: el backend corre con `--noreload` (puerto 8001) → tras cambiar código Python
+     hay que reiniciarlo para que tome los cambios.
+23. ✓ Integración de PIURA + import genérico por sede (2026-06-19). `importar_lima`,
+   `importar_atenciones_lima` y `fusionar_duplicados` ahora aceptan `--sede {lima|piura}`
+   y `--archivo`. `importar_lima` pasó a **header-driven** (ubica columnas por NOMBRE de
+   encabezado, no por posición): el Excel de Piura tiene otro layout (sin INVITADOS,
+   pagos sin MEDIO, hasta 5 pagos por proceso). En `importar_atenciones_lima` la fila de
+   psicólogos se toma de la primera fila (Piura intercala una fila de mes) y se **omiten
+   las sesiones sin fecha** (antes caían a "hoy" y ensuciaban la retención). Regresión
+   Lima: idéntica (779/3680/2655/S439 358/1352).
+   - Piura importado de "LEADS PIURA - CONVERSEMOS (1).xlsx": **1095 pacientes, 3996
+     leads, 3187 cobros (S/463 755), 1481 atenciones**; +3 psicólogos inactivos; 76
+     duplicados fusionados. Backup `C:\projects\db-itaca-backup-2026-06-19-pre-piura.sqlite3`.
+   - **TOTAL del sistema (Lima+Piura)**: 1874 pacientes · 7677 leads · 5842 cobros
+     (**S/903 113**) · 2833 atenciones. Retención: 802 en rojo = lista de reactivación.
+   - Sigue **pendiente**: egresos a psicólogos (`pagos adelantados a ps`, falta tarifa
+     por sesión) y conectar WhatsApp/desplegar.
+24. ✓ Editor tipo Excel (2026-06-19). Vista **"Editar (Excel)"** (nav solo admin):
+   grillas con **edición en celda** para los formatos editables — Pacientes, Leads,
+   Cobros, Servicios, Egresos, Profesionales. (Atención: editable a pedido — ver item 25.)
+   - Componentes `HojasExcel` + `HojaEditable` en `frontend/src/App.jsx`, con una config
+     `FORMATOS` por entidad (columnas tipo text/num/fecha/select/fk/check/ro). Cada celda
+     se guarda sola al salir (Enter o blur) vía PATCH; "Nueva fila" hace POST con
+     defaults válidos; FK (psicólogo/médico) son selects cargados de
+     profesionales/medicos. Borde verde=guardado, rojo=error.
+   - Capa genérica nueva en `api.js`: `hojaListar/hojaActualizar/hojaCrear/hojaBorrar`
+     (sirven cualquier endpoint del router DRF).
+   - Buscador + **tope de 250 filas** renderizadas (las tablas grandes —leads 7677,
+     cobros 5842— se traen completas pero se filtran/recortan en cliente para no colgar
+     el navegador). Cobros: edición sí, "Nueva fila" no (se crean en Finanzas/Atender).
+   - Permisos: la vista es admin-only; egresos/servicios además exigen admin en el
+     backend. Probado CRUD end-to-end (crear/editar/borrar).
+25. ✓ Historias clínicas editables + edición conectada al resto (2026-06-19, a pedido).
+   - Se relajó el append-only de `Atencion` SOLO para **corregir** (no borrar): nuevo
+     `AtencionViewSet` (`/api/atenciones/`, registrado en el router) con list/retrieve para
+     todos y **PATCH solo médico/admin**; `create`→405 (las atenciones se crean al Atender)
+     y `destroy`→405 (Ley 29733). `AtencionSerializer` ahora expone `paciente_nombre` y
+     `registrado_por_nombre`; los campos clínicos (motivo, diagnóstico, indicaciones, nota,
+     signos vitales, especialidad) son editables. En el editor Excel se agregó el formato
+     **"Historias clínicas"** (con aviso, sin "Nueva fila").
+   - **Auditoría de correcciones** (implementada): nuevo modelo `pacientes.EdicionAtencion`
+     (clinica, atencion, campo, antes, despues, editado_por, creado_en; migración 0007).
+     `AtencionViewSet.perform_update` registra una fila por **cada campo que cambió**
+     (valor anterior→nuevo, quién, cuándo). El serializer expone `ultima_edicion`
+     ("quién · fecha"), visible como columna en el grid. Así la historia clínica se
+     **corrige con trazabilidad** (no se pierde el valor previo) · Ley 29733.
+   - El editor ahora **refresca el sistema**: al salir de "Editar (Excel)", si hubo cambios,
+     llama a `cargarDatos()` (recarga pacientes/citas/servicios compartidos) para que las
+     otras pestañas reflejen lo editado. De fondo, todo escribe en la MISMA BD/API: las
+     pantallas que recargan al entrar (Gerencia, Finanzas, Pacientes…) ya ven los cambios.
+26. ✓ Integración Google Calendar (scaffold, service account) (2026-06-19). `core/gcalendar.py`
+   sincroniza las **citas** con Google Calendar usando un **service account**, con degradación
+   elegante (no-op si faltan credenciales o la librería — igual patrón que WhatsApp). Hooks en
+   `CitaViewSet`: crear/atender/mover/confirmar → upsert del evento; cancelar → borra el evento.
+   Evento con id determinístico `itacacita<ID>` (no guarda nada extra en la BD). Calendario por
+   sede en settings: `GOOGLE_CALENDAR_CREDENTIALS` (ruta al JSON o el JSON), `GOOGLE_CALENDAR_LIMA`
+   / `GOOGLE_CALENDAR_PIURA`, `GOOGLE_CALENDAR_ID` (respaldo). Libs pineadas en requirements
+   (google-api-python-client, google-auth). Comando `python manage.py test_gcalendar` para
+   verificar credenciales/acceso. `.env.example` documentado.
+   - **FALTA (acción del usuario)**: crear el service account en Google Cloud, activar Calendar
+     API, compartir cada calendario con su email (permiso editor) y poner las variables. Probado:
+     sin credenciales queda no-op y el flujo de citas (crear/cancelar) sigue OK.
+   - **Re-auditoría 2026-06-19**: `manage.py check` 0 problemas; 24/24 endpoints responden 200;
+     el frontend compila; datos consistentes en ambas sedes. Sin tests automatizados (stubs);
+     verificación por smoke-test de la API en vivo.
+27. ✓ Notas clínicas por VOZ (Whisper, dentro del sistema) (2026-06-20, a pedido de Emma).
+   En el modal **Atender**, el psicólogo sube/graba un audio de la sesión → `POST
+   /api/transcribir/` (`TranscribirView`, solo médico/admin) lo transcribe con **Whisper
+   local** (faster-whisper, `core/transcripcion.py`, gratis; tamaño por `WHISPER_MODEL`,
+   default `small`) y —si hay `OPENAI_API_KEY`— lo **estructura** en motivo/diagnóstico/
+   indicaciones/nota (`core/estructurar_nota.py`, vía `requests` a OpenAI; opcional, con
+   degradación elegante: sin clave la transcripción cae a la nota). El endpoint NO guarda:
+   devuelve `{transcripcion, estructura}`, el front pre-llena los campos y el terapeuta
+   revisa y guarda con el flujo normal → queda en la historia clínica editable + auditada.
+   Frontend: botón "Dictar / subir audio" en `AtenderModal` + `api.transcribirAudio`.
+   `faster-whisper==1.2.1` pineado (corre en Python 3.14). Resuelve el problema histórico
+   de adherencia (idea de Emma: "no pedirles que escriban"). Pendiente opcional: clave de
+   OpenAI para el auto-estructurado; grabar en el navegador (hoy se sube archivo / audio WA).

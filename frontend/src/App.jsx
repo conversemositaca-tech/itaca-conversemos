@@ -4,6 +4,7 @@ import {
   Phone, Cake, X, Stethoscope, MessageCircle, Check, Pencil, UserPlus, FileText,
   TrendingUp, Download, AlertTriangle, Megaphone, LogOut,
   Paperclip, Trash2, Activity, Pill, HeartPulse, Copy, BarChart3, UserCog, KeyRound, MapPin,
+  Mic,
 } from "lucide-react";
 import { api } from "./api";
 import Login from "./Login";
@@ -327,6 +328,7 @@ export default function ClinicaApp() {
     { id: "marketing", label: "Marketing", icon: Megaphone },
     { id: "finanzas", label: "Finanzas", icon: TrendingUp },
     ...(usuario?.rol === "admin" ? [{ id: "equipo", label: "Equipo", icon: UserCog }] : []),
+    ...(usuario?.rol === "admin" ? [{ id: "hojas", label: "Editar (Excel)", icon: Pencil }] : []),
   ];
 
   const citasHoy = citas.filter((c) => c.fecha === HOY_ISO && c.estado !== "cancelada");
@@ -699,6 +701,22 @@ export default function ClinicaApp() {
         .ca-tbl .num { text-align:right; font-variant-numeric:tabular-nums; }
         .ca-tbl .tot td { font-weight:600; background:#FBFAF8; }
         .ca-dot { display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:6px; vertical-align:middle; }
+        /* Hoja editable tipo Excel */
+        .ca-hoja-wrap { overflow:auto; max-height:calc(100vh - 230px); border:1px solid var(--line); border-radius:11px; background:var(--surface); }
+        .ca-hoja { border-collapse:separate; border-spacing:0; width:max-content; min-width:100%; font-size:13px; }
+        .ca-hoja th { position:sticky; top:0; z-index:2; background:#F3F1EC; text-align:left; font-size:11px; font-weight:600;
+          color:var(--ink-soft); text-transform:uppercase; letter-spacing:.03em; padding:8px 10px; border-bottom:1px solid var(--line); border-right:1px solid var(--line); white-space:nowrap; }
+        .ca-hoja td { padding:0; border-bottom:1px solid var(--line); border-right:1px solid var(--line); }
+        .ca-hoja td.ca-ro { padding:6px 10px; color:var(--muted); background:#FBFAF8; white-space:nowrap; }
+        .ca-hoja tr:hover td { background:#FAF7F2; }
+        .ca-hoja .ca-cell { width:100%; border:0; background:transparent; padding:6px 10px; font:inherit; color:var(--ink); outline:none; min-width:90px; }
+        .ca-hoja .ca-cell:focus { background:#E9F1ED; box-shadow:inset 0 0 0 2px var(--accent); border-radius:3px; }
+        .ca-hoja select.ca-cell { cursor:pointer; }
+        .ca-hoja td.saving { box-shadow:inset 0 0 0 2px #C9923A; }
+        .ca-hoja td.saved { box-shadow:inset 0 0 0 2px #4F8A77; }
+        .ca-hoja td.err { box-shadow:inset 0 0 0 2px #B4564E; }
+        .ca-hoja .rownum { position:sticky; left:0; z-index:1; background:#F3F1EC; color:var(--muted); text-align:right;
+          padding:6px 8px; font-size:11px; white-space:nowrap; }
         .ca-alert { display:flex; align-items:flex-start; gap:11px; background:#FBF1E3; border:1px solid #F0DDBF;
           color:#8A5A1E; border-radius:11px; padding:13px 15px; font-size:13.5px; margin-bottom:24px; line-height:1.5; }
         .ca-bar { height:8px; background:var(--line); border-radius:999px; overflow:hidden; margin-top:10px; }
@@ -871,6 +889,8 @@ export default function ClinicaApp() {
         {view === "ocupacion" && <Ocupacion showToast={showToast} />}
 
         {view === "equipo" && <Equipo showToast={showToast} miId={usuario?.id} />}
+
+        {view === "hojas" && <HojasExcel showToast={showToast} onCambio={cargarDatos} />}
 
         {view === "profesionales" && <Profesionales showToast={showToast} esAdmin={usuario?.rol === "admin"} />}
 
@@ -1136,6 +1156,21 @@ function Gerencia({ showToast }) {
             </div>
           )}
 
+          {data.retencion && data.retencion.con_sesiones > 0 && (
+            <>
+              <h2 className="ca-secth" style={{ marginTop: 28 }}>Retención (días desde la última sesión)</h2>
+              <div className="ca-stats">
+                <StatCard label="En ritmo (<8 días)" valor={data.retencion.verde} color="#4F8A77" />
+                <StatCard label="Alerta (8–15 días)" valor={data.retencion.amarillo} color="#C9923A" />
+                <StatCard label="Abandono (>15 días)" valor={data.retencion.rojo} sub="para llamar / reactivar" color="#B4564E" />
+                <StatCard label="% en abandono" valor={`${data.retencion.rojo_pct}%`} color={data.retencion.rojo_pct >= 50 ? "#B4564E" : "#C9923A"} />
+              </div>
+              <div style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 6 }}>
+                Sobre {data.retencion.con_sesiones} pacientes con al menos una sesión registrada. Regla de la clínica: verde &lt;8 días · amarillo 8–15 · rojo &gt;15.
+              </div>
+            </>
+          )}
+
           <h2 className="ca-secth" style={{ marginTop: 28 }}>Dinero</h2>
           <div className="ca-stats">
             <StatCard label="Ingresos (cobrado)" valor={money(data.finanzas?.cobrado || 0)} color="#4F8A77"
@@ -1176,6 +1211,294 @@ function Gerencia({ showToast }) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// --- Editor tipo Excel: grillas editables de los "formatos" del sistema --------
+const OPC_SEDE = [{ v: "lima", l: "Lima" }, { v: "piura", l: "Piura" }];
+const OPC_DOC = [{ v: "dni", l: "DNI" }, { v: "ce", l: "C. Extranjería" }, { v: "pasaporte", l: "Pasaporte" }, { v: "ruc", l: "RUC" }];
+const OPC_GENERO = [{ v: "", l: "—" }, { v: "femenino", l: "Femenino" }, { v: "masculino", l: "Masculino" }, { v: "otro", l: "Otro" }];
+const _op = (pares) => pares.map(([v, l]) => ({ v, l }));
+const OPC_FUENTE = _op([["instagram", "Instagram"], ["facebook", "Facebook"], ["tiktok", "TikTok"], ["referido", "Referido"], ["whatsapp", "WhatsApp"], ["bot", "Bot"], ["web", "Web"], ["agendapro", "AgendaPro"], ["derivado", "Derivado"], ["linkedin", "LinkedIn"], ["convenio", "Convenio"], ["otro", "Otro"]]);
+const OPC_ESTADO_LEAD = _op([["nuevo", "Nuevo"], ["contactado", "Contactado"], ["agendado", "Agendado"], ["no_realizada", "No realizada"], ["evaluando", "Evaluando"], ["pendiente_pago", "Pend. pago"], ["ganado", "Inició proceso"], ["perdido", "Perdido"]]);
+const OPC_ESTADO_COBRO = _op([["pagado", "Pagado"], ["pendiente", "Pendiente"], ["anulado", "Anulado"]]);
+const OPC_MEDIO = _op([["", "—"], ["efectivo", "Efectivo"], ["yape", "Yape"], ["plin", "Plin"], ["tarjeta", "Tarjeta"], ["transferencia", "Transferencia"]]);
+const OPC_CAT_EGRESO = _op([["insumos", "Insumos"], ["sueldos", "Sueldos"], ["alquiler", "Alquiler"], ["equipos", "Equipos"], ["marketing", "Marketing"], ["otro", "Otro"]]);
+const OPC_MODALIDAD = _op([["presencial", "Presencial"], ["virtual", "Virtual"], ["ambas", "Ambas"]]);
+
+const FORMATOS = [
+  {
+    key: "pacientes", label: "Pacientes", endpoint: "pacientes", puedeAgregar: true,
+    nuevo: { nombre: "Nuevo paciente", sede: "lima" },
+    cols: [
+      { campo: "nombre", label: "Nombre", tipo: "text" },
+      { campo: "tel", label: "Teléfono", tipo: "text" },
+      { campo: "sede", label: "Sede", tipo: "select", opciones: OPC_SEDE },
+      { campo: "profesional", label: "Psicólogo", tipo: "fk", fk: "profesionales", labelCampo: "profesional_nombre" },
+      { campo: "proceso", label: "Proceso", tipo: "text" },
+      { campo: "n_sesion", label: "N° ses.", tipo: "num" },
+      { campo: "tipo_documento", label: "Tipo doc", tipo: "select", opciones: OPC_DOC },
+      { campo: "numero_documento", label: "N° doc", tipo: "text" },
+      { campo: "genero", label: "Género", tipo: "select", opciones: OPC_GENERO },
+      { campo: "fecha_nacimiento", label: "F. nac.", tipo: "fecha" },
+      { campo: "direccion", label: "Dirección", tipo: "text" },
+      { campo: "especialidad", label: "Especialidad", tipo: "text" },
+      { campo: "ultima", label: "Últ. visita", tipo: "ro" },
+    ],
+  },
+  {
+    key: "leads", label: "Leads", endpoint: "leads", puedeAgregar: true,
+    nuevo: { nombre: "Nuevo lead", sede: "lima", fuente: "whatsapp", estado: "nuevo" },
+    cols: [
+      { campo: "nombre", label: "Nombre", tipo: "text" },
+      { campo: "telefono", label: "Teléfono", tipo: "text" },
+      { campo: "sede", label: "Sede", tipo: "select", opciones: OPC_SEDE },
+      { campo: "fuente", label: "Fuente", tipo: "select", opciones: OPC_FUENTE },
+      { campo: "estado", label: "Estado", tipo: "select", opciones: OPC_ESTADO_LEAD },
+      { campo: "medico", label: "Psicólogo", tipo: "fk", fk: "medicos", labelCampo: "medico_nombre" },
+      { campo: "fecha_consulta", label: "F. consulta", tipo: "fecha" },
+      { campo: "fecha_cierre", label: "F. cierre", tipo: "fecha" },
+      { campo: "campania", label: "Campaña", tipo: "text" },
+      { campo: "especialidad", label: "Motivo", tipo: "text" },
+      { campo: "motivo_perdida", label: "Motivo pérdida", tipo: "text" },
+      { campo: "notas", label: "Notas", tipo: "text" },
+      { campo: "paciente_nombre", label: "Paciente", tipo: "ro" },
+      { campo: "creado", label: "Creado", tipo: "ro" },
+    ],
+  },
+  {
+    key: "cobros", label: "Cobros / pagos", endpoint: "cobros", puedeAgregar: false,
+    cols: [
+      { campo: "paciente_nombre", label: "Paciente", tipo: "ro" },
+      { campo: "concepto", label: "Concepto", tipo: "text" },
+      { campo: "monto", label: "Monto S/", tipo: "num" },
+      { campo: "estado", label: "Estado", tipo: "select", opciones: OPC_ESTADO_COBRO },
+      { campo: "medio_pago", label: "Medio", tipo: "select", opciones: OPC_MEDIO },
+      { campo: "fecha_label", label: "Fecha", tipo: "ro" },
+    ],
+  },
+  {
+    key: "servicios", label: "Servicios (precios)", endpoint: "servicios", puedeAgregar: true,
+    nuevo: { nombre: "Nuevo servicio", precio: 0, activo: true },
+    cols: [
+      { campo: "nombre", label: "Nombre", tipo: "text" },
+      { campo: "especialidad", label: "Especialidad", tipo: "text" },
+      { campo: "precio", label: "Precio S/", tipo: "num" },
+      { campo: "activo", label: "Activo", tipo: "check" },
+    ],
+  },
+  {
+    key: "egresos", label: "Egresos (gastos)", endpoint: "egresos", puedeAgregar: true,
+    nuevo: { concepto: "Nuevo gasto", monto: 1, categoria: "otro" },
+    cols: [
+      { campo: "concepto", label: "Concepto", tipo: "text" },
+      { campo: "categoria", label: "Categoría", tipo: "select", opciones: OPC_CAT_EGRESO },
+      { campo: "monto", label: "Monto S/", tipo: "num" },
+      { campo: "medio_pago", label: "Medio", tipo: "select", opciones: OPC_MEDIO },
+      { campo: "proveedor", label: "Proveedor", tipo: "text" },
+      { campo: "fecha_label", label: "Fecha", tipo: "ro" },
+    ],
+  },
+  {
+    key: "profesionales", label: "Profesionales", endpoint: "profesionales", puedeAgregar: true,
+    nuevo: { nombre: "Nuevo profesional", sede: "lima", activo: true },
+    cols: [
+      { campo: "nombre", label: "Nombre", tipo: "text" },
+      { campo: "titulo", label: "Título", tipo: "text" },
+      { campo: "colegiatura", label: "C.Ps.P.", tipo: "text" },
+      { campo: "sede", label: "Sede", tipo: "select", opciones: OPC_SEDE },
+      { campo: "modalidad", label: "Modalidad", tipo: "select", opciones: OPC_MODALIDAD },
+      { campo: "activo", label: "Activo", tipo: "check" },
+    ],
+  },
+  {
+    key: "atenciones", label: "Historias clínicas", endpoint: "atenciones", puedeAgregar: false,
+    aviso: "La historia clínica es un registro permanente: aquí se corrige, no se borra. Solo médico/admin. (Las atenciones nuevas se crean al Atender una cita.)",
+    cols: [
+      { campo: "paciente_nombre", label: "Paciente", tipo: "ro" },
+      { campo: "fecha", label: "Fecha", tipo: "ro" },
+      { campo: "especialidad", label: "Especialidad", tipo: "text" },
+      { campo: "motivo", label: "Motivo", tipo: "text" },
+      { campo: "diagnostico", label: "Diagnóstico", tipo: "text" },
+      { campo: "indicaciones", label: "Indicaciones", tipo: "text" },
+      { campo: "nota", label: "Nota / evolución", tipo: "text" },
+      { campo: "presion_arterial", label: "P. arterial", tipo: "text" },
+      { campo: "frecuencia_cardiaca", label: "FC", tipo: "num" },
+      { campo: "temperatura", label: "T°", tipo: "num" },
+      { campo: "peso", label: "Peso", tipo: "num" },
+      { campo: "talla", label: "Talla", tipo: "num" },
+      { campo: "medico", label: "Médico", tipo: "ro" },
+      { campo: "registrado_por_nombre", label: "Registró", tipo: "ro" },
+      { campo: "ultima_edicion", label: "Última edición", tipo: "ro" },
+    ],
+  },
+];
+
+function HojasExcel({ showToast, onCambio }) {
+  const [fkey, setFkey] = useState("pacientes");
+  const cambios = React.useRef(false);
+  // Al salir del editor, si hubo cambios, refresca los datos compartidos del
+  // sistema (pacientes, citas, etc.) para que las otras pestañas los reflejen.
+  useEffect(() => () => { if (cambios.current && onCambio) onCambio(); }, []);
+  const formato = FORMATOS.find((f) => f.key === fkey);
+  return (
+    <div>
+      <div className="ca-tophead">
+        <div>
+          <h1 className="ca-h1">Editar (Excel)</h1>
+          <div className="ca-sub">Edita los datos en una grilla. Cada celda se guarda sola al salir (Enter o clic afuera) y se actualiza en todo el sistema.</div>
+        </div>
+      </div>
+      <div className="ca-seg" style={{ flexWrap: "wrap", marginLeft: 0, marginBottom: 14 }}>
+        {FORMATOS.map((f) => (
+          <button key={f.key} className={fkey === f.key ? "on" : ""} onClick={() => setFkey(f.key)}>{f.label}</button>
+        ))}
+      </div>
+      {formato.aviso && (
+        <div className="ca-alert" style={{ marginBottom: 14 }}>
+          <AlertTriangle size={16} /> <span>{formato.aviso}</span>
+        </div>
+      )}
+      <HojaEditable key={fkey} formato={formato} showToast={showToast} onSaved={() => { cambios.current = true; }} />
+    </div>
+  );
+}
+
+function HojaEditable({ formato, showToast, onSaved }) {
+  const [rows, setRows] = useState(null);
+  const [filtro, setFiltro] = useState("");
+  const [fk, setFk] = useState({});
+  const [estado, setEstado] = useState({});
+  const TOPE = 250;
+
+  useEffect(() => {
+    let vivo = true;
+    setRows(null); setFiltro("");
+    api.hojaListar(formato.endpoint)
+      .then((d) => { if (vivo) setRows(Array.isArray(d) ? d : (d.results || [])); })
+      .catch((e) => { if (vivo) { setRows([]); showToast("Error: " + e.message); } });
+    const fks = [...new Set(formato.cols.filter((c) => c.tipo === "fk").map((c) => c.fk))];
+    fks.forEach((name) => {
+      const loader = name === "medicos" ? api.medicos : api.profesionales;
+      loader().then((d) => { if (vivo) setFk((p) => ({ ...p, [name]: d || [] })); }).catch(() => {});
+    });
+    return () => { vivo = false; };
+  }, [formato.key]);
+
+  const fkOpcs = (name) => (fk[name] || []).map((o) => ({ v: String(o.id), l: o.nombre || ("#" + o.id) }));
+
+  function marcar(id, campo, st) {
+    const k = id + ":" + campo;
+    setEstado((p) => ({ ...p, [k]: st }));
+    if (st === "saved") setTimeout(() => setEstado((p) => { const n = { ...p }; delete n[k]; return n; }), 900);
+  }
+
+  async function guardar(row, campo, valor) {
+    marcar(row.id, campo, "saving");
+    try {
+      const upd = await api.hojaActualizar(formato.endpoint, row.id, { [campo]: valor });
+      setRows((rs) => rs.map((r) => (r.id === row.id ? { ...r, ...upd } : r)));
+      marcar(row.id, campo, "saved");
+      if (onSaved) onSaved();
+    } catch (e) {
+      marcar(row.id, campo, "err");
+      showToast("No se guardó: " + e.message);
+    }
+  }
+
+  async function agregar() {
+    try {
+      const creado = await api.hojaCrear(formato.endpoint, formato.nuevo);
+      setRows((rs) => [creado, ...rs]);
+      showToast("Fila agregada arriba. Edítala.");
+    } catch (e) { showToast("No se pudo agregar: " + e.message); }
+  }
+
+  function normaliza(col, raw) {
+    if (col.tipo === "num") return raw === "" ? null : Number(raw);
+    if (col.tipo === "check") return !!raw;
+    if (col.tipo === "fk") return raw === "" ? null : Number(raw);
+    if (col.tipo === "fecha") return raw || null;
+    return raw;
+  }
+
+  function celda(row, col) {
+    const st = estado[row.id + ":" + col.campo] || "";
+    if (col.tipo === "ro") return <td className="ca-ro">{(row[col.campo] ?? "") === "" ? "—" : row[col.campo]}</td>;
+    if (col.tipo === "select" || col.tipo === "fk") {
+      const ops = col.tipo === "fk" ? [{ v: "", l: "—" }, ...fkOpcs(col.fk)] : col.opciones;
+      const val = col.tipo === "fk" ? (row[col.campo] == null ? "" : String(row[col.campo])) : (row[col.campo] ?? "");
+      return (
+        <td className={st}>
+          <select className="ca-cell" value={val} onChange={(e) => guardar(row, col.campo, normaliza(col, e.target.value))}>
+            {ops.map((o) => <option key={o.v} value={o.v}>{o.l}</option>)}
+          </select>
+        </td>
+      );
+    }
+    if (col.tipo === "check") {
+      return <td className={st} style={{ textAlign: "center" }}>
+        <input type="checkbox" checked={!!row[col.campo]} onChange={(e) => guardar(row, col.campo, e.target.checked)} />
+      </td>;
+    }
+    const tipoInput = col.tipo === "num" ? "number" : col.tipo === "fecha" ? "date" : "text";
+    return (
+      <td className={st}>
+        <input className="ca-cell" type={tipoInput} defaultValue={row[col.campo] ?? ""}
+          onKeyDown={(e) => { if (e.key === "Enter") e.target.blur(); }}
+          onBlur={(e) => {
+            const nuevo = normaliza(col, e.target.value);
+            const viejo = row[col.campo] ?? (col.tipo === "num" ? null : "");
+            if (String(nuevo ?? "") !== String(viejo ?? "")) guardar(row, col.campo, nuevo);
+          }} />
+      </td>
+    );
+  }
+
+  const filtradas = useMemo(() => {
+    if (!rows) return [];
+    const q = filtro.trim().toLowerCase();
+    if (!q) return rows;
+    return rows.filter((r) => formato.cols.some((c) => String(r[c.campo] ?? r[c.labelCampo] ?? "").toLowerCase().includes(q)));
+  }, [rows, filtro, formato]);
+  const visibles = filtradas.slice(0, TOPE);
+
+  if (rows === null) return <div className="ca-empty">Cargando…</div>;
+
+  return (
+    <div>
+      <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 10, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 7, flex: "1 1 240px", background: "var(--surface)", border: "1px solid var(--line)", borderRadius: 8, padding: "7px 11px" }}>
+          <Search size={15} color="var(--muted)" />
+          <input placeholder={`Buscar en ${formato.label.toLowerCase()}…`} value={filtro} onChange={(e) => setFiltro(e.target.value)}
+            style={{ border: 0, outline: "none", background: "transparent", width: "100%", font: "inherit", color: "var(--ink)" }} />
+        </div>
+        {formato.puedeAgregar && <button className="ca-btn" onClick={agregar}><Plus size={15} /> Nueva fila</button>}
+        <span style={{ fontSize: 12.5, color: "var(--muted)" }}>
+          {filtradas.length} fila{filtradas.length === 1 ? "" : "s"}{filtradas.length > TOPE ? ` · mostrando ${TOPE}` : ""}
+        </span>
+      </div>
+      <div className="ca-hoja-wrap">
+        <table className="ca-hoja">
+          <thead>
+            <tr><th className="rownum">#</th>{formato.cols.map((c) => <th key={c.campo}>{c.label}</th>)}</tr>
+          </thead>
+          <tbody>
+            {visibles.map((row, i) => (
+              <tr key={row.id}>
+                <td className="rownum">{i + 1}</td>
+                {formato.cols.map((c) => <React.Fragment key={c.campo}>{celda(row, c)}</React.Fragment>)}
+              </tr>
+            ))}
+            {visibles.length === 0 && <tr><td className="ca-ro" colSpan={formato.cols.length + 1}>Sin resultados.</td></tr>}
+          </tbody>
+        </table>
+      </div>
+      <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 8 }}>
+        Edita una celda y sal con Enter o clic afuera para guardar. Borde verde = guardado, rojo = error.
+        {!formato.puedeAgregar && " Los cobros se crean desde Finanzas o al Atender."}
+      </div>
     </div>
   );
 }
@@ -1755,7 +2078,68 @@ function AtenderModal({ cita, servicios, onClose, onSave }) {
   const [cobEstado, setCobEstado] = useState("pagado");
   const [cobMedio, setCobMedio] = useState("efectivo");
 
+  const [transcribiendo, setTranscribiendo] = useState(false);
+  const [dictMsg, setDictMsg] = useState("");
+  const [grabando, setGrabando] = useState(false);
+  const recRef = React.useRef(null);
+  const chunksRef = React.useRef([]);
+
   const canSave = [motivo, diag, indic, nota].some((v) => v.trim().length > 0);
+
+  async function toggleGrabar() {
+    if (grabando) { recRef.current?.stop(); return; }
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
+      setDictMsg("Error: este navegador no permite grabar aquí. Usa 'Subir audio'. (En el celular por red se necesita HTTPS.)");
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mr = new MediaRecorder(stream);
+      chunksRef.current = [];
+      mr.ondataavailable = (e) => { if (e.data && e.data.size) chunksRef.current.push(e.data); };
+      mr.onstop = () => {
+        stream.getTracks().forEach((t) => t.stop());
+        setGrabando(false);
+        const tipo = mr.mimeType || "audio/webm";
+        const ext = tipo.includes("mp4") ? "mp4" : tipo.includes("ogg") ? "ogg" : "webm";
+        const blob = new Blob(chunksRef.current, { type: tipo });
+        if (blob.size > 0) dictar(new File([blob], `sesion.${ext}`, { type: tipo }));
+        else setDictMsg("No se grabó audio.");
+      };
+      recRef.current = mr;
+      mr.start();
+      setGrabando(true);
+      setDictMsg("● Grabando… habla y toca Detener al terminar.");
+    } catch (err) {
+      setDictMsg("Error: no se pudo usar el micrófono (" + (err.message || err.name) + "). En el celular por red hace falta HTTPS.");
+    }
+  }
+
+  async function dictar(file) {
+    if (!file) return;
+    setTranscribiendo(true);
+    setDictMsg("Transcribiendo el audio…");
+    try {
+      const r = await api.transcribirAudio(file);
+      const e = r.estructura;
+      if (e) {
+        if (e.motivo) setMotivo((p) => p || e.motivo);
+        if (e.diagnostico) setDiag((p) => p || e.diagnostico);
+        if (e.indicaciones) setIndic((p) => p || e.indicaciones);
+        if (e.nota) setNota((p) => (p.trim() ? p + "\n\n" + e.nota : e.nota));
+        setDictMsg("Listo: la IA llenó los campos. Revísalos antes de guardar.");
+      } else if (r.transcripcion) {
+        setNota((p) => (p.trim() ? p + "\n\n" + r.transcripcion : r.transcripcion));
+        setDictMsg("Transcripción lista en la nota. (Para que la IA la ordene en campos, configura OpenAI.)");
+      } else {
+        setDictMsg("No se detectó voz en el audio.");
+      }
+    } catch (err) {
+      setDictMsg("Error: " + err.message);
+    } finally {
+      setTranscribiendo(false);
+    }
+  }
 
   function insertarPlantilla() {
     const t = TEMPLATES[tplEsp] || "";
@@ -1793,6 +2177,28 @@ function AtenderModal({ cita, servicios, onClose, onSave }) {
         <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
           <SpecialtyTag name={cita.especialidad} />
           <span style={{ fontSize: 13, color: "var(--muted)", alignSelf: "center" }}>{cita.hora} · {cita.medico}</span>
+        </div>
+
+        <div style={{ border: "1px solid var(--accent-soft)", background: "var(--accent-soft)", borderRadius: 10, padding: "10px 12px", marginBottom: 16 }}>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+            <button type="button" onClick={toggleGrabar} disabled={transcribiendo}
+              style={{
+                display: "inline-flex", alignItems: "center", gap: 7, cursor: transcribiendo ? "wait" : "pointer",
+                fontSize: 13.5, fontWeight: 600, border: "none", borderRadius: 8, padding: "8px 12px",
+                color: "#fff", background: grabando ? "#B4564E" : "var(--accent)",
+              }}>
+              <Mic size={15} strokeWidth={2.2} /> {grabando ? "■ Detener y transcribir" : "● Grabar la sesión"}
+            </button>
+            <label style={{ display: "inline-flex", alignItems: "center", gap: 6, cursor: transcribiendo ? "wait" : "pointer", fontSize: 13, color: "var(--accent)", fontWeight: 500 }}>
+              <Paperclip size={13} strokeWidth={2} /> Subir audio
+              <input type="file" accept="audio/*" hidden disabled={transcribiendo || grabando}
+                onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; dictar(f); }} />
+            </label>
+          </div>
+          <div style={{ fontSize: 12, color: "var(--ink-soft)", marginTop: 6 }}>
+            {transcribiendo ? "Transcribiendo con Whisper…" : "Graba (o sube) un audio y la IA llena los campos de la historia clínica. Tú solo revisas."}
+          </div>
+          {dictMsg && <div style={{ fontSize: 12, marginTop: 6, color: dictMsg.startsWith("Error") ? "#B4564E" : "var(--ink)" }}>{dictMsg}</div>}
         </div>
 
         <div style={{ marginBottom: 14 }}>

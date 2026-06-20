@@ -4,14 +4,17 @@ from django.http import FileResponse
 from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
+from rest_framework.views import APIView
 
+from core import estructurar_nota, gcalendar, transcripcion
 from core.tenant import get_clinica_actual
 from mensajes.models import Mensaje
 from mensajes.services import registrar_y_enviar
 
 from .models import Adjunto, Atencion, Cita, Paciente, SeguimientoSesion
-from .serializers import AdjuntoSerializer, CitaSerializer, PacienteSerializer
+from .serializers import AdjuntoSerializer, AtencionSerializer, CitaSerializer, PacienteSerializer
 
 # Tipos de archivo permitidos para adjuntos clínicos.
 EXT_PERMITIDAS = {
@@ -182,6 +185,7 @@ class CitaViewSet(viewsets.ModelViewSet):
             especialidad=especialidad or paciente.especialidad_habitual,
             estado=Cita.Estado.POR_CONFIRMAR,
         )
+        gcalendar.sync_cita(cita)  # no-op si Google Calendar no está configurado
         data = CitaSerializer(cita).data
         if aviso:
             data["aviso"] = aviso
@@ -261,6 +265,7 @@ class CitaViewSet(viewsets.ModelViewSet):
 
         cita.estado = Cita.Estado.ATENDIDA
         cita.save(update_fields=["estado"])
+        gcalendar.sync_cita(cita)
         return Response(CitaSerializer(cita).data)
 
     @action(detail=True, methods=["post"])
@@ -301,6 +306,7 @@ class CitaViewSet(viewsets.ModelViewSet):
         cita.estado = Cita.Estado.POR_CONFIRMAR
         cita.recordatorio_enviado = False
         cita.save(update_fields=["inicio", "estado", "recordatorio_enviado"])
+        gcalendar.sync_cita(cita)
         return Response(CitaSerializer(cita).data)
 
     @action(detail=True, methods=["post"])
@@ -309,6 +315,7 @@ class CitaViewSet(viewsets.ModelViewSet):
         cita = self.get_object()
         cita.estado = Cita.Estado.CANCELADA
         cita.save(update_fields=["estado"])
+        gcalendar.eliminar_cita(cita)  # quita el evento del calendario
         return Response(CitaSerializer(cita).data)
 
     @action(detail=True, methods=["post"])
@@ -317,7 +324,105 @@ class CitaViewSet(viewsets.ModelViewSet):
         cita = self.get_object()
         cita.estado = Cita.Estado.CONFIRMADA
         cita.save(update_fields=["estado"])
+        gcalendar.sync_cita(cita)
         return Response(CitaSerializer(cita).data)
+
+
+class TranscribirView(APIView):
+    """Transcribe un audio de la sesión con Whisper (local) y, si OpenAI está
+    configurado, lo estructura en los campos de la nota. NO guarda nada: devuelve
+    el texto para que el terapeuta lo revise y guarde con el flujo normal (Atender).
+    Solo médico/admin.
+    """
+
+    def post(self, request):
+        from usuarios.models import Usuario
+
+        if getattr(request.user, "rol", None) not in (Usuario.Rol.MEDICO, Usuario.Rol.ADMIN):
+            return Response({"detail": "Solo el personal médico puede transcribir notas."},
+                            status=status.HTTP_403_FORBIDDEN)
+        audio = request.FILES.get("audio")
+        if audio is None:
+            return Response({"detail": "No se recibió ningún audio."}, status=status.HTTP_400_BAD_REQUEST)
+        if audio.size > 25 * 1024 * 1024:
+            return Response({"detail": "El audio supera el límite de 25 MB."}, status=status.HTTP_400_BAD_REQUEST)
+        if not transcripcion.disponible():
+            return Response({"detail": "Whisper no está instalado en el servidor."},
+                            status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        try:
+            texto = transcripcion.transcribir_archivo(audio)
+        except Exception as e:  # noqa: BLE001 — reportamos el fallo de forma controlada
+            return Response({"detail": f"No se pudo transcribir el audio: {e}"},
+                            status=status.HTTP_400_BAD_REQUEST)
+        return Response({
+            "transcripcion": texto,
+            "estructura": estructurar_nota.estructurar(texto),  # None si no hay OpenAI
+        })
+
+
+class AtencionViewSet(viewsets.ModelViewSet):
+    """Historia clínica (atenciones). Ver: cualquier usuario de la clínica.
+    EDITAR el contenido: solo médico/admin. NO se crea aquí (se registra al Atender
+    una cita) ni se borra: la historia clínica es un registro permanente que se
+    corrige, no se elimina (integridad médica · Ley 29733). Las correcciones quedan
+    a cargo del personal clínico; conviene sumar un registro de auditoría más adelante.
+    """
+
+    serializer_class = AtencionSerializer
+
+    CAMPOS_AUDIT = [
+        "especialidad", "motivo", "presion_arterial", "frecuencia_cardiaca",
+        "temperatura", "peso", "talla", "diagnostico", "indicaciones", "nota",
+    ]
+
+    def get_queryset(self):
+        qs = (
+            Atencion.objects.del_tenant_actual()
+            .select_related("paciente", "medico", "registrado_por")
+            .prefetch_related("ediciones__editado_por")
+        )
+        pid = self.request.query_params.get("paciente")
+        if pid:
+            qs = qs.filter(paciente_id=pid)
+        return qs.order_by("-fecha")
+
+    def _solo_clinico(self):
+        from usuarios.models import Usuario
+        if getattr(self.request.user, "rol", None) not in (Usuario.Rol.MEDICO, Usuario.Rol.ADMIN):
+            raise PermissionDenied("Solo el personal médico (médico/admin) puede editar la historia clínica.")
+
+    def perform_update(self, serializer):
+        self._solo_clinico()
+        from .models import EdicionAtencion
+
+        instancia = serializer.instance
+        antes = {c: getattr(instancia, c) for c in self.CAMPOS_AUDIT}
+        atencion = serializer.save()
+        # Bitácora: una fila por campo que realmente cambió.
+        logs = []
+        for c in self.CAMPOS_AUDIT:
+            nuevo = getattr(atencion, c)
+            if str(antes[c] if antes[c] is not None else "") != str(nuevo if nuevo is not None else ""):
+                logs.append(EdicionAtencion(
+                    clinica=atencion.clinica, atencion=atencion, campo=c,
+                    antes=str(antes[c] if antes[c] is not None else ""),
+                    despues=str(nuevo if nuevo is not None else ""),
+                    editado_por=self.request.user,
+                ))
+        if logs:
+            EdicionAtencion.objects.bulk_create(logs)
+
+    def create(self, request, *args, **kwargs):
+        return Response(
+            {"detail": "Las atenciones se registran al Atender una cita, no se crean sueltas."},
+            status=status.HTTP_405_METHOD_NOT_ALLOWED,
+        )
+
+    def destroy(self, request, *args, **kwargs):
+        return Response(
+            {"detail": "La historia clínica no se borra (integridad médica · Ley 29733)."},
+            status=status.HTTP_405_METHOD_NOT_ALLOWED,
+        )
 
 
 class AdjuntoViewSet(viewsets.ModelViewSet):
