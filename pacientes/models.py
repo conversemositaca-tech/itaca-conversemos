@@ -186,6 +186,20 @@ class Atencion(ModeloTenant):
     # llenaron los campos estructurados.
     nota = models.TextField(blank=True, default="")
 
+    # --- Formato psicología (estilo AgendaPro): dos tipos de registro ---
+    class Tipo(models.TextChoices):
+        EVOLUCION = "evolucion", "Ficha de evolución"
+        HISTORIA = "historia", "Historia clínica"
+
+    tipo = models.CharField(max_length=12, choices=Tipo.choices, default=Tipo.EVOLUCION)
+    # Historia clínica (se llena una vez). 'motivo' y 'diagnostico' se reutilizan.
+    aspectos_historicos = models.TextField(blank=True, default="")
+    objetivos = models.TextField(blank=True, default="")
+    # Ficha de evolución (cada sesión). 'nota' (resumen) e 'indicaciones'
+    # (tratamiento/tareas) se reutilizan.
+    puntos_importantes = models.TextField(blank=True, default="")
+    proximos_pasos = models.TextField(blank=True, default="")
+
     class Meta:
         verbose_name = "Atención"
         verbose_name_plural = "Atenciones"

@@ -60,9 +60,10 @@ export const api = {
     req(`/api/citas/${id}/recordar/`, { method: "POST", body: JSON.stringify({ texto }) }),
   // Transcribe un audio de la sesión (Whisper) y, si hay OpenAI, lo estructura.
   // Devuelve { transcripcion, estructura: {motivo,diagnostico,indicaciones,nota}|null }.
-  transcribirAudio: (file) => {
+  transcribirAudio: (file, tipo) => {
     const fd = new FormData();
     fd.append("audio", file);
+    if (tipo) fd.append("tipo", tipo);
     return req("/api/transcribir/", { method: "POST", body: fd });
   },
   confirmarCita: (id) => req(`/api/citas/${id}/confirmar/`, { method: "POST" }),

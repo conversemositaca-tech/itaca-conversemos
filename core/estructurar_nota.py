@@ -14,27 +14,52 @@ import os
 
 import requests
 
-SYSTEM = (
-    "Eres un asistente clínico para psicólogos. A partir del relato (transcrito de "
-    "un audio) de una sesión de psicoterapia, devuelve SOLO un JSON con estas claves, "
-    "en español, conciso y profesional, sin inventar datos que no estén en el relato:\n"
-    '  "motivo": motivo de consulta o tema central de la sesión.\n'
-    '  "diagnostico": impresión diagnóstica o problemática a trabajar (vacío si no se menciona).\n'
-    '  "indicaciones": próximos pasos + tareas/actividades asignadas.\n'
-    '  "nota": resumen de la sesión y puntos importantes a recordar, en prosa breve.\n'
-    "Devuelve únicamente el JSON, sin texto adicional."
+# Prompts y claves por tipo de ficha (estilo AgendaPro).
+_BASE = (
+    "Eres un asistente clínico para psicólogos. A partir del relato (transcrito de un "
+    "audio) de una sesión de psicoterapia, devuelve SOLO un JSON, en español, conciso y "
+    "profesional, SIN inventar datos que no estén en el relato. Claves del JSON:\n"
 )
+PROMPTS = {
+    "evolucion": _BASE + (
+        '  "nota": resumen de la sesión, en prosa breve.\n'
+        '  "puntos_importantes": puntos importantes a recordar (viñetas en una línea).\n'
+        '  "proximos_pasos": próximos pasos a seguir.\n'
+        '  "indicaciones": tratamiento / líneas de trabajo / tareas o actividades asignadas.\n'
+        "Devuelve únicamente el JSON."
+    ),
+    "historia": _BASE + (
+        '  "motivo": motivo de consulta.\n'
+        '  "aspectos_historicos": aspectos históricos relevantes.\n'
+        '  "objetivos": objetivos del proceso de terapia.\n'
+        '  "diagnostico": impresión diagnóstica / problemática a tratar.\n'
+        "Devuelve únicamente el JSON."
+    ),
+}
+CLAVES = {
+    "evolucion": ("nota", "puntos_importantes", "proximos_pasos", "indicaciones"),
+    "historia": ("motivo", "aspectos_historicos", "objetivos", "diagnostico"),
+}
+
+
+def _a_texto(v):
+    """Normaliza el valor a texto. Si el LLM devuelve una lista, la pasa a viñetas."""
+    if isinstance(v, list):
+        return "\n".join(f"- {str(x).strip()}" for x in v if str(x).strip())
+    return str(v if v is not None else "").strip()
 
 
 def disponible():
     return bool(os.getenv("OPENAI_API_KEY", "").strip())
 
 
-def estructurar(texto):
-    """Devuelve {motivo, diagnostico, indicaciones, nota} o None si no se pudo."""
+def estructurar(texto, tipo="evolucion"):
+    """Estructura el texto en los campos del tipo de ficha (evolucion|historia).
+    Devuelve un dict con las claves del tipo, o None si no se pudo."""
     key = os.getenv("OPENAI_API_KEY", "").strip()
     if not key or not (texto or "").strip():
         return None
+    tipo = tipo if tipo in PROMPTS else "evolucion"
     modelo = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
     try:
         r = requests.post(
@@ -45,17 +70,14 @@ def estructurar(texto):
                 "temperature": 0.2,
                 "response_format": {"type": "json_object"},
                 "messages": [
-                    {"role": "system", "content": SYSTEM},
+                    {"role": "system", "content": PROMPTS[tipo]},
                     {"role": "user", "content": texto.strip()[:6000]},
                 ],
             },
             timeout=40,
         )
         r.raise_for_status()
-        contenido = r.json()["choices"][0]["message"]["content"]
-        datos = json.loads(contenido)
-        # Solo las claves que conocemos, como strings.
-        return {k: str(datos.get(k, "") or "").strip()
-                for k in ("motivo", "diagnostico", "indicaciones", "nota")}
+        datos = json.loads(r.json()["choices"][0]["message"]["content"])
+        return {k: _a_texto(datos.get(k)) for k in CLAVES[tipo]}
     except (requests.RequestException, KeyError, ValueError, json.JSONDecodeError):
         return None

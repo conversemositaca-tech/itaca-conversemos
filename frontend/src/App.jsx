@@ -1318,16 +1318,16 @@ const FORMATOS = [
     cols: [
       { campo: "paciente_nombre", label: "Paciente", tipo: "ro" },
       { campo: "fecha", label: "Fecha", tipo: "ro" },
+      { campo: "tipo", label: "Tipo", tipo: "select", opciones: [{ v: "evolucion", l: "Evolución" }, { v: "historia", l: "Historia clínica" }] },
+      { campo: "nota", label: "Resumen de la sesión", tipo: "text" },
+      { campo: "puntos_importantes", label: "Puntos importantes", tipo: "text" },
+      { campo: "proximos_pasos", label: "Próximos pasos", tipo: "text" },
+      { campo: "indicaciones", label: "Tratamiento / tareas", tipo: "text" },
+      { campo: "motivo", label: "Motivo (H.C.)", tipo: "text" },
+      { campo: "aspectos_historicos", label: "Aspectos históricos (H.C.)", tipo: "text" },
+      { campo: "objetivos", label: "Objetivos (H.C.)", tipo: "text" },
+      { campo: "diagnostico", label: "Impresión dx (H.C.)", tipo: "text" },
       { campo: "especialidad", label: "Especialidad", tipo: "text" },
-      { campo: "motivo", label: "Motivo", tipo: "text" },
-      { campo: "diagnostico", label: "Diagnóstico", tipo: "text" },
-      { campo: "indicaciones", label: "Indicaciones", tipo: "text" },
-      { campo: "nota", label: "Nota / evolución", tipo: "text" },
-      { campo: "presion_arterial", label: "P. arterial", tipo: "text" },
-      { campo: "frecuencia_cardiaca", label: "FC", tipo: "num" },
-      { campo: "temperatura", label: "T°", tipo: "num" },
-      { campo: "peso", label: "Peso", tipo: "num" },
-      { campo: "talla", label: "Talla", tipo: "num" },
       { campo: "medico", label: "Médico", tipo: "ro" },
       { campo: "registrado_por_nombre", label: "Registró", tipo: "ro" },
       { campo: "ultima_edicion", label: "Última edición", tipo: "ro" },
@@ -2059,16 +2059,17 @@ function ConfirmModal({ titulo, mensaje, confirmLabel, peligro, onConfirm, onClo
 }
 
 function AtenderModal({ cita, servicios, onClose, onSave }) {
+  const [tipo, setTipo] = useState("evolucion");
+  // Ficha de evolución (cada sesión)
+  const [resumen, setResumen] = useState("");
+  const [puntos, setPuntos] = useState("");
+  const [proximos, setProximos] = useState("");
+  const [tratamiento, setTratamiento] = useState("");
+  // Historia clínica (una vez)
   const [motivo, setMotivo] = useState("");
-  const [pa, setPa] = useState("");
-  const [fc, setFc] = useState("");
-  const [temp, setTemp] = useState("");
-  const [peso, setPeso] = useState("");
-  const [talla, setTalla] = useState("");
-  const [diag, setDiag] = useState("");
-  const [indic, setIndic] = useState("");
-  const [nota, setNota] = useState("");
-  const [tplEsp, setTplEsp] = useState(cita.especialidad in TEMPLATES ? cita.especialidad : "Terapia individual");
+  const [aspectos, setAspectos] = useState("");
+  const [objetivos, setObjetivos] = useState("");
+  const [impresion, setImpresion] = useState("");
 
   const serviciosActivos = (servicios || []).filter((s) => s.activo);
   const servDef = serviciosActivos.find((s) => s.especialidad === cita.especialidad);
@@ -2084,7 +2085,8 @@ function AtenderModal({ cita, servicios, onClose, onSave }) {
   const recRef = React.useRef(null);
   const chunksRef = React.useRef([]);
 
-  const canSave = [motivo, diag, indic, nota].some((v) => v.trim().length > 0);
+  const activos = tipo === "evolucion" ? [resumen, puntos, proximos, tratamiento] : [motivo, aspectos, objetivos, impresion];
+  const canSave = activos.some((v) => v.trim().length > 0);
 
   async function toggleGrabar() {
     if (grabando) { recRef.current?.stop(); return; }
@@ -2120,17 +2122,25 @@ function AtenderModal({ cita, servicios, onClose, onSave }) {
     setTranscribiendo(true);
     setDictMsg("Transcribiendo el audio…");
     try {
-      const r = await api.transcribirAudio(file);
+      const r = await api.transcribirAudio(file, tipo);
       const e = r.estructura;
+      const add = (set) => (val) => set((p) => (p.trim() ? p + "\n\n" + val : val));
       if (e) {
-        if (e.motivo) setMotivo((p) => p || e.motivo);
-        if (e.diagnostico) setDiag((p) => p || e.diagnostico);
-        if (e.indicaciones) setIndic((p) => p || e.indicaciones);
-        if (e.nota) setNota((p) => (p.trim() ? p + "\n\n" + e.nota : e.nota));
+        if (tipo === "evolucion") {
+          if (e.nota) add(setResumen)(e.nota);
+          if (e.puntos_importantes) setPuntos((p) => p || e.puntos_importantes);
+          if (e.proximos_pasos) setProximos((p) => p || e.proximos_pasos);
+          if (e.indicaciones) setTratamiento((p) => p || e.indicaciones);
+        } else {
+          if (e.motivo) setMotivo((p) => p || e.motivo);
+          if (e.aspectos_historicos) setAspectos((p) => p || e.aspectos_historicos);
+          if (e.objetivos) setObjetivos((p) => p || e.objetivos);
+          if (e.diagnostico) setImpresion((p) => p || e.diagnostico);
+        }
         setDictMsg("Listo: la IA llenó los campos. Revísalos antes de guardar.");
       } else if (r.transcripcion) {
-        setNota((p) => (p.trim() ? p + "\n\n" + r.transcripcion : r.transcripcion));
-        setDictMsg("Transcripción lista en la nota. (Para que la IA la ordene en campos, configura OpenAI.)");
+        add(tipo === "evolucion" ? setResumen : setMotivo)(r.transcripcion);
+        setDictMsg("Transcripción lista. (Para que la IA la ordene en campos, configura OpenAI.)");
       } else {
         setDictMsg("No se detectó voz en el audio.");
       }
@@ -2141,22 +2151,17 @@ function AtenderModal({ cita, servicios, onClose, onSave }) {
     }
   }
 
-  function insertarPlantilla() {
-    const t = TEMPLATES[tplEsp] || "";
-    setNota((prev) => (prev.trim() ? prev + "\n\n" + t : t));
-  }
-
   function guardar() {
     const datos = {
+      tipo,
       motivo: motivo.trim(),
-      presion_arterial: pa.trim(),
-      frecuencia_cardiaca: fc.trim(),
-      temperatura: temp.trim(),
-      peso: peso.trim(),
-      talla: talla.trim(),
-      diagnostico: diag.trim(),
-      indicaciones: indic.trim(),
-      nota: nota.trim(),
+      diagnostico: impresion.trim(),
+      aspectos_historicos: aspectos.trim(),
+      objetivos: objetivos.trim(),
+      nota: resumen.trim(),
+      puntos_importantes: puntos.trim(),
+      proximos_pasos: proximos.trim(),
+      indicaciones: tratamiento.trim(),
     };
     if (cobrar && cobMonto && Number(cobMonto) > 0) {
       datos.cobro_monto = cobMonto;
@@ -2201,42 +2206,52 @@ function AtenderModal({ cita, servicios, onClose, onSave }) {
           {dictMsg && <div style={{ fontSize: 12, marginTop: 6, color: dictMsg.startsWith("Error") ? "#B4564E" : "var(--ink)" }}>{dictMsg}</div>}
         </div>
 
-        <div style={{ marginBottom: 14 }}>
-          <div className="ca-label">Motivo de consulta</div>
-          <input className="ca-input" value={motivo} onChange={(e) => setMotivo(e.target.value)}
-            placeholder="¿Por qué viene el paciente?" autoFocus />
+        {/* Tipo de registro (como AgendaPro) */}
+        <div className="ca-seg" style={{ marginLeft: 0, marginBottom: 14 }}>
+          <button className={tipo === "evolucion" ? "on" : ""} onClick={() => setTipo("evolucion")}>Ficha de evolución</button>
+          <button className={tipo === "historia" ? "on" : ""} onClick={() => setTipo("historia")}>Historia clínica</button>
         </div>
 
-        <div className="ca-label" style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <Activity size={13} strokeWidth={2} style={{ color: "var(--muted)" }} /> Signos vitales <span style={{ color: "var(--muted)", fontWeight: 400 }}>· opcional</span>
-        </div>
-        <div className="ca-vitgrid" style={{ marginTop: 6 }}>
-          <label className="ca-vitin"><span>P. arterial</span><input className="ca-input" value={pa} onChange={(e) => setPa(e.target.value)} placeholder="120/80" /></label>
-          <label className="ca-vitin"><span>FC (lpm)</span><input className="ca-input" value={fc} onChange={(e) => setFc(e.target.value)} placeholder="72" inputMode="numeric" /></label>
-          <label className="ca-vitin"><span>Temp (°C)</span><input className="ca-input" value={temp} onChange={(e) => setTemp(e.target.value)} placeholder="36.5" inputMode="decimal" /></label>
-          <label className="ca-vitin"><span>Peso (kg)</span><input className="ca-input" value={peso} onChange={(e) => setPeso(e.target.value)} placeholder="70" inputMode="decimal" /></label>
-          <label className="ca-vitin"><span>Talla (cm)</span><input className="ca-input" value={talla} onChange={(e) => setTalla(e.target.value)} placeholder="170" inputMode="numeric" /></label>
-        </div>
-
-        <div style={{ margin: "16px 0 13px" }}>
-          <div className="ca-label">Diagnóstico</div>
-          <textarea className="ca-input" style={{ minHeight: 60, resize: "vertical", lineHeight: 1.5 }} value={diag} onChange={(e) => setDiag(e.target.value)} placeholder="Impresión diagnóstica…" />
-        </div>
-        <div style={{ marginBottom: 13 }}>
-          <div className="ca-label">Indicaciones / receta</div>
-          <textarea className="ca-input" style={{ minHeight: 60, resize: "vertical", lineHeight: 1.5 }} value={indic} onChange={(e) => setIndic(e.target.value)} placeholder="Medicamentos, dosis, recomendaciones…" />
-        </div>
-
-        <div className="ca-label">Nota / evolución</div>
-        <div className="ca-tplbar">
-          <button className="ca-tplchip" onClick={insertarPlantilla}><FileText size={13} strokeWidth={2} /> Insertar plantilla</button>
-          <select className="ca-tplsel" value={tplEsp} onChange={(e) => setTplEsp(e.target.value)}>
-            {Object.keys(TEMPLATES).map((s) => <option key={s}>{s}</option>)}
-          </select>
-        </div>
-        <textarea className="ca-input ca-textarea" style={{ minHeight: 110 }} value={nota} onChange={(e) => setNota(e.target.value)}
-          placeholder="Evolución, observaciones… o inserta una plantilla para no empezar de cero." />
-        <div style={{ fontSize: 12, color: "var(--muted)", margin: "8px 0 14px" }}>Se guarda en la historia clínica con fecha de hoy. Llena al menos motivo, diagnóstico, indicaciones o nota.</div>
+        {tipo === "evolucion" ? (
+          <>
+            <div style={{ marginBottom: 13 }}>
+              <div className="ca-label">Resumen de la sesión <span style={{ color: "#B4564E" }}>*</span></div>
+              <textarea className="ca-input" style={{ minHeight: 80, resize: "vertical", lineHeight: 1.5 }} value={resumen} onChange={(e) => setResumen(e.target.value)} placeholder="¿Qué se trabajó en la sesión?" />
+            </div>
+            <div style={{ marginBottom: 13 }}>
+              <div className="ca-label">Puntos importantes a recordar</div>
+              <textarea className="ca-input" style={{ minHeight: 56, resize: "vertical", lineHeight: 1.5 }} value={puntos} onChange={(e) => setPuntos(e.target.value)} placeholder="Observaciones clave…" />
+            </div>
+            <div style={{ marginBottom: 13 }}>
+              <div className="ca-label">Próximos pasos a seguir</div>
+              <textarea className="ca-input" style={{ minHeight: 56, resize: "vertical", lineHeight: 1.5 }} value={proximos} onChange={(e) => setProximos(e.target.value)} placeholder="Qué abordar la próxima sesión…" />
+            </div>
+            <div style={{ marginBottom: 13 }}>
+              <div className="ca-label">Tratamiento / líneas de trabajo / tareas</div>
+              <textarea className="ca-input" style={{ minHeight: 56, resize: "vertical", lineHeight: 1.5 }} value={tratamiento} onChange={(e) => setTratamiento(e.target.value)} placeholder="Tareas o actividades asignadas…" />
+            </div>
+          </>
+        ) : (
+          <>
+            <div style={{ marginBottom: 13 }}>
+              <div className="ca-label">Motivo de consulta <span style={{ color: "#B4564E" }}>*</span></div>
+              <textarea className="ca-input" style={{ minHeight: 70, resize: "vertical", lineHeight: 1.5 }} value={motivo} onChange={(e) => setMotivo(e.target.value)} placeholder="¿Por qué viene el paciente?" />
+            </div>
+            <div style={{ marginBottom: 13 }}>
+              <div className="ca-label">Aspectos históricos relevantes</div>
+              <textarea className="ca-input" style={{ minHeight: 56, resize: "vertical", lineHeight: 1.5 }} value={aspectos} onChange={(e) => setAspectos(e.target.value)} placeholder="Antecedentes relevantes…" />
+            </div>
+            <div style={{ marginBottom: 13 }}>
+              <div className="ca-label">Objetivos del proceso de terapia</div>
+              <textarea className="ca-input" style={{ minHeight: 56, resize: "vertical", lineHeight: 1.5 }} value={objetivos} onChange={(e) => setObjetivos(e.target.value)} placeholder="Metas del proceso…" />
+            </div>
+            <div style={{ marginBottom: 13 }}>
+              <div className="ca-label">Impresión diagnóstica / problemática a tratar</div>
+              <textarea className="ca-input" style={{ minHeight: 56, resize: "vertical", lineHeight: 1.5 }} value={impresion} onChange={(e) => setImpresion(e.target.value)} placeholder="Impresión diagnóstica…" />
+            </div>
+          </>
+        )}
+        <div style={{ fontSize: 12, color: "var(--muted)", margin: "0 0 14px" }}>Se guarda en la historia clínica con fecha de hoy.</div>
 
         <div style={{ border: "1px solid var(--line)", borderRadius: 10, padding: "11px 13px", marginBottom: 16 }}>
           <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: 13.5, fontWeight: 500 }}>

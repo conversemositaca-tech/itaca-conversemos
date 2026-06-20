@@ -40,9 +40,11 @@ class AtencionSerializer(serializers.ModelSerializer):
         model = Atencion
         fields = [
             "id", "paciente", "paciente_nombre", "fecha", "medico", "registrado_por_nombre",
-            "especialidad", "motivo",
+            "tipo", "especialidad", "motivo",
             "presion_arterial", "frecuencia_cardiaca", "temperatura", "peso", "talla",
-            "diagnostico", "indicaciones", "nota", "ultima_edicion", "adjuntos",
+            "diagnostico", "indicaciones", "nota",
+            "aspectos_historicos", "objetivos", "puntos_importantes", "proximos_pasos",
+            "ultima_edicion", "adjuntos",
         ]
         read_only_fields = ["paciente"]
 

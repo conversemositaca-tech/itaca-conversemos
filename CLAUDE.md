@@ -361,6 +361,19 @@ los feriados de Perú. Zona horaria por defecto: `America/Lima` (GMT-5).
    - **Re-auditoría 2026-06-19**: `manage.py check` 0 problemas; 24/24 endpoints responden 200;
      el frontend compila; datos consistentes en ambas sedes. Sin tests automatizados (stubs);
      verificación por smoke-test de la API en vivo.
+28. ✓ Ficha clínica estilo AgendaPro (2026-06-20, según capturas de Emma). `Atencion` +=
+   `tipo` (evolucion|historia) + `aspectos_historicos`, `objetivos`, `puntos_importantes`,
+   `proximos_pasos` (migración 0008). Dos formatos como AgendaPro:
+   - **Historia clínica** (una vez): Motivo (`motivo`), Aspectos históricos
+     (`aspectos_historicos`), Objetivos (`objetivos`), Impresión dx (`diagnostico`).
+   - **Ficha de evolución** (cada sesión): Resumen (`nota`), Puntos importantes
+     (`puntos_importantes`), Próximos pasos (`proximos_pasos`), Tratamiento/tareas
+     (`indicaciones`).
+   `AtenderModal` rediseñado: selector de tipo + esos campos (se quitaron los signos
+   vitales, no aplican a psicología). El dictado por voz llena el set activo según el tipo
+   (`estructurar_nota` usa prompt por tipo; listas → viñetas). Endpoint atender, serializer,
+   auditoría (CAMPOS_AUDIT) y editor Excel incluyen los campos nuevos. Las atenciones
+   importadas quedan `tipo=evolucion` con su texto en `nota` (Resumen).
 27. ✓ Notas clínicas por VOZ (Whisper, dentro del sistema) (2026-06-20, a pedido de Emma).
    En el modal **Atender**, el psicólogo sube/graba un audio de la sesión → `POST
    /api/transcribir/` (`TranscribirView`, solo médico/admin) lo transcribe con **Whisper

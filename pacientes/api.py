@@ -218,9 +218,16 @@ class CitaViewSet(viewsets.ModelViewSet):
         diagnostico = limpio("diagnostico")
         indicaciones = limpio("indicaciones")
         nota = limpio("nota")
-        if not any([motivo, diagnostico, indicaciones, nota]):
+        aspectos_historicos = limpio("aspectos_historicos")
+        objetivos = limpio("objetivos")
+        puntos_importantes = limpio("puntos_importantes")
+        proximos_pasos = limpio("proximos_pasos")
+        tipo = d.get("tipo") if d.get("tipo") in dict(Atencion.Tipo.choices) else Atencion.Tipo.EVOLUCION
+        contenido = [motivo, diagnostico, indicaciones, nota, aspectos_historicos,
+                     objetivos, puntos_importantes, proximos_pasos]
+        if not any(contenido):
             return Response(
-                {"detail": "Registra al menos el motivo, el diagnóstico, las indicaciones o una nota."},
+                {"detail": "Registra al menos un campo de la ficha."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -232,6 +239,7 @@ class CitaViewSet(viewsets.ModelViewSet):
             registrado_por=request.user,
             especialidad=cita.especialidad,
             fecha=timezone.now(),
+            tipo=tipo,
             motivo=motivo,
             presion_arterial=limpio("presion_arterial"),
             frecuencia_cardiaca=_int_o_none(d.get("frecuencia_cardiaca")),
@@ -241,6 +249,10 @@ class CitaViewSet(viewsets.ModelViewSet):
             diagnostico=diagnostico,
             indicaciones=indicaciones,
             nota=nota,
+            aspectos_historicos=aspectos_historicos,
+            objetivos=objetivos,
+            puntos_importantes=puntos_importantes,
+            proximos_pasos=proximos_pasos,
         )
 
         # Cobro opcional en el mismo acto de atender (el médico cobra ahí mismo).
@@ -354,9 +366,10 @@ class TranscribirView(APIView):
         except Exception as e:  # noqa: BLE001 — reportamos el fallo de forma controlada
             return Response({"detail": f"No se pudo transcribir el audio: {e}"},
                             status=status.HTTP_400_BAD_REQUEST)
+        tipo = request.data.get("tipo") or "evolucion"
         return Response({
             "transcripcion": texto,
-            "estructura": estructurar_nota.estructurar(texto),  # None si no hay OpenAI
+            "estructura": estructurar_nota.estructurar(texto, tipo),  # None si no hay OpenAI
         })
 
 
@@ -373,6 +386,7 @@ class AtencionViewSet(viewsets.ModelViewSet):
     CAMPOS_AUDIT = [
         "especialidad", "motivo", "presion_arterial", "frecuencia_cardiaca",
         "temperatura", "peso", "talla", "diagnostico", "indicaciones", "nota",
+        "aspectos_historicos", "objetivos", "puntos_importantes", "proximos_pasos",
     ]
 
     def get_queryset(self):
