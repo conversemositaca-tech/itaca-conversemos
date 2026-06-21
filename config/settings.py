@@ -94,7 +94,10 @@ if os.getenv("DATABASE_URL"):
 
     DATABASES = {
         "default": dj_database_url.parse(
-            os.environ["DATABASE_URL"], conn_max_age=600, ssl_require=not DEBUG
+            os.environ["DATABASE_URL"], conn_max_age=600,
+            # Railway/managed exige SSL; el Postgres interno de EasyPanel no lo usa.
+            # Controlable por entorno: en EasyPanel poner DJANGO_DB_SSL=False.
+            ssl_require=env_bool("DJANGO_DB_SSL", not DEBUG),
         )
     }
 else:
