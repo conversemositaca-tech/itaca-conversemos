@@ -324,9 +324,11 @@ export default function ClinicaApp() {
     { id: "agenda", label: "Agenda", icon: Calendar },
     { id: "pacientes", label: "Pacientes", icon: Users },
     { id: "profesionales", label: "Profesionales", icon: HeartPulse },
-    { id: "mensajes", label: "Mensajes", icon: MessageCircle },
-    { id: "marketing", label: "Marketing", icon: Megaphone },
-    { id: "finanzas", label: "Finanzas", icon: TrendingUp },
+    // Mensajes, Marketing y Finanzas son de coordinación/gestión: el psicólogo
+    // ve solo lo clínico (Hoy, Agenda, Pacientes, Profesionales).
+    ...(usuario?.rol !== "medico" ? [{ id: "mensajes", label: "Mensajes", icon: MessageCircle }] : []),
+    ...(usuario?.rol !== "medico" ? [{ id: "marketing", label: "Marketing", icon: Megaphone }] : []),
+    ...(usuario?.rol !== "medico" ? [{ id: "finanzas", label: "Finanzas", icon: TrendingUp }] : []),
     ...(usuario?.rol === "admin" ? [{ id: "equipo", label: "Equipo", icon: UserCog }] : []),
     ...(usuario?.rol === "admin" ? [{ id: "hojas", label: "Editar (Excel)", icon: Pencil }] : []),
   ];
