@@ -182,6 +182,13 @@ CSRF_TRUSTED_ORIGINS += [o.strip() for o in os.getenv("DJANGO_CSRF_ORIGINS", "")
 if _railway_domain:
     CSRF_TRUSTED_ORIGINS.append(f"https://{_railway_domain}")
 
+# --- Integración con Eli (bot de WhatsApp): notas clínicas por voz ---
+# Token compartido (servidor-a-servidor) que Eli envía en la cabecera
+# X-Integracion-Token para guardar atenciones desde WhatsApp. Si queda vacío,
+# la integración está apagada (los endpoints /api/integraciones/* rechazan todo).
+ITACA_INTEGRACION_TOKEN = os.getenv("ITACA_INTEGRACION_TOKEN", "")
+
+
 # --- WhatsApp vía Evolution API ---
 # URL y API key del servidor Evolution (en EasyPanel). La "instancia" es la conexión
 # de WhatsApp; puede definirse global aquí o por clínica (Clinica.whatsapp_instance).
