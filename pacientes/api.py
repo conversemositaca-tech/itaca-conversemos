@@ -65,8 +65,21 @@ def texto_recordatorio(cita):
     )
 
 
+def _es_medico(user):
+    """True si el usuario es psicólogo (rol médico). El admin NO se acota."""
+    from usuarios.models import Usuario
+    return getattr(user, "rol", None) == Usuario.Rol.MEDICO
+
+
+def _ficha_de(user):
+    """Ficha del directorio (Profesional) enlazada a este usuario, o None."""
+    from usuarios.models import Profesional
+    return Profesional.objects.filter(usuario=user).first()
+
+
 class PacienteViewSet(viewsets.ModelViewSet):
-    """CRUD de pacientes, siempre con scope de la clínica activa."""
+    """CRUD de pacientes, siempre con scope de la clínica activa.
+    El psicólogo ve solo SUS pacientes; el admin, todos."""
 
     serializer_class = PacienteSerializer
 
@@ -75,6 +88,10 @@ class PacienteViewSet(viewsets.ModelViewSet):
             Paciente.objects.del_tenant_actual()
             .prefetch_related("atenciones__adjuntos", "adjuntos", "cobros", "citas", "seguimientos")
         )
+        # El psicólogo solo ve a los pacientes de su ficha del directorio.
+        if _es_medico(self.request.user):
+            ficha = _ficha_de(self.request.user)
+            qs = qs.filter(profesional=ficha) if ficha else qs.none()
         prof = self.request.query_params.get("profesional")
         if prof:
             qs = qs.filter(profesional_id=prof)
@@ -143,12 +160,15 @@ class CitaViewSet(viewsets.ModelViewSet):
     serializer_class = CitaSerializer
 
     def get_queryset(self):
-        return (
+        qs = (
             Cita.objects.del_tenant_actual()
             .select_related("paciente", "medico")
             .prefetch_related("cobros")
-            .order_by("inicio")
         )
+        # El psicólogo ve solo SU agenda; el admin, la de toda la clínica.
+        if _es_medico(self.request.user):
+            qs = qs.filter(medico=self.request.user)
+        return qs.order_by("inicio")
 
     def create(self, request, *args, **kwargs):
         """Agenda una cita. Recibe pacienteId, especialidad, hora (HH:MM) y
@@ -395,6 +415,10 @@ class AtencionViewSet(viewsets.ModelViewSet):
             .select_related("paciente", "medico", "registrado_por")
             .prefetch_related("ediciones__editado_por")
         )
+        # El psicólogo solo ve las historias de SUS pacientes.
+        if _es_medico(self.request.user):
+            ficha = _ficha_de(self.request.user)
+            qs = qs.filter(paciente__profesional=ficha) if ficha else qs.none()
         pid = self.request.query_params.get("paciente")
         if pid:
             qs = qs.filter(paciente_id=pid)
