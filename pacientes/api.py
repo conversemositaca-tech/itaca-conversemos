@@ -188,7 +188,16 @@ class CitaViewSet(viewsets.ModelViewSet):
 
         from usuarios.models import Usuario
 
-        medico = Usuario.objects.filter(clinica=clinica, rol=Usuario.Rol.MEDICO).first()
+        # El médico de la cita: si la agenda un psicólogo, es él mismo; si es el
+        # admin/gerente, puede indicar medicoId; por defecto, el primero de la clínica.
+        if getattr(request.user, "rol", None) == Usuario.Rol.MEDICO:
+            medico = request.user
+        else:
+            medico_id = request.data.get("medicoId")
+            medico = (
+                Usuario.objects.filter(clinica=clinica, rol=Usuario.Rol.MEDICO, pk=medico_id).first()
+                if medico_id else None
+            ) or Usuario.objects.filter(clinica=clinica, rol=Usuario.Rol.MEDICO).first()
 
         # Aviso (no bloqueante) si el mismo médico ya tiene una cita a esa hora.
         aviso = None
