@@ -190,61 +190,77 @@ class Command(BaseCommand):
                     SeguimientoSesion.objects.filter(clinica=clinica).delete()
                     Paciente.objects.filter(clinica=clinica).delete()
 
+            # 1) Parsear todas las filas (sin tocar la BD).
+            parsed = []  # [(datos, creado)]
             for fila in filas:
                 nombre = " ".join(p for p in [celda(fila, c_nombres), celda(fila, c_apellidos)] if p).strip()
                 if not nombre:
                     continue
                 doc = solo_digitos(celda(fila, c_doc))
-                tipo_doc = "ruc" if len(doc) == 11 else "dni"
-                tel = celda(fila, c_tel)
-                email = celda(fila, c_email)
-                ciudad = celda(fila, c_ciudad).lower()
-                sede = "lima" if "lima" in ciudad else ("piura" if "piura" in ciudad else "")
-                direccion = celda(fila, c_dir) or celda(fila, c_distrito)
-                g = celda(fila, c_gen)
-                genero = "femenino" if g == "1" else ("masculino" if g == "2" else "")
-                fnac = parse_nacimiento(celda(fila, c_dia), celda(fila, c_mes), celda(fila, c_anio))
-                creado = parse_fecha_ddmmaa(celda(fila, c_creado))
-
-                datos = dict(
-                    nombre=nombre, telefono=tel, email=email, sede=sede,
-                    direccion=direccion[:255], genero=genero, fecha_nacimiento=fnac,
-                    numero_documento=doc, tipo_documento=tipo_doc,
-                )
-
-                # Dedup: por documento; si no hay, por nombre exacto.
-                existente = None
-                if doc:
-                    existente = Paciente.objects.filter(clinica=clinica, numero_documento=doc).first()
-                else:
+                if not doc:
                     sin_doc += 1
-                    existente = Paciente.objects.filter(clinica=clinica, nombre__iexact=nombre,
-                                                        numero_documento="").first()
-
+                ciudad = celda(fila, c_ciudad).lower()
+                g = celda(fila, c_gen)
+                datos = dict(
+                    nombre=nombre,
+                    telefono=celda(fila, c_tel),
+                    email=celda(fila, c_email),
+                    sede=("lima" if "lima" in ciudad else "piura" if "piura" in ciudad else ""),
+                    direccion=(celda(fila, c_dir) or celda(fila, c_distrito))[:255],
+                    genero=("femenino" if g == "1" else "masculino" if g == "2" else ""),
+                    fecha_nacimiento=parse_nacimiento(celda(fila, c_dia), celda(fila, c_mes), celda(fila, c_anio)),
+                    numero_documento=doc,
+                    tipo_documento=("ruc" if len(doc) == 11 else "dni"),
+                )
+                creado = parse_fecha_ddmmaa(celda(fila, c_creado))
                 if len(muestras) < 3:
                     muestras.append(datos)
+                parsed.append((datos, creado))
 
-                if opt["dry_run"]:
+            def buscar(datos):
+                if datos["numero_documento"]:
+                    return Paciente.objects.filter(clinica=clinica, numero_documento=datos["numero_documento"]).first()
+                return Paciente.objects.filter(clinica=clinica, nombre__iexact=datos["nombre"], numero_documento="").first()
+
+            def fecha_alta(creado):
+                return timezone.make_aware(datetime.combine(creado, time(9, 0)))
+
+            # 2) Cargar.
+            if opt["dry_run"]:
+                if opt["reemplazar"]:
+                    creados = len(parsed)  # tras el borrado, todos serían nuevos
+                else:
+                    for datos, _c in parsed:
+                        if buscar(datos):
+                            actualizados += 1
+                        else:
+                            creados += 1
+            elif opt["reemplazar"]:
+                # Tabla vacía tras el borrado: inserción masiva (robusto y rápido).
+                objs = [Paciente(clinica=clinica, **datos) for datos, _c in parsed]
+                Paciente.objects.bulk_create(objs, batch_size=500)
+                creados = len(objs)
+                con_fecha = []
+                for obj, (_d, c) in zip(objs, parsed):
+                    if c:
+                        obj.creado_en = fecha_alta(c)
+                        con_fecha.append(obj)
+                if con_fecha:
+                    Paciente.objects.bulk_update(con_fecha, ["creado_en"], batch_size=500)
+            else:
+                for datos, creado in parsed:
+                    existente = buscar(datos)
                     if existente:
+                        for k, v in datos.items():
+                            setattr(existente, k, v)
+                        existente.save()
+                        pac = existente
                         actualizados += 1
                     else:
+                        pac = Paciente.objects.create(clinica=clinica, **datos)
                         creados += 1
-                    continue
-
-                if existente:
-                    for k, v in datos.items():
-                        setattr(existente, k, v)
-                    existente.save()
-                    pac = existente
-                    actualizados += 1
-                else:
-                    pac = Paciente.objects.create(clinica=clinica, **datos)
-                    creados += 1
-
-                # Preservar la fecha de alta de AgendaPro (creado_en es auto_now_add).
-                if creado:
-                    dt = timezone.make_aware(datetime.combine(creado, time(9, 0)))
-                    Paciente.objects.filter(pk=pac.pk).update(creado_en=dt)
+                    if creado:
+                        Paciente.objects.filter(pk=pac.pk).update(creado_en=fecha_alta(creado))
 
         self.stdout.write("\n--- muestra del mapeo (primeras 3) ---")
         for m in muestras:
