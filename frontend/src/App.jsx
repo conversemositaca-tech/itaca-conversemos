@@ -40,6 +40,7 @@ const TEMPLATES = {
 const STATUS = {
   confirmada: { bg: "#E9F1ED", fg: "#3E7A65" },
   por_confirmar: { bg: "#F7ECDD", fg: "#9C6B2E" },
+  reprogramada: { bg: "#EAE6F2", fg: "#6B5B9C" },
   atendida: { bg: "#EFEDE8", fg: "#7C7870" },
   cancelada: { bg: "#F7E5E5", fg: "#9C4646" },
 };
@@ -463,10 +464,14 @@ export default function ClinicaApp() {
     try {
       let pacienteId = data.pacienteId;
       if (data.nuevoNombre) {
-        const nuevo = await api.crearPaciente({ nombre: data.nuevoNombre, especialidad: data.especialidad });
+        const nuevo = await api.crearPaciente({ nombre: data.nuevoNombre, especialidad: data.especialidad, sede: data.sede || "" });
         pacienteId = nuevo.id;
       }
-      const r = await api.agendarCita({ pacienteId, fecha: data.fecha, hora: data.hora, especialidad: data.especialidad });
+      const r = await api.agendarCita({
+        pacienteId, fecha: data.fecha, hora: data.hora, especialidad: data.especialidad,
+        medicoId: data.medicoId || null, sede: data.sede || "", modalidad: data.modalidad || "presencial",
+        enlace: data.enlace || "", notas: data.notas || "", n_sesion: data.n_sesion || null,
+      });
       await Promise.all([refrescarCitas(), refrescarPacientes()]);
       setAdding(false);
       if (data.fecha) setAgendaFecha(data.fecha); // saltar al día de la cita recién creada
@@ -1839,26 +1844,47 @@ function AgendarModal({ pacientes, fechaInicial, pacienteFijo, onClose, onSave }
   const [fecha, setFecha] = useState(fechaInicial || HOY_ISO);
   const [hora, setHora] = useState("");
   const [esp, setEsp] = useState(pacienteFijo?.especialidad || "Terapia individual");
+  const [medicos, setMedicos] = useState([]);
+  const [medicoId, setMedicoId] = useState("");
+  const [sede, setSede] = useState(pacienteFijo?.sede || "");
+  const [modalidad, setModalidad] = useState("presencial");
+  const [enlace, setEnlace] = useState("");
+  const [notas, setNotas] = useState("");
+  const [nSesion, setNSesion] = useState(
+    pacienteFijo?.n_sesion != null ? String(pacienteFijo.n_sesion + 1) : ""
+  );
+
+  useEffect(() => { api.medicos().then(setMedicos).catch(() => {}); }, []);
 
   const matches = useMemo(
     () => (busca.trim() ? pacientes.filter((p) => p.nombre.toLowerCase().includes(busca.toLowerCase())).slice(0, 4) : []),
     [busca, pacientes]
   );
 
-  function elegir(p) { setSel(p); setNuevo(false); setEsp(p.especialidad || "Terapia individual"); setBusca(""); }
+  function elegir(p) {
+    setSel(p); setNuevo(false); setEsp(p.especialidad || "Terapia individual");
+    if (p.sede) setSede(p.sede);
+    if (p.n_sesion != null) setNSesion(String(p.n_sesion + 1));
+    setBusca("");
+  }
   function elegirNuevo() { setNuevo(true); setSel(null); }
   function limpiar() { setSel(null); setNuevo(false); setBusca(""); }
 
   const canSave = (sel || (nuevo && busca.trim())) && fecha && hora.trim();
 
   function guardar() {
-    if (sel) onSave({ pacienteId: sel.id, paciente: sel.nombre, especialidad: esp, fecha, hora });
-    else if (nuevo) onSave({ nuevoNombre: busca.trim(), especialidad: esp, fecha, hora });
+    const extra = {
+      especialidad: esp, fecha, hora, medicoId: medicoId || null, sede,
+      modalidad, enlace: modalidad === "virtual" ? enlace.trim() : "",
+      notas: notas.trim(), n_sesion: nSesion ? Number(nSesion) : null,
+    };
+    if (sel) onSave({ pacienteId: sel.id, paciente: sel.nombre, ...extra });
+    else if (nuevo) onSave({ nuevoNombre: busca.trim(), ...extra });
   }
 
   return (
     <div className="ca-modal-bg" onClick={onClose}>
-      <div className="ca-modal" style={{ maxWidth: 390 }} onClick={(e) => e.stopPropagation()}>
+      <div className="ca-modal" style={{ maxWidth: 430 }} onClick={(e) => e.stopPropagation()}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
           <strong style={{ fontSize: 16 }}>Nueva sesión</strong>
           <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)" }}><X size={18} /></button>
@@ -1911,11 +1937,62 @@ function AgendarModal({ pacientes, fechaInicial, pacienteFijo, onClose, onSave }
             <input className="ca-input" type="time" value={hora} onChange={(e) => setHora(e.target.value)} placeholder="14:30" />
           </div>
         </div>
-        <div style={{ marginBottom: 20 }}>
+        <div style={{ marginBottom: 13 }}>
           <div className="ca-label">Especialidad</div>
           <select className="ca-input" value={esp} onChange={(e) => setEsp(e.target.value)}>
             {Object.keys(SPECIALTY).map((s) => <option key={s}>{s}</option>)}
           </select>
+        </div>
+
+        <div style={{ display: "flex", gap: 11, marginBottom: 13 }}>
+          <div style={{ flex: 1.5 }}>
+            <div className="ca-label">Psicólogo</div>
+            <select className="ca-input" value={medicoId} onChange={(e) => setMedicoId(e.target.value)}>
+              <option value="">— Sin asignar —</option>
+              {medicos.map((m) => <option key={m.id} value={m.id}>{m.nombre}</option>)}
+            </select>
+          </div>
+          <div style={{ width: 92 }}>
+            <div className="ca-label">N° sesión</div>
+            <input className="ca-input" value={nSesion} onChange={(e) => setNSesion(e.target.value.replace(/[^0-9]/g, ""))} inputMode="numeric" placeholder="1" />
+          </div>
+        </div>
+
+        <div style={{ display: "flex", gap: 11, marginBottom: 13 }}>
+          <div style={{ flex: 1 }}>
+            <div className="ca-label">Sede</div>
+            <select className="ca-input" value={sede} onChange={(e) => setSede(e.target.value)}>
+              <option value="">— Sin sede —</option>
+              <option value="lima">Lima</option>
+              <option value="piura">Piura</option>
+            </select>
+          </div>
+          <div style={{ flex: 1 }}>
+            <div className="ca-label">Modalidad</div>
+            <div style={{ display: "flex", gap: 6 }}>
+              {[["presencial", "Presencial"], ["virtual", "Virtual"]].map(([v, l]) => (
+                <button key={v} type="button" onClick={() => setModalidad(v)}
+                  className="ca-input" style={{
+                    flex: 1, cursor: "pointer", fontWeight: modalidad === v ? 600 : 400,
+                    color: modalidad === v ? "#fff" : "var(--ink)",
+                    background: modalidad === v ? "var(--accent)" : "var(--bg)",
+                    borderColor: modalidad === v ? "var(--accent)" : "var(--line)",
+                  }}>{l}</button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {modalidad === "virtual" && (
+          <div style={{ marginBottom: 13 }}>
+            <div className="ca-label">Enlace de la videollamada</div>
+            <input className="ca-input" value={enlace} onChange={(e) => setEnlace(e.target.value)} placeholder="https://meet.google.com/…" />
+          </div>
+        )}
+
+        <div style={{ marginBottom: 20 }}>
+          <div className="ca-label">Notas (opcional)</div>
+          <textarea className="ca-input" style={{ minHeight: 52, resize: "vertical", lineHeight: 1.5 }} value={notas} onChange={(e) => setNotas(e.target.value)} placeholder="Indicaciones para la cita, recordatorios…" />
         </div>
 
         <div style={{ display: "flex", gap: 9, justifyContent: "flex-end" }}>
@@ -1931,21 +2008,26 @@ function AgendarModal({ pacientes, fechaInicial, pacienteFijo, onClose, onSave }
 
 function CitaRow({ c, esAsistente, esMedico, onAtender, onRecordar, onReagendar, onCancelar, onConfirmar, onCobrar, openFicha }) {
   const activa = c.estado !== "atendida" && c.estado !== "cancelada";
+  const pendiente = c.estado === "por_confirmar" || c.estado === "reprogramada";
   return (
     <div className="ca-row">
       <div className="ca-time"><Clock size={13} strokeWidth={2} style={{ color: "var(--muted)" }} />{c.hora}</div>
       <div style={{ flex: 1, minWidth: 150 }}>
         <button className="ca-pnamebtn" onClick={() => openFicha(c.pacienteId)}>{c.paciente}</button>
-        <div className="ca-pmeta">{c.medico}{c.n_sesion ? ` · Sesión N° ${c.n_sesion}` : ""}</div>
+        <div className="ca-pmeta">
+          {c.medico}{c.n_sesion ? ` · Sesión N° ${c.n_sesion}` : ""}{c.sede_label ? ` · ${c.sede_label}` : ""} · {c.modalidad === "virtual" ? "Virtual" : "Presencial"}
+          {c.modalidad === "virtual" && c.enlace && (<> · <a href={c.enlace} target="_blank" rel="noreferrer" style={{ color: "var(--accent)", fontWeight: 600 }}>Unirse</a></>)}
+        </div>
+        {c.notas && <div className="ca-pmeta" style={{ fontStyle: "italic" }}>{c.notas}</div>}
       </div>
       <SpecialtyTag name={c.especialidad} />
       <Tag colors={STATUS[c.estado]}>{c.estado_label}</Tag>
       <div className="ca-actions">
         {/* El psicólogo no ve acciones comerciales (confirmar, recordar, cobrar). */}
-        {!esMedico && c.estado === "por_confirmar" && (
+        {!esMedico && pendiente && (
           <button className="ca-mini" onClick={() => onConfirmar(c)} title="Marcar confirmada"><Check size={13} strokeWidth={2.2} /> Confirmar</button>
         )}
-        {!esMedico && c.estado === "por_confirmar" && (c.recordado ? (
+        {!esMedico && pendiente && (c.recordado ? (
           <span className="ca-mini done"><Check size={13} strokeWidth={2.4} /> Recordado</span>
         ) : (
           <button className="ca-mini wa" onClick={() => onRecordar(c)}><MessageCircle size={13} strokeWidth={2} /> Recordar</button>
@@ -2179,16 +2261,6 @@ function AtenderModal({ cita, servicios, onClose, onSave }) {
   const [objetivos, setObjetivos] = useState("");
   const [impresion, setImpresion] = useState("");
 
-  const serviciosActivos = (servicios || []).filter((s) => s.activo);
-  const servDef = serviciosActivos.find((s) => s.especialidad === cita.especialidad);
-  const [cobrar, setCobrar] = useState(false);
-  const [cobServicio, setCobServicio] = useState(servDef ? String(servDef.id) : "");
-  const [cobMonto, setCobMonto] = useState(servDef ? String(servDef.precio) : "");
-  const [cobEstado, setCobEstado] = useState("pagado");
-  const [cobMedio, setCobMedio] = useState("efectivo");
-  const [cobComprobante, setCobComprobante] = useState("");
-  const [cobCompNumero, setCobCompNumero] = useState("");
-
   const [transcribiendo, setTranscribiendo] = useState(false);
   const [dictMsg, setDictMsg] = useState("");
   const [grabando, setGrabando] = useState(false);
@@ -2273,14 +2345,6 @@ function AtenderModal({ cita, servicios, onClose, onSave }) {
       proximos_pasos: proximos.trim(),
       indicaciones: tratamiento.trim(),
     };
-    if (cobrar && cobMonto && Number(cobMonto) > 0) {
-      datos.cobro_monto = cobMonto;
-      datos.cobro_servicio = cobServicio || null;
-      datos.cobro_estado = cobEstado;
-      datos.cobro_medio = cobEstado === "pagado" ? cobMedio : "";
-      datos.cobro_comprobante = cobComprobante;
-      datos.cobro_comprobante_numero = cobCompNumero.trim();
-    }
     onSave(datos);
   }
 
@@ -2365,61 +2429,9 @@ function AtenderModal({ cita, servicios, onClose, onSave }) {
             </div>
           </>
         )}
-        <div style={{ fontSize: 12, color: "var(--muted)", margin: "0 0 14px" }}>Se guarda en la historia clínica con fecha de hoy.</div>
-
-        <div style={{ border: "1px solid var(--line)", borderRadius: 10, padding: "11px 13px", marginBottom: 16 }}>
-          <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: 13.5, fontWeight: 500 }}>
-            <input type="checkbox" checked={cobrar} onChange={(e) => setCobrar(e.target.checked)} />
-            <Receipt size={14} strokeWidth={2} style={{ color: "var(--accent)" }} /> Registrar cobro de esta atención
-          </label>
-          {cobrar && (
-            <div style={{ marginTop: 12 }}>
-              <div style={{ display: "flex", gap: 10, marginBottom: 10 }}>
-                <div style={{ flex: 1.4 }}>
-                  <div className="ca-label">Servicio</div>
-                  <select className="ca-input" value={cobServicio} onChange={(e) => { setCobServicio(e.target.value); const s = serviciosActivos.find((x) => String(x.id) === e.target.value); if (s) setCobMonto(String(s.precio)); }}>
-                    <option value="">— Personalizado —</option>
-                    {serviciosActivos.map((s) => <option key={s.id} value={s.id}>{s.nombre} (S/ {s.precio})</option>)}
-                  </select>
-                </div>
-                <div style={{ width: 96 }}>
-                  <div className="ca-label">Monto S/.</div>
-                  <input className="ca-input" value={cobMonto} onChange={(e) => setCobMonto(e.target.value)} inputMode="decimal" placeholder="80" />
-                </div>
-              </div>
-              <div style={{ display: "flex", gap: 10 }}>
-                <div style={{ flex: 1 }}>
-                  <div className="ca-label">Estado</div>
-                  <select className="ca-input" value={cobEstado} onChange={(e) => setCobEstado(e.target.value)}>
-                    <option value="pagado">Pagado</option>
-                    <option value="pendiente">Pendiente</option>
-                  </select>
-                </div>
-                {cobEstado === "pagado" && (
-                  <div style={{ flex: 1 }}>
-                    <div className="ca-label">Medio</div>
-                    <select className="ca-input" value={cobMedio} onChange={(e) => setCobMedio(e.target.value)}>
-                      {MEDIOS_PAGO.map((m) => <option key={m.v} value={m.v}>{m.l}</option>)}
-                    </select>
-                  </div>
-                )}
-              </div>
-              <div style={{ display: "flex", gap: 10, marginTop: 10 }}>
-                <div style={{ flex: 1.3 }}>
-                  <div className="ca-label">Comprobante</div>
-                  <select className="ca-input" value={cobComprobante} onChange={(e) => setCobComprobante(e.target.value)}>
-                    {COMPROBANTES.map((c) => <option key={c.v} value={c.v}>{c.l}</option>)}
-                  </select>
-                </div>
-                {cobComprobante && (
-                  <div style={{ flex: 1 }}>
-                    <div className="ca-label">N°</div>
-                    <input className="ca-input" value={cobCompNumero} onChange={(e) => setCobCompNumero(e.target.value)} placeholder="B001-123" />
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
+        <div style={{ fontSize: 12.5, color: "var(--muted)", margin: "0 0 16px", display: "flex", gap: 7, alignItems: "flex-start", lineHeight: 1.5 }}>
+          <Receipt size={14} strokeWidth={2} style={{ color: "var(--accent)", flexShrink: 0, marginTop: 1 }} />
+          <span>Se guarda en la historia clínica con fecha de hoy. El <strong>cobro lo registra Coordinación</strong> aparte, con el botón “Cobrar” de la agenda.</span>
         </div>
 
         <div style={{ display: "flex", gap: 9, justifyContent: "flex-end" }}>

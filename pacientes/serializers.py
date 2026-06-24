@@ -160,18 +160,25 @@ class CitaSerializer(serializers.ModelSerializer):
     estado_label = serializers.CharField(source="get_estado_display", read_only=True)
     recordado = serializers.BooleanField(source="recordatorio_enviado", read_only=True)
     cobrada = serializers.SerializerMethodField()
-    n_sesion = serializers.IntegerField(source="paciente.n_sesion", read_only=True)
+    n_sesion = serializers.SerializerMethodField()
+    modalidad_label = serializers.CharField(source="get_modalidad_display", read_only=True)
+    sede_label = serializers.CharField(source="get_sede_display", read_only=True)
 
     class Meta:
         model = Cita
         fields = [
             "id", "pacienteId", "paciente", "medico", "especialidad",
-            "fecha", "hora", "inicio", "estado", "estado_label", "recordado", "cobrada", "n_sesion",
+            "fecha", "hora", "inicio", "estado", "estado_label", "recordado", "cobrada",
+            "n_sesion", "sede", "sede_label", "modalidad", "modalidad_label", "enlace", "notas",
         ]
         read_only_fields = ["inicio"]
 
     def get_cobrada(self, obj):
         return obj.cobros.exclude(estado="anulado").exists()
+
+    def get_n_sesion(self, obj):
+        # El N° de la cita si se indicó; si no, el del paciente.
+        return obj.n_sesion if obj.n_sesion else obj.paciente.n_sesion
 
     def get_medico(self, obj):
         return str(obj.medico) if obj.medico_id else ""

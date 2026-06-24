@@ -216,6 +216,13 @@ class CitaViewSet(viewsets.ModelViewSet):
         ).exclude(estado=Cita.Estado.CANCELADA).exists():
             aviso = f"Aviso: {medico} ya tiene otra cita a las {timezone.localtime(inicio):%H:%M}."
 
+        # Datos de la sesión: sede, modalidad (presencial/virtual) + enlace, notas, N° de sesión.
+        sede = request.data.get("sede") if request.data.get("sede") in dict(Paciente.Sede.choices) else (paciente.sede or "")
+        modalidad = request.data.get("modalidad") if request.data.get("modalidad") in dict(Cita.Modalidad.choices) else Cita.Modalidad.PRESENCIAL
+        enlace = (request.data.get("enlace") or "").strip() if modalidad == Cita.Modalidad.VIRTUAL else ""
+        notas = (request.data.get("notas") or "").strip()
+        n_sesion = _int_o_none(request.data.get("n_sesion"))
+
         cita = Cita.objects.create(
             clinica=clinica,
             paciente=paciente,
@@ -223,6 +230,11 @@ class CitaViewSet(viewsets.ModelViewSet):
             inicio=inicio,
             especialidad=especialidad or paciente.especialidad_habitual,
             estado=Cita.Estado.POR_CONFIRMAR,
+            sede=sede,
+            modalidad=modalidad,
+            enlace=enlace,
+            notas=notas,
+            n_sesion=n_sesion,
         )
         gcalendar.sync_cita(cita)  # no-op si Google Calendar no está configurado
         data = CitaSerializer(cita).data
@@ -294,28 +306,9 @@ class CitaViewSet(viewsets.ModelViewSet):
             proximos_pasos=proximos_pasos,
         )
 
-        # Cobro opcional en el mismo acto de atender (el médico cobra ahí mismo).
-        cobro_monto = _dec_o_none(d.get("cobro_monto"))
-        if cobro_monto and cobro_monto > 0:
-            from finanzas.models import Cobro, Servicio
-
-            servicio = (
-                Servicio.objects.del_tenant_actual().filter(pk=d.get("cobro_servicio")).first()
-                if d.get("cobro_servicio") else None
-            )
-            estado_cobro = d.get("cobro_estado") if d.get("cobro_estado") in dict(Cobro.Estado.choices) else Cobro.Estado.PAGADO
-            medio = d.get("cobro_medio") if d.get("cobro_medio") in dict(Cobro.Medio.choices) else ""
-            concepto = (str(d.get("cobro_concepto") or "").strip()
-                        or (servicio.nombre if servicio else f"Consulta {cita.especialidad}".strip()))[:200]
-            comprobante = d.get("cobro_comprobante") if d.get("cobro_comprobante") in dict(Cobro.Comprobante.choices) else ""
-            Cobro.objects.create(
-                clinica=cita.clinica, paciente=cita.paciente, atencion=atencion, cita=cita, servicio=servicio,
-                concepto=concepto, monto=cobro_monto, estado=estado_cobro,
-                medio_pago=medio if estado_cobro == Cobro.Estado.PAGADO else "",
-                comprobante_tipo=comprobante,
-                comprobante_numero=(d.get("cobro_comprobante_numero") or "").strip()[:40],
-                registrado_por=request.user,
-            )
+        # El cobro NO se registra aquí: es tarea de Coordinación (separada de la
+        # historia clínica que llena el psicólogo). Tras atender, la cita queda
+        # "atendida" y Coordinación la cobra con el botón "Cobrar" de la agenda.
 
         cita.estado = Cita.Estado.ATENDIDA
         cita.save(update_fields=["estado"])
@@ -350,14 +343,15 @@ class CitaViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["post"])
     def mover(self, request, pk=None):
-        """Reagenda la cita a una nueva fecha/hora. Vuelve a 'Por confirmar' y
-        limpia el recordatorio para poder avisar de nuevo al paciente."""
+        """Reagenda la cita a una nueva fecha/hora. Queda como 'Reprogramada' y
+        limpia el recordatorio para poder avisar de nuevo al paciente (no se crea
+        otra cita: es la misma con nueva fecha y estado claro)."""
         cita = self.get_object()
         try:
             cita.inicio = _inicio_desde(request.data.get("fecha"), request.data.get("hora"))
         except (ValueError, TypeError):
             return Response({"detail": "Fecha u hora inválida (usa fecha y HH:MM)."}, status=status.HTTP_400_BAD_REQUEST)
-        cita.estado = Cita.Estado.POR_CONFIRMAR
+        cita.estado = Cita.Estado.REPROGRAMADA
         cita.recordatorio_enviado = False
         cita.save(update_fields=["inicio", "estado", "recordatorio_enviado"])
         gcalendar.sync_cita(cita)

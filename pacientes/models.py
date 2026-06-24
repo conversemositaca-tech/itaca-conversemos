@@ -121,8 +121,13 @@ class Cita(ModeloTenant):
     class Estado(models.TextChoices):
         POR_CONFIRMAR = "por_confirmar", "Por confirmar"
         CONFIRMADA = "confirmada", "Confirmada"
+        REPROGRAMADA = "reprogramada", "Reprogramada"
         ATENDIDA = "atendida", "Atendida"
         CANCELADA = "cancelada", "Cancelada"
+
+    class Modalidad(models.TextChoices):
+        PRESENCIAL = "presencial", "Presencial"
+        VIRTUAL = "virtual", "Virtual"
 
     paciente = models.ForeignKey(Paciente, on_delete=models.PROTECT, related_name="citas")
     medico = models.ForeignKey(
@@ -137,6 +142,16 @@ class Cita(ModeloTenant):
     especialidad = models.CharField(max_length=120, blank=True)
     estado = models.CharField(max_length=20, choices=Estado.choices, default=Estado.POR_CONFIRMAR)
     recordatorio_enviado = models.BooleanField(default=False)
+
+    # --- Datos de la sesión (estilo AgendaPro) ---
+    sede = models.CharField(max_length=10, choices=Paciente.Sede.choices, blank=True, default="")
+    modalidad = models.CharField(max_length=12, choices=Modalidad.choices, default=Modalidad.PRESENCIAL)
+    enlace = models.URLField("Enlace de videollamada", blank=True, default="")
+    notas = models.TextField("Notas de la cita", blank=True, default="")
+    n_sesion = models.PositiveIntegerField(
+        "N° de sesión", null=True, blank=True,
+        help_text="Número de sesión que representa esta cita (si no se indica, usa el del paciente).",
+    )
 
     class Meta:
         verbose_name = "Cita"
