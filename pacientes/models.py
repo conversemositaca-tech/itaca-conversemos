@@ -29,6 +29,7 @@ class Paciente(ModeloTenant):
     nombre = models.CharField(max_length=200)
     fecha_nacimiento = models.DateField(null=True, blank=True)
     telefono = models.CharField(max_length=40, blank=True)
+    email = models.EmailField("correo electrónico", blank=True, default="")
     especialidad_habitual = models.CharField(max_length=120, blank=True)
 
     # --- Sede y psicólogo a cargo (clínica con dos sedes: Piura y Lima) ---
