@@ -3109,6 +3109,9 @@ const EGRESO_CATEGORIAS = [
 
 function Finanzas({ showToast, esAdmin }) {
   const [periodo, setPeriodo] = useState("mes");
+  const [sede, setSede] = useState("");
+  const [desde, setDesde] = useState("");
+  const [hasta, setHasta] = useState("");
   const [res, setRes] = useState(null);
   const [cobros, setCobros] = useState([]);
   const [servicios, setServicios] = useState([]);
@@ -3121,9 +3124,12 @@ function Finanzas({ showToast, esAdmin }) {
   const [pagando, setPagando] = useState(null);
   const [precios, setPrecios] = useState(false);
 
+  const rangoActivo = desde && hasta;
+  const filtro = { periodo, sede, desde, hasta };
+
   async function cargar() {
-    const base = [api.resumenFinanzas(periodo), api.cobros(periodo), api.servicios(), api.pacientes()];
-    const extra = esAdmin ? [api.cajaFinanzas(periodo), api.egresos(periodo)] : [];
+    const base = [api.resumenFinanzas(filtro), api.cobros(filtro), api.servicios(), api.pacientes()];
+    const extra = esAdmin ? [api.cajaFinanzas(filtro), api.egresos(filtro)] : [];
     const [r, c, s, p, cj, eg] = await Promise.all([...base, ...extra]);
     setRes(r); setCobros(c); setServicios(s); setPacientes(p);
     if (esAdmin) { setCaja(cj); setEgresos(eg); }
@@ -3131,7 +3137,7 @@ function Finanzas({ showToast, esAdmin }) {
   useEffect(() => {
     setCargando(true);
     cargar().catch((e) => showToast("Error: " + e.message)).finally(() => setCargando(false));
-  }, [periodo]);
+  }, [periodo, sede, desde, hasta]);
 
   async function registrar(data) {
     try { await api.crearCobro(data); await cargar(); setNuevo(null); showToast("Cobro registrado ✓"); }
@@ -3159,7 +3165,7 @@ function Finanzas({ showToast, esAdmin }) {
         </div>
         <div style={{ display: "flex", gap: 9, alignItems: "center" }}>
           <button className="ca-btn ghost" disabled={cobros.length === 0}
-            onClick={() => descargarCSV(`cobros_${periodo}.csv`, ["Fecha", "Paciente", "Concepto", "Monto", "Estado", "Medio"],
+            onClick={() => descargarCSV(`cobros_${rangoActivo ? `${desde}_a_${hasta}` : periodo}${sede ? "_" + sede : ""}.csv`, ["Fecha", "Paciente", "Concepto", "Monto", "Estado", "Medio"],
               cobros.map((c) => [c.fecha_label, c.paciente_nombre, c.concepto, c.monto, c.estado_label, c.medio_label]))}>
             <Download size={15} strokeWidth={2} /> CSV
           </button>
@@ -3168,11 +3174,23 @@ function Finanzas({ showToast, esAdmin }) {
         </div>
       </div>
 
-      <div className="ca-agnav" style={{ justifyContent: "flex-end" }}>
-        <div className="ca-seg">
+      <div className="ca-agnav" style={{ justifyContent: "flex-end", flexWrap: "wrap", gap: 10 }}>
+        <select className="ca-input" style={{ width: "auto" }} value={sede} onChange={(e) => setSede(e.target.value)}>
+          <option value="">Todas las sedes</option>
+          <option value="lima">Lima</option>
+          <option value="piura">Piura</option>
+        </select>
+        <div className="ca-seg" style={{ opacity: rangoActivo ? 0.45 : 1 }}>
           {[["hoy", "Hoy"], ["semana", "Semana"], ["mes", "Mes"]].map(([v, l]) => (
-            <button key={v} className={periodo === v ? "on" : ""} onClick={() => setPeriodo(v)}>{l}</button>
+            <button key={v} className={!rangoActivo && periodo === v ? "on" : ""}
+              onClick={() => { setDesde(""); setHasta(""); setPeriodo(v); }}>{l}</button>
           ))}
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <input className="ca-input" style={{ width: "auto" }} type="date" value={desde} max={hasta || undefined} onChange={(e) => setDesde(e.target.value)} title="Desde" />
+          <span style={{ color: "var(--muted)" }}>–</span>
+          <input className="ca-input" style={{ width: "auto" }} type="date" value={hasta} min={desde || undefined} onChange={(e) => setHasta(e.target.value)} title="Hasta" />
+          {rangoActivo && <button className="ca-mini" onClick={() => { setDesde(""); setHasta(""); }} title="Quitar el rango"><X size={13} strokeWidth={2} /> rango</button>}
         </div>
       </div>
 
@@ -3182,14 +3200,18 @@ function Finanzas({ showToast, esAdmin }) {
         <div style={{ opacity: cargando ? 0.5 : 1, transition: "opacity .15s" }}>
           {esAdmin && caja && (
             <>
-              <h2 className="ca-secth" style={{ marginTop: 16 }}>Caja del período</h2>
+              <h2 className="ca-secth" style={{ marginTop: 16 }}>Caja del período{caja.sede ? ` · ${caja.sede === "lima" ? "Lima" : "Piura"}` : ""}</h2>
               <div className="ca-stats">
                 <StatCard label="Ingresos (cobrado)" valor={money(caja.ingresos)} color="#4F8A77" />
-                <StatCard label="Egresos (gastos)" valor={money(caja.egresos)} sub={`${caja.n_egresos} gastos`} color="#B4564E" />
-                <StatCard label="Utilidad (neto)" valor={money(caja.utilidad)} color={caja.utilidad >= 0 ? "#3E7A65" : "#B4564E"} />
+                {!caja.egresos_solo_total && <StatCard label="Egresos (gastos)" valor={money(caja.egresos)} sub={`${caja.n_egresos} gastos`} color="#B4564E" />}
+                {!caja.egresos_solo_total && <StatCard label="Utilidad (neto)" valor={money(caja.utilidad)} color={caja.utilidad >= 0 ? "#3E7A65" : "#B4564E"} />}
                 <StatCard label="Pendiente por cobrar" valor={money(caja.pendiente)} color={caja.pendiente > 0 ? "#C9923A" : "#7C7870"} />
               </div>
-              {caja.egresos_por_categoria.length > 0 && (
+              {caja.egresos_solo_total ? (
+                <div style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 8 }}>
+                  Egresos y utilidad se calculan solo en «Todas las sedes» (los gastos no se registran por sede).
+                </div>
+              ) : caja.egresos_por_categoria.length > 0 && (
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }}>
                   {caja.egresos_por_categoria.map((c) => (
                     <span key={c.categoria} className="ca-vital" style={{ background: "#F7E9E7", color: "#B4564E" }}><b>{c.categoria}</b> {money(c.monto)}</span>

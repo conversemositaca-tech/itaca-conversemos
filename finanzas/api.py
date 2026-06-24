@@ -40,6 +40,32 @@ def _bounds(desde, hasta):
     return ini, fin
 
 
+def _parse_fecha(s):
+    try:
+        return datetime.strptime((s or "").strip(), "%Y-%m-%d").date()
+    except (ValueError, AttributeError):
+        return None
+
+
+def _rango_params(request):
+    """Rango (desde, hasta) inclusive. Usa ?desde=&hasta= (YYYY-MM-DD) si vienen;
+    si no, el preset ?periodo= (hoy/semana/mes)."""
+    desde = _parse_fecha(request.query_params.get("desde"))
+    hasta = _parse_fecha(request.query_params.get("hasta"))
+    if desde and hasta:
+        return (hasta, desde) if hasta < desde else (desde, hasta)
+    if desde:
+        return desde, desde
+    if hasta:
+        return hasta, hasta
+    return _rango(request.query_params.get("periodo", "mes"))
+
+
+def _sede_param(request):
+    s = request.query_params.get("sede", "")
+    return s if s in dict(Paciente.Sede.choices) else ""
+
+
 def _dec(valor):
     try:
         return Decimal(str(valor).strip().replace(",", "."))
@@ -80,12 +106,15 @@ class CobroViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         qs = Cobro.objects.del_tenant_actual().select_related("paciente", "registrado_por", "servicio")
         estado = self.request.query_params.get("estado")
-        periodo = self.request.query_params.get("periodo")
+        q = self.request.query_params
         if estado:
             qs = qs.filter(estado=estado)
-        if periodo:
-            ini, fin = _bounds(*_rango(periodo))
+        if q.get("periodo") or q.get("desde") or q.get("hasta"):
+            ini, fin = _bounds(*_rango_params(self.request))
             qs = qs.filter(fecha__gte=ini, fecha__lt=fin)
+        sede = _sede_param(self.request)
+        if sede:
+            qs = qs.filter(paciente__sede=sede)
         return qs.order_by("-fecha")
 
     def create(self, request, *args, **kwargs):
@@ -135,13 +164,18 @@ class CobroViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=["get"])
     def resumen(self, request):
-        """KPIs del período: cobrado, pendiente, # cobros, ticket promedio, por medio."""
-        ini, fin = _bounds(*_rango(request.query_params.get("periodo", "mes")))
-        cobros = list(
+        """KPIs del período: cobrado, pendiente, # cobros, ticket promedio, por medio.
+        Filtros: ?periodo= o ?desde=&hasta= (rango personalizado) y ?sede=."""
+        ini, fin = _bounds(*_rango_params(request))
+        qs = (
             Cobro.objects.del_tenant_actual()
             .filter(fecha__gte=ini, fecha__lt=fin)
             .exclude(estado=Cobro.Estado.ANULADO)
         )
+        sede = _sede_param(request)
+        if sede:
+            qs = qs.filter(paciente__sede=sede)
+        cobros = list(qs)
         pagados = [c for c in cobros if c.estado == Cobro.Estado.PAGADO]
         pendientes = [c for c in cobros if c.estado == Cobro.Estado.PENDIENTE]
         cobrado = sum((c.monto for c in pagados), Decimal("0"))
@@ -186,9 +220,9 @@ class EgresoViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         qs = Egreso.objects.del_tenant_actual().select_related("registrado_por")
-        periodo = self.request.query_params.get("periodo")
-        if periodo:
-            ini, fin = _bounds(*_rango(periodo))
+        q = self.request.query_params
+        if q.get("periodo") or q.get("desde") or q.get("hasta"):
+            ini, fin = _bounds(*_rango_params(self.request))
             qs = qs.filter(fecha__gte=ini, fecha__lt=fin)
         return qs.order_by("-fecha")
 
@@ -223,14 +257,21 @@ class CajaView(APIView):
         if get_clinica_actual() is None:
             return Response({"detail": "Sin clínica en contexto."}, status=status.HTTP_400_BAD_REQUEST)
 
-        ini, fin = _bounds(*_rango(request.query_params.get("periodo", "mes")))
-        cobros_pagados = list(
-            Cobro.objects.del_tenant_actual().filter(estado=Cobro.Estado.PAGADO, fecha__gte=ini, fecha__lt=fin)
+        ini, fin = _bounds(*_rango_params(request))
+        sede = _sede_param(request)
+        pagados_qs = Cobro.objects.del_tenant_actual().filter(
+            estado=Cobro.Estado.PAGADO, fecha__gte=ini, fecha__lt=fin
         )
-        pendiente = Cobro.objects.del_tenant_actual().filter(
+        pendiente_qs = Cobro.objects.del_tenant_actual().filter(
             estado=Cobro.Estado.PENDIENTE, fecha__gte=ini, fecha__lt=fin
-        ).aggregate(s=Sum("monto"))["s"] or Decimal("0")
-        egresos = list(Egreso.objects.del_tenant_actual().filter(fecha__gte=ini, fecha__lt=fin))
+        )
+        if sede:
+            pagados_qs = pagados_qs.filter(paciente__sede=sede)
+            pendiente_qs = pendiente_qs.filter(paciente__sede=sede)
+        cobros_pagados = list(pagados_qs)
+        pendiente = pendiente_qs.aggregate(s=Sum("monto"))["s"] or Decimal("0")
+        # Los egresos no se registran por sede: solo se contabilizan en "Total".
+        egresos = [] if sede else list(Egreso.objects.del_tenant_actual().filter(fecha__gte=ini, fecha__lt=fin))
 
         ingresos_total = sum((c.monto for c in cobros_pagados), Decimal("0"))
         egresos_total = sum((e.monto for e in egresos), Decimal("0"))
@@ -265,4 +306,6 @@ class CajaView(APIView):
             "n_egresos": len(egresos),
             "por_dia": por_dia,
             "egresos_por_categoria": egresos_por_categoria,
+            "sede": sede,
+            "egresos_solo_total": bool(sede),
         })

@@ -32,6 +32,17 @@ async function req(url, options = {}) {
   return res.json();
 }
 
+// Query string de los filtros de Finanzas: rango personalizado (desde/hasta)
+// o preset (periodo), + sede + estado.
+function finanzasQS(f = {}) {
+  const p = new URLSearchParams();
+  if (f.desde && f.hasta) { p.set("desde", f.desde); p.set("hasta", f.hasta); }
+  else p.set("periodo", f.periodo || "mes");
+  if (f.sede) p.set("sede", f.sede);
+  if (f.estado) p.set("estado", f.estado);
+  return p.toString();
+}
+
 export const api = {
   // Autenticación
   me: () => req("/api/auth/me/"),
@@ -181,16 +192,16 @@ export const api = {
   crearServicio: (data) => req("/api/servicios/", { method: "POST", body: JSON.stringify(data) }),
   actualizarServicio: (id, data) => req(`/api/servicios/${id}/`, { method: "PATCH", body: JSON.stringify(data) }),
   eliminarServicio: (id) => req(`/api/servicios/${id}/`, { method: "DELETE" }),
-  cobros: (periodo, estado) => req(`/api/cobros/?periodo=${periodo || "mes"}${estado ? "&estado=" + estado : ""}`),
+  cobros: (f) => req(`/api/cobros/?${finanzasQS(f)}`),
   crearCobro: (data) => req("/api/cobros/", { method: "POST", body: JSON.stringify(data) }),
   marcarCobroPagado: (id, medio) =>
     req(`/api/cobros/${id}/marcar_pagado/`, { method: "POST", body: JSON.stringify({ medio_pago: medio }) }),
-  resumenFinanzas: (periodo) => req(`/api/cobros/resumen/?periodo=${periodo || "mes"}`),
+  resumenFinanzas: (f) => req(`/api/cobros/resumen/?${finanzasQS(f)}`),
   // Egresos (gastos) y caja — solo admin
-  egresos: (periodo) => req(`/api/egresos/?periodo=${periodo || "mes"}`),
+  egresos: (f) => req(`/api/egresos/?${finanzasQS(f)}`),
   crearEgreso: (data) => req("/api/egresos/", { method: "POST", body: JSON.stringify(data) }),
   eliminarEgreso: (id) => req(`/api/egresos/${id}/`, { method: "DELETE" }),
-  cajaFinanzas: (periodo) => req(`/api/finanzas/caja/?periodo=${periodo || "mes"}`),
+  cajaFinanzas: (f) => req(`/api/finanzas/caja/?${finanzasQS(f)}`),
 
   // --- Edición genérica tipo hoja de cálculo (cualquier endpoint del router) ---
   hojaListar: (endpoint, qs = "") => req(`/api/${endpoint}/${qs}`),
