@@ -71,13 +71,26 @@ const LEAD_ESTADO_COLOR = {
   perdido: { bg: "#F7E5E5", fg: "#9C4646" },
 };
 const FUENTES = [
+  { v: "meta_ads", l: "Meta Ads" }, { v: "google", l: "Google" },
   { v: "instagram", l: "Instagram" }, { v: "facebook", l: "Facebook" },
-  { v: "tiktok", l: "TikTok" }, { v: "referido", l: "Referido" },
-  { v: "whatsapp", l: "WhatsApp directo" }, { v: "bot", l: "Bot / Chatbot" },
-  { v: "web", l: "Web" }, { v: "agendapro", l: "AgendaPro web" },
+  { v: "tiktok", l: "TikTok" }, { v: "referido_paciente", l: "Referido por paciente" },
+  { v: "referido_psicologo", l: "Referido por psicólogo" }, { v: "referido", l: "Referido" },
+  { v: "convenio", l: "Convenio" }, { v: "organico", l: "Orgánico" },
+  { v: "web", l: "Página web" }, { v: "whatsapp", l: "WhatsApp directo" },
+  { v: "bot", l: "Bot / Chatbot" }, { v: "agendapro", l: "AgendaPro web" },
   { v: "derivado", l: "Derivado de otra sede" }, { v: "linkedin", l: "LinkedIn" },
-  { v: "convenio", l: "Convenio" }, { v: "otro", l: "Otro" },
+  { v: "otro", l: "Otro" },
 ];
+const TIPOS_SERVICIO = [
+  { v: "", l: "—" }, { v: "adultos", l: "Adultos" }, { v: "ninos", l: "Niños" },
+  { v: "adolescentes", l: "Adolescentes" }, { v: "pareja", l: "Pareja" },
+  { v: "familia", l: "Familia" }, { v: "lenguaje", l: "Lenguaje" },
+  { v: "evaluacion", l: "Evaluación psicológica" }, { v: "otro", l: "Otro" },
+];
+const LEAD_SEM = {
+  verde: { c: "#2BA35A", l: "Al día" }, amarillo: { c: "#E0A82E", l: "1+ día sin contactar" },
+  naranja: { c: "#E07B2E", l: "3+ días sin contactar" }, rojo: { c: "#D85656", l: "5+ días — abandonado" },
+};
 
 // ---- Helpers de fecha (zona local) ----
 const _MESES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "set", "oct", "nov", "dic"];
@@ -2529,6 +2542,7 @@ function Marketing({ showToast, onConvertir, esAdmin }) {
   const [cargando, setCargando] = useState(true);
   const [creando, setCreando] = useState(false);
   const [editandoLead, setEditandoLead] = useState(null);
+  const [filtroSedeLead, setFiltroSedeLead] = useState("");
   const [pauta, setPauta] = useState({ sede: "lima", desde: "", hasta: "", data: null, cargando: false });
   const origen = window.location.origin;
 
@@ -2602,6 +2616,12 @@ function Marketing({ showToast, onConvertir, esAdmin }) {
       onConvertir && onConvertir();
       showToast(`${lead.nombre} ahora es paciente ✓`);
     } catch (err) { showToast("Error: " + err.message); }
+  }
+  async function seguimientoLead(lead) {
+    const nota = window.prompt(`Seguimiento de ${lead.nombre} — ¿qué pasó? (opcional)`);
+    if (nota === null) return; // canceló
+    try { await api.leadSeguimiento(lead.id, nota.trim()); await cargar(); showToast("Seguimiento registrado ✓"); }
+    catch (err) { showToast("Error: " + err.message); }
   }
   if (cargando) return <div className="ca-empty">Cargando…</div>;
 
@@ -2779,12 +2799,22 @@ function Marketing({ showToast, onConvertir, esAdmin }) {
         )}
       </div>
 
-      <h2 className="ca-secth" style={{ marginTop: 30 }}>Leads ({leads.length})</h2>
-      {leads.length === 0 ? (
-        <div className="ca-empty">Aún no hay leads. Capta el primero con el botón de arriba.</div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap", marginTop: 30 }}>
+        <h2 className="ca-secth" style={{ marginTop: 0 }}>Leads ({leads.filter((l) => !filtroSedeLead || l.sede === filtroSedeLead).length})</h2>
+        <div className="ca-seg">
+          {[["", "Todas"], ["lima", "Lima"], ["piura", "Piura"]].map(([v, l]) => (
+            <button key={v || "todas"} className={filtroSedeLead === v ? "on" : ""} onClick={() => setFiltroSedeLead(v)}>{l}</button>
+          ))}
+        </div>
+      </div>
+      {leads.filter((l) => !filtroSedeLead || l.sede === filtroSedeLead).length === 0 ? (
+        <div className="ca-empty">No hay leads{filtroSedeLead ? " en esta sede" : ". Capta el primero con el botón de arriba."}.</div>
       ) : (
-        leads.map((lead) => (
+        leads.filter((l) => !filtroSedeLead || l.sede === filtroSedeLead).map((lead) => {
+          const sem = LEAD_SEM[lead.semaforo];
+          return (
           <div key={lead.id} className="ca-row">
+            {sem ? <span title={`${sem.l} (${lead.dias_sin_contacto}d sin contacto)`} style={{ width: 10, height: 10, borderRadius: 999, background: sem.c, flexShrink: 0, alignSelf: "center" }} /> : <span style={{ width: 10, flexShrink: 0 }} />}
             <div style={{ flex: 1, minWidth: 160 }}>
               <div className="ca-pname">
                 {lead.nombre}
@@ -2793,12 +2823,15 @@ function Marketing({ showToast, onConvertir, esAdmin }) {
                 )}
               </div>
               <div className="ca-pmeta">
-                {lead.sede_label ? `${lead.sede_label} · ` : ""}{lead.fuente_label}{lead.anuncio_nombre ? ` · 📣 ${lead.anuncio_nombre}` : ""}{lead.es_pareja ? " · pareja" : ""}{lead.medico_nombre ? ` · ${lead.medico_nombre}` : ""}
+                {lead.sede_label ? `${lead.sede_label} · ` : ""}{lead.fuente_label}{lead.tipo_servicio_label ? ` · ${lead.tipo_servicio_label}` : ""}{lead.anuncio_nombre ? ` · 📣 ${lead.anuncio_nombre}` : ""}{lead.medico_nombre ? ` · ${lead.medico_nombre}` : ""}
               </div>
             </div>
             <select className="ca-tplsel" value={lead.estado} onChange={(ev) => moverEstado(lead, ev.target.value)}>
               {LEAD_ESTADOS.map((s) => <option key={s.v} value={s.v}>{s.l}</option>)}
             </select>
+            {!lead.paciente_nombre && (
+              <button className="ca-mini wa" title="Registrar seguimiento" onClick={() => seguimientoLead(lead)}><MessageCircle size={13} strokeWidth={2} /> Seguimiento</button>
+            )}
             <button className="ca-iconbtn" title="Editar lead" onClick={() => setEditandoLead(lead)}><Pencil size={14} strokeWidth={2} /></button>
             {lead.paciente_nombre ? (
               <Tag colors={LEAD_ESTADO_COLOR.ganado}>Ya es paciente</Tag>
@@ -2808,7 +2841,8 @@ function Marketing({ showToast, onConvertir, esAdmin }) {
               </button>
             )}
           </div>
-        ))
+          );
+        })
       )}
 
       {(creando || editandoLead) && (
@@ -2852,6 +2886,11 @@ function CrearLeadModal({ lead, medicos, anuncios, onClose, onSave }) {
     campania: lead?.campania || "",
     especialidad: lead?.especialidad || Object.keys(SPECIALTY)[0],
     medico: lead?.medico || "",
+    tipo_servicio: lead?.tipo_servicio || "",
+    motivo_consulta: lead?.motivo_consulta || "",
+    resumen_conversacion: lead?.resumen_conversacion || "",
+    objeciones: lead?.objeciones || "",
+    observaciones: lead?.observaciones || "",
   });
   const set = (k) => (e) => setF((p) => ({ ...p, [k]: e.target.value }));
   const setChk = (k) => (e) => setF((p) => ({ ...p, [k]: e.target.checked }));
@@ -2865,6 +2904,9 @@ function CrearLeadModal({ lead, medicos, anuncios, onClose, onSave }) {
       es_pauta: f.es_pauta, anuncio: f.anuncio ? Number(f.anuncio) : null, es_pareja: f.es_pareja,
       estado: f.estado, fecha_consulta: f.fecha_consulta || null, fecha_cierre: f.fecha_cierre || null,
       campania: f.campania.trim(), especialidad: f.especialidad, medico: f.medico ? Number(f.medico) : null,
+      tipo_servicio: f.tipo_servicio, motivo_consulta: f.motivo_consulta.trim(),
+      resumen_conversacion: f.resumen_conversacion.trim(), objeciones: f.objeciones.trim(),
+      observaciones: f.observaciones.trim(),
     });
   }
 
@@ -2911,6 +2953,14 @@ function CrearLeadModal({ lead, medicos, anuncios, onClose, onSave }) {
         <div style={{ display: "flex", gap: 11, marginBottom: 18 }}>
           <div style={{ flex: 1 }}><div className="ca-label">Campaña (opcional)</div><input className="ca-input" value={f.campania} onChange={set("campania")} placeholder="ej. Pauta junio" /></div>
           <div style={{ flex: 1 }}><div className="ca-label">Psicólogo</div><select className="ca-input" value={f.medico} onChange={set("medico")}><option value="">Sin asignar</option>{medicos.map((m) => <option key={m.id} value={m.id}>{m.nombre}</option>)}</select></div>
+        </div>
+        <div style={{ marginBottom: 12 }}><div className="ca-label">Tipo de servicio</div><select className="ca-input" value={f.tipo_servicio} onChange={set("tipo_servicio")}>{TIPOS_SERVICIO.map((x) => <option key={x.v} value={x.v}>{x.l}</option>)}</select></div>
+        <div className="ca-secth" style={{ marginTop: 4, marginBottom: 8, fontSize: 13 }}>Información comercial</div>
+        <div style={{ marginBottom: 10 }}><div className="ca-label">Motivo de consulta</div><textarea className="ca-input" rows={2} value={f.motivo_consulta} onChange={set("motivo_consulta")} /></div>
+        <div style={{ marginBottom: 10 }}><div className="ca-label">Resumen de la conversación</div><textarea className="ca-input" rows={2} value={f.resumen_conversacion} onChange={set("resumen_conversacion")} placeholder="Útil: las charlas de WhatsApp luego se borran" /></div>
+        <div style={{ display: "flex", gap: 11, marginBottom: 16 }}>
+          <div style={{ flex: 1 }}><div className="ca-label">Objeciones</div><textarea className="ca-input" rows={2} value={f.objeciones} onChange={set("objeciones")} /></div>
+          <div style={{ flex: 1 }}><div className="ca-label">Observaciones</div><textarea className="ca-input" rows={2} value={f.observaciones} onChange={set("observaciones")} /></div>
         </div>
         <div style={{ display: "flex", gap: 9, justifyContent: "flex-end" }}>
           <button className="ca-btn ghost" onClick={onClose}>Cancelar</button>

@@ -49,6 +49,21 @@ class Lead(ModeloTenant):
         DERIVADO = "derivado", "Derivado de otra sede"
         LINKEDIN = "linkedin", "LinkedIn"
         CONVENIO = "convenio", "Convenio"
+        META_ADS = "meta_ads", "Meta Ads"
+        GOOGLE = "google", "Google"
+        REFERIDO_PACIENTE = "referido_paciente", "Referido por paciente"
+        REFERIDO_PSICOLOGO = "referido_psicologo", "Referido por psicólogo"
+        ORGANICO = "organico", "Orgánico"
+        OTRO = "otro", "Otro"
+
+    class TipoServicio(models.TextChoices):
+        ADULTOS = "adultos", "Adultos"
+        NINOS = "ninos", "Niños"
+        ADOLESCENTES = "adolescentes", "Adolescentes"
+        PAREJA = "pareja", "Pareja"
+        FAMILIA = "familia", "Familia"
+        LENGUAJE = "lenguaje", "Lenguaje"
+        EVALUACION = "evaluacion", "Evaluación psicológica"
         OTRO = "otro", "Otro"
 
     class Estado(models.TextChoices):
@@ -75,6 +90,7 @@ class Lead(ModeloTenant):
     fecha_cierre = models.DateField("fecha en que inició proceso", null=True, blank=True)
     campania = models.CharField("campaña", max_length=120, blank=True)
     especialidad = models.CharField(max_length=120, blank=True)
+    tipo_servicio = models.CharField(max_length=20, choices=TipoServicio.choices, blank=True, default="")
     medico = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -86,6 +102,13 @@ class Lead(ModeloTenant):
     estado = models.CharField(max_length=20, choices=Estado.choices, default=Estado.NUEVO)
     motivo_perdida = models.CharField(max_length=200, blank=True)
     notas = models.TextField(blank=True)
+    # Información comercial (muchas charlas de WhatsApp luego se borran; aquí queda).
+    motivo_consulta = models.TextField(blank=True, default="")
+    resumen_conversacion = models.TextField(blank=True, default="")
+    objeciones = models.TextField(blank=True, default="")
+    observaciones = models.TextField(blank=True, default="")
+    # Último seguimiento (para el semáforo automático de leads sin contactar).
+    ultimo_contacto = models.DateTimeField("último seguimiento", null=True, blank=True)
     paciente = models.ForeignKey(
         "pacientes.Paciente",
         on_delete=models.SET_NULL,

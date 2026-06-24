@@ -92,6 +92,7 @@ export const api = {
   crearLead: (data) => req("/api/leads/", { method: "POST", body: JSON.stringify(data) }),
   actualizarLead: (id, data) => req(`/api/leads/${id}/`, { method: "PATCH", body: JSON.stringify(data) }),
   convertirLead: (id) => req(`/api/leads/${id}/convertir/`, { method: "POST" }),
+  leadSeguimiento: (id, nota) => req(`/api/leads/${id}/seguimiento/`, { method: "POST", body: JSON.stringify({ nota }) }),
   reportePauta: ({ sede, desde, hasta }) => {
     const qs = new URLSearchParams();
     if (sede) qs.set("sede", sede);

@@ -26,14 +26,20 @@ class LeadSerializer(serializers.ModelSerializer):
     medico_nombre = serializers.SerializerMethodField()
     paciente_nombre = serializers.SerializerMethodField()
     creado = serializers.SerializerMethodField()
+    tipo_servicio_label = serializers.CharField(source="get_tipo_servicio_display", read_only=True)
+    dias_sin_contacto = serializers.SerializerMethodField()
+    semaforo = serializers.SerializerMethodField()
 
     class Meta:
         model = Lead
         fields = [
             "id", "nombre", "telefono", "sede", "sede_label", "fuente", "fuente_label",
             "es_pauta", "anuncio", "anuncio_nombre", "es_pareja", "fecha_consulta", "fecha_cierre",
-            "campania", "especialidad", "medico", "medico_nombre", "estado", "estado_label",
-            "motivo_perdida", "notas", "paciente", "paciente_nombre", "creado",
+            "campania", "especialidad", "tipo_servicio", "tipo_servicio_label",
+            "medico", "medico_nombre", "estado", "estado_label", "motivo_perdida", "notas",
+            "motivo_consulta", "resumen_conversacion", "objeciones", "observaciones",
+            "ultimo_contacto", "dias_sin_contacto", "semaforo",
+            "paciente", "paciente_nombre", "creado",
         ]
         read_only_fields = ["paciente"]
 
@@ -45,3 +51,20 @@ class LeadSerializer(serializers.ModelSerializer):
 
     def get_creado(self, obj):
         return fecha_corta(timezone.localtime(obj.creado_en))
+
+    def get_dias_sin_contacto(self, obj):
+        ref = obj.ultimo_contacto or obj.creado_en
+        return max((timezone.now() - ref).days, 0)
+
+    def get_semaforo(self, obj):
+        """Semáforo de seguimiento (solo leads abiertos): amarillo ≥1d, naranja ≥3d, rojo ≥5d."""
+        if obj.estado in (Lead.Estado.GANADO, Lead.Estado.PERDIDO):
+            return ""
+        d = self.get_dias_sin_contacto(obj)
+        if d >= 5:
+            return "rojo"
+        if d >= 3:
+            return "naranja"
+        if d >= 1:
+            return "amarillo"
+        return "verde"

@@ -1,5 +1,6 @@
 from datetime import date, timedelta
 
+from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -23,6 +24,29 @@ def _parse_fecha(valor, por_defecto):
         return por_defecto
 
 
+def convertir_lead_en_paciente(lead):
+    """Crea el Paciente desde el Lead (si aún no existe) y los enlaza. Copia sede,
+    teléfono y enlaza al psicólogo (su ficha del directorio). Idempotente."""
+    if lead.paciente_id:
+        return lead.paciente
+    from usuarios.models import Profesional
+
+    ficha = Profesional.objects.filter(usuario=lead.medico).first() if lead.medico_id else None
+    paciente = Paciente.objects.create(
+        clinica=lead.clinica,
+        nombre=lead.nombre,
+        telefono=lead.telefono,
+        sede=lead.sede or "",
+        profesional=ficha,
+        especialidad_habitual=lead.especialidad or lead.get_tipo_servicio_display() or "",
+    )
+    lead.paciente = paciente
+    if lead.estado != Lead.Estado.GANADO:
+        lead.estado = Lead.Estado.GANADO
+    lead.save(update_fields=["paciente", "estado"])
+    return paciente
+
+
 class AnuncioViewSet(viewsets.ModelViewSet):
     """Catálogo de anuncios/publicaciones de pauta (lo gestiona el equipo de marketing)."""
 
@@ -41,14 +65,24 @@ class LeadViewSet(viewsets.ModelViewSet):
     serializer_class = LeadSerializer
 
     def get_queryset(self):
-        return (
+        qs = (
             Lead.objects.del_tenant_actual()
             .select_related("medico", "paciente")
             .order_by("-creado_en")
         )
+        sede = (self.request.query_params.get("sede") or "").strip()
+        if sede in dict(Lead.Sede.choices):
+            qs = qs.filter(sede=sede)
+        return qs
 
     def perform_create(self, serializer):
         serializer.save(clinica=get_clinica_actual())
+
+    def perform_update(self, serializer):
+        lead = serializer.save()
+        # Al marcar "Inició proceso" (ganado), se convierte en paciente automáticamente.
+        if lead.estado == Lead.Estado.GANADO and not lead.paciente_id:
+            convertir_lead_en_paciente(lead)
 
     @action(detail=True, methods=["post"])
     def convertir(self, request, pk=None):
@@ -56,17 +90,23 @@ class LeadViewSet(viewsets.ModelViewSet):
         lead = self.get_object()
         if lead.paciente_id:
             return Response({"detail": "Este lead ya es paciente.", "paciente_id": lead.paciente_id})
-        paciente = Paciente.objects.create(
-            clinica=lead.clinica,
-            nombre=lead.nombre,
-            telefono=lead.telefono,
-            especialidad_habitual=lead.especialidad,
-        )
-        lead.paciente = paciente
-        lead.estado = Lead.Estado.GANADO
-        lead.save(update_fields=["paciente", "estado"])
+        paciente = convertir_lead_en_paciente(lead)
         return Response({"paciente_id": paciente.id, "lead": LeadSerializer(lead).data},
                         status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=["post"])
+    def seguimiento(self, request, pk=None):
+        """Registra un seguimiento: actualiza el último contacto y agrega la nota a
+        observaciones. No cambia el estado (el lead sigue en seguimiento)."""
+        lead = self.get_object()
+        nota = (request.data.get("nota") or "").strip()
+        lead.ultimo_contacto = timezone.now()
+        if nota:
+            sello = timezone.localtime(lead.ultimo_contacto).strftime("%d/%m %H:%M")
+            extra = f"[{sello}] {nota}"
+            lead.observaciones = (lead.observaciones + "\n" + extra).strip() if lead.observaciones else extra
+        lead.save(update_fields=["ultimo_contacto", "observaciones"])
+        return Response(LeadSerializer(lead).data)
 
     @action(detail=False, methods=["get"], url_path="reporte-pauta")
     def reporte_pauta(self, request):
