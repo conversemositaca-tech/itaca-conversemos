@@ -19,6 +19,11 @@ from leads.captacion import (
 )
 from mensajes.api import MensajeViewSet, PlantillaMensajeViewSet
 from pacientes.api import AdjuntoViewSet, AtencionViewSet, CitaViewSet, PacienteViewSet, TranscribirView
+from pacientes.consentimiento import (
+    AceptarConsentimientoView,
+    ConsentimientoPublicoView,
+    ConsentimientoViewSet,
+)
 from usuarios.api import (
     CambiarPasswordView,
     LoginView,
@@ -43,6 +48,7 @@ router.register(r"metricas", MetricaMensualViewSet, basename="metrica")
 router.register(r"reportes-semanales", ReporteSemanalViewSet, basename="reporte-semanal")
 router.register(r"mensajes", MensajeViewSet, basename="mensaje")
 router.register(r"plantillas", PlantillaMensajeViewSet, basename="plantilla")
+router.register(r"consentimientos", ConsentimientoViewSet, basename="consentimiento")
 router.register(r"leads", LeadViewSet, basename="lead")
 router.register(r"anuncios", AnuncioViewSet, basename="anuncio")
 
@@ -68,6 +74,9 @@ urlpatterns = [
     path("api/integraciones/psicologo/", PsicologoView.as_view(), name="integ-psicologo"),
     path("api/integraciones/pacientes/", PacientesBuscarView.as_view(), name="integ-pacientes"),
     path("api/integraciones/nota-voz/", NotaVozView.as_view(), name="integ-nota-voz"),
+    # Consentimiento informado: aceptación pública por token (sin login).
+    path("api/consentimiento/<str:token>/aceptar/", AceptarConsentimientoView.as_view(), name="consentimiento-aceptar"),
+    path("api/consentimiento/<str:token>/", ConsentimientoPublicoView.as_view(), name="consentimiento-publico"),
     path("api/", include(router.urls)),
     # Catch-all: cualquier otra ruta sirve la app React (index.html). En producción
     # Django entrega el SPA; en desarrollo el SPA lo sirve Vite (5173), no Django.

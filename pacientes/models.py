@@ -1,3 +1,4 @@
+import secrets
 from datetime import date
 
 from django.conf import settings
@@ -280,3 +281,64 @@ class Adjunto(ModeloTenant):
 
     def __str__(self):
         return self.nombre or self.archivo.name
+
+
+def texto_consentimiento_default(clinica, tipo="consentimiento"):
+    """Texto por defecto del documento (snapshot al generar). El gerente puede editarlo."""
+    nombre_cl = clinica.nombre if clinica else "la clínica"
+    if tipo == "politicas":
+        return (
+            f"POLÍTICAS DE ATENCIÓN — {nombre_cl}\n\n"
+            "1. Puntualidad: te pedimos llegar 5 minutos antes de tu sesión.\n"
+            "2. Reprogramación: avísanos con al menos 24 horas de anticipación.\n"
+            "3. Cancelación: las cancelaciones con menos de 24 horas pueden generar cargo.\n"
+            "4. Confidencialidad: tu información está protegida por la Ley N° 29733.\n"
+            "5. Modalidad: la atención puede ser presencial o virtual, según se acuerde.\n\n"
+            "Al hacer clic en \"Acepto\" y registrar tu nombre, confirmas que leíste y aceptas estas políticas."
+        )
+    return (
+        f"CONSENTIMIENTO INFORMADO — {nombre_cl}\n\n"
+        "Acepto iniciar un proceso de atención psicológica en " + nombre_cl + ". Declaro que:\n\n"
+        "1. He sido informado/a sobre el propósito y el carácter de la atención psicológica.\n"
+        "2. Entiendo que lo que comparta es confidencial y está protegido por la Ley N° 29733 de "
+        "Protección de Datos Personales, salvo las excepciones que la ley contempla (riesgo para mi "
+        "vida o la de terceros).\n"
+        "3. Conozco las políticas de puntualidad, reprogramación y cancelación.\n"
+        "4. La atención podrá ser presencial o virtual, según se acuerde.\n"
+        "5. Puedo hacer preguntas y retirar mi consentimiento en cualquier momento.\n\n"
+        "Al hacer clic en \"Acepto\" y registrar mi nombre, doy mi consentimiento informado de forma "
+        "libre y voluntaria."
+    )
+
+
+class Consentimiento(ModeloTenant):
+    """Consentimiento informado / políticas para aceptación digital del paciente.
+    Se envía un enlace; el paciente lo lee y 'firma' con un clic + su nombre (sello
+    de fecha/hora e IP). No es firma certificada: es aceptación con trazabilidad."""
+
+    class Tipo(models.TextChoices):
+        CONSENTIMIENTO = "consentimiento", "Consentimiento informado"
+        POLITICAS = "politicas", "Políticas de atención"
+
+    paciente = models.ForeignKey(Paciente, on_delete=models.CASCADE, related_name="consentimientos")
+    tipo = models.CharField(max_length=20, choices=Tipo.choices, default=Tipo.CONSENTIMIENTO)
+    token = models.CharField(max_length=64, unique=True, db_index=True)
+    texto = models.TextField()
+    aceptado = models.BooleanField(default=False)
+    aceptado_en = models.DateTimeField(null=True, blank=True)
+    firmante_nombre = models.CharField(max_length=200, blank=True, default="")
+    firmante_documento = models.CharField(max_length=40, blank=True, default="")
+    ip = models.GenericIPAddressField(null=True, blank=True)
+
+    class Meta:
+        verbose_name = "Consentimiento"
+        verbose_name_plural = "Consentimientos"
+        ordering = ["-creado_en"]
+        indexes = [models.Index(fields=["clinica", "paciente"])]
+
+    def __str__(self):
+        return f"{self.get_tipo_display()} · {self.paciente.nombre} · {'firmado' if self.aceptado else 'pendiente'}"
+
+    @staticmethod
+    def nuevo_token():
+        return secrets.token_urlsafe(24)

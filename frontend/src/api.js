@@ -88,6 +88,12 @@ export const api = {
   plantillas: (pacienteId) => req(`/api/plantillas/${pacienteId ? `?paciente=${pacienteId}` : ""}`),
   actualizarPlantilla: (id, data) => req(`/api/plantillas/${id}/`, { method: "PATCH", body: JSON.stringify(data) }),
 
+  // Consentimiento informado (firma digital del paciente)
+  consentimientos: (pacienteId) => req(`/api/consentimientos/?paciente=${pacienteId}`),
+  crearConsentimiento: (paciente, tipo) => req("/api/consentimientos/", { method: "POST", body: JSON.stringify({ paciente, tipo }) }),
+  consentimientoPublico: (token) => req(`/api/consentimiento/${token}/`),
+  aceptarConsentimiento: (token, data) => req(`/api/consentimiento/${token}/aceptar/`, { method: "POST", body: JSON.stringify(data) }),
+
   // Leads / captación
   medicos: () => req("/api/medicos/"),
   leads: () => req("/api/leads/"),

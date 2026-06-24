@@ -2540,8 +2540,16 @@ function MensajePacienteModal({ paciente, onClose, onSend }) {
     api.plantillas(paciente.id).then((ps) => setPlantillas(ps.filter((p) => p.activo))).catch(() => {});
   }, [paciente.id, sinTel]);
 
-  function usarPlantilla(p) {
-    setTexto(p.preview || p.texto);
+  async function usarPlantilla(p) {
+    let txt = p.preview || p.texto;
+    // Consentimiento / políticas: genera el enlace de firma y lo agrega al mensaje.
+    if (["consentimiento", "politicas"].includes(p.clave)) {
+      try {
+        const c = await api.crearConsentimiento(paciente.id, p.clave);
+        txt += `\n\n📄 Léelo y acéptalo aquí: ${window.location.origin}${c.url}`;
+      } catch (e) { /* si falla, se manda el texto sin enlace */ }
+    }
+    setTexto(txt);
     setTipoSel(["recordatorio", "confirmacion"].includes(p.clave) ? p.clave : "manual");
   }
 
@@ -4608,6 +4616,65 @@ function PacienteModal({ paciente, onClose, onSave }) {
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// Página PÚBLICA del consentimiento (sin login). El paciente la abre por su enlace,
+// lee el documento y lo acepta con su nombre (sello de fecha/hora e IP en el backend).
+export function ConsentimientoPublico({ token }) {
+  const [doc, setDoc] = useState(null);
+  const [err, setErr] = useState("");
+  const [nombre, setNombre] = useState("");
+  const [documento, setDocumento] = useState("");
+  const [enviando, setEnviando] = useState(false);
+  const [hecho, setHecho] = useState(null);
+
+  useEffect(() => { api.consentimientoPublico(token).then(setDoc).catch((e) => setErr(e.message)); }, [token]);
+
+  async function aceptar() {
+    if (nombre.trim().length < 3) return;
+    setEnviando(true); setErr("");
+    try { setHecho(await api.aceptarConsentimiento(token, { nombre: nombre.trim(), documento: documento.trim() })); }
+    catch (e) { setErr(e.message); } finally { setEnviando(false); }
+  }
+
+  const wrap = { maxWidth: 640, margin: "0 auto", padding: "32px 20px", fontFamily: "'Inter',system-ui,sans-serif", color: "#2A2722", minHeight: "100vh", background: "#fff" };
+  const inp = { width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid #DDD8CF", fontSize: 15, marginBottom: 10, boxSizing: "border-box" };
+
+  if (err && !doc) return <div style={wrap}><h2>Documento no disponible</h2><p style={{ color: "#9C4646" }}>{err}</p></div>;
+  if (!doc) return <div style={wrap}>Cargando…</div>;
+
+  const yaFirmado = doc.aceptado || hecho;
+  return (
+    <div style={wrap}>
+      <div style={{ textAlign: "center", marginBottom: 18 }}>
+        <div style={{ fontSize: 13, color: "#9B968D" }}>{doc.clinica}</div>
+        <h1 style={{ fontSize: 21, margin: "6px 0" }}>{doc.tipo_label}</h1>
+        <div style={{ fontSize: 13, color: "#6B675F" }}>Para: <strong>{doc.paciente_nombre}</strong></div>
+      </div>
+      <div style={{ background: "#FBFAF8", border: "1px solid #ECE8E1", borderRadius: 12, padding: 18, whiteSpace: "pre-wrap", lineHeight: 1.55, fontSize: 14.5 }}>{doc.texto}</div>
+      {yaFirmado ? (
+        <div style={{ marginTop: 20, background: "#E9F1ED", border: "1px solid #CFE3D8", borderRadius: 12, padding: 16, textAlign: "center", color: "#2F6B4F" }}>
+          ✅ Documento aceptado{(hecho?.aceptado_en || doc.aceptado_en) ? ` el ${hecho?.aceptado_en || doc.aceptado_en}` : ""}.
+          {doc.firmante_nombre ? <div style={{ fontSize: 13, marginTop: 4 }}>Firmado por {doc.firmante_nombre}.</div> : null}
+          <div style={{ fontSize: 13, marginTop: 6 }}>Ya puedes cerrar esta página. ¡Gracias! 🌿</div>
+        </div>
+      ) : (
+        <div style={{ marginTop: 20 }}>
+          <div style={{ fontSize: 13, marginBottom: 6 }}>Para aceptar, escribe tu <strong>nombre completo</strong>:</div>
+          <input style={inp} value={nombre} onChange={(e) => setNombre(e.target.value)} placeholder="Nombre y apellidos" />
+          <input style={inp} value={documento} onChange={(e) => setDocumento(e.target.value)} placeholder="DNI (opcional)" />
+          {err ? <div style={{ color: "#9C4646", fontSize: 13, marginBottom: 10 }}>{err}</div> : null}
+          <button onClick={aceptar} disabled={enviando || nombre.trim().length < 3}
+            style={{ width: "100%", padding: "13px", borderRadius: 10, border: "none", background: "#3E7A65", color: "#fff", fontSize: 15, fontWeight: 600, cursor: "pointer", opacity: (enviando || nombre.trim().length < 3) ? 0.5 : 1 }}>
+            {enviando ? "Guardando…" : "Acepto"}
+          </button>
+          <div style={{ fontSize: 11.5, color: "#9B968D", marginTop: 10, textAlign: "center" }}>
+            Al hacer clic en "Acepto" registramos tu aceptación con fecha y hora.
+          </div>
+        </div>
+      )}
     </div>
   );
 }
