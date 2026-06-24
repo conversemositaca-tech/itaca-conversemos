@@ -91,6 +91,17 @@ const LEAD_SEM = {
   verde: { c: "#2BA35A", l: "Al día" }, amarillo: { c: "#E0A82E", l: "1+ día sin contactar" },
   naranja: { c: "#E07B2E", l: "3+ días sin contactar" }, rojo: { c: "#D85656", l: "5+ días — abandonado" },
 };
+// Tipos de documento clínico (Atencion.tipo).
+const TIPOS_HC = [
+  { v: "evolucion", l: "Ficha de evolución" },
+  { v: "historia", l: "Historia clínica" },
+  { v: "continuidad", l: "Ficha de continuidad" },
+  { v: "informe_continuidad", l: "Informe de continuidad" },
+  { v: "informe", l: "Informe psicológico" },
+  { v: "derivacion", l: "Derivación" },
+  { v: "evaluacion", l: "Evaluación psicológica" },
+  { v: "otro", l: "Otro documento clínico" },
+];
 
 // ---- Helpers de fecha (zona local) ----
 const _MESES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "set", "oct", "nov", "dic"];
@@ -1350,7 +1361,7 @@ const FORMATOS = [
     cols: [
       { campo: "paciente_nombre", label: "Paciente", tipo: "ro" },
       { campo: "fecha", label: "Fecha", tipo: "ro" },
-      { campo: "tipo", label: "Tipo", tipo: "select", opciones: [{ v: "evolucion", l: "Evolución" }, { v: "historia", l: "Historia clínica" }] },
+      { campo: "tipo", label: "Tipo", tipo: "select", opciones: TIPOS_HC },
       { campo: "nota", label: "Resumen de la sesión", tipo: "text" },
       { campo: "puntos_importantes", label: "Puntos importantes", tipo: "text" },
       { campo: "proximos_pasos", label: "Próximos pasos", tipo: "text" },
@@ -2301,10 +2312,12 @@ function AtenderModal({ cita, servicios, onClose, onSave }) {
           {dictMsg && <div style={{ fontSize: 12, marginTop: 6, color: dictMsg.startsWith("Error") ? "#B4564E" : "var(--ink)" }}>{dictMsg}</div>}
         </div>
 
-        {/* Tipo de registro (como AgendaPro) */}
-        <div className="ca-seg" style={{ marginLeft: 0, marginBottom: 14 }}>
-          <button className={tipo === "evolucion" ? "on" : ""} onClick={() => setTipo("evolucion")}>Ficha de evolución</button>
-          <button className={tipo === "historia" ? "on" : ""} onClick={() => setTipo("historia")}>Historia clínica</button>
+        {/* Tipo de documento clínico */}
+        <div style={{ marginBottom: 14 }}>
+          <div className="ca-label">Tipo de documento</div>
+          <select className="ca-input" value={tipo} onChange={(e) => setTipo(e.target.value)}>
+            {TIPOS_HC.map((t) => <option key={t.v} value={t.v}>{t.l}</option>)}
+          </select>
         </div>
 
         {tipo === "evolucion" ? (

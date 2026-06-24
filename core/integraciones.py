@@ -111,9 +111,12 @@ class PacientesBuscarView(_Base):
 
 
 class NotaVozView(_Base):
-    """Guarda la transcripción como una atención de la historia clínica.
+    """Guarda una atención en la historia clínica desde Eli.
     POST /api/integraciones/nota-voz/
-    body: {telefono, paciente_id, tipo, transcripcion}"""
+    body: {telefono, paciente_id, tipo, ...}
+      - Nota guiada (Eli pregunta): resumen, aspectos, objetivos, recomendaciones.
+      - Legado (una sola dictada): transcripcion.
+    Los 4 campos guiados se mapean a la ficha según el tipo."""
 
     def post(self, request):
         d = request.data if isinstance(request.data, dict) else {}
@@ -127,23 +130,36 @@ class NotaVozView(_Base):
             return Response({"ok": False, "detail": "Paciente no encontrado en tu clínica."},
                             status=status.HTTP_404_NOT_FOUND)
 
-        transcripcion = (d.get("transcripcion") or "").strip()
-        if not transcripcion:
-            return Response({"ok": False, "detail": "La transcripción está vacía."},
+        tipo = d.get("tipo") if d.get("tipo") in dict(Atencion.Tipo.choices) else Atencion.Tipo.EVOLUCION
+
+        def g(k):
+            return (d.get(k) or "").strip()
+
+        resumen, aspectos = g("resumen"), g("aspectos")
+        objetivos, recomendaciones = g("objetivos"), g("recomendaciones")
+        transcripcion = g("transcripcion")
+
+        marca = "🎙️ Registrado por voz vía WhatsApp."
+        campos = dict(clinica=psico.clinica, paciente=paciente, medico=psico,
+                      registrado_por=psico, tipo=tipo, especialidad=psico.especialidad or "")
+
+        if resumen or aspectos or objetivos or recomendaciones:
+            # Nota guiada: cada respuesta a su campo de la ficha (según el tipo).
+            campos["nota"] = (marca + "\n\n" + resumen).strip() if resumen else marca
+            campos["indicaciones"] = recomendaciones
+            if tipo == Atencion.Tipo.EVOLUCION:
+                campos["puntos_importantes"] = aspectos
+                campos["proximos_pasos"] = objetivos
+            else:
+                campos["aspectos_historicos"] = aspectos
+                campos["objetivos"] = objetivos
+        elif transcripcion:
+            campos["nota"] = marca + "\n\n" + transcripcion
+        else:
+            return Response({"ok": False, "detail": "No hay contenido para guardar."},
                             status=status.HTTP_400_BAD_REQUEST)
 
-        tipo = d.get("tipo") if d.get("tipo") in dict(Atencion.Tipo.choices) else Atencion.Tipo.EVOLUCION
-        nota = "🎙️ Registrado por voz vía WhatsApp.\n\n" + transcripcion
-
-        atencion = Atencion.objects.create(
-            clinica=psico.clinica,
-            paciente=paciente,
-            medico=psico,
-            registrado_por=psico,
-            tipo=tipo,
-            nota=nota,
-            especialidad=psico.especialidad or "",
-        )
+        atencion = Atencion.objects.create(**campos)
         return Response(
             {"ok": True, "atencion_id": atencion.id, "paciente": paciente.nombre,
              "tipo": atencion.get_tipo_display()},

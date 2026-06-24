@@ -191,8 +191,14 @@ class Atencion(ModeloTenant):
     class Tipo(models.TextChoices):
         EVOLUCION = "evolucion", "Ficha de evolución"
         HISTORIA = "historia", "Historia clínica"
+        CONTINUIDAD = "continuidad", "Ficha de continuidad"
+        INFORME_CONTINUIDAD = "informe_continuidad", "Informe de continuidad"
+        INFORME = "informe", "Informe psicológico"
+        DERIVACION = "derivacion", "Derivación"
+        EVALUACION = "evaluacion", "Evaluación psicológica"
+        OTRO = "otro", "Otro documento clínico"
 
-    tipo = models.CharField(max_length=12, choices=Tipo.choices, default=Tipo.EVOLUCION)
+    tipo = models.CharField(max_length=20, choices=Tipo.choices, default=Tipo.EVOLUCION)
     # Historia clínica (se llena una vez). 'motivo' y 'diagnostico' se reutilizan.
     aspectos_historicos = models.TextField(blank=True, default="")
     objetivos = models.TextField(blank=True, default="")
