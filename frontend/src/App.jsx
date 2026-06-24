@@ -3909,7 +3909,7 @@ function ReporteModal({ reporte, onClose, onSave, showToast }) {
           <div style={{ flex: 1 }}><div className="ca-label">Fin</div><input className="ca-input" type="date" value={f.fecha_fin} onChange={set("fecha_fin")} /></div>
         </div>
         <button className="ca-mini" onClick={traerReales}><Download size={13} strokeWidth={2} /> Traer datos reales del período</button>
-        <div className="ca-pmeta" style={{ marginTop: 5 }}>Rellena leads, consultas, procesos, pacientes activos y facturación (cobros pagados del mes, por sede) desde el sistema. La ocupación, retención y videos se completan a mano.</div>
+        <div className="ca-pmeta" style={{ marginTop: 5 }}>Rellena leads, consultas, procesos, pacientes activos, facturación (cobros del mes, por sede), ocupación y retención S3+ desde el sistema. Solo videos y metas se completan a mano.</div>
 
         <div className="ca-secth" style={sec}>Facturación del mes (S/)</div>
         <div style={{ display: "flex", gap: 10, marginBottom: 8 }}>{N("fact_lima", "Lima")}{N("fact_piura", "Piura")}{N("meta_min_sede", "Meta x sede")}</div>

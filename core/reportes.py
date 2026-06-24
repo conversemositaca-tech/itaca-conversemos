@@ -149,6 +149,12 @@ class ReporteSemanalViewSet(viewsets.ModelViewSet):
         factor = dias_mes / hasta.day if hasta.day else 1
         proy = {s: round(v * factor, 2) for s, v in fact.items()}
 
+        # --- Retención S3+ por sede (% de pacientes que llegan a la sesión 3) ---
+        def retencion(sede):
+            base = pac.filter(sede=sede, n_sesion__gte=1).count()
+            s3 = pac.filter(sede=sede, n_sesion__gte=3).count()
+            return round(s3 / base * 100, 1) if base else 0.0
+
         # --- Ocupación de agenda (si viene la semana del reporte) ---
         from core.ocupacion import ocupacion_por_sede
         ocup = {"lima": 0, "piura": 0}
@@ -168,6 +174,8 @@ class ReporteSemanalViewSet(viewsets.ModelViewSet):
             "pacientes_iniciaron": procesos.count(),
             "pac_activos_lima": pac.filter(sede="lima").count(),
             "pac_activos_piura": pac.filter(sede="piura").count(),
+            "retencion_lima": retencion("lima"),
+            "retencion_piura": retencion("piura"),
             "fact_lima": round(fact["lima"], 2),
             "fact_piura": round(fact["piura"], 2),
             "proy_lima": proy["lima"],
