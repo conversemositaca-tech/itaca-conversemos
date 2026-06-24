@@ -2924,13 +2924,19 @@ function Marketing({ showToast, onConvertir, esAdmin }) {
         leads.filter((l) => !filtroSedeLead || l.sede === filtroSedeLead).map((lead) => {
           const sem = LEAD_SEM[lead.semaforo];
           return (
-          <div key={lead.id} className="ca-row">
+          <div key={lead.id} className="ca-row" style={lead.agendo_consulta === false ? { borderLeft: "3px solid #D85656" } : undefined}>
             {sem ? <span title={`${sem.l} (${lead.dias_sin_contacto}d sin contacto)`} style={{ width: 10, height: 10, borderRadius: 999, background: sem.c, flexShrink: 0, alignSelf: "center" }} /> : <span style={{ width: 10, flexShrink: 0 }} />}
             <div style={{ flex: 1, minWidth: 160 }}>
               <div className="ca-pname">
                 {lead.nombre}
                 {lead.es_pauta && (
                   <span style={{ marginLeft: 8, fontSize: 10.5, background: "#EDE6F4", color: "#6B4E96", padding: "1px 7px", borderRadius: 999, fontWeight: 600, verticalAlign: "middle" }}>PAUTA</span>
+                )}
+                {lead.agendo_consulta === false && (
+                  <span style={{ marginLeft: 8, fontSize: 10.5, background: "#F7E5E5", color: "#B4564E", padding: "1px 7px", borderRadius: 999, fontWeight: 600, verticalAlign: "middle" }}>SIN AGENDAR</span>
+                )}
+                {lead.agendo_consulta === true && lead.fecha_consulta && (
+                  <span style={{ marginLeft: 8, fontSize: 10.5, background: "#E9F1ED", color: "#3E7A65", padding: "1px 7px", borderRadius: 999, fontWeight: 600, verticalAlign: "middle" }}>📅 {lead.fecha_consulta}</span>
                 )}
               </div>
               <div className="ca-pmeta">
@@ -2988,10 +2994,12 @@ function CrearLeadModal({ lead, medicos, anuncios, onClose, onSave }) {
     telefono: lead?.telefono && lead.telefono !== "—" ? lead.telefono : "",
     sede: lead?.sede || "lima",
     fuente: lead?.fuente || "instagram",
+    fuente_otro: lead?.fuente_otro || "",
     es_pauta: lead ? lead.es_pauta : true,
     anuncio: lead?.anuncio || "",
     es_pareja: lead?.es_pareja || false,
     estado: lead?.estado || "nuevo",
+    agendo_consulta: lead?.agendo_consulta ?? null,
     fecha_consulta: lead?.fecha_consulta || "",
     fecha_cierre: lead?.fecha_cierre || "",
     campania: lead?.campania || "",
@@ -3012,8 +3020,10 @@ function CrearLeadModal({ lead, medicos, anuncios, onClose, onSave }) {
     onSave({
       ...(lead?.id ? { id: lead.id } : {}),
       nombre: f.nombre.trim(), telefono: f.telefono.trim(), sede: f.sede, fuente: f.fuente,
+      fuente_otro: f.fuente === "otro" ? f.fuente_otro.trim() : "",
       es_pauta: f.es_pauta, anuncio: f.anuncio ? Number(f.anuncio) : null, es_pareja: f.es_pareja,
-      estado: f.estado, fecha_consulta: f.fecha_consulta || null, fecha_cierre: f.fecha_cierre || null,
+      estado: f.estado, agendo_consulta: f.agendo_consulta,
+      fecha_consulta: f.agendo_consulta === false ? null : (f.fecha_consulta || null), fecha_cierre: f.fecha_cierre || null,
       campania: f.campania.trim(), especialidad: f.especialidad, medico: f.medico ? Number(f.medico) : null,
       tipo_servicio: f.tipo_servicio, motivo_consulta: f.motivo_consulta.trim(),
       resumen_conversacion: f.resumen_conversacion.trim(), objeciones: f.objeciones.trim(),
@@ -3040,6 +3050,12 @@ function CrearLeadModal({ lead, medicos, anuncios, onClose, onSave }) {
           <div style={{ flex: 1 }}><div className="ca-label">Origen</div><select className="ca-input" value={f.fuente} onChange={set("fuente")}>{FUENTES.map((x) => <option key={x.v} value={x.v}>{x.l}</option>)}</select></div>
           <div style={{ flex: 1 }}><div className="ca-label">Etapa</div><select className="ca-input" value={f.estado} onChange={set("estado")}>{LEAD_ESTADOS.map((s) => <option key={s.v} value={s.v}>{s.l}</option>)}</select></div>
         </div>
+        {f.fuente === "otro" && (
+          <div style={{ marginBottom: 12 }}>
+            <div className="ca-label">¿Cuál otro origen?</div>
+            <input className="ca-input" value={f.fuente_otro} onChange={set("fuente_otro")} placeholder="Especifica de dónde vino el lead" />
+          </div>
+        )}
         <div style={{ display: "flex", gap: 16, marginBottom: 12, flexWrap: "wrap" }}>
           <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13.5, color: "var(--ink-soft)", cursor: "pointer" }}>
             <input type="checkbox" checked={f.es_pauta} onChange={setChk("es_pauta")} /> Vino de pauta (pagado)
@@ -3057,8 +3073,31 @@ function CrearLeadModal({ lead, medicos, anuncios, onClose, onSave }) {
             </select>
           </div>
         )}
+        <div style={{ marginBottom: 12 }}>
+          <div className="ca-label">¿Agendó consulta?</div>
+          <div style={{ display: "flex", gap: 8 }}>
+            {[[true, "Sí"], [false, "No"]].map(([v, l]) => {
+              const on = f.agendo_consulta === v;
+              return (
+                <button key={String(v)} type="button"
+                  onClick={() => setF((p) => ({ ...p, agendo_consulta: on ? null : v, ...((!on && v === false) ? { fecha_consulta: "" } : {}) }))}
+                  className="ca-input" style={{
+                    flex: 1, cursor: "pointer", fontWeight: on ? 600 : 400,
+                    color: on ? "#fff" : "var(--ink)",
+                    background: on ? (v === true ? "var(--accent)" : "#D85656") : "var(--bg)",
+                    borderColor: on ? "transparent" : "var(--line)",
+                  }}>{l}</button>
+              );
+            })}
+          </div>
+        </div>
         <div style={{ display: "flex", gap: 11, marginBottom: 12 }}>
-          <div style={{ flex: 1 }}><div className="ca-label">Fecha de la consulta</div><input className="ca-input" type="date" value={f.fecha_consulta || ""} onChange={set("fecha_consulta")} /></div>
+          {f.agendo_consulta === true && (
+            <div style={{ flex: 1 }}><div className="ca-label">Fecha de la consulta</div><input className="ca-input" type="date" value={f.fecha_consulta || ""} onChange={set("fecha_consulta")} /></div>
+          )}
+          {f.agendo_consulta === false && (
+            <div style={{ flex: 1, alignSelf: "center", fontSize: 12.5, color: "#B4564E" }}>⚠ Quedará marcado «sin agendar» para hacerle seguimiento.</div>
+          )}
           <div style={{ flex: 1 }}><div className="ca-label">Inició proceso (fecha)</div><input className="ca-input" type="date" value={f.fecha_cierre || ""} onChange={set("fecha_cierre")} /></div>
         </div>
         <div style={{ display: "flex", gap: 11, marginBottom: 18 }}>

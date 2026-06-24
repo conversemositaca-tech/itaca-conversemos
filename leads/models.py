@@ -80,6 +80,10 @@ class Lead(ModeloTenant):
     telefono = models.CharField(max_length=40, blank=True)
     sede = models.CharField(max_length=10, choices=Sede.choices, blank=True, default="")
     fuente = models.CharField(max_length=20, choices=Fuente.choices, default=Fuente.INSTAGRAM)
+    fuente_otro = models.CharField("origen (especificar)", max_length=120, blank=True, default="")
+    # ¿Agendó una consulta? None = sin definir, True = sí (ver fecha_consulta),
+    # False = no (se marca para seguimiento).
+    agendo_consulta = models.BooleanField("¿Agendó consulta?", null=True, blank=True, default=None)
     es_pauta = models.BooleanField("¿Vino de pauta (anuncio pagado)?", default=False)
     anuncio = models.ForeignKey(
         "leads.Anuncio", on_delete=models.SET_NULL, related_name="leads", null=True, blank=True,

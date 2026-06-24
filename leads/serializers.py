@@ -19,7 +19,7 @@ class AnuncioSerializer(serializers.ModelSerializer):
 
 
 class LeadSerializer(serializers.ModelSerializer):
-    fuente_label = serializers.CharField(source="get_fuente_display", read_only=True)
+    fuente_label = serializers.SerializerMethodField()
     estado_label = serializers.CharField(source="get_estado_display", read_only=True)
     sede_label = serializers.CharField(source="get_sede_display", read_only=True)
     anuncio_nombre = serializers.CharField(source="anuncio.nombre", read_only=True, default="")
@@ -33,8 +33,9 @@ class LeadSerializer(serializers.ModelSerializer):
     class Meta:
         model = Lead
         fields = [
-            "id", "nombre", "telefono", "sede", "sede_label", "fuente", "fuente_label",
-            "es_pauta", "anuncio", "anuncio_nombre", "es_pareja", "fecha_consulta", "fecha_cierre",
+            "id", "nombre", "telefono", "sede", "sede_label", "fuente", "fuente_label", "fuente_otro",
+            "es_pauta", "anuncio", "anuncio_nombre", "es_pareja",
+            "agendo_consulta", "fecha_consulta", "fecha_cierre",
             "campania", "especialidad", "tipo_servicio", "tipo_servicio_label",
             "medico", "medico_nombre", "estado", "estado_label", "motivo_perdida", "notas",
             "motivo_consulta", "resumen_conversacion", "objeciones", "observaciones",
@@ -42,6 +43,12 @@ class LeadSerializer(serializers.ModelSerializer):
             "paciente", "paciente_nombre", "creado",
         ]
         read_only_fields = ["paciente"]
+
+    def get_fuente_label(self, obj):
+        # Si el origen es "Otro" y se especificó, muestra ese texto.
+        if obj.fuente == Lead.Fuente.OTRO and obj.fuente_otro:
+            return obj.fuente_otro
+        return obj.get_fuente_display()
 
     def get_medico_nombre(self, obj):
         return str(obj.medico) if obj.medico_id else ""
