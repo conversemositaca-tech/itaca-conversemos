@@ -1076,18 +1076,19 @@ function ConfigClinica({ showToast }) {
 
 function Gerencia({ showToast }) {
   const [periodo, setPeriodo] = useState("mes");
+  const [sede, setSede] = useState("");
   const [data, setData] = useState(null);
   const [cargando, setCargando] = useState(true);
 
   useEffect(() => {
     let vivo = true;
     setCargando(true);
-    api.gerenciaResumen(periodo)
+    api.gerenciaResumen(periodo, sede)
       .then((d) => { if (vivo) setData(d); })
       .catch((e) => showToast("Error: " + e.message))
       .finally(() => { if (vivo) setCargando(false); });
     return () => { vivo = false; };
-  }, [periodo]);
+  }, [periodo, sede]);
 
   const op = data?.operacion, cap = data?.captacion, pac = data?.pacientes;
 
@@ -1100,10 +1101,17 @@ function Gerencia({ showToast }) {
             {data ? `${data.periodo.label} · ${labelNumMes(data.periodo.desde)} – ${labelNumMes(data.periodo.hasta)}` : "Cargando…"}
           </div>
         </div>
-        <div className="ca-seg">
-          {[["hoy", "Hoy"], ["semana", "Semana"], ["mes", "Mes"]].map(([v, l]) => (
-            <button key={v} className={periodo === v ? "on" : ""} onClick={() => setPeriodo(v)}>{l}</button>
-          ))}
+        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+          <div className="ca-seg">
+            {[["", "Total"], ["lima", "Lima"], ["piura", "Piura"]].map(([v, l]) => (
+              <button key={v || "total"} className={sede === v ? "on" : ""} onClick={() => setSede(v)}>{l}</button>
+            ))}
+          </div>
+          <div className="ca-seg">
+            {[["hoy", "Hoy"], ["semana", "Semana"], ["mes", "Mes"]].map(([v, l]) => (
+              <button key={v} className={periodo === v ? "on" : ""} onClick={() => setPeriodo(v)}>{l}</button>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -1173,15 +1181,24 @@ function Gerencia({ showToast }) {
             </>
           )}
 
-          <h2 className="ca-secth" style={{ marginTop: 28 }}>Dinero</h2>
+          <h2 className="ca-secth" style={{ marginTop: 28 }}>Dinero{data.sede ? ` · ${data.sede === "lima" ? "Lima" : "Piura"}` : ""}</h2>
           <div className="ca-stats">
             <StatCard label="Ingresos (cobrado)" valor={money(data.finanzas?.cobrado || 0)} color="#4F8A77"
               sub={data.anterior ? deltaTxt(data.finanzas?.cobrado || 0, data.anterior.cobrado) : undefined} />
-            <StatCard label="Egresos (gastos)" valor={money(data.finanzas?.egresos || 0)} color="#B4564E" />
-            <StatCard label="Utilidad (neto)" valor={money(data.finanzas?.utilidad || 0)}
-              color={(data.finanzas?.utilidad || 0) >= 0 ? "#3E7A65" : "#B4564E"} />
+            {data.finanzas?.egresos != null && (
+              <StatCard label="Egresos (gastos)" valor={money(data.finanzas.egresos)} color="#B4564E" />
+            )}
+            {data.finanzas?.utilidad != null && (
+              <StatCard label="Utilidad (neto)" valor={money(data.finanzas.utilidad)}
+                color={data.finanzas.utilidad >= 0 ? "#3E7A65" : "#B4564E"} />
+            )}
             <StatCard label="Pendiente por cobrar" valor={money(data.finanzas?.pendiente || 0)} color={(data.finanzas?.pendiente || 0) > 0 ? "#C9923A" : "#7C7870"} />
           </div>
+          {data.sede && (
+            <div style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 6 }}>
+              Egresos y utilidad solo en la vista <strong>Total</strong> (no se registran por sede).
+            </div>
+          )}
 
           <h2 className="ca-secth" style={{ marginTop: 28 }}>Productividad por médico</h2>
           <table className="ca-tbl">

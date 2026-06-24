@@ -121,9 +121,22 @@ class GerenciaResumenView(APIView):
         desde, hasta, label = _rango(periodo)
         ini, fin = _bounds(desde, hasta)
 
+        # --- Filtro por sede (Total / Lima / Piura) ---
+        sede = (request.query_params.get("sede") or "").strip().lower()
+        if sede not in ("lima", "piura"):
+            sede = ""  # "" = todas las sedes (Total)
+
+        def fpac(qs):
+            """Acota por la sede del paciente (citas, atenciones, cobros…)."""
+            return qs.filter(paciente__sede=sede) if sede else qs
+
+        def fsede(qs):
+            """Acota por el campo sede directo (pacientes, leads)."""
+            return qs.filter(sede=sede) if sede else qs
+
         # --- Operación (agenda) ---
         E = Cita.Estado
-        citas = list(Cita.objects.del_tenant_actual().filter(inicio__gte=ini, inicio__lt=fin).select_related("medico"))
+        citas = list(fpac(Cita.objects.del_tenant_actual().filter(inicio__gte=ini, inicio__lt=fin)).select_related("medico"))
         atendidas = sum(1 for c in citas if c.estado == E.ATENDIDA)
         canceladas = sum(1 for c in citas if c.estado == E.CANCELADA)
         cerradas = atendidas + canceladas
@@ -150,7 +163,7 @@ class GerenciaResumenView(APIView):
 
         # --- Captación (leads del período) ---
         LE = Lead.Estado
-        leads = list(Lead.objects.del_tenant_actual().filter(creado_en__gte=ini, creado_en__lt=fin).select_related("medico"))
+        leads = list(fsede(Lead.objects.del_tenant_actual().filter(creado_en__gte=ini, creado_en__lt=fin)).select_related("medico"))
         recibidos = len(leads)
         de_pauta = sum(1 for l in leads if l.es_pauta)
         cierres = sum(1 for l in leads if l.estado == LE.GANADO)
@@ -173,12 +186,12 @@ class GerenciaResumenView(APIView):
         }
 
         # --- Pacientes ---
-        total_pac = Paciente.objects.del_tenant_actual().count()
-        nuevos_pac = Paciente.objects.del_tenant_actual().filter(creado_en__gte=ini, creado_en__lt=fin).count()
+        total_pac = fsede(Paciente.objects.del_tenant_actual()).count()
+        nuevos_pac = fsede(Paciente.objects.del_tenant_actual().filter(creado_en__gte=ini, creado_en__lt=fin)).count()
         con_futura = set(
-            Cita.objects.del_tenant_actual()
-            .filter(inicio__gte=timezone.now())
-            .exclude(estado=E.CANCELADA)
+            fpac(Cita.objects.del_tenant_actual()
+                 .filter(inicio__gte=timezone.now())
+                 .exclude(estado=E.CANCELADA))
             .values_list("paciente_id", flat=True)
         )
         pacientes = {
@@ -190,7 +203,7 @@ class GerenciaResumenView(APIView):
         # --- Demografía (sobre toda la base de pacientes) ---
         gen = {"femenino": 0, "masculino": 0, "otro": 0, "sin": 0}
         ed = {"0-24": 0, "25-35": 0, "36-45": 0, "46-55": 0, "+56": 0, "sin": 0}
-        for p in Paciente.objects.del_tenant_actual().only("genero", "fecha_nacimiento"):
+        for p in fsede(Paciente.objects.del_tenant_actual()).only("genero", "fecha_nacimiento"):
             gen[p.genero if p.genero in gen else "sin"] += 1
             e = p.edad
             if e is None:
@@ -228,7 +241,7 @@ class GerenciaResumenView(APIView):
         hoy_d = timezone.localdate()
         ret = {"verde": 0, "amarillo": 0, "rojo": 0}
         ultimas = (
-            Atencion.objects.del_tenant_actual()
+            fpac(Atencion.objects.del_tenant_actual())
             .values("paciente_id").annotate(ultima=Max("fecha"))
         )
         for row in ultimas:
@@ -256,7 +269,7 @@ class GerenciaResumenView(APIView):
 
         for c in citas:
             fila(c.medico_id, str(c.medico) if c.medico_id else "Sin asignar")["citas"] += 1
-        atenciones = list(Atencion.objects.del_tenant_actual().filter(fecha__gte=ini, fecha__lt=fin).select_related("medico"))
+        atenciones = list(fpac(Atencion.objects.del_tenant_actual().filter(fecha__gte=ini, fecha__lt=fin)).select_related("medico"))
         for a in atenciones:
             fila(a.medico_id, str(a.medico) if a.medico_id else "Sin asignar")["atenciones"] += 1
         for l in leads:
@@ -267,35 +280,41 @@ class GerenciaResumenView(APIView):
         productividad = sorted(prod.values(), key=lambda x: (-x["atenciones"], -x["citas"], -x["leads"]))
 
         # --- Finanzas (ingresos, egresos y utilidad reales del período) ---
-        cobros = Cobro.objects.del_tenant_actual().filter(fecha__gte=ini, fecha__lt=fin)
+        cobros = fpac(Cobro.objects.del_tenant_actual().filter(fecha__gte=ini, fecha__lt=fin))
         cobrado = cobros.filter(estado=Cobro.Estado.PAGADO).aggregate(s=Sum("monto"))["s"] or 0
         pendiente = cobros.filter(estado=Cobro.Estado.PENDIENTE).aggregate(s=Sum("monto"))["s"] or 0
-        egresos = Egreso.objects.del_tenant_actual().filter(
-            fecha__gte=ini, fecha__lt=fin
-        ).aggregate(s=Sum("monto"))["s"] or 0
-        finanzas = {
-            "cobrado": float(cobrado),
-            "pendiente": float(pendiente),
-            "egresos": float(egresos),
-            "utilidad": float(cobrado) - float(egresos),
-        }
+        # Los egresos no están etiquetados por sede: solo se muestran en la vista Total.
+        if sede:
+            finanzas = {"cobrado": float(cobrado), "pendiente": float(pendiente),
+                        "egresos": None, "utilidad": None}
+        else:
+            egresos = Egreso.objects.del_tenant_actual().filter(
+                fecha__gte=ini, fecha__lt=fin
+            ).aggregate(s=Sum("monto"))["s"] or 0
+            finanzas = {
+                "cobrado": float(cobrado),
+                "pendiente": float(pendiente),
+                "egresos": float(egresos),
+                "utilidad": float(cobrado) - float(egresos),
+            }
 
         # --- Comparativa con el período anterior (tendencias) ---
         a_desde, a_hasta = _rango_anterior(periodo, desde, hasta)
         a_ini, a_fin = _bounds(a_desde, a_hasta)
         anterior = {
-            "citas": Cita.objects.del_tenant_actual().filter(inicio__gte=a_ini, inicio__lt=a_fin).count(),
-            "atenciones": Atencion.objects.del_tenant_actual().filter(fecha__gte=a_ini, fecha__lt=a_fin).count(),
-            "leads": Lead.objects.del_tenant_actual().filter(creado_en__gte=a_ini, creado_en__lt=a_fin).count(),
+            "citas": fpac(Cita.objects.del_tenant_actual().filter(inicio__gte=a_ini, inicio__lt=a_fin)).count(),
+            "atenciones": fpac(Atencion.objects.del_tenant_actual().filter(fecha__gte=a_ini, fecha__lt=a_fin)).count(),
+            "leads": fsede(Lead.objects.del_tenant_actual().filter(creado_en__gte=a_ini, creado_en__lt=a_fin)).count(),
             "cobrado": float(
-                Cobro.objects.del_tenant_actual()
-                .filter(fecha__gte=a_ini, fecha__lt=a_fin, estado=Cobro.Estado.PAGADO)
+                fpac(Cobro.objects.del_tenant_actual()
+                     .filter(fecha__gte=a_ini, fecha__lt=a_fin, estado=Cobro.Estado.PAGADO))
                 .aggregate(s=Sum("monto"))["s"] or 0
             ),
         }
 
         return Response({
             "periodo": {"clave": periodo, "label": label, "desde": desde.isoformat(), "hasta": hasta.isoformat()},
+            "sede": sede,
             "operacion": operacion,
             "captacion": captacion,
             "pacientes": pacientes,
