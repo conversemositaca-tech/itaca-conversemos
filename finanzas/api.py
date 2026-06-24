@@ -104,11 +104,14 @@ class CobroViewSet(viewsets.ModelViewSet):
         estado = d.get("estado") if d.get("estado") in dict(Cobro.Estado.choices) else Cobro.Estado.PENDIENTE
         medio = d.get("medio_pago") if d.get("medio_pago") in dict(Cobro.Medio.choices) else ""
         concepto = (str(d.get("concepto") or "").strip() or (servicio.nombre if servicio else "Cobro"))[:200]
+        comprobante = d.get("comprobante_tipo") if d.get("comprobante_tipo") in dict(Cobro.Comprobante.choices) else ""
 
         cobro = Cobro.objects.create(
             clinica=clinica, paciente=paciente, servicio=servicio, cita=cita, atencion=atencion,
             concepto=concepto, monto=monto, estado=estado,
             medio_pago=medio if estado == Cobro.Estado.PAGADO else "",
+            comprobante_tipo=comprobante,
+            comprobante_numero=str(d.get("comprobante_numero") or "").strip()[:40],
             registrado_por=request.user,
         )
         return Response(CobroSerializer(cobro).data, status=status.HTTP_201_CREATED)
@@ -121,7 +124,13 @@ class CobroViewSet(viewsets.ModelViewSet):
             return Response({"detail": "Elige un medio de pago."}, status=status.HTTP_400_BAD_REQUEST)
         cobro.estado = Cobro.Estado.PAGADO
         cobro.medio_pago = medio
-        cobro.save(update_fields=["estado", "medio_pago"])
+        campos = ["estado", "medio_pago"]
+        comp = request.data.get("comprobante_tipo")
+        if comp in dict(Cobro.Comprobante.choices):
+            cobro.comprobante_tipo = comp
+            cobro.comprobante_numero = str(request.data.get("comprobante_numero") or "").strip()[:40]
+            campos += ["comprobante_tipo", "comprobante_numero"]
+        cobro.save(update_fields=campos)
         return Response(CobroSerializer(cobro).data)
 
     @action(detail=False, methods=["get"])

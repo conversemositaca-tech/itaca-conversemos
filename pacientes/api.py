@@ -307,10 +307,13 @@ class CitaViewSet(viewsets.ModelViewSet):
             medio = d.get("cobro_medio") if d.get("cobro_medio") in dict(Cobro.Medio.choices) else ""
             concepto = (str(d.get("cobro_concepto") or "").strip()
                         or (servicio.nombre if servicio else f"Consulta {cita.especialidad}".strip()))[:200]
+            comprobante = d.get("cobro_comprobante") if d.get("cobro_comprobante") in dict(Cobro.Comprobante.choices) else ""
             Cobro.objects.create(
                 clinica=cita.clinica, paciente=cita.paciente, atencion=atencion, cita=cita, servicio=servicio,
                 concepto=concepto, monto=cobro_monto, estado=estado_cobro,
                 medio_pago=medio if estado_cobro == Cobro.Estado.PAGADO else "",
+                comprobante_tipo=comprobante,
+                comprobante_numero=(d.get("cobro_comprobante_numero") or "").strip()[:40],
                 registrado_por=request.user,
             )
 

@@ -1774,7 +1774,7 @@ function Ficha({ p, onBack, onEdit, onWhatsApp, onSubirAdjunto, onEliminarAdjunt
             {p.cuenta.items.map((c) => (
               <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderTop: "1px solid var(--line)", fontSize: 13.5 }}>
                 <span style={{ color: "var(--muted)", width: 86, flexShrink: 0 }}>{c.fecha}</span>
-                <span style={{ flex: 1, minWidth: 0 }}>{c.concepto}</span>
+                <span style={{ flex: 1, minWidth: 0 }}>{c.concepto}{c.comprobante ? <span style={{ color: "var(--muted)", fontSize: 12 }}> · {c.comprobante}{c.comprobante_numero ? ` ${c.comprobante_numero}` : ""}</span> : null}</span>
                 <span style={{ fontVariantNumeric: "tabular-nums", fontWeight: 500 }}>{money(c.monto)}</span>
                 <Tag colors={ESTADO_COBRO_COLOR[c.estado]}>{c.estado === "pagado" ? (c.medio || "Pagado") : "Pendiente"}</Tag>
               </div>
@@ -2186,6 +2186,8 @@ function AtenderModal({ cita, servicios, onClose, onSave }) {
   const [cobMonto, setCobMonto] = useState(servDef ? String(servDef.precio) : "");
   const [cobEstado, setCobEstado] = useState("pagado");
   const [cobMedio, setCobMedio] = useState("efectivo");
+  const [cobComprobante, setCobComprobante] = useState("");
+  const [cobCompNumero, setCobCompNumero] = useState("");
 
   const [transcribiendo, setTranscribiendo] = useState(false);
   const [dictMsg, setDictMsg] = useState("");
@@ -2276,6 +2278,8 @@ function AtenderModal({ cita, servicios, onClose, onSave }) {
       datos.cobro_servicio = cobServicio || null;
       datos.cobro_estado = cobEstado;
       datos.cobro_medio = cobEstado === "pagado" ? cobMedio : "";
+      datos.cobro_comprobante = cobComprobante;
+      datos.cobro_comprobante_numero = cobCompNumero.trim();
     }
     onSave(datos);
   }
@@ -2397,6 +2401,20 @@ function AtenderModal({ cita, servicios, onClose, onSave }) {
                     <select className="ca-input" value={cobMedio} onChange={(e) => setCobMedio(e.target.value)}>
                       {MEDIOS_PAGO.map((m) => <option key={m.v} value={m.v}>{m.l}</option>)}
                     </select>
+                  </div>
+                )}
+              </div>
+              <div style={{ display: "flex", gap: 10, marginTop: 10 }}>
+                <div style={{ flex: 1.3 }}>
+                  <div className="ca-label">Comprobante</div>
+                  <select className="ca-input" value={cobComprobante} onChange={(e) => setCobComprobante(e.target.value)}>
+                    {COMPROBANTES.map((c) => <option key={c.v} value={c.v}>{c.l}</option>)}
+                  </select>
+                </div>
+                {cobComprobante && (
+                  <div style={{ flex: 1 }}>
+                    <div className="ca-label">N°</div>
+                    <input className="ca-input" value={cobCompNumero} onChange={(e) => setCobCompNumero(e.target.value)} placeholder="B001-123" />
                   </div>
                 )}
               </div>
@@ -3058,6 +3076,10 @@ const MEDIOS_PAGO = [
   { v: "efectivo", l: "Efectivo" }, { v: "yape", l: "Yape" }, { v: "plin", l: "Plin" },
   { v: "tarjeta", l: "Tarjeta" }, { v: "transferencia", l: "Transferencia" },
 ];
+const COMPROBANTES = [
+  { v: "", l: "Sin comprobante" }, { v: "boleta", l: "Boleta" }, { v: "factura", l: "Factura" },
+  { v: "recibo", l: "Recibo x honorarios" }, { v: "nota_venta", l: "Nota de venta" },
+];
 const ESTADO_COBRO_COLOR = {
   pagado: { bg: "#E9F1ED", fg: "#3E7A65" },
   pendiente: { bg: "#F7ECDD", fg: "#9C6B2E" },
@@ -3352,6 +3374,8 @@ function CobroModal({ prefill, pacientes, servicios, onClose, onSave }) {
   const [monto, setMonto] = useState(servDefault ? String(servDefault.precio) : "");
   const [estado, setEstado] = useState("pagado");
   const [medio, setMedio] = useState("efectivo");
+  const [comprobante, setComprobante] = useState("");
+  const [compNumero, setCompNumero] = useState("");
   const [concepto, setConcepto] = useState(prefill?.concepto || (servDefault ? servDefault.nombre : ""));
 
   const matches = useMemo(
@@ -3374,6 +3398,8 @@ function CobroModal({ prefill, pacientes, servicios, onClose, onSave }) {
       concepto: concepto.trim() || undefined,
       monto, estado,
       medio_pago: estado === "pagado" ? medio : "",
+      comprobante_tipo: comprobante,
+      comprobante_numero: compNumero.trim(),
     });
   }
 
@@ -3440,6 +3466,21 @@ function CobroModal({ prefill, pacientes, servicios, onClose, onSave }) {
             </select>
           </div>
         )}
+
+        <div style={{ display: "flex", gap: 11, marginBottom: 13 }}>
+          <div style={{ flex: 1.3 }}>
+            <div className="ca-label">Comprobante</div>
+            <select className="ca-input" value={comprobante} onChange={(e) => setComprobante(e.target.value)}>
+              {COMPROBANTES.map((c) => <option key={c.v} value={c.v}>{c.l}</option>)}
+            </select>
+          </div>
+          {comprobante && (
+            <div style={{ flex: 1 }}>
+              <div className="ca-label">N° (opcional)</div>
+              <input className="ca-input" value={compNumero} onChange={(e) => setCompNumero(e.target.value)} placeholder="B001-123" />
+            </div>
+          )}
+        </div>
 
         <div style={{ marginBottom: 18 }}>
           <div className="ca-label">Concepto</div>

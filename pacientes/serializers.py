@@ -128,6 +128,8 @@ class PacienteSerializer(serializers.ModelSerializer):
                 "id": c.id, "concepto": c.concepto, "monto": float(c.monto), "estado": c.estado,
                 "fecha": fecha_corta(timezone.localtime(c.fecha)),
                 "medio": c.get_medio_pago_display() if c.medio_pago else "",
+                "comprobante": c.get_comprobante_tipo_display() if c.comprobante_tipo else "",
+                "comprobante_numero": c.comprobante_numero,
             }
             for c in sorted(cobros, key=lambda x: x.fecha, reverse=True)
         ]

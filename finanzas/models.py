@@ -40,6 +40,12 @@ class Cobro(ModeloTenant):
         TARJETA = "tarjeta", "Tarjeta"
         TRANSFERENCIA = "transferencia", "Transferencia"
 
+    class Comprobante(models.TextChoices):
+        BOLETA = "boleta", "Boleta"
+        FACTURA = "factura", "Factura"
+        RECIBO = "recibo", "Recibo por honorarios"
+        NOTA_VENTA = "nota_venta", "Nota de venta"
+
     paciente = models.ForeignKey("pacientes.Paciente", on_delete=models.PROTECT, related_name="cobros")
     atencion = models.ForeignKey(
         "pacientes.Atencion", on_delete=models.SET_NULL, related_name="cobros", null=True, blank=True
@@ -54,6 +60,9 @@ class Cobro(ModeloTenant):
     monto = models.DecimalField(max_digits=8, decimal_places=2)
     estado = models.CharField(max_length=12, choices=Estado.choices, default=Estado.PENDIENTE)
     medio_pago = models.CharField(max_length=15, choices=Medio.choices, blank=True, default="")
+    # Comprobante emitido (registro interno; no es facturación electrónica SUNAT).
+    comprobante_tipo = models.CharField(max_length=12, choices=Comprobante.choices, blank=True, default="")
+    comprobante_numero = models.CharField(max_length=40, blank=True, default="")
     fecha = models.DateTimeField(default=timezone.now)
     registrado_por = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, related_name="cobros", null=True, blank=True
