@@ -44,6 +44,7 @@ class Usuario(AbstractUser):
         ADMIN = "admin", "Administrador"
         MEDICO = "medico", "Psicólogo/a"
         ASISTENTE = "asistente", "Asistente"
+        COMERCIAL = "comercial", "Comercial"
 
     # Quitamos username: el login es por email.
     username = None

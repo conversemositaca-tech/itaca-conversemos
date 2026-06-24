@@ -345,14 +345,16 @@ export default function ClinicaApp() {
     ...(usuario?.rol === "admin" ? [{ id: "historico", label: "Histórico", icon: Activity }] : []),
     ...(usuario?.rol === "admin" ? [{ id: "reporte", label: "Reporte", icon: FileText }] : []),
     ...(usuario?.rol === "admin" ? [{ id: "ocupacion", label: "Ocupación", icon: Clock }] : []),
-    { id: "agenda", label: "Agenda", icon: Calendar },
-    { id: "pacientes", label: "Pacientes", icon: Users },
-    { id: "profesionales", label: "Profesionales", icon: HeartPulse },
-    // Mensajes, Marketing y Finanzas son de coordinación/gestión: el psicólogo
-    // ve solo lo clínico (Hoy, Agenda, Pacientes, Profesionales).
+    // Clínico (Agenda, Pacientes, Profesionales): gerencia, coordinación y psicólogo (no comercial).
+    ...(usuario?.rol !== "comercial" ? [{ id: "agenda", label: "Agenda", icon: Calendar }] : []),
+    ...(usuario?.rol !== "comercial" ? [{ id: "pacientes", label: "Pacientes", icon: Users }] : []),
+    ...(usuario?.rol !== "comercial" ? [{ id: "profesionales", label: "Profesionales", icon: HeartPulse }] : []),
+    // Mensajes: gerencia, coordinación y comercial (no psicólogo).
     ...(usuario?.rol !== "medico" ? [{ id: "mensajes", label: "Mensajes", icon: MessageCircle }] : []),
-    ...(usuario?.rol !== "medico" ? [{ id: "marketing", label: "Marketing", icon: Megaphone }] : []),
-    ...(usuario?.rol !== "medico" ? [{ id: "finanzas", label: "Finanzas", icon: TrendingUp }] : []),
+    // Marketing / Leads: gerencia y comercial.
+    ...((usuario?.rol === "admin" || usuario?.rol === "comercial") ? [{ id: "marketing", label: "Marketing", icon: Megaphone }] : []),
+    // Finanzas: solo gerencia.
+    ...(usuario?.rol === "admin" ? [{ id: "finanzas", label: "Finanzas", icon: TrendingUp }] : []),
     ...(usuario?.rol === "admin" ? [{ id: "equipo", label: "Equipo", icon: UserCog }] : []),
     ...(usuario?.rol === "admin" ? [{ id: "hojas", label: "Editar (Excel)", icon: Pencil }] : []),
   ];
@@ -3509,13 +3511,15 @@ function PreciosModal({ onClose, showToast }) {
 
 const ROLES = [
   { v: "medico", l: "Psicólogo/a" },
-  { v: "asistente", l: "Asistente" },
-  { v: "admin", l: "Administrador" },
+  { v: "asistente", l: "Asistente (coordinación)" },
+  { v: "comercial", l: "Comercial" },
+  { v: "admin", l: "Administrador (gerencia)" },
 ];
 const ROL_COLOR = {
   admin: { bg: "#EDE6F4", fg: "#6B4E96" },
   medico: { bg: "#E3F0E8", fg: "#2F6B4F" },
   asistente: { bg: "#E2ECF5", fg: "#2E5C86" },
+  comercial: { bg: "#F7ECDD", fg: "#9C6B2E" },
 };
 
 const SEDES = [{ v: "piura", l: "Piura" }, { v: "lima", l: "Lima" }];
@@ -4354,9 +4358,10 @@ function Equipo({ showToast, miId }) {
       <div className="ca-card" style={{ marginTop: 22 }}>
         <div className="ca-secth" style={{ margin: "0 0 10px" }}>¿Qué puede hacer cada rol?</div>
         <div style={{ display: "flex", flexDirection: "column", gap: 9, fontSize: 13.5, color: "var(--ink-soft)", lineHeight: 1.5 }}>
-          <div><Tag colors={ROL_COLOR.admin}>Administrador</Tag> <span style={{ marginLeft: 4 }}>Ve todo: gerencia, finanzas (ingresos y egresos), equipo y configuración. Gestiona usuarios y precios.</span></div>
-          <div><Tag colors={ROL_COLOR.medico}>Psicólogo/a</Tag> <span style={{ marginLeft: 4 }}>Atiende sesiones y registra la historia clínica. Ve agenda, pacientes y cobros; no ve gerencia ni egresos.</span></div>
-          <div><Tag colors={ROL_COLOR.asistente}>Asistente</Tag> <span style={{ marginLeft: 4 }}>Agenda sesiones, gestiona pacientes y registra cobros. No escribe historia clínica ni ve egresos/gerencia.</span></div>
+          <div><Tag colors={ROL_COLOR.admin}>Administrador (gerencia)</Tag> <span style={{ marginLeft: 4 }}>Ve todo: gerencia, finanzas, marketing, equipo y configuración.</span></div>
+          <div><Tag colors={ROL_COLOR.medico}>Psicólogo/a</Tag> <span style={{ marginLeft: 4 }}>Solo lo clínico: su agenda, sus pacientes asignados, historia clínica y sesiones. No ve finanzas ni comercial.</span></div>
+          <div><Tag colors={ROL_COLOR.asistente}>Asistente (coordinación)</Tag> <span style={{ marginLeft: 4 }}>Agenda, pacientes y seguimiento clínico + mensajes. No ve marketing ni finanzas.</span></div>
+          <div><Tag colors={ROL_COLOR.comercial}>Comercial</Tag> <span style={{ marginLeft: 4 }}>Leads, seguimientos, marketing y conversión + mensajes. No ve datos clínicos ni finanzas.</span></div>
         </div>
       </div>
 

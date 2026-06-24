@@ -77,6 +77,12 @@ def _ficha_de(user):
     return Profesional.objects.filter(usuario=user).first()
 
 
+def _es_comercial(user):
+    """El rol Comercial no accede a datos clínicos (pacientes, agenda, historias)."""
+    from usuarios.models import Usuario
+    return getattr(user, "rol", None) == Usuario.Rol.COMERCIAL
+
+
 class PacienteViewSet(viewsets.ModelViewSet):
     """CRUD de pacientes, siempre con scope de la clínica activa.
     El psicólogo ve solo SUS pacientes; el admin, todos."""
@@ -88,6 +94,8 @@ class PacienteViewSet(viewsets.ModelViewSet):
             Paciente.objects.del_tenant_actual()
             .prefetch_related("atenciones__adjuntos", "adjuntos", "cobros", "citas", "seguimientos")
         )
+        if _es_comercial(self.request.user):
+            return qs.none()
         # El psicólogo solo ve a los pacientes de su ficha del directorio.
         if _es_medico(self.request.user):
             ficha = _ficha_de(self.request.user)
@@ -165,6 +173,8 @@ class CitaViewSet(viewsets.ModelViewSet):
             .select_related("paciente", "medico")
             .prefetch_related("cobros")
         )
+        if _es_comercial(self.request.user):
+            return qs.none()
         # El psicólogo ve solo SU agenda; el admin, la de toda la clínica.
         if _es_medico(self.request.user):
             qs = qs.filter(medico=self.request.user)
@@ -424,6 +434,8 @@ class AtencionViewSet(viewsets.ModelViewSet):
             .select_related("paciente", "medico", "registrado_por")
             .prefetch_related("ediciones__editado_por")
         )
+        if _es_comercial(self.request.user):
+            return qs.none()
         # El psicólogo solo ve las historias de SUS pacientes.
         if _es_medico(self.request.user):
             ficha = _ficha_de(self.request.user)
