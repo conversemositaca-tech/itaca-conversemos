@@ -17,7 +17,7 @@ from leads.captacion import (
     IntakeWhatsappView,
     RegenerarTokenView,
 )
-from mensajes.api import MensajeViewSet
+from mensajes.api import MensajeViewSet, PlantillaMensajeViewSet
 from pacientes.api import AdjuntoViewSet, AtencionViewSet, CitaViewSet, PacienteViewSet, TranscribirView
 from usuarios.api import (
     CambiarPasswordView,
@@ -42,6 +42,7 @@ router.register(r"profesionales", ProfesionalViewSet, basename="profesional")
 router.register(r"metricas", MetricaMensualViewSet, basename="metrica")
 router.register(r"reportes-semanales", ReporteSemanalViewSet, basename="reporte-semanal")
 router.register(r"mensajes", MensajeViewSet, basename="mensaje")
+router.register(r"plantillas", PlantillaMensajeViewSet, basename="plantilla")
 router.register(r"leads", LeadViewSet, basename="lead")
 router.register(r"anuncios", AnuncioViewSet, basename="anuncio")
 

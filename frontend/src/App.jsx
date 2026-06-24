@@ -920,7 +920,7 @@ export default function ClinicaApp() {
 
         {view === "profesionales" && <Profesionales showToast={showToast} esAdmin={usuario?.rol === "admin"} />}
 
-        {view === "mensajes" && <Mensajes mensajes={mensajes} />}
+        {view === "mensajes" && <Mensajes mensajes={mensajes} esAdmin={usuario?.rol === "admin"} showToast={showToast} />}
 
         {view === "marketing" && <Marketing showToast={showToast} onConvertir={refrescarPacientes} esAdmin={usuario?.rol === "admin"} />}
 
@@ -2451,23 +2451,60 @@ function RecordarModal({ cita, clinica, onClose, onSend }) {
   );
 }
 
-function Mensajes({ mensajes }) {
+function Mensajes({ mensajes, esAdmin, showToast }) {
+  const [plantillas, setPlantillas] = useState(null);
+  const [editando, setEditando] = useState(null); // { id, texto }
+
+  useEffect(() => { api.plantillas().then(setPlantillas).catch(() => setPlantillas([])); }, []);
+
+  async function guardarPlantilla(id, texto) {
+    try {
+      await api.actualizarPlantilla(id, { texto });
+      setPlantillas((ps) => ps.map((p) => (p.id === id ? { ...p, texto } : p)));
+      setEditando(null);
+      showToast && showToast("Plantilla guardada ✓");
+    } catch (e) { showToast && showToast("Error: " + e.message); }
+  }
+
   return (
     <div>
       <h1 className="ca-h1">Mensajes</h1>
-      <div className="ca-sub">Bitácora de WhatsApp · {mensajes.length} en total</div>
+      <div className="ca-sub">Plantillas de WhatsApp y bitácora de envíos</div>
+
+      <h2 className="ca-secth" style={{ marginTop: 22 }}>Plantillas</h2>
+      <div className="ca-pmeta" style={{ marginBottom: 10 }}>
+        Variables que se reemplazan solas: <code>{"{nombre} {psicologo} {fecha} {hora} {n_sesion} {sede} {clinica}"}</code>
+      </div>
+      {!plantillas ? <div className="ca-empty">Cargando…</div> : plantillas.map((p) => (
+        <div key={p.id} className="ca-card" style={{ marginBottom: 10 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+            <strong style={{ fontSize: 13.5 }}>{p.nombre}</strong>
+            {esAdmin && editando?.id !== p.id && (
+              <button className="ca-mini" onClick={() => setEditando({ id: p.id, texto: p.texto })}><Pencil size={13} strokeWidth={2} /> Editar</button>
+            )}
+          </div>
+          {editando?.id === p.id ? (
+            <>
+              <textarea className="ca-input" style={{ minHeight: 80 }} value={editando.texto}
+                onChange={(e) => setEditando({ id: p.id, texto: e.target.value })} />
+              <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 8 }}>
+                <button className="ca-btn ghost" onClick={() => setEditando(null)}>Cancelar</button>
+                <button className="ca-btn" onClick={() => guardarPlantilla(p.id, editando.texto)}>Guardar</button>
+              </div>
+            </>
+          ) : (
+            <div style={{ fontSize: 13, color: "var(--ink-soft)", whiteSpace: "pre-wrap" }}>{p.texto}</div>
+          )}
+        </div>
+      ))}
+
+      <h2 className="ca-secth" style={{ marginTop: 26 }}>Bitácora de envíos · {mensajes.length}</h2>
       {mensajes.length === 0 ? (
-        <div className="ca-empty">Aún no se han enviado mensajes. Los recordatorios y seguimientos que envíes aparecerán aquí.</div>
+        <div className="ca-empty">Aún no se han enviado mensajes. Los que envíes aparecerán aquí.</div>
       ) : (
-        <table className="ca-tbl" style={{ marginTop: 22 }}>
+        <table className="ca-tbl" style={{ marginTop: 12 }}>
           <thead>
-            <tr>
-              <th>Fecha</th>
-              <th>Paciente</th>
-              <th>Tipo</th>
-              <th>Estado</th>
-              <th>Mensaje</th>
-            </tr>
+            <tr><th>Fecha</th><th>Paciente</th><th>Tipo</th><th>Estado</th><th>Mensaje</th></tr>
           </thead>
           <tbody>
             {mensajes.map((m) => (
@@ -2491,12 +2528,24 @@ function MensajePacienteModal({ paciente, onClose, onSend }) {
   const inicial = `Hola ${primer} 👋 Desde Itaca Conversemos queremos saber cómo te encuentras. Si lo deseas, podemos agendar tu próxima sesión. Estamos para ayudarte 🌿`;
   const [texto, setTexto] = useState(inicial);
   const [enviando, setEnviando] = useState(false);
+  const [plantillas, setPlantillas] = useState([]);
+  const [tipoSel, setTipoSel] = useState("seguimiento");
   const sinTel = !paciente.tel || paciente.tel === "—";
   const canSend = texto.trim().length > 0 && !sinTel && !enviando;
 
+  useEffect(() => {
+    if (sinTel) return;
+    api.plantillas(paciente.id).then((ps) => setPlantillas(ps.filter((p) => p.activo))).catch(() => {});
+  }, [paciente.id, sinTel]);
+
+  function usarPlantilla(p) {
+    setTexto(p.preview || p.texto);
+    setTipoSel(["recordatorio", "confirmacion"].includes(p.clave) ? p.clave : "manual");
+  }
+
   async function enviar() {
     setEnviando(true);
-    try { await onSend(texto.trim(), "seguimiento"); } finally { setEnviando(false); }
+    try { await onSend(texto.trim(), tipoSel); } finally { setEnviando(false); }
   }
 
   return (
@@ -2516,8 +2565,17 @@ function MensajePacienteModal({ paciente, onClose, onSend }) {
             Este paciente no tiene teléfono registrado. Agrégalo en “Editar” para poder enviarle WhatsApp.
           </div>
         ) : (
-          <textarea className="ca-input ca-textarea" style={{ minHeight: 120 }} value={texto}
-            onChange={(e) => setTexto(e.target.value)} autoFocus />
+          <>
+            {plantillas.length > 0 && (
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
+                {plantillas.map((p) => (
+                  <button key={p.id} className="ca-mini" onClick={() => usarPlantilla(p)}>{p.nombre}</button>
+                ))}
+              </div>
+            )}
+            <textarea className="ca-input ca-textarea" style={{ minHeight: 120 }} value={texto}
+              onChange={(e) => setTexto(e.target.value)} autoFocus />
+          </>
         )}
         <div style={{ display: "flex", gap: 9, justifyContent: "flex-end", marginTop: 16 }}>
           <button className="ca-btn ghost" onClick={onClose}>Cancelar</button>

@@ -84,6 +84,9 @@ export const api = {
   mensajes: () => req("/api/mensajes/"),
   enviarMensajePaciente: (id, texto, tipo) =>
     req(`/api/pacientes/${id}/mensaje/`, { method: "POST", body: JSON.stringify({ texto, tipo }) }),
+  // Plantillas de mensaje (con variables). pacienteId opcional → trae preview sustituido.
+  plantillas: (pacienteId) => req(`/api/plantillas/${pacienteId ? `?paciente=${pacienteId}` : ""}`),
+  actualizarPlantilla: (id, data) => req(`/api/plantillas/${id}/`, { method: "PATCH", body: JSON.stringify(data) }),
 
   // Leads / captación
   medicos: () => req("/api/medicos/"),

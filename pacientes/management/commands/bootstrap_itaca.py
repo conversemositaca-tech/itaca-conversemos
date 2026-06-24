@@ -19,6 +19,7 @@ SEEDS = [
     "seed_pacientes_reales",
     "seed_seguimiento",
     "seed_reporte_semanal",
+    "seed_plantillas",
 ]
 
 

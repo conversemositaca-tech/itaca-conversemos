@@ -3,7 +3,23 @@ from rest_framework import serializers
 
 from core.utils import fecha_corta
 
-from .models import Mensaje
+from .models import Mensaje, PlantillaMensaje, render_plantilla
+
+
+class PlantillaMensajeSerializer(serializers.ModelSerializer):
+    preview = serializers.SerializerMethodField()
+
+    class Meta:
+        model = PlantillaMensaje
+        fields = ["id", "clave", "nombre", "texto", "activo", "orden", "preview"]
+        read_only_fields = ["clave"]
+
+    def get_preview(self, obj):
+        # Si la vista pasó un paciente en el contexto, devolvemos el texto ya sustituido.
+        paciente = self.context.get("paciente")
+        if paciente is None:
+            return ""
+        return render_plantilla(obj.texto, paciente=paciente, cita=self.context.get("cita"))
 
 
 class MensajeSerializer(serializers.ModelSerializer):
