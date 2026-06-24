@@ -16,6 +16,8 @@ class MetricaMensualSerializer(serializers.ModelSerializer):
     mes_label = serializers.SerializerMethodField()
     coste_mensaje = serializers.FloatField(read_only=True)
     cac = serializers.FloatField(read_only=True)
+    costo_lead = serializers.FloatField(read_only=True)
+    conversion = serializers.FloatField(read_only=True)
     ratio_cita = serializers.FloatField(read_only=True)
     ratio_paciente = serializers.FloatField(read_only=True)
 
@@ -23,8 +25,8 @@ class MetricaMensualSerializer(serializers.ModelSerializer):
         model = MetricaMensual
         fields = [
             "id", "sede", "sede_label", "anio", "mes", "mes_label",
-            "invertido", "mensajes", "citas_nuevas", "pacientes", "nota",
-            "coste_mensaje", "cac", "ratio_cita", "ratio_paciente",
+            "invertido", "mensajes", "leads", "citas_nuevas", "pacientes", "nota",
+            "coste_mensaje", "cac", "costo_lead", "conversion", "ratio_cita", "ratio_paciente",
         ]
 
     def get_mes_label(self, obj):

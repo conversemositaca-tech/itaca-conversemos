@@ -3565,7 +3565,8 @@ function Historico({ showToast, esAdmin }) {
     const inv = arr.reduce((s, r) => s + Number(r.invertido), 0);
     const cit = arr.reduce((s, r) => s + r.citas_nuevas, 0);
     const pac = arr.reduce((s, r) => s + r.pacientes, 0);
-    return { inv, cit, pac, cac: pac ? inv / pac : 0 };
+    const led = arr.reduce((s, r) => s + (r.leads || 0), 0);
+    return { inv, cit, pac, led, cac: pac ? inv / pac : 0, cpl: led ? inv / led : 0, conv: led ? pac / led : 0 };
   };
   const tp = tot(piura), tl = tot(lima);
   const filas = [...delAnio].sort((a, b) => a.mes - b.mes || (a.sede < b.sede ? -1 : 1));
@@ -3594,9 +3595,12 @@ function Historico({ showToast, esAdmin }) {
             <div style={{ fontWeight: 600, marginBottom: 10 }}>{nombre} · {anio}</div>
             <div style={{ display: "flex", gap: 18, flexWrap: "wrap" }}>
               <div><div className="ca-pmeta">Invertido</div><div style={{ fontWeight: 600 }}>{money(t.inv)}</div></div>
+              <div><div className="ca-pmeta">Leads</div><div style={{ fontWeight: 600 }}>{t.led}</div></div>
               <div><div className="ca-pmeta">Citas nuevas</div><div style={{ fontWeight: 600 }}>{t.cit}</div></div>
               <div><div className="ca-pmeta">Pacientes</div><div style={{ fontWeight: 600 }}>{t.pac}</div></div>
-              <div><div className="ca-pmeta">CAC promedio</div><div style={{ fontWeight: 600 }}>{money(t.cac)}</div></div>
+              <div><div className="ca-pmeta">Costo/lead</div><div style={{ fontWeight: 600 }}>{money(t.cpl)}</div></div>
+              <div><div className="ca-pmeta">CAC (costo/pac.)</div><div style={{ fontWeight: 600 }}>{money(t.cac)}</div></div>
+              <div><div className="ca-pmeta">Conversión</div><div style={{ fontWeight: 600 }}>{Math.round(t.conv * 100)}%</div></div>
             </div>
           </div>
         ))}
@@ -3633,8 +3637,9 @@ function Historico({ showToast, esAdmin }) {
           <thead>
             <tr>
               <th>Mes</th><th>Sede</th><th style={{ textAlign: "right" }}>Invertido</th>
-              <th style={{ textAlign: "right" }}>Msjs</th><th style={{ textAlign: "right" }}>Citas</th>
+              <th style={{ textAlign: "right" }}>Msjs</th><th style={{ textAlign: "right" }}>Leads</th><th style={{ textAlign: "right" }}>Citas</th>
               <th style={{ textAlign: "right" }}>Pac.</th><th style={{ textAlign: "right" }}>CAC</th>
+              <th style={{ textAlign: "right" }}>C/lead</th><th style={{ textAlign: "right" }}>Conv.</th>
               {esAdmin && <th></th>}
             </tr>
           </thead>
@@ -3645,9 +3650,12 @@ function Historico({ showToast, esAdmin }) {
                 <td><span style={{ color: r.sede === "piura" ? COL_PIURA : COL_LIMA, fontWeight: 600 }}>{r.sede_label}</span></td>
                 <td style={{ textAlign: "right" }}>{money(Number(r.invertido))}</td>
                 <td style={{ textAlign: "right" }}>{r.mensajes}</td>
+                <td style={{ textAlign: "right" }}>{r.leads}</td>
                 <td style={{ textAlign: "right" }}>{r.citas_nuevas}</td>
                 <td style={{ textAlign: "right" }}>{r.pacientes}</td>
                 <td style={{ textAlign: "right" }}>{money(r.cac)}</td>
+                <td style={{ textAlign: "right" }}>{money(r.costo_lead)}</td>
+                <td style={{ textAlign: "right" }}>{Math.round((r.conversion || 0) * 100)}%</td>
                 {esAdmin && (
                   <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
                     <button className="ca-iconbtn" title="Editar" onClick={() => setEditar(r)}><Pencil size={13} strokeWidth={2} /></button>
@@ -3672,6 +3680,7 @@ function MetricaModal({ metrica, anioDefault, onClose, onSave }) {
     mes: metrica?.mes || 1,
     invertido: metrica?.invertido ?? "",
     mensajes: metrica?.mensajes ?? "",
+    leads: metrica?.leads ?? "",
     citas_nuevas: metrica?.citas_nuevas ?? "",
     pacientes: metrica?.pacientes ?? "",
     nota: metrica?.nota || "",
@@ -3684,6 +3693,7 @@ function MetricaModal({ metrica, anioDefault, onClose, onSave }) {
       ...(metrica?.id ? { id: metrica.id } : {}),
       sede: f.sede, anio: Number(f.anio), mes: Number(f.mes),
       invertido: Number(f.invertido || 0), mensajes: Number(f.mensajes || 0),
+      leads: Number(f.leads || 0),
       citas_nuevas: Number(f.citas_nuevas || 0), pacientes: Number(f.pacientes || 0),
       nota: f.nota,
     });
@@ -3704,6 +3714,7 @@ function MetricaModal({ metrica, anioDefault, onClose, onSave }) {
         <div style={{ display: "flex", gap: 11, marginBottom: 12 }}>
           <div style={{ flex: 1 }}><div className="ca-label">Invertido S/</div><input className="ca-input" value={f.invertido} onChange={num("invertido")} placeholder="1453.25" /></div>
           <div style={{ flex: 1 }}><div className="ca-label">Mensajes</div><input className="ca-input" value={f.mensajes} onChange={num("mensajes")} /></div>
+          <div style={{ flex: 1 }}><div className="ca-label">Leads</div><input className="ca-input" value={f.leads} onChange={num("leads")} /></div>
         </div>
         <div style={{ display: "flex", gap: 11, marginBottom: 12 }}>
           <div style={{ flex: 1 }}><div className="ca-label">Citas nuevas</div><input className="ca-input" value={f.citas_nuevas} onChange={num("citas_nuevas")} /></div>

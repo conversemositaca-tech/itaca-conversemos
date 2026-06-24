@@ -104,6 +104,7 @@ class MetricaMensual(ModeloTenant):
     mensajes = models.PositiveIntegerField(default=0)
     citas_nuevas = models.PositiveIntegerField(default=0)
     pacientes = models.PositiveIntegerField("pacientes/clientes nuevos", default=0)
+    leads = models.PositiveIntegerField("leads calificados", default=0)
     nota = models.CharField(max_length=200, blank=True, default="")
 
     class Meta:
@@ -128,6 +129,16 @@ class MetricaMensual(ModeloTenant):
     def cac(self):
         """Costo de adquisición = inversión / pacientes nuevos."""
         return float(self.invertido) / self.pacientes if self.pacientes else 0.0
+
+    @property
+    def costo_lead(self):
+        """Costo por lead = inversión / leads."""
+        return float(self.invertido) / self.leads if self.leads else 0.0
+
+    @property
+    def conversion(self):
+        """Conversión = % de leads que se vuelven paciente."""
+        return self.pacientes / self.leads if self.leads else 0.0
 
     @property
     def ratio_cita(self):
