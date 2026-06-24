@@ -104,6 +104,63 @@ const TIPOS_HC = [
   { v: "otro", l: "Otro documento clínico" },
 ];
 
+// Campos de cada tipo de ficha. Cada uno se guarda en un campo del modelo
+// Atencion (k), con la etiqueta (l) propia del tipo. Así "evolución" ≠ "derivación".
+const FICHAS = {
+  historia: [
+    { k: "motivo", l: "Motivo de consulta", ph: "¿Por qué viene el paciente?" },
+    { k: "aspectos_historicos", l: "Aspectos históricos relevantes", ph: "Antecedentes relevantes…" },
+    { k: "objetivos", l: "Objetivos del proceso de terapia", ph: "Metas del proceso…" },
+    { k: "diagnostico", l: "Impresión diagnóstica / problemática a tratar", ph: "Impresión diagnóstica…" },
+  ],
+  evolucion: [
+    { k: "nota", l: "Resumen de la sesión", ph: "¿Qué se trabajó en la sesión?" },
+    { k: "puntos_importantes", l: "Puntos importantes a recordar", ph: "Observaciones clave…" },
+    { k: "proximos_pasos", l: "Próximos pasos a seguir", ph: "Qué abordar la próxima sesión…" },
+    { k: "indicaciones", l: "Tratamiento / tareas asignadas", ph: "Tareas o actividades…" },
+  ],
+  continuidad: [
+    { k: "nota", l: "Estado actual del paciente", ph: "¿Cómo está hoy el paciente?" },
+    { k: "puntos_importantes", l: "Avances", ph: "Avances observados…" },
+    { k: "proximos_pasos", l: "Plan a seguir", ph: "Plan de continuidad…" },
+  ],
+  informe_continuidad: [
+    { k: "nota", l: "Resumen del proceso", ph: "Resumen del proceso terapéutico…" },
+    { k: "puntos_importantes", l: "Avances logrados", ph: "Logros del proceso…" },
+    { k: "indicaciones", l: "Recomendaciones para continuar", ph: "Recomendaciones…" },
+  ],
+  informe: [
+    { k: "motivo", l: "Motivo / objetivo del informe", ph: "Motivo del informe…" },
+    { k: "aspectos_historicos", l: "Técnicas / instrumentos aplicados", ph: "Pruebas y técnicas usadas…" },
+    { k: "puntos_importantes", l: "Resultados", ph: "Resultados obtenidos…" },
+    { k: "diagnostico", l: "Conclusiones", ph: "Conclusiones del informe…" },
+    { k: "indicaciones", l: "Recomendaciones", ph: "Recomendaciones…" },
+  ],
+  derivacion: [
+    { k: "motivo", l: "Motivo de la derivación", ph: "¿Por qué se deriva?" },
+    { k: "proximos_pasos", l: "A quién / dónde se deriva", ph: "Profesional o servicio destino…" },
+    { k: "nota", l: "Resumen del caso", ph: "Resumen para quien recibe…" },
+    { k: "indicaciones", l: "Recomendaciones", ph: "Recomendaciones…" },
+  ],
+  evaluacion: [
+    { k: "motivo", l: "Motivo de la evaluación", ph: "Motivo de la evaluación…" },
+    { k: "aspectos_historicos", l: "Instrumentos aplicados", ph: "Pruebas aplicadas…" },
+    { k: "puntos_importantes", l: "Resultados", ph: "Resultados…" },
+    { k: "diagnostico", l: "Impresión diagnóstica", ph: "Impresión diagnóstica…" },
+    { k: "indicaciones", l: "Recomendaciones", ph: "Recomendaciones…" },
+  ],
+  otro: [
+    { k: "nota", l: "Contenido del documento", ph: "Escribe el documento…" },
+  ],
+};
+// Etiqueta genérica de cada campo del modelo (para mostrar texto que no calce con el tipo).
+const CAMPO_LABEL = {
+  motivo: "Motivo", diagnostico: "Diagnóstico / impresión", indicaciones: "Indicaciones / recomendaciones",
+  nota: "Nota", aspectos_historicos: "Aspectos históricos", objetivos: "Objetivos",
+  puntos_importantes: "Puntos importantes", proximos_pasos: "Próximos pasos",
+};
+const TODOS_CAMPOS_HC = ["motivo", "nota", "aspectos_historicos", "objetivos", "puntos_importantes", "proximos_pasos", "diagnostico", "indicaciones"];
+
 // ---- Helpers de fecha (zona local) ----
 const _MESES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "set", "oct", "nov", "dic"];
 const pad2 = (n) => String(n).padStart(2, "0");
@@ -203,15 +260,21 @@ function imprimirHistoria(p, clinica) {
     if (h.talla != null) v.push(`Talla ${h.talla} cm`);
     return v.join(" · ");
   };
-  const ats = (p.historial || []).map((h) => `
+  const campoLinea = (etq, val) => (val && val.trim() ? `<p><b>${esc(etq)}:</b> ${esc(val).replace(/\n/g, "<br>")}</p>` : "");
+  const ats = (p.historial || []).map((h) => {
+    const ficha = FICHAS[h.tipo] || FICHAS.evolucion;
+    const mostrados = new Set();
+    let cuerpo = "";
+    ficha.forEach((c) => { if ((h[c.k] || "").trim()) { cuerpo += campoLinea(c.l, h[c.k]); mostrados.add(c.k); } });
+    TODOS_CAMPOS_HC.forEach((k) => { if (!mostrados.has(k) && (h[k] || "").trim()) cuerpo += campoLinea(CAMPO_LABEL[k], h[k]); });
+    const tipoLabel = (TIPOS_HC.find((t) => t.v === h.tipo) || {}).l || "";
+    return `
     <div class="at">
-      <div class="meta">${esc(h.fecha)} · ${esc(h.medico || "")}${h.especialidad ? " · " + esc(h.especialidad) : ""}</div>
-      ${h.motivo ? `<p><b>Motivo:</b> ${esc(h.motivo)}</p>` : ""}
+      <div class="meta">${tipoLabel ? "<b>" + esc(tipoLabel) + "</b> · " : ""}${esc(h.fecha)} · ${esc(h.medico || "")}${h.especialidad ? " · " + esc(h.especialidad) : ""}</div>
       ${vit(h) ? `<p><b>Signos vitales:</b> ${esc(vit(h))}</p>` : ""}
-      ${h.diagnostico ? `<p><b>Diagnóstico:</b> ${esc(h.diagnostico)}</p>` : ""}
-      ${h.indicaciones ? `<p><b>Indicaciones:</b> ${esc(h.indicaciones)}</p>` : ""}
-      ${h.nota ? `<p>${esc(h.nota).replace(/\n/g, "<br>")}</p>` : ""}
-    </div>`).join("");
+      ${cuerpo}
+    </div>`;
+  }).join("");
   w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Historia clínica · ${esc(p.nombre)}</title>
     <style>
       body{font-family:Inter,Arial,sans-serif;color:#32302C;max-width:720px;margin:28px auto;padding:0 16px;line-height:1.5}
@@ -1794,18 +1857,31 @@ function Ficha({ p, onBack, onEdit, onWhatsApp, onSubirAdjunto, onEliminarAdjunt
           <div style={{ color: "var(--muted)", fontSize: 14 }}>Aún no hay atenciones registradas. Aparecerán aquí después de la primera consulta.</div>
         ) : (
           <div className="ca-hist">
-            {p.historial.map((h, i) => (
+            {p.historial.map((h, i) => {
+              const ficha = FICHAS[h.tipo] || FICHAS.evolucion;
+              const mostrados = new Set();
+              const filas = [];
+              ficha.forEach((c) => {
+                const val = (h[c.k] || "").trim();
+                if (val) { filas.push([c.l, val]); mostrados.add(c.k); }
+              });
+              // Campos con contenido que no pertenecen al tipo (datos antiguos): se muestran igual.
+              TODOS_CAMPOS_HC.forEach((k) => {
+                if (!mostrados.has(k) && (h[k] || "").trim()) filas.push([CAMPO_LABEL[k], h[k].trim()]);
+              });
+              const tipoLabel = (TIPOS_HC.find((t) => t.v === h.tipo) || {}).l || "";
+              return (
               <div key={h.id ?? i} className={`ca-histitem ${h.fecha === HOY_FECHA && i === 0 ? "nuevo" : ""}`}>
-                <div style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 6 }}>{h.fecha} · {h.medico || "—"}{h.especialidad ? ` · ${h.especialidad}` : ""}</div>
-                {h.motivo && <Campo etiqueta="Motivo">{h.motivo}</Campo>}
+                <div style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 6, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                  {tipoLabel && <span style={{ fontSize: 10.5, background: "var(--accent-soft)", color: "var(--accent)", padding: "1px 8px", borderRadius: 999, fontWeight: 600 }}>{tipoLabel}</span>}
+                  <span>{h.fecha} · {h.medico || "—"}{h.especialidad ? ` · ${h.especialidad}` : ""}</span>
+                </div>
                 {vitalesDe(h).length > 0 && (
                   <div className="ca-vitales">
                     {vitalesDe(h).map(([k, val]) => <span key={k} className="ca-vital"><b>{k}</b> {val}</span>)}
                   </div>
                 )}
-                {h.diagnostico && <Campo etiqueta="Diagnóstico">{h.diagnostico}</Campo>}
-                {h.indicaciones && <Campo etiqueta="Indicaciones">{h.indicaciones}</Campo>}
-                {h.nota && <div className="ca-histnota" style={{ marginTop: 6 }}>{h.nota}</div>}
+                {filas.map(([etq, val], idx) => <Campo key={idx} etiqueta={etq}>{val}</Campo>)}
                 {h.adjuntos && h.adjuntos.length > 0 && (
                   <div style={{ marginTop: 8, display: "flex", flexWrap: "wrap", gap: 6 }}>
                     {h.adjuntos.map((a) => (
@@ -1816,7 +1892,8 @@ function Ficha({ p, onBack, onEdit, onWhatsApp, onSubirAdjunto, onEliminarAdjunt
                   </div>
                 )}
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
@@ -2250,16 +2327,11 @@ function ConfirmModal({ titulo, mensaje, confirmLabel, peligro, onConfirm, onClo
 
 function AtenderModal({ cita, servicios, onClose, onSave }) {
   const [tipo, setTipo] = useState("evolucion");
-  // Ficha de evolución (cada sesión)
-  const [resumen, setResumen] = useState("");
-  const [puntos, setPuntos] = useState("");
-  const [proximos, setProximos] = useState("");
-  const [tratamiento, setTratamiento] = useState("");
-  // Historia clínica (una vez)
-  const [motivo, setMotivo] = useState("");
-  const [aspectos, setAspectos] = useState("");
-  const [objetivos, setObjetivos] = useState("");
-  const [impresion, setImpresion] = useState("");
+  // Un campo por cada campo del modelo Atencion; la ficha activa decide cuáles se muestran.
+  const [campos, setCampos] = useState(() =>
+    Object.fromEntries(TODOS_CAMPOS_HC.map((k) => [k, ""]))
+  );
+  const setCampo = (k) => (e) => setCampos((p) => ({ ...p, [k]: e.target.value }));
 
   const [transcribiendo, setTranscribiendo] = useState(false);
   const [dictMsg, setDictMsg] = useState("");
@@ -2267,8 +2339,8 @@ function AtenderModal({ cita, servicios, onClose, onSave }) {
   const recRef = React.useRef(null);
   const chunksRef = React.useRef([]);
 
-  const activos = tipo === "evolucion" ? [resumen, puntos, proximos, tratamiento] : [motivo, aspectos, objetivos, impresion];
-  const canSave = activos.some((v) => v.trim().length > 0);
+  const fichaCampos = FICHAS[tipo] || FICHAS.evolucion;
+  const canSave = fichaCampos.some((c) => (campos[c.k] || "").trim().length > 0);
 
   async function toggleGrabar() {
     if (grabando) { recRef.current?.stop(); return; }
@@ -2306,22 +2378,16 @@ function AtenderModal({ cita, servicios, onClose, onSave }) {
     try {
       const r = await api.transcribirAudio(file, tipo);
       const e = r.estructura;
-      const add = (set) => (val) => set((p) => (p.trim() ? p + "\n\n" + val : val));
       if (e) {
-        if (tipo === "evolucion") {
-          if (e.nota) add(setResumen)(e.nota);
-          if (e.puntos_importantes) setPuntos((p) => p || e.puntos_importantes);
-          if (e.proximos_pasos) setProximos((p) => p || e.proximos_pasos);
-          if (e.indicaciones) setTratamiento((p) => p || e.indicaciones);
-        } else {
-          if (e.motivo) setMotivo((p) => p || e.motivo);
-          if (e.aspectos_historicos) setAspectos((p) => p || e.aspectos_historicos);
-          if (e.objetivos) setObjetivos((p) => p || e.objetivos);
-          if (e.diagnostico) setImpresion((p) => p || e.diagnostico);
-        }
+        setCampos((prev) => {
+          const next = { ...prev };
+          TODOS_CAMPOS_HC.forEach((k) => { if (e[k] && !next[k].trim()) next[k] = e[k]; });
+          return next;
+        });
         setDictMsg("Listo: la IA llenó los campos. Revísalos antes de guardar.");
       } else if (r.transcripcion) {
-        add(tipo === "evolucion" ? setResumen : setMotivo)(r.transcripcion);
+        const primero = fichaCampos[0].k;
+        setCampos((prev) => ({ ...prev, [primero]: prev[primero].trim() ? prev[primero] + "\n\n" + r.transcripcion : r.transcripcion }));
         setDictMsg("Transcripción lista. (Para que la IA la ordene en campos, configura OpenAI.)");
       } else {
         setDictMsg("No se detectó voz en el audio.");
@@ -2334,17 +2400,10 @@ function AtenderModal({ cita, servicios, onClose, onSave }) {
   }
 
   function guardar() {
-    const datos = {
-      tipo,
-      motivo: motivo.trim(),
-      diagnostico: impresion.trim(),
-      aspectos_historicos: aspectos.trim(),
-      objetivos: objetivos.trim(),
-      nota: resumen.trim(),
-      puntos_importantes: puntos.trim(),
-      proximos_pasos: proximos.trim(),
-      indicaciones: tratamiento.trim(),
-    };
+    // Solo se guardan los campos del tipo activo (los demás van vacíos: sin mezcla entre tipos).
+    const datos = { tipo };
+    TODOS_CAMPOS_HC.forEach((k) => { datos[k] = ""; });
+    fichaCampos.forEach((c) => { datos[c.k] = (campos[c.k] || "").trim(); });
     onSave(datos);
   }
 
@@ -2390,45 +2449,13 @@ function AtenderModal({ cita, servicios, onClose, onSave }) {
           </select>
         </div>
 
-        {tipo === "evolucion" ? (
-          <>
-            <div style={{ marginBottom: 13 }}>
-              <div className="ca-label">Resumen de la sesión <span style={{ color: "#B4564E" }}>*</span></div>
-              <textarea className="ca-input" style={{ minHeight: 80, resize: "vertical", lineHeight: 1.5 }} value={resumen} onChange={(e) => setResumen(e.target.value)} placeholder="¿Qué se trabajó en la sesión?" />
-            </div>
-            <div style={{ marginBottom: 13 }}>
-              <div className="ca-label">Puntos importantes a recordar</div>
-              <textarea className="ca-input" style={{ minHeight: 56, resize: "vertical", lineHeight: 1.5 }} value={puntos} onChange={(e) => setPuntos(e.target.value)} placeholder="Observaciones clave…" />
-            </div>
-            <div style={{ marginBottom: 13 }}>
-              <div className="ca-label">Próximos pasos a seguir</div>
-              <textarea className="ca-input" style={{ minHeight: 56, resize: "vertical", lineHeight: 1.5 }} value={proximos} onChange={(e) => setProximos(e.target.value)} placeholder="Qué abordar la próxima sesión…" />
-            </div>
-            <div style={{ marginBottom: 13 }}>
-              <div className="ca-label">Tratamiento / líneas de trabajo / tareas</div>
-              <textarea className="ca-input" style={{ minHeight: 56, resize: "vertical", lineHeight: 1.5 }} value={tratamiento} onChange={(e) => setTratamiento(e.target.value)} placeholder="Tareas o actividades asignadas…" />
-            </div>
-          </>
-        ) : (
-          <>
-            <div style={{ marginBottom: 13 }}>
-              <div className="ca-label">Motivo de consulta <span style={{ color: "#B4564E" }}>*</span></div>
-              <textarea className="ca-input" style={{ minHeight: 70, resize: "vertical", lineHeight: 1.5 }} value={motivo} onChange={(e) => setMotivo(e.target.value)} placeholder="¿Por qué viene el paciente?" />
-            </div>
-            <div style={{ marginBottom: 13 }}>
-              <div className="ca-label">Aspectos históricos relevantes</div>
-              <textarea className="ca-input" style={{ minHeight: 56, resize: "vertical", lineHeight: 1.5 }} value={aspectos} onChange={(e) => setAspectos(e.target.value)} placeholder="Antecedentes relevantes…" />
-            </div>
-            <div style={{ marginBottom: 13 }}>
-              <div className="ca-label">Objetivos del proceso de terapia</div>
-              <textarea className="ca-input" style={{ minHeight: 56, resize: "vertical", lineHeight: 1.5 }} value={objetivos} onChange={(e) => setObjetivos(e.target.value)} placeholder="Metas del proceso…" />
-            </div>
-            <div style={{ marginBottom: 13 }}>
-              <div className="ca-label">Impresión diagnóstica / problemática a tratar</div>
-              <textarea className="ca-input" style={{ minHeight: 56, resize: "vertical", lineHeight: 1.5 }} value={impresion} onChange={(e) => setImpresion(e.target.value)} placeholder="Impresión diagnóstica…" />
-            </div>
-          </>
-        )}
+        {fichaCampos.map((c, i) => (
+          <div key={c.k} style={{ marginBottom: 13 }}>
+            <div className="ca-label">{c.l}{i === 0 && <span style={{ color: "#B4564E" }}> *</span>}</div>
+            <textarea className="ca-input" style={{ minHeight: i === 0 ? 80 : 56, resize: "vertical", lineHeight: 1.5 }}
+              value={campos[c.k]} onChange={setCampo(c.k)} placeholder={c.ph} />
+          </div>
+        ))}
         <div style={{ fontSize: 12.5, color: "var(--muted)", margin: "0 0 16px", display: "flex", gap: 7, alignItems: "flex-start", lineHeight: 1.5 }}>
           <Receipt size={14} strokeWidth={2} style={{ color: "var(--accent)", flexShrink: 0, marginTop: 1 }} />
           <span>Se guarda en la historia clínica con fecha de hoy. El <strong>cobro lo registra Coordinación</strong> aparte, con el botón “Cobrar” de la agenda.</span>
