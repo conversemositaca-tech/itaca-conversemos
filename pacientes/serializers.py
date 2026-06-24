@@ -158,12 +158,13 @@ class CitaSerializer(serializers.ModelSerializer):
     estado_label = serializers.CharField(source="get_estado_display", read_only=True)
     recordado = serializers.BooleanField(source="recordatorio_enviado", read_only=True)
     cobrada = serializers.SerializerMethodField()
+    n_sesion = serializers.IntegerField(source="paciente.n_sesion", read_only=True)
 
     class Meta:
         model = Cita
         fields = [
             "id", "pacienteId", "paciente", "medico", "especialidad",
-            "fecha", "hora", "inicio", "estado", "estado_label", "recordado", "cobrada",
+            "fecha", "hora", "inicio", "estado", "estado_label", "recordado", "cobrada", "n_sesion",
         ]
         read_only_fields = ["inicio"]
 

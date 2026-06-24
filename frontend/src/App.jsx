@@ -808,7 +808,7 @@ export default function ClinicaApp() {
         {view === "agenda" && (
           <Agenda
             citas={citas} fecha={agendaFecha} setFecha={setAgendaFecha}
-            vista={agendaVista} setVista={setAgendaVista} esAsistente={esAsistente}
+            vista={agendaVista} setVista={setAgendaVista} esAsistente={esAsistente} esMedico={usuario?.rol === "medico"}
             onAgendar={() => setAdding(true)} onAtender={setAtender} onRecordar={setRecordar}
             onReagendar={setReagendar} onCancelar={setCancelando} openFicha={openFicha}
             onConfirmar={confirmarCita}
@@ -1903,30 +1903,34 @@ function AgendarModal({ pacientes, fechaInicial, pacienteFijo, onClose, onSave }
   );
 }
 
-function CitaRow({ c, esAsistente, onAtender, onRecordar, onReagendar, onCancelar, onConfirmar, onCobrar, openFicha }) {
+function CitaRow({ c, esAsistente, esMedico, onAtender, onRecordar, onReagendar, onCancelar, onConfirmar, onCobrar, openFicha }) {
   const activa = c.estado !== "atendida" && c.estado !== "cancelada";
   return (
     <div className="ca-row">
       <div className="ca-time"><Clock size={13} strokeWidth={2} style={{ color: "var(--muted)" }} />{c.hora}</div>
       <div style={{ flex: 1, minWidth: 150 }}>
         <button className="ca-pnamebtn" onClick={() => openFicha(c.pacienteId)}>{c.paciente}</button>
-        <div className="ca-pmeta">{c.medico}</div>
+        <div className="ca-pmeta">{c.medico}{c.n_sesion ? ` · Sesión N° ${c.n_sesion}` : ""}</div>
       </div>
       <SpecialtyTag name={c.especialidad} />
       <Tag colors={STATUS[c.estado]}>{c.estado_label}</Tag>
       <div className="ca-actions">
-        {c.estado === "por_confirmar" && (
+        {/* El psicólogo no ve acciones comerciales (confirmar, recordar, cobrar). */}
+        {!esMedico && c.estado === "por_confirmar" && (
           <button className="ca-mini" onClick={() => onConfirmar(c)} title="Marcar confirmada"><Check size={13} strokeWidth={2.2} /> Confirmar</button>
         )}
-        {c.estado === "por_confirmar" && (c.recordado ? (
+        {!esMedico && c.estado === "por_confirmar" && (c.recordado ? (
           <span className="ca-mini done"><Check size={13} strokeWidth={2.4} /> Recordado</span>
         ) : (
           <button className="ca-mini wa" onClick={() => onRecordar(c)}><MessageCircle size={13} strokeWidth={2} /> Recordar</button>
         ))}
         {activa && !esAsistente && (
-          <button className="ca-mini" onClick={() => onAtender(c)}><Stethoscope size={13} strokeWidth={2} /> Atender</button>
+          <button className="ca-mini" onClick={() => onAtender(c)}><Stethoscope size={13} strokeWidth={2} /> {esMedico ? "Registrar sesión" : "Atender"}</button>
         )}
-        {c.estado === "atendida" && (c.cobrada ? (
+        {esMedico && (
+          <button className="ca-mini" onClick={() => openFicha(c.pacienteId)} title="Historia clínica"><FileText size={13} strokeWidth={2} /> Historia</button>
+        )}
+        {!esMedico && c.estado === "atendida" && (c.cobrada ? (
           <span className="ca-mini done"><Check size={13} strokeWidth={2.4} /> Cobrada</span>
         ) : (
           <button className="ca-mini" onClick={() => onCobrar(c)} title="Registrar cobro"><Receipt size={13} strokeWidth={2} /> Cobrar</button>
@@ -1942,7 +1946,63 @@ function CitaRow({ c, esAsistente, onAtender, onRecordar, onReagendar, onCancela
   );
 }
 
-function Agenda({ citas, fecha, setFecha, vista, setVista, esAsistente, onAgendar, onAtender, onRecordar, onReagendar, onCancelar, onConfirmar, onCobrar, openFicha }) {
+// Agenda multi-terapeuta (4.2): horas a la izquierda, terapeutas en columnas.
+function TerapeutasGrid({ citas, openFicha }) {
+  const terapeutas = useMemo(
+    () => [...new Set(citas.map((c) => c.medico).filter(Boolean))].sort(),
+    [citas]
+  );
+  const horas = citas.map((c) => parseInt(c.hora.slice(0, 2), 10)).filter((h) => !isNaN(h));
+  const hIni = horas.length ? Math.max(6, Math.min(...horas)) : 8;
+  const hFin = horas.length ? Math.min(22, Math.max(...horas) + 1) : 20;
+  const rows = [];
+  for (let h = hIni; h <= hFin; h++) rows.push(h);
+
+  if (terapeutas.length === 0)
+    return <div className="ca-empty" style={{ marginTop: 18 }}>No hay sesiones para este día.</div>;
+
+  return (
+    <div className="ca-card" style={{ marginTop: 18, overflowX: "auto", padding: 0 }}>
+      <table className="ca-table" style={{ minWidth: 80 + terapeutas.length * 160 }}>
+        <thead>
+          <tr>
+            <th style={{ width: 60 }}>Hora</th>
+            {terapeutas.map((t) => <th key={t} style={{ textAlign: "center" }}>{t}</th>)}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((h) => (
+            <tr key={h}>
+              <td style={{ color: "var(--muted)", fontSize: 12, whiteSpace: "nowrap", verticalAlign: "top" }}>{String(h).padStart(2, "0")}:00</td>
+              {terapeutas.map((t) => {
+                const evs = citas.filter((c) => c.medico === t && parseInt(c.hora.slice(0, 2), 10) === h && c.estado !== "cancelada");
+                return (
+                  <td key={t} style={{ verticalAlign: "top" }}>
+                    {evs.map((c) => {
+                      const col = STATUS[c.estado] || STATUS.por_confirmar;
+                      return (
+                        <button key={c.id} onClick={() => openFicha(c.pacienteId)}
+                          title={`${c.hora} · ${c.paciente} · ${c.especialidad}`}
+                          style={{ display: "block", width: "100%", textAlign: "left", border: "none",
+                                   borderLeft: `3px solid ${col.fg}`, background: col.bg, borderRadius: 6,
+                                   padding: "4px 7px", marginBottom: 4, cursor: "pointer" }}>
+                          <span style={{ fontSize: 11.5, fontWeight: 600, color: col.fg }}>{c.hora}</span>
+                          <span style={{ fontSize: 12.5, display: "block" }}>{c.paciente}</span>
+                        </button>
+                      );
+                    })}
+                  </td>
+                );
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function Agenda({ citas, fecha, setFecha, vista, setVista, esAsistente, esMedico, onAgendar, onAtender, onRecordar, onReagendar, onCancelar, onConfirmar, onCobrar, openFicha }) {
   const [filtroMedico, setFiltroMedico] = useState("");
   const medicos = useMemo(() => [...new Set(citas.map((c) => c.medico).filter(Boolean))].sort(), [citas]);
   const semana = vista === "semana" ? semanaDe(fecha) : null;
@@ -1979,6 +2039,7 @@ function Agenda({ citas, fecha, setFecha, vista, setVista, esAsistente, onAgenda
         )}
         <div className="ca-seg">
           <button className={vista === "dia" ? "on" : ""} onClick={() => setVista("dia")}>Día</button>
+          <button className={vista === "terapeutas" ? "on" : ""} onClick={() => setVista("terapeutas")}>Terapeutas</button>
           <button className={vista === "semana" ? "on" : ""} onClick={() => setVista("semana")}>Semana</button>
         </div>
       </div>
@@ -1989,12 +2050,14 @@ function Agenda({ citas, fecha, setFecha, vista, setVista, esAsistente, onAgenda
             <div className="ca-empty">No hay sesiones para este día. Usa «Agendar sesión» para reservar una.</div>
           ) : (
             delDia(fecha).map((c) => (
-              <CitaRow key={c.id} c={c} esAsistente={esAsistente}
+              <CitaRow key={c.id} c={c} esAsistente={esAsistente} esMedico={esMedico}
                 onAtender={onAtender} onRecordar={onRecordar} onReagendar={onReagendar}
                 onCancelar={onCancelar} onConfirmar={onConfirmar} onCobrar={onCobrar} openFicha={openFicha} />
             ))
           )}
         </div>
+      ) : vista === "terapeutas" ? (
+        <TerapeutasGrid citas={delDia(fecha)} openFicha={openFicha} />
       ) : (
         <div className="ca-wk">
           {semana.map((iso) => (
