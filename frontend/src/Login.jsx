@@ -43,14 +43,10 @@ export default function Login({ onLogin }) {
         width: "100%", maxWidth: 380, background: C.surface, border: `1px solid ${C.line}`,
         borderRadius: 16, padding: "30px 28px", boxShadow: "0 12px 40px rgba(40,38,34,.06)",
       }}>
-        <div style={{
-          width: 44, height: 44, borderRadius: 12, background: C.accentSoft, display: "flex",
-          alignItems: "center", justifyContent: "center", fontSize: 23, margin: "0 auto 14px",
-        }}>💬</div>
-        <h1 style={{ fontSize: 20, fontWeight: 600, textAlign: "center", margin: 0, letterSpacing: "-0.02em" }}>
-          Itaca Conversemos
-        </h1>
-        <p style={{ fontSize: 13.5, color: C.inkSoft, textAlign: "center", margin: "6px 0 22px" }}>
+        <img src="/itaca-logo-v.png" alt="Itaca Conversemos"
+          style={{ display: "block", width: 190, maxWidth: "72%", height: "auto", margin: "0 auto 8px" }}
+          onError={(e) => { e.currentTarget.style.display = "none"; }} />
+        <p style={{ fontSize: 13.5, color: C.inkSoft, textAlign: "center", margin: "4px 0 22px" }}>
           Ingresa para gestionar tu consultorio.
         </p>
 
@@ -80,15 +76,6 @@ export default function Login({ onLogin }) {
           }}>
           {cargando ? "Ingresando…" : "Ingresar"}
         </button>
-
-        <div style={{
-          marginTop: 20, paddingTop: 16, borderTop: `1px solid ${C.line}`, fontSize: 12,
-          color: C.muted, lineHeight: 1.6,
-        }}>
-          <strong style={{ color: C.inkSoft }}>Cuentas de prueba</strong> (contraseña <code>demo1234</code>):<br />
-          lucia@itaca.pe · psicóloga<br />
-          recepcion@itaca.pe · asistente
-        </div>
       </form>
     </div>
   );

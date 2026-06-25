@@ -627,6 +627,7 @@ export default function ClinicaApp() {
         .ca-side { width:236px; flex-shrink:0; background:#F7F5F1; border-right:1px solid var(--line);
           padding:14px 10px; display:flex; flex-direction:column; gap:2px; }
         .ca-ws { display:flex; align-items:center; gap:9px; padding:8px 8px 14px; }
+        .ca-ws-img { height:46px; width:auto; max-width:100%; display:block; object-fit:contain; }
         .ca-ws-logo { width:30px; height:30px; border-radius:8px; background:var(--accent-soft);
           display:flex; align-items:center; justify-content:center; font-size:16px; }
         .ca-ws-name { font-weight:600; font-size:14.5px; line-height:1.15; }
@@ -856,6 +857,7 @@ export default function ClinicaApp() {
           .ca-side { width:100%; flex-direction:row; overflow-x:auto; border-right:none;
             border-bottom:1px solid var(--line); padding:10px; align-items:center; }
           .ca-ws { padding:4px 8px 4px 4px; }
+          .ca-ws-img { height:32px; }
           .ca-ws-sub, .ca-sectlabel { display:none; }
           .ca-navitem { width:auto; white-space:nowrap; }
           .ca-main { padding:24px 18px 50px; }
@@ -869,10 +871,14 @@ export default function ClinicaApp() {
       {/* ---- Sidebar ---- */}
       <aside className="ca-side">
         <div className="ca-ws">
-          <div className="ca-ws-logo">🩺</div>
-          <div>
-            <div className="ca-ws-name">{nombreClinica}</div>
-            <div className="ca-ws-sub">{ciudadClinica}</div>
+          <img src="/itaca-logo-h.png" alt="Itaca Conversemos" className="ca-ws-img"
+            onError={(e) => { e.currentTarget.style.display = "none"; e.currentTarget.nextElementSibling.style.display = "flex"; }} />
+          <div className="ca-ws-fallback" style={{ display: "none", alignItems: "center", gap: 9 }}>
+            <div className="ca-ws-logo">🩺</div>
+            <div>
+              <div className="ca-ws-name">{nombreClinica}</div>
+              <div className="ca-ws-sub">{ciudadClinica}</div>
+            </div>
           </div>
         </div>
         {nav.map((n) => {
