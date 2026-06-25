@@ -871,7 +871,7 @@ export default function ClinicaApp() {
       {/* ---- Sidebar ---- */}
       <aside className="ca-side">
         <div className="ca-ws">
-          <img src="/itaca-logo-h.png" alt="Itaca Conversemos" className="ca-ws-img"
+          <img src={`${import.meta.env.BASE_URL}itaca-logo-h.png`} alt="Itaca Conversemos" className="ca-ws-img"
             onError={(e) => { e.currentTarget.style.display = "none"; e.currentTarget.nextElementSibling.style.display = "flex"; }} />
           <div className="ca-ws-fallback" style={{ display: "none", alignItems: "center", gap: 9 }}>
             <div className="ca-ws-logo">🩺</div>

@@ -43,7 +43,7 @@ export default function Login({ onLogin }) {
         width: "100%", maxWidth: 380, background: C.surface, border: `1px solid ${C.line}`,
         borderRadius: 16, padding: "30px 28px", boxShadow: "0 12px 40px rgba(40,38,34,.06)",
       }}>
-        <img src="/itaca-logo-v.png" alt="Itaca Conversemos"
+        <img src={`${import.meta.env.BASE_URL}itaca-logo-v.png`} alt="Itaca Conversemos"
           style={{ display: "block", width: 190, maxWidth: "72%", height: "auto", margin: "0 auto 8px" }}
           onError={(e) => { e.currentTarget.style.display = "none"; }} />
         <p style={{ fontSize: 13.5, color: C.inkSoft, textAlign: "center", margin: "4px 0 22px" }}>
