@@ -256,7 +256,7 @@ class CitaViewSet(viewsets.ModelViewSet):
 
         if request.user.rol not in (Usuario.Rol.MEDICO, Usuario.Rol.ADMIN):
             return Response(
-                {"detail": "Solo el personal médico puede registrar atenciones."},
+                {"detail": "Solo psicólogos y administradores pueden registrar atenciones."},
                 status=status.HTTP_403_FORBIDDEN,
             )
         cita = self.get_object()
@@ -410,7 +410,7 @@ class TranscribirView(APIView):
         from usuarios.models import Usuario
 
         if getattr(request.user, "rol", None) not in (Usuario.Rol.MEDICO, Usuario.Rol.ADMIN):
-            return Response({"detail": "Solo el personal médico puede transcribir notas."},
+            return Response({"detail": "Solo psicólogos y administradores pueden transcribir notas."},
                             status=status.HTTP_403_FORBIDDEN)
         audio = request.FILES.get("audio")
         if audio is None:
@@ -468,7 +468,7 @@ class AtencionViewSet(viewsets.ModelViewSet):
     def _solo_clinico(self):
         from usuarios.models import Usuario
         if getattr(self.request.user, "rol", None) not in (Usuario.Rol.MEDICO, Usuario.Rol.ADMIN):
-            raise PermissionDenied("Solo el personal médico (médico/admin) puede editar la historia clínica.")
+            raise PermissionDenied("Solo psicólogos y administradores pueden editar la historia clínica.")
 
     def perform_update(self, serializer):
         self._solo_clinico()
@@ -564,7 +564,7 @@ class AdjuntoViewSet(viewsets.ModelViewSet):
 
         if request.user.rol not in (Usuario.Rol.MEDICO, Usuario.Rol.ADMIN):
             return Response(
-                {"detail": "Solo el personal médico puede eliminar archivos clínicos."},
+                {"detail": "Solo psicólogos y administradores pueden eliminar archivos clínicos."},
                 status=status.HTTP_403_FORBIDDEN,
             )
         return super().destroy(request, *args, **kwargs)

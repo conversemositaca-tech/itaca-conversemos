@@ -1319,11 +1319,11 @@ function Gerencia({ showToast }) {
             </div>
           )}
 
-          <h2 className="ca-secth" style={{ marginTop: 28 }}>Productividad por médico</h2>
+          <h2 className="ca-secth" style={{ marginTop: 28 }}>Productividad por psicólogo</h2>
           <table className="ca-tbl">
             <thead>
               <tr>
-                <th>Médico</th>
+                <th>Psicólogo</th>
                 <th className="num">Sesiones</th>
                 <th className="num">Atenciones</th>
                 <th className="num">Leads</th>
@@ -1452,7 +1452,7 @@ const FORMATOS = [
   },
   {
     key: "atenciones", label: "Historias clínicas", endpoint: "atenciones", puedeAgregar: false,
-    aviso: "La historia clínica es un registro permanente: aquí se corrige, no se borra. Solo médico/admin. (Las atenciones nuevas se crean al Atender una cita.)",
+    aviso: "La historia clínica es un registro permanente: aquí se corrige, no se borra. Solo psicólogo/admin. (Las atenciones nuevas se crean al Atender una cita.)",
     cols: [
       { campo: "paciente_nombre", label: "Paciente", tipo: "ro" },
       { campo: "fecha", label: "Fecha", tipo: "ro" },
@@ -1466,7 +1466,7 @@ const FORMATOS = [
       { campo: "objetivos", label: "Objetivos (H.C.)", tipo: "text" },
       { campo: "diagnostico", label: "Impresión dx (H.C.)", tipo: "text" },
       { campo: "especialidad", label: "Especialidad", tipo: "text" },
-      { campo: "medico", label: "Médico", tipo: "ro" },
+      { campo: "medico", label: "Psicólogo", tipo: "ro" },
       { campo: "registrado_por_nombre", label: "Registró", tipo: "ro" },
       { campo: "ultima_edicion", label: "Última edición", tipo: "ro" },
     ],
@@ -2279,7 +2279,7 @@ function Agenda({ citas, fecha, setFecha, vista, setVista, esAsistente, esMedico
         <input className="ca-datein" type="date" value={fecha} onChange={(e) => e.target.value && setFecha(e.target.value)} />
         {medicos.length > 1 && (
           <select className="ca-datein" value={filtroMedico} onChange={(e) => setFiltroMedico(e.target.value)}>
-            <option value="">Todos los médicos</option>
+            <option value="">Todos los psicólogos</option>
             {medicos.map((m) => <option key={m} value={m}>{m}</option>)}
           </select>
         )}
@@ -2805,7 +2805,7 @@ function Marketing({ showToast, onConvertir, esAdmin }) {
     catch (err) { showToast("Error: " + err.message); }
   }
   async function asignarMedico(lead, medicoId) {
-    try { await api.actualizarLead(lead.id, { medico: medicoId || null }); await cargar(); showToast("Médico asignado ✓"); }
+    try { await api.actualizarLead(lead.id, { medico: medicoId || null }); await cargar(); showToast("Psicólogo asignado ✓"); }
     catch (err) { showToast("Error: " + err.message); }
   }
   async function convertir(lead) {
@@ -2838,11 +2838,11 @@ function Marketing({ showToast, onConvertir, esAdmin }) {
       <div className="ca-tophead">
         <div>
           <h1 className="ca-h1">Captación</h1>
-          <div className="ca-sub">Leads, embudo y cierre por doctor</div>
+          <div className="ca-sub">Leads, embudo y cierre por psicólogo</div>
         </div>
         <div style={{ display: "flex", gap: 9, alignItems: "center" }}>
           <button className="ca-btn ghost" disabled={leads.length === 0}
-            onClick={() => descargarCSV("leads.csv", ["Nombre", "Telefono", "Fuente", "Pauta", "Campaña", "Especialidad", "Medico", "Estado", "Creado"],
+            onClick={() => descargarCSV("leads.csv", ["Nombre", "Telefono", "Fuente", "Pauta", "Campaña", "Especialidad", "Psicologo", "Estado", "Creado"],
               leads.map((l) => [l.nombre, l.telefono, l.fuente_label, l.es_pauta ? "Si" : "No", l.campania, l.especialidad, l.medico_nombre, l.estado_label, l.creado]))}>
             <Download size={15} strokeWidth={2} /> CSV
           </button>
@@ -2932,11 +2932,11 @@ function Marketing({ showToast, onConvertir, esAdmin }) {
         </div>
       </div>
 
-      <h2 className="ca-secth" style={{ marginTop: 30 }}>Cierre por doctor</h2>
+      <h2 className="ca-secth" style={{ marginTop: 30 }}>Cierre por psicólogo</h2>
       <table className="ca-tbl">
         <thead>
           <tr>
-            <th>Doctor</th>
+            <th>Psicólogo</th>
             <th className="num">Leads</th>
             <th className="num">Agendados</th>
             <th className="num">Cierres</th>
@@ -2956,7 +2956,7 @@ function Marketing({ showToast, onConvertir, esAdmin }) {
         </tbody>
       </table>
       <div style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 4 }}>
-        Cuántos leads llegan por cada doctor (de pauta u orgánico) y cuántos cierran.
+        Cuántos leads llegan por cada psicólogo (de pauta u orgánico) y cuántos cierran.
       </div>
 
       <h2 className="ca-secth" style={{ marginTop: 30 }}>Leads por fuente</h2>
@@ -4607,7 +4607,7 @@ function CambiarPasswordModal({ onClose, onSave }) {
 }
 
 const FILTROS_ROL = [
-  { v: null, l: "Todos" }, { v: "medico", l: "Médicos" },
+  { v: null, l: "Todos" }, { v: "medico", l: "Psicólogos" },
   { v: "asistente", l: "Asistentes" }, { v: "admin", l: "Administradores" },
   { v: "inactivos", l: "Inactivos" },
 ];
@@ -4656,7 +4656,7 @@ function Equipo({ showToast, miId }) {
       <div className="ca-tophead">
         <div>
           <h1 className="ca-h1">Equipo</h1>
-          <div className="ca-sub">Médicos, asistentes y administradores de la clínica</div>
+          <div className="ca-sub">Psicólogos, asistentes y administradores de la clínica</div>
         </div>
         <button className="ca-btn" onClick={() => setEditar({ new: true })}><UserPlus size={16} strokeWidth={2.1} /> Nuevo usuario</button>
       </div>
