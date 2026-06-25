@@ -3238,22 +3238,21 @@ function ConsolidadoSoto({ showToast }) {
   const [abierto, setAbierto] = useState(false);
   const [data, setData] = useState(null);
   const [mes, setMes] = useState("");
-  const [cargando, setCargando] = useState(false);
   const [probando, setProbando] = useState(false);
 
   async function cargar(m) {
-    setCargando(true);
     try {
       const r = await api.sotoResumen(m);
       setData(r);
       if (!m && r?.mes) setMes(r.mes);
-    } catch (e) { setData({ configurado: true, ok: false, detalle: e.message }); }
-    finally { setCargando(false); }
+    } catch (e) { /* silencioso: si no responde, la sección simplemente no aparece */ }
   }
-  function toggle() {
-    const next = !abierto; setAbierto(next);
-    if (next && !data) cargar(mes);
-  }
+  useEffect(() => { cargar(""); }, []);
+
+  // Mientras no sepamos el estado, o si Soto NO está conectado, no mostramos nada
+  // (sin cuadro vacío). La sección aparece sola cuando se configure SOTO_EXEC_URL.
+  if (!data || !data.configurado) return null;
+
   function cambiarMes(m) { setMes(m); cargar(m); }
   async function probar() {
     setProbando(true);
@@ -3266,7 +3265,7 @@ function ConsolidadoSoto({ showToast }) {
 
   return (
     <div className="ca-card" style={{ marginBottom: 18, padding: 0, overflow: "hidden" }}>
-      <button onClick={toggle} style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "13px 16px", background: "none", border: "none", cursor: "pointer", fontFamily: "inherit" }}>
+      <button onClick={() => setAbierto(!abierto)} style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "13px 16px", background: "none", border: "none", cursor: "pointer", fontFamily: "inherit" }}>
         <span style={{ display: "flex", alignItems: "center", gap: 9, fontWeight: 600, fontSize: 14.5, color: "var(--ink)" }}>
           <TrendingUp size={16} strokeWidth={2} style={{ color: "var(--accent)" }} /> Consolidado financiero (Soto)
         </span>
@@ -3274,11 +3273,7 @@ function ConsolidadoSoto({ showToast }) {
       </button>
       {abierto && (
         <div style={{ padding: "0 16px 16px" }}>
-          {cargando && !data ? (
-            <div style={{ color: "var(--muted)", fontSize: 13 }}>Cargando datos de Soto…</div>
-          ) : !data?.configurado ? (
-            <div style={{ fontSize: 13, color: "var(--muted)", lineHeight: 1.5 }}>Aún no está conectado. Falta poner <b>SOTO_EXEC_URL</b> en el servidor (la URL /exec de Soto).</div>
-          ) : !data.ok ? (
+          {!data.ok ? (
             <div style={{ fontSize: 13, color: "#B4564E", lineHeight: 1.5 }}>
               {data.detalle}
               <div style={{ marginTop: 8 }}><button className="ca-mini" onClick={() => cargar(mes)}>Reintentar</button></div>
