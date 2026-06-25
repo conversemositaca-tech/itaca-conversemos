@@ -189,6 +189,15 @@ if _railway_domain:
 ITACA_INTEGRACION_TOKEN = os.getenv("ITACA_INTEGRACION_TOKEN", "")
 
 
+# --- Integración con el tablero financiero de Soto (Google Apps Script) ---
+# URL /exec de la app web de Soto. PULL: GET ?api=datos devuelve el JSON de
+# getDatos(). PUSH: POST agrega filas a BD_Ingresos/BD_Egresos (doPost de Soto).
+SOTO_EXEC_URL = os.getenv("SOTO_EXEC_URL", "")
+# El PUSH escribe en la contabilidad REAL de Soto: arranca APAGADO. Solo cuando
+# está en True se envían los cobros/egresos nuevos automáticamente.
+SOTO_PUSH_ENABLED = env_bool("SOTO_PUSH_ENABLED", False)
+
+
 # --- WhatsApp vía Evolution API ---
 # URL y API key del servidor Evolution (en EasyPanel). La "instancia" es la conexión
 # de WhatsApp; puede definirse global aquí o por clínica (Clinica.whatsapp_instance).

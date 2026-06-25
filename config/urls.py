@@ -9,7 +9,15 @@ from core.integraciones import NotaVozView, PacientesBuscarView, PsicologoView
 from core.metricas import MetricaMensualViewSet
 from core.ocupacion import OcupacionView
 from core.reportes import ReporteSemanalViewSet
-from finanzas.api import CajaView, CobroViewSet, EgresoViewSet, PaqueteViewSet, ServicioViewSet
+from finanzas.api import (
+    CajaView,
+    CobroViewSet,
+    EgresoViewSet,
+    PaqueteViewSet,
+    ServicioViewSet,
+    SotoPruebaView,
+    SotoResumenView,
+)
 from leads.api import AnuncioViewSet, LeadViewSet
 from leads.captacion import (
     CaptacionConfigView,
@@ -65,6 +73,9 @@ urlpatterns = [
     path("api/clinica/", ClinicaConfigView.as_view(), name="clinica-config"),
     path("api/gerencia/resumen/", GerenciaResumenView.as_view(), name="gerencia-resumen"),
     path("api/finanzas/caja/", CajaView.as_view(), name="finanzas-caja"),
+    path("api/finanzas/soto/", SotoResumenView.as_view(), name="finanzas-soto"),
+    path("api/finanzas/soto/prueba/", SotoPruebaView.as_view(), name="finanzas-soto-prueba"),
+
     path("api/ocupacion/", OcupacionView.as_view(), name="ocupacion"),
     # Captación de leads. Las rutas específicas van ANTES del comodín <token>.
     path("api/captacion/config/", CaptacionConfigView.as_view(), name="captacion-config"),

@@ -202,6 +202,9 @@ export const api = {
   crearEgreso: (data) => req("/api/egresos/", { method: "POST", body: JSON.stringify(data) }),
   eliminarEgreso: (id) => req(`/api/egresos/${id}/`, { method: "DELETE" }),
   cajaFinanzas: (f) => req(`/api/finanzas/caja/?${finanzasQS(f)}`),
+  // Consolidado de Soto (tablero financiero externo)
+  sotoResumen: (mes) => req(`/api/finanzas/soto/${mes ? `?mes=${mes}` : ""}`),
+  sotoPrueba: () => req("/api/finanzas/soto/prueba/", { method: "POST" }),
   // Paquetes de sesiones prepagadas
   paquetes: (pacienteId) => req(`/api/paquetes/${pacienteId ? `?paciente=${pacienteId}` : ""}`),
   crearPaquete: (data) => req("/api/paquetes/", { method: "POST", body: JSON.stringify(data) }),

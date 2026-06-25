@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from "react";
 import {
-  Home, Calendar, Users, Receipt, Search, Plus, Clock, ChevronLeft,
+  Home, Calendar, Users, Receipt, Search, Plus, Clock, ChevronLeft, ChevronDown,
   Phone, Cake, X, Stethoscope, MessageCircle, Check, Pencil, UserPlus, FileText,
   TrendingUp, Download, AlertTriangle, Megaphone, LogOut,
   Paperclip, Trash2, Activity, Pill, HeartPulse, Copy, BarChart3, UserCog, KeyRound, MapPin,
@@ -3234,6 +3234,101 @@ const EGRESO_CATEGORIAS = [
   { v: "otro", l: "Otro" },
 ];
 
+function ConsolidadoSoto({ showToast }) {
+  const [abierto, setAbierto] = useState(false);
+  const [data, setData] = useState(null);
+  const [mes, setMes] = useState("");
+  const [cargando, setCargando] = useState(false);
+  const [probando, setProbando] = useState(false);
+
+  async function cargar(m) {
+    setCargando(true);
+    try {
+      const r = await api.sotoResumen(m);
+      setData(r);
+      if (!m && r?.mes) setMes(r.mes);
+    } catch (e) { setData({ configurado: true, ok: false, detalle: e.message }); }
+    finally { setCargando(false); }
+  }
+  function toggle() {
+    const next = !abierto; setAbierto(next);
+    if (next && !data) cargar(mes);
+  }
+  function cambiarMes(m) { setMes(m); cargar(m); }
+  async function probar() {
+    setProbando(true);
+    try {
+      const r = await api.sotoPrueba();
+      showToast(r.ok ? "Fila de prueba enviada a Soto ✓ (recuerda borrarla de la hoja)" : "Error: " + r.detalle);
+    } catch (e) { showToast("Error: " + e.message); }
+    finally { setProbando(false); }
+  }
+
+  return (
+    <div className="ca-card" style={{ marginBottom: 18, padding: 0, overflow: "hidden" }}>
+      <button onClick={toggle} style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "13px 16px", background: "none", border: "none", cursor: "pointer", fontFamily: "inherit" }}>
+        <span style={{ display: "flex", alignItems: "center", gap: 9, fontWeight: 600, fontSize: 14.5, color: "var(--ink)" }}>
+          <TrendingUp size={16} strokeWidth={2} style={{ color: "var(--accent)" }} /> Consolidado financiero (Soto)
+        </span>
+        <ChevronDown size={18} style={{ transform: abierto ? "rotate(180deg)" : "none", transition: "transform .2s", color: "var(--muted)" }} />
+      </button>
+      {abierto && (
+        <div style={{ padding: "0 16px 16px" }}>
+          {cargando && !data ? (
+            <div style={{ color: "var(--muted)", fontSize: 13 }}>Cargando datos de Soto…</div>
+          ) : !data?.configurado ? (
+            <div style={{ fontSize: 13, color: "var(--muted)", lineHeight: 1.5 }}>Aún no está conectado. Falta poner <b>SOTO_EXEC_URL</b> en el servidor (la URL /exec de Soto).</div>
+          ) : !data.ok ? (
+            <div style={{ fontSize: 13, color: "#B4564E", lineHeight: 1.5 }}>
+              {data.detalle}
+              <div style={{ marginTop: 8 }}><button className="ca-mini" onClick={() => cargar(mes)}>Reintentar</button></div>
+            </div>
+          ) : (
+            <>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
+                <select className="ca-input" style={{ width: "auto" }} value={mes} onChange={(e) => cambiarMes(e.target.value)}>
+                  {(data.meses || []).map((m) => <option key={m} value={m}>{m}</option>)}
+                </select>
+                {data.push_enabled
+                  ? <span className="ca-vital" style={{ background: "#E9F1ED", color: "#3E7A65" }}>Auto-envío a Soto: ON</span>
+                  : <span className="ca-vital" style={{ background: "#F7ECDD", color: "#9C6B2E" }}>Auto-envío a Soto: OFF</span>}
+                <button className="ca-mini" disabled={probando} onClick={probar}>{probando ? "Enviando…" : "Probar conexión"}</button>
+                {data.dashboard_url && <a className="ca-link" href={data.dashboard_url} target="_blank" rel="noreferrer">Ver tablero completo ↗</a>}
+              </div>
+              <div className="ca-stats">
+                <StatCard label="Ingresos" valor={money(data.ingresos)} color="#4F8A77" />
+                <StatCard label="Egresos" valor={money(data.egresos)} color="#B4564E" />
+                <StatCard label="Regalías (2.5%)" valor={money(data.regalias)} color="#9C6B2E" />
+                <StatCard label="Utilidad" valor={money(data.utilidad)} sub={`Margen ${data.margen}%`} color={data.utilidad >= 0 ? "#3E7A65" : "#B4564E"} />
+              </div>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
+                <span className="ca-vital"><b>Piura</b> {money(data.ing_piura)}</span>
+                <span className="ca-vital"><b>Lima</b> {money(data.ing_lima)}</span>
+                <span className="ca-vital"><b>{data.n_ingresos}</b> ingresos · <b>{data.n_egresos}</b> egresos</span>
+              </div>
+              {data.ranking && data.ranking.length > 0 && (
+                <>
+                  <div className="ca-label" style={{ marginTop: 14, marginBottom: 6 }}>Ranking de psicólogos</div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                    {data.ranking.map((r, i) => (
+                      <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 13 }}>
+                        <span style={{ color: "var(--muted)", width: 18 }}>{i + 1}</span>
+                        <span style={{ flex: 1, textTransform: "capitalize" }}>{r.nombre}</span>
+                        <span style={{ fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>{money(r.total)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+              <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 12 }}>Datos del tablero de Soto (Google Sheets). La utilidad descuenta egresos y regalías (2.5%).</div>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Finanzas({ showToast, esAdmin }) {
   const [periodo, setPeriodo] = useState("mes");
   const [sede, setSede] = useState("");
@@ -3300,6 +3395,8 @@ function Finanzas({ showToast, esAdmin }) {
           <button className="ca-btn" onClick={() => setNuevo({})}><Plus size={16} strokeWidth={2.2} /> Registrar cobro</button>
         </div>
       </div>
+
+      {esAdmin && <ConsolidadoSoto showToast={showToast} />}
 
       <div className="ca-agnav" style={{ justifyContent: "flex-end", flexWrap: "wrap", gap: 10 }}>
         <select className="ca-input" style={{ width: "auto" }} value={sede} onChange={(e) => setSede(e.target.value)}>

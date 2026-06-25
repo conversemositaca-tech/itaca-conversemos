@@ -67,6 +67,8 @@ class Cobro(ModeloTenant):
     registrado_por = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, related_name="cobros", null=True, blank=True
     )
+    # ¿Ya se envió a la hoja de Soto (BD_Ingresos)? Evita filas duplicadas.
+    soto_sincronizado = models.BooleanField(default=False)
 
     class Meta:
         verbose_name = "Cobro"
@@ -148,6 +150,8 @@ class Egreso(ModeloTenant):
     registrado_por = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, related_name="egresos", null=True, blank=True
     )
+    # ¿Ya se envió a la hoja de Soto (BD_Egresos)? Evita filas duplicadas.
+    soto_sincronizado = models.BooleanField(default=False)
 
     class Meta:
         verbose_name = "Egreso"

@@ -10,10 +10,20 @@ from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from core import soto
 from core.tenant import get_clinica_actual
 from pacientes.models import Atencion, Cita, Paciente
 
 from .models import Cobro, Egreso, Paquete, Servicio
+
+
+def _push_soto_ingreso(cobro):
+    """Envía el cobro a la hoja de Soto si está pagado (best-effort, nunca rompe)."""
+    try:
+        if cobro.estado == Cobro.Estado.PAGADO:
+            soto.push_ingreso(cobro)
+    except Exception:  # noqa: BLE001 — la integración jamás debe tumbar el cobro
+        pass
 from .serializers import CobroSerializer, EgresoSerializer, PaqueteSerializer, ServicioSerializer
 
 
@@ -144,6 +154,7 @@ class CobroViewSet(viewsets.ModelViewSet):
             comprobante_numero=str(d.get("comprobante_numero") or "").strip()[:40],
             registrado_por=request.user,
         )
+        _push_soto_ingreso(cobro)
         return Response(CobroSerializer(cobro).data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=["post"])
@@ -161,6 +172,7 @@ class CobroViewSet(viewsets.ModelViewSet):
             cobro.comprobante_numero = str(request.data.get("comprobante_numero") or "").strip()[:40]
             campos += ["comprobante_tipo", "comprobante_numero"]
         cobro.save(update_fields=campos)
+        _push_soto_ingreso(cobro)
         return Response(CobroSerializer(cobro).data)
 
     @action(detail=False, methods=["get"])
@@ -256,6 +268,7 @@ class PaqueteViewSet(viewsets.ModelViewSet):
                 clinica=clinica, paciente=paciente, nombre=nombre,
                 sesiones_total=total, monto=monto, cobro=cobro, registrado_por=request.user,
             )
+        _push_soto_ingreso(cobro)
         return Response(PaqueteSerializer(paquete).data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=["post"])
@@ -304,6 +317,10 @@ class EgresoViewSet(viewsets.ModelViewSet):
             proveedor=str(d.get("proveedor") or "").strip()[:160],
             registrado_por=request.user,
         )
+        try:
+            soto.push_egreso(egreso)
+        except Exception:  # noqa: BLE001 — la integración jamás debe tumbar el egreso
+            pass
         return Response(EgresoSerializer(egreso).data, status=status.HTTP_201_CREATED)
 
 
@@ -368,3 +385,46 @@ class CajaView(APIView):
             "sede": sede,
             "egresos_solo_total": bool(sede),
         })
+
+
+class SotoResumenView(APIView):
+    """GET /api/finanzas/soto/?mes=YYYY-MM — KPIs del tablero financiero de Soto
+    (PULL). Solo admin. Devuelve 'configurado'/'ok' para que el front muestre el
+    estado si Soto aún no publicó el endpoint ?api=datos."""
+
+    def get(self, request):
+        from django.conf import settings as dj_settings
+
+        if not _es_admin(request.user):
+            return Response({"detail": "Solo el gerente (admin) puede ver el consolidado."},
+                            status=status.HTTP_403_FORBIDDEN)
+        base = {
+            "configurado": soto.disponible(),
+            "push_enabled": dj_settings.SOTO_PUSH_ENABLED,
+            "dashboard_url": dj_settings.SOTO_EXEC_URL,
+        }
+        if not soto.disponible():
+            return Response({**base, "ok": False,
+                             "detalle": "Falta configurar SOTO_EXEC_URL en el servidor."})
+        datos = soto.fetch_datos()
+        if datos is None:
+            return Response({**base, "ok": False,
+                             "detalle": "No se pudo leer los datos de Soto. ¿Ya agregó el endpoint ?api=datos y publicó nueva versión?"})
+        mes = request.query_params.get("mes") or datos.get("mes_actual_iso")
+        res = soto.resumen(datos, mes_iso=mes) or {}
+        return Response({**base, "ok": True, **res})
+
+
+class SotoPruebaView(APIView):
+    """POST /api/finanzas/soto/prueba/ — envía UNA fila de prueba a la hoja de Soto
+    para verificar la conexión (PUSH) sin datos reales. Solo admin."""
+
+    def post(self, request):
+        if not _es_admin(request.user):
+            return Response({"detail": "Solo el gerente (admin) puede probar la conexión."},
+                            status=status.HTTP_403_FORBIDDEN)
+        if not soto.disponible():
+            return Response({"ok": False, "detalle": "Falta configurar SOTO_EXEC_URL."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        ok, detalle = soto.enviar_prueba()
+        return Response({"ok": ok, "detalle": detalle})
