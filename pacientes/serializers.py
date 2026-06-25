@@ -83,6 +83,7 @@ class PacienteSerializer(serializers.ModelSerializer):
     historial = serializers.SerializerMethodField()
     adjuntos = serializers.SerializerMethodField()
     cuenta = serializers.SerializerMethodField()
+    paquetes = serializers.SerializerMethodField()
 
     class Meta:
         model = Paciente
@@ -93,7 +94,7 @@ class PacienteSerializer(serializers.ModelSerializer):
             "sede", "sede_label", "profesional", "profesional_nombre",
             "n_sesion", "proceso", "proceso_label", "seguimiento",
             "especialidad", "alergias", "antecedentes", "medicacion_habitual",
-            "ultima", "proxima", "historial", "adjuntos", "cuenta",
+            "ultima", "proxima", "historial", "adjuntos", "cuenta", "paquetes",
         ]
 
     def get_proceso_label(self, obj):
@@ -134,6 +135,20 @@ class PacienteSerializer(serializers.ModelSerializer):
             for c in sorted(cobros, key=lambda x: x.fecha, reverse=True)
         ]
         return {"cobrado": float(cobrado), "pendiente": float(pendiente), "items": items}
+
+    def get_paquetes(self, obj):
+        # Paquetes de sesiones del paciente (los activos primero).
+        orden = {"activo": 0, "agotado": 1, "anulado": 2}
+        paqs = sorted(obj.paquetes.all(), key=lambda p: (orden.get(p.estado, 9), -p.id))
+        return [
+            {
+                "id": p.id, "nombre": p.nombre, "total": p.sesiones_total,
+                "usadas": p.sesiones_usadas, "restantes": p.sesiones_restantes,
+                "estado": p.estado, "monto": float(p.monto),
+                "fecha": fecha_corta(timezone.localtime(p.fecha)),
+            }
+            for p in paqs
+        ]
 
     def get_ultima(self, obj):
         ult = obj.atenciones.order_by("-fecha").first()

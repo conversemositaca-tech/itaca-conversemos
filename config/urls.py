@@ -9,7 +9,7 @@ from core.integraciones import NotaVozView, PacientesBuscarView, PsicologoView
 from core.metricas import MetricaMensualViewSet
 from core.ocupacion import OcupacionView
 from core.reportes import ReporteSemanalViewSet
-from finanzas.api import CajaView, CobroViewSet, EgresoViewSet, ServicioViewSet
+from finanzas.api import CajaView, CobroViewSet, EgresoViewSet, PaqueteViewSet, ServicioViewSet
 from leads.api import AnuncioViewSet, LeadViewSet
 from leads.captacion import (
     CaptacionConfigView,
@@ -41,6 +41,7 @@ router.register(r"atenciones", AtencionViewSet, basename="atencion")
 router.register(r"adjuntos", AdjuntoViewSet, basename="adjunto")
 router.register(r"servicios", ServicioViewSet, basename="servicio")
 router.register(r"cobros", CobroViewSet, basename="cobro")
+router.register(r"paquetes", PaqueteViewSet, basename="paquete")
 router.register(r"egresos", EgresoViewSet, basename="egreso")
 router.register(r"usuarios", UsuarioViewSet, basename="usuario")
 router.register(r"profesionales", ProfesionalViewSet, basename="profesional")

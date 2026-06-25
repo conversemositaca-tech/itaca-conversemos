@@ -1,6 +1,7 @@
 from datetime import datetime, time, timedelta
 from decimal import Decimal, InvalidOperation
 
+from django.db import transaction
 from django.db.models import Sum
 from django.utils import timezone
 from rest_framework import status, viewsets
@@ -12,8 +13,8 @@ from rest_framework.views import APIView
 from core.tenant import get_clinica_actual
 from pacientes.models import Atencion, Cita, Paciente
 
-from .models import Cobro, Egreso, Servicio
-from .serializers import CobroSerializer, EgresoSerializer, ServicioSerializer
+from .models import Cobro, Egreso, Paquete, Servicio
+from .serializers import CobroSerializer, EgresoSerializer, PaqueteSerializer, ServicioSerializer
 
 
 def _es_admin(user):
@@ -206,6 +207,64 @@ class CobroViewSet(viewsets.ModelViewSet):
             "por_medio": por_medio_list,
             "por_dia": por_dia,
         })
+
+
+class PaqueteViewSet(viewsets.ModelViewSet):
+    """Paquetes de sesiones prepagadas. Al crear, genera el Cobro (pagado) del paquete.
+    El descuento de sesiones se hace solo al atender (ver pacientes/api.py)."""
+
+    serializer_class = PaqueteSerializer
+
+    def get_queryset(self):
+        qs = Paquete.objects.del_tenant_actual().select_related("paciente").order_by("-fecha")
+        paciente = self.request.query_params.get("paciente")
+        if paciente:
+            qs = qs.filter(paciente_id=paciente)
+        estado = self.request.query_params.get("estado")
+        if estado in dict(Paquete.Estado.choices):
+            qs = qs.filter(estado=estado)
+        return qs
+
+    def create(self, request, *args, **kwargs):
+        clinica = get_clinica_actual()
+        d = request.data
+        paciente = Paciente.objects.del_tenant_actual().filter(pk=d.get("paciente")).first()
+        if paciente is None:
+            return Response({"detail": "Paciente no encontrado."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            total = int(d.get("sesiones_total") or 0)
+        except (ValueError, TypeError):
+            total = 0
+        if total <= 0:
+            return Response({"detail": "Indica cuántas sesiones tiene el paquete."}, status=status.HTTP_400_BAD_REQUEST)
+        monto = _dec(d.get("monto"))
+        if monto is None or monto <= 0:
+            return Response({"detail": "El monto debe ser mayor a 0."}, status=status.HTTP_400_BAD_REQUEST)
+        nombre = (str(d.get("nombre") or "").strip() or f"Paquete de {total} sesiones")[:160]
+        medio = d.get("medio_pago") if d.get("medio_pago") in dict(Cobro.Medio.choices) else Cobro.Medio.EFECTIVO
+        comprobante = d.get("comprobante_tipo") if d.get("comprobante_tipo") in dict(Cobro.Comprobante.choices) else ""
+
+        with transaction.atomic():
+            cobro = Cobro.objects.create(
+                clinica=clinica, paciente=paciente, concepto=nombre, monto=monto,
+                estado=Cobro.Estado.PAGADO, medio_pago=medio,
+                comprobante_tipo=comprobante,
+                comprobante_numero=str(d.get("comprobante_numero") or "").strip()[:40],
+                registrado_por=request.user,
+            )
+            paquete = Paquete.objects.create(
+                clinica=clinica, paciente=paciente, nombre=nombre,
+                sesiones_total=total, monto=monto, cobro=cobro, registrado_por=request.user,
+            )
+        return Response(PaqueteSerializer(paquete).data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=["post"])
+    def anular(self, request, pk=None):
+        """Anula el paquete (no borra). No revierte el cobro automáticamente."""
+        paquete = self.get_object()
+        paquete.estado = Paquete.Estado.ANULADO
+        paquete.save(update_fields=["estado"])
+        return Response(PaqueteSerializer(paquete).data)
 
 
 class EgresoViewSet(viewsets.ModelViewSet):

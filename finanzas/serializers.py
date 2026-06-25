@@ -3,13 +3,32 @@ from rest_framework import serializers
 
 from core.utils import fecha_corta
 
-from .models import Cobro, Egreso, Servicio
+from .models import Cobro, Egreso, Paquete, Servicio
 
 
 class ServicioSerializer(serializers.ModelSerializer):
     class Meta:
         model = Servicio
         fields = ["id", "nombre", "especialidad", "precio", "activo"]
+
+
+class PaqueteSerializer(serializers.ModelSerializer):
+    paciente_nombre = serializers.CharField(source="paciente.nombre", read_only=True)
+    estado_label = serializers.CharField(source="get_estado_display", read_only=True)
+    sesiones_restantes = serializers.IntegerField(read_only=True)
+    fecha_label = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Paquete
+        fields = [
+            "id", "paciente", "paciente_nombre", "nombre", "sesiones_total",
+            "sesiones_usadas", "sesiones_restantes", "monto", "estado", "estado_label",
+            "cobro", "fecha", "fecha_label",
+        ]
+        read_only_fields = ["sesiones_usadas", "estado", "cobro"]
+
+    def get_fecha_label(self, obj):
+        return fecha_corta(timezone.localtime(obj.fecha))
 
 
 class EgresoSerializer(serializers.ModelSerializer):

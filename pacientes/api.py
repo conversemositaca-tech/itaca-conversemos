@@ -310,10 +310,33 @@ class CitaViewSet(viewsets.ModelViewSet):
         # historia clínica que llena el psicólogo). Tras atender, la cita queda
         # "atendida" y Coordinación la cobra con el botón "Cobrar" de la agenda.
 
+        ya_atendida = cita.estado == Cita.Estado.ATENDIDA
         cita.estado = Cita.Estado.ATENDIDA
         cita.save(update_fields=["estado"])
         gcalendar.sync_cita(cita)
-        return Response(CitaSerializer(cita).data)
+
+        # Descuento automático de paquete de sesiones (genérico, sin vencimiento):
+        # si el paciente tiene un paquete activo y es la 1ª vez que se atiende esta cita.
+        paquete_info = None
+        if not ya_atendida:
+            from finanzas.models import Paquete
+
+            paq = (
+                Paquete.objects.del_tenant_actual()
+                .filter(paciente=cita.paciente, estado=Paquete.Estado.ACTIVO)
+                .order_by("fecha")
+                .first()
+            )
+            if paq and paq.consumir():
+                paquete_info = {
+                    "nombre": paq.nombre, "usadas": paq.sesiones_usadas,
+                    "total": paq.sesiones_total, "restantes": paq.sesiones_restantes,
+                }
+
+        data = CitaSerializer(cita).data
+        if paquete_info:
+            data["paquete"] = paquete_info
+        return Response(data)
 
     @action(detail=True, methods=["post"])
     def recordar(self, request, pk=None):

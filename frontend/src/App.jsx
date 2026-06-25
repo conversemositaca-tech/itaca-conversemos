@@ -339,6 +339,7 @@ export default function ClinicaApp() {
   const [cobrando, setCobrando] = useState(null);
   const [cambiarPass, setCambiarPass] = useState(false);
   const [agendarPara, setAgendarPara] = useState(null);
+  const [vendiendoPaquete, setVendiendoPaquete] = useState(null);
   const [agendaFecha, setAgendaFecha] = useState(HOY_ISO);
   const [agendaVista, setAgendaVista] = useState("dia");
   const [editingPaciente, setEditingPaciente] = useState(null);
@@ -442,10 +443,23 @@ export default function ClinicaApp() {
 
   async function guardarAtencion(cita, datos) {
     try {
-      await api.atenderCita(cita.id, datos);
+      const r = await api.atenderCita(cita.id, datos);
       await Promise.all([refrescarCitas(), refrescarPacientes()]);
       setAtender(null);
-      showToast("Atención guardada en la historia clínica ✓");
+      if (r?.paquete) {
+        showToast(`Atención guardada ✓ · Paquete: ${r.paquete.usadas}/${r.paquete.total} (quedan ${r.paquete.restantes})`);
+      } else {
+        showToast("Atención guardada en la historia clínica ✓");
+      }
+    } catch (e) { showToast("Error: " + e.message); }
+  }
+
+  async function venderPaquete(data) {
+    try {
+      await api.crearPaquete(data);
+      await refrescarPacientes();
+      setVendiendoPaquete(null);
+      showToast("Paquete vendido ✓");
     } catch (e) { showToast("Error: " + e.message); }
   }
 
@@ -972,6 +986,7 @@ export default function ClinicaApp() {
           <Ficha p={selected} onBack={() => setSelectedId(null)} onEdit={() => setEditingPaciente(selected)}
             onWhatsApp={() => setWaPaciente(selected)} clinica={nombreClinica} onAgendar={() => setAgendarPara(selected)}
             onRegistrarSesion={() => setRegistrandoSesion(selected)} puedeRegistrar={usuario?.rol === "medico" || usuario?.rol === "admin"}
+            onVenderPaquete={() => setVendiendoPaquete(selected)} puedeVenderPaquete={usuario?.rol === "asistente" || usuario?.rol === "admin"}
             onSubirAdjunto={(file) => subirAdjunto(selected, file)}
             onEliminarAdjunto={eliminarAdjunto} puedeEliminar={usuario?.rol === "medico" || usuario?.rol === "admin"} />
         )}
@@ -999,8 +1014,12 @@ export default function ClinicaApp() {
         {adding && <AgendarModal pacientes={pacientes} fechaInicial={agendaFecha} onClose={() => setAdding(false)} onSave={agendarCita} />}
         {agendarPara && (
           <AgendarModal pacientes={pacientes} fechaInicial={agendaFecha}
-            pacienteFijo={{ id: agendarPara.id, nombre: agendarPara.nombre, especialidad: agendarPara.especialidad }}
+            pacienteFijo={{ id: agendarPara.id, nombre: agendarPara.nombre, especialidad: agendarPara.especialidad, sede: agendarPara.sede, n_sesion: agendarPara.n_sesion }}
             onClose={() => setAgendarPara(null)} onSave={async (d) => { await agendarCita(d); setAgendarPara(null); }} />
+        )}
+        {vendiendoPaquete && (
+          <VenderPaqueteModal paciente={vendiendoPaquete} servicios={servicios}
+            onClose={() => setVendiendoPaquete(null)} onSave={venderPaquete} />
         )}
         {atender && <AtenderModal cita={atender} servicios={servicios} onClose={() => setAtender(null)} onSave={(datos) => guardarAtencion(atender, datos)} />}
         {recordar && <RecordarModal cita={recordar} clinica={nombreClinica} onClose={() => setRecordar(null)} onSend={(texto) => enviarRecordatorio(recordar, texto)} />}
@@ -1751,7 +1770,7 @@ function AdjuntoRow({ a, puedeEliminar, onEliminar }) {
   );
 }
 
-function Ficha({ p, onBack, onEdit, onWhatsApp, onSubirAdjunto, onEliminarAdjunto, puedeEliminar, clinica, onAgendar, onRegistrarSesion, puedeRegistrar }) {
+function Ficha({ p, onBack, onEdit, onWhatsApp, onSubirAdjunto, onEliminarAdjunto, puedeEliminar, clinica, onAgendar, onRegistrarSesion, puedeRegistrar, onVenderPaquete, puedeVenderPaquete }) {
   return (
     <div>
       <button className="ca-back" onClick={onBack}><ChevronLeft size={16} strokeWidth={2} /> Pacientes</button>
@@ -1847,6 +1866,42 @@ function Ficha({ p, onBack, onEdit, onWhatsApp, onSubirAdjunto, onEliminarAdjunt
                 <Tag colors={ESTADO_COBRO_COLOR[c.estado]}>{c.estado === "pagado" ? (c.medio || "Pagado") : "Pendiente"}</Tag>
               </div>
             ))}
+          </div>
+        </>
+      )}
+
+      {(puedeVenderPaquete || (p.paquetes && p.paquetes.length > 0)) && (
+        <>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <h2 className="ca-secth">Paquetes de sesiones</h2>
+            {puedeVenderPaquete && (
+              <button className="ca-mini" onClick={onVenderPaquete}><Plus size={13} strokeWidth={2.2} /> Vender paquete</button>
+            )}
+          </div>
+          <div className="ca-card" style={{ marginBottom: 26 }}>
+            {(!p.paquetes || p.paquetes.length === 0) ? (
+              <div style={{ color: "var(--muted)", fontSize: 13.5 }}>Sin paquetes. Las sesiones prepagadas se descuentan solas al atender.</div>
+            ) : (
+              p.paquetes.map((pq) => {
+                const pct = pq.total ? Math.round((pq.usadas / pq.total) * 100) : 0;
+                const agotado = pq.estado !== "activo";
+                return (
+                  <div key={pq.id} style={{ padding: "10px 0", borderTop: "1px solid var(--line)" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+                      <span style={{ flex: 1, fontWeight: 500, fontSize: 14, opacity: agotado ? 0.6 : 1 }}>{pq.nombre}</span>
+                      <span style={{ fontSize: 13, fontWeight: 600, color: pq.restantes > 0 ? "#4F8A77" : "#B4564E" }}>
+                        {pq.usadas}/{pq.total} usadas · quedan {pq.restantes}
+                      </span>
+                      {pq.estado !== "activo" && <Tag colors={pq.estado === "agotado" ? STATUS.atendida : STATUS.cancelada}>{pq.estado === "agotado" ? "Agotado" : "Anulado"}</Tag>}
+                    </div>
+                    <div style={{ height: 7, borderRadius: 999, background: "var(--line)", overflow: "hidden" }}>
+                      <div style={{ width: `${pct}%`, height: "100%", background: pq.restantes > 0 ? "#4F8A77" : "#C9923A" }} />
+                    </div>
+                    <div className="ca-pmeta" style={{ marginTop: 5 }}>{pq.fecha} · {money(pq.monto)}</div>
+                  </div>
+                );
+              })
+            )}
           </div>
         </>
       )}
@@ -3458,6 +3513,104 @@ function EgresoModal({ onClose, onSave }) {
           <button className="ca-btn" style={{ opacity: canSave ? 1 : 0.5, pointerEvents: canSave ? "auto" : "none" }}
             onClick={() => onSave({ concepto: concepto.trim(), categoria, monto, medio_pago: medio, proveedor: proveedor.trim() })}>
             Guardar egreso
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function VenderPaqueteModal({ paciente, servicios, onClose, onSave }) {
+  const serviciosActivos = (servicios || []).filter((s) => s.activo);
+  const [servicio, setServicio] = useState("");
+  const [precioUnit, setPrecioUnit] = useState("");
+  const [sesiones, setSesiones] = useState("8");
+  const [monto, setMonto] = useState("");
+  const [nombre, setNombre] = useState("");
+  const [medio, setMedio] = useState("efectivo");
+  const [comprobante, setComprobante] = useState("");
+  const [compNumero, setCompNumero] = useState("");
+
+  const nSes = Number(sesiones) || 0;
+  const nombreFinal = nombre.trim() || (nSes ? `Paquete de ${nSes} sesiones` : "Paquete de sesiones");
+  const canSave = nSes > 0 && Number(monto) > 0;
+
+  function elegirServicio(id) {
+    setServicio(id);
+    const s = serviciosActivos.find((x) => String(x.id) === id);
+    if (s) { setPrecioUnit(String(s.precio)); if (nSes) setMonto((Number(s.precio) * nSes).toFixed(2)); }
+  }
+  function setSes(v) {
+    const n = v.replace(/[^0-9]/g, "");
+    setSesiones(n);
+    if (precioUnit && Number(n)) setMonto((Number(precioUnit) * Number(n)).toFixed(2));
+  }
+
+  function guardar() {
+    onSave({
+      paciente: paciente.id, nombre: nombreFinal, sesiones_total: nSes, monto,
+      medio_pago: medio, comprobante_tipo: comprobante, comprobante_numero: compNumero.trim(),
+    });
+  }
+
+  return (
+    <div className="ca-modal-bg" onClick={onClose}>
+      <div className="ca-modal" style={{ maxWidth: 430 }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+          <strong style={{ fontSize: 16 }}>Vender paquete</strong>
+          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)" }}><X size={18} /></button>
+        </div>
+        <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 16 }}>Para {paciente.nombre} · se cobra ahora y las sesiones se descuentan al atender.</div>
+
+        <div style={{ marginBottom: 12 }}>
+          <div className="ca-label">Servicio (opcional, sugiere precio)</div>
+          <select className="ca-input" value={servicio} onChange={(e) => elegirServicio(e.target.value)}>
+            <option value="">— Personalizado —</option>
+            {serviciosActivos.map((s) => <option key={s.id} value={s.id}>{s.nombre} (S/ {s.precio})</option>)}
+          </select>
+        </div>
+        <div style={{ display: "flex", gap: 11, marginBottom: 12 }}>
+          <div style={{ flex: 1 }}>
+            <div className="ca-label">N° de sesiones</div>
+            <input className="ca-input" value={sesiones} onChange={(e) => setSes(e.target.value)} inputMode="numeric" placeholder="8" />
+          </div>
+          <div style={{ flex: 1 }}>
+            <div className="ca-label">Monto total S/.</div>
+            <input className="ca-input" value={monto} onChange={(e) => setMonto(e.target.value)} inputMode="decimal" placeholder="640" />
+          </div>
+        </div>
+        {precioUnit && nSes > 0 && (
+          <div style={{ fontSize: 12, color: "var(--muted)", marginTop: -4, marginBottom: 12 }}>{nSes} × S/ {precioUnit} = S/ {(Number(precioUnit) * nSes).toFixed(2)} (puedes ajustar el total)</div>
+        )}
+        <div style={{ marginBottom: 12 }}>
+          <div className="ca-label">Nombre del paquete</div>
+          <input className="ca-input" value={nombre} onChange={(e) => setNombre(e.target.value)} placeholder={nombreFinal} />
+        </div>
+        <div style={{ display: "flex", gap: 11, marginBottom: 12 }}>
+          <div style={{ flex: 1 }}>
+            <div className="ca-label">Medio de pago</div>
+            <select className="ca-input" value={medio} onChange={(e) => setMedio(e.target.value)}>
+              {MEDIOS_PAGO.map((m) => <option key={m.v} value={m.v}>{m.l}</option>)}
+            </select>
+          </div>
+          <div style={{ flex: 1 }}>
+            <div className="ca-label">Comprobante</div>
+            <select className="ca-input" value={comprobante} onChange={(e) => setComprobante(e.target.value)}>
+              {COMPROBANTES.map((c) => <option key={c.v} value={c.v}>{c.l}</option>)}
+            </select>
+          </div>
+        </div>
+        {comprobante && (
+          <div style={{ marginBottom: 12 }}>
+            <div className="ca-label">N° de comprobante</div>
+            <input className="ca-input" value={compNumero} onChange={(e) => setCompNumero(e.target.value)} placeholder="B001-123" />
+          </div>
+        )}
+
+        <div style={{ display: "flex", gap: 9, justifyContent: "flex-end", marginTop: 18 }}>
+          <button className="ca-btn ghost" onClick={onClose}>Cancelar</button>
+          <button className="ca-btn" style={{ opacity: canSave ? 1 : 0.5, pointerEvents: canSave ? "auto" : "none" }} onClick={guardar}>
+            Vender por {money(Number(monto) || 0)}
           </button>
         </div>
       </div>

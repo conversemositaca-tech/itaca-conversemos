@@ -78,6 +78,55 @@ class Cobro(ModeloTenant):
         return f"{self.concepto} · S/ {self.monto} · {self.get_estado_display()}"
 
 
+class Paquete(ModeloTenant):
+    """Paquete de sesiones prepagadas de un paciente (estilo AgendaPro).
+    Se compra por adelantado (genera un Cobro) y cada sesión atendida descuenta
+    una sesión. Genérico (cualquier sesión) y sin vencimiento."""
+
+    class Estado(models.TextChoices):
+        ACTIVO = "activo", "Activo"
+        AGOTADO = "agotado", "Agotado"
+        ANULADO = "anulado", "Anulado"
+
+    paciente = models.ForeignKey("pacientes.Paciente", on_delete=models.PROTECT, related_name="paquetes")
+    nombre = models.CharField(max_length=160, default="Paquete de sesiones")
+    sesiones_total = models.PositiveIntegerField(default=0)
+    sesiones_usadas = models.PositiveIntegerField(default=0)
+    monto = models.DecimalField(max_digits=8, decimal_places=2, default=0)
+    estado = models.CharField(max_length=10, choices=Estado.choices, default=Estado.ACTIVO)
+    cobro = models.ForeignKey(
+        "finanzas.Cobro", on_delete=models.SET_NULL, related_name="paquetes", null=True, blank=True,
+        help_text="Cobro que pagó el paquete.",
+    )
+    fecha = models.DateTimeField(default=timezone.now)
+    registrado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, related_name="paquetes", null=True, blank=True
+    )
+
+    class Meta:
+        verbose_name = "Paquete"
+        verbose_name_plural = "Paquetes"
+        ordering = ["-fecha"]
+        indexes = [models.Index(fields=["clinica", "paciente", "estado"])]
+
+    def __str__(self):
+        return f"{self.nombre} · {self.paciente} · {self.sesiones_usadas}/{self.sesiones_total}"
+
+    @property
+    def sesiones_restantes(self):
+        return max(self.sesiones_total - self.sesiones_usadas, 0)
+
+    def consumir(self):
+        """Descuenta una sesión si quedan. Devuelve True si descontó."""
+        if self.estado != self.Estado.ACTIVO or self.sesiones_restantes <= 0:
+            return False
+        self.sesiones_usadas += 1
+        if self.sesiones_restantes <= 0:
+            self.estado = self.Estado.AGOTADO
+        self.save(update_fields=["sesiones_usadas", "estado"])
+        return True
+
+
 class Egreso(ModeloTenant):
     """Gasto / salida de dinero de la clínica (insumos, sueldos, alquiler, etc.).
     Es el otro lado de la caja: Ingresos (Cobro) - Egresos = Utilidad."""
