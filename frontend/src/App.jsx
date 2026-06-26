@@ -1271,6 +1271,37 @@ function Gerencia({ showToast }) {
 
   const op = data?.operacion, cap = data?.captacion, pac = data?.pacientes;
 
+  // Indicadores del tablero como pares Indicador/Valor para exportar.
+  const indicadores = data ? [
+    ["Período", data.periodo.label],
+    ["Sede", data.sede ? (data.sede === "lima" ? "Lima" : "Piura") : "Total"],
+    ["Sesiones en el período", op.citas],
+    ["Atendidas", op.atendidas],
+    ["% Asistencia", `${op.asistencia_pct}%`],
+    ["% Cancelación", `${op.cancelacion_pct}%`],
+    ["Recordatorios enviados", op.recordatorios],
+    ["Leads recibidos", cap.recibidos],
+    ["% de pauta", `${cap.pauta_pct}%`],
+    ["Cierres (iniciaron)", cap.cierres],
+    ["Tasa de cierre", `${cap.tasa_cierre}%`],
+    ["Mejor fuente", cap.top_fuente],
+    ["Mejor campaña", cap.top_campania],
+    ["Pacientes totales", pac.total],
+    ["Nuevos en el período", pac.nuevos],
+    ["Sin próxima sesión", pac.sin_proxima],
+    ...(data.retencion && data.retencion.con_sesiones > 0 ? [
+      ["Retención · en ritmo (<8d)", data.retencion.verde],
+      ["Retención · alerta (8–15d)", data.retencion.amarillo],
+      ["Retención · abandono (>15d)", data.retencion.rojo],
+      ["Retención · % abandono", `${data.retencion.rojo_pct}%`],
+    ] : []),
+    ["Ingresos (cobrado)", data.finanzas?.cobrado || 0],
+    ...(data.finanzas?.egresos != null ? [["Egresos (gastos)", data.finanzas.egresos]] : []),
+    ...(data.finanzas?.utilidad != null ? [["Utilidad (neto)", data.finanzas.utilidad]] : []),
+    ["Pendiente por cobrar", data.finanzas?.pendiente || 0],
+  ] : [];
+  const tituloGer = `Gerencia${data ? " · " + data.periodo.label : ""}${sede ? " · " + (sede === "lima" ? "Lima" : "Piura") : ""}`;
+
   return (
     <div>
       <div className="ca-tophead">
@@ -1281,6 +1312,8 @@ function Gerencia({ showToast }) {
           </div>
         </div>
         <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+          <ExportBtns nombre={`gerencia_${periodo}${sede ? "_" + sede : ""}`} titulo={tituloGer}
+            headers={["Indicador", "Valor"]} filas={indicadores} disabled={!data} />
           <div className="ca-seg">
             {[["", "Total"], ["lima", "Lima"], ["piura", "Piura"]].map(([v, l]) => (
               <button key={v || "total"} className={sede === v ? "on" : ""} onClick={() => setSede(v)}>{l}</button>
@@ -1379,7 +1412,13 @@ function Gerencia({ showToast }) {
             </div>
           )}
 
-          <h2 className="ca-secth" style={{ marginTop: 28 }}>Productividad por psicólogo</h2>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 28, gap: 10, flexWrap: "wrap" }}>
+            <h2 className="ca-secth" style={{ margin: 0 }}>Productividad por psicólogo</h2>
+            <ExportBtns nombre={`productividad_${periodo}${sede ? "_" + sede : ""}`} titulo={`Productividad por psicólogo${data ? " · " + data.periodo.label : ""}`}
+              headers={["Psicologo", "Sesiones", "Atenciones", "Leads", "Cierres"]}
+              filas={data.productividad.map((m) => [m.medico, m.citas, m.atenciones, m.leads, m.cierres])}
+              disabled={data.productividad.length === 0} />
+          </div>
           <table className="ca-tbl">
             <thead>
               <tr>
@@ -4413,7 +4452,12 @@ function Historico({ showToast, esAdmin }) {
           <h1 className="ca-h1">Histórico de marketing</h1>
           <div className="ca-sub">Inversión, captación y CAC por sede · {anio}</div>
         </div>
-        {esAdmin && <button className="ca-btn" onClick={() => setEditar({ new: true, anio })}><Plus size={16} strokeWidth={2.2} /> Agregar mes</button>}
+        <div style={{ display: "flex", gap: 9, alignItems: "center" }}>
+          <ExportBtns nombre={`historico_marketing_${anio}`} titulo={`Histórico de marketing · ${anio}`} disabled={filas.length === 0}
+            headers={["Año", "Mes", "Sede", "Invertido", "Mensajes", "Leads", "Citas nuevas", "Pacientes", "CAC", "Costo/lead", "Conversion %"]}
+            filas={filas.map((r) => [r.anio, r.mes_label, r.sede_label, Number(r.invertido), r.mensajes, r.leads, r.citas_nuevas, r.pacientes, Math.round(r.cac), Math.round(r.costo_lead), Math.round((r.conversion || 0) * 100)])} />
+          {esAdmin && <button className="ca-btn" onClick={() => setEditar({ new: true, anio })}><Plus size={16} strokeWidth={2.2} /> Agregar mes</button>}
+        </div>
       </div>
 
       <div className="ca-fchips" style={{ marginTop: 18 }}>
@@ -4615,7 +4659,13 @@ function ReporteSemanal({ showToast, esAdmin }) {
           <h1 className="ca-h1">Reporte semanal</h1>
           <div className="ca-sub">Tablero ejecutivo para el directorio</div>
         </div>
-        {esAdmin && <button className="ca-btn" onClick={() => setEditar({ new: true })}><Plus size={16} strokeWidth={2.2} /> Nuevo reporte</button>}
+        <div style={{ display: "flex", gap: 9, alignItems: "center" }}>
+          <ExportBtns nombre={`reporte_${rep?.periodo_label || ""}`} titulo={`Reporte semanal${rep?.periodo_label ? " · " + rep.periodo_label : ""}`}
+            disabled={!rep || !rep.semaforo || rep.semaforo.length === 0}
+            headers={["Indicador", "Valor", "Meta", "Estado"]}
+            filas={(rep?.semaforo || []).map((s) => [s.area, s.valor, s.meta, (SEM[s.estado] || SEM.rojo).l])} />
+          {esAdmin && <button className="ca-btn" onClick={() => setEditar({ new: true })}><Plus size={16} strokeWidth={2.2} /> Nuevo reporte</button>}
+        </div>
       </div>
 
       {lista.length === 0 ? (
@@ -4799,6 +4849,11 @@ function Ocupacion({ showToast }) {
           <h1 className="ca-h1">Ocupación de agenda</h1>
           <div className="ca-sub">Horas disponibles vs. sesiones realizadas, por psicólogo</div>
         </div>
+        <ExportBtns nombre={`ocupacion_${data.anio}_${data.mes}_s${data.semana}`}
+          titulo={`Ocupación de agenda · Sem ${data.semana} · ${MESES_FULL[data.mes] || ""} ${data.anio}`}
+          disabled={data.sedes.length === 0}
+          headers={["Sede", "Psicologo", "Horas", "Sesiones", "% Ocupacion", "Consultas", "1er proceso", "Recompra"]}
+          filas={data.sedes.flatMap((g) => g.psicologos.map((p) => [g.sede_label, p.nombre, p.horas_disponibles, p.sesiones, `${p.ocupacion}%`, p.consultas, p.primer_proceso, p.recompra]))} />
       </div>
 
       <div className="ca-fchips" style={{ marginTop: 18, alignItems: "flex-end" }}>
