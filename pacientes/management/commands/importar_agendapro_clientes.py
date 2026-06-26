@@ -22,6 +22,7 @@ from django.utils import timezone
 
 from core.models import Clinica
 from pacientes.models import Atencion, Cita, Paciente, SeguimientoSesion
+from usuarios.models import Profesional
 
 NS = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
 RNS = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}"
@@ -123,12 +124,27 @@ class Command(BaseCommand):
         parser.add_argument("--dry-run", action="store_true", help="No escribe; solo reporta.")
         parser.add_argument("--reemplazar", action="store_true",
                             help="Borra pacientes/citas/atenciones/cobros del demo antes de importar.")
+        parser.add_argument("--sede", choices=["lima", "piura"], default="",
+                            help="Fuerza la sede de TODAS las filas (ignora la columna Ciudad).")
+        parser.add_argument("--profesional", default="",
+                            help="Nombre (o parte) del psicólogo del directorio a asignar a TODAS las filas.")
 
     def handle(self, *args, **opt):
         clinica = Clinica.objects.filter(slug="itaca").first() or Clinica.objects.first()
         if clinica is None:
             self.stderr.write("No hay clínica. Corre primero el bootstrap/seed.")
             return
+
+        prof = None
+        if opt["profesional"]:
+            qs = Profesional.objects.filter(clinica=clinica, nombre__icontains=opt["profesional"])
+            if qs.count() != 1:
+                self.stderr.write(
+                    f"--profesional '{opt['profesional']}' coincide con {qs.count()} profesionales: "
+                    f"{[p.nombre for p in qs]}. Sé más específico.")
+                return
+            prof = qs.first()
+            self.stdout.write(f"Profesional a asignar: {prof.nombre} (sede {prof.sede})")
 
         encabezados, filas = leer_primera_hoja(opt["archivo"])
         if not filas:
@@ -201,17 +217,20 @@ class Command(BaseCommand):
                     sin_doc += 1
                 ciudad = celda(fila, c_ciudad).lower()
                 g = celda(fila, c_gen)
+                sede = opt["sede"] or ("lima" if "lima" in ciudad else "piura" if "piura" in ciudad else "")
                 datos = dict(
                     nombre=nombre,
                     telefono=celda(fila, c_tel),
                     email=celda(fila, c_email),
-                    sede=("lima" if "lima" in ciudad else "piura" if "piura" in ciudad else ""),
+                    sede=sede,
                     direccion=(celda(fila, c_dir) or celda(fila, c_distrito))[:255],
                     genero=("femenino" if g == "1" else "masculino" if g == "2" else ""),
                     fecha_nacimiento=parse_nacimiento(celda(fila, c_dia), celda(fila, c_mes), celda(fila, c_anio)),
                     numero_documento=doc,
                     tipo_documento=("ruc" if len(doc) == 11 else "dni"),
                 )
+                if prof is not None:
+                    datos["profesional"] = prof
                 creado = parse_fecha_ddmmaa(celda(fila, c_creado))
                 if len(muestras) < 3:
                     muestras.append(datos)
@@ -251,16 +270,22 @@ class Command(BaseCommand):
                 for datos, creado in parsed:
                     existente = buscar(datos)
                     if existente:
+                        # Solo pisar con valores con contenido: nunca borrar datos
+                        # existentes (p. ej. fecha de nacimiento) con un vacío del archivo.
                         for k, v in datos.items():
+                            if v in (None, ""):
+                                continue
                             setattr(existente, k, v)
                         existente.save()
                         pac = existente
                         actualizados += 1
                     else:
                         pac = Paciente.objects.create(clinica=clinica, **datos)
+                        # creado_en (fecha de alta) solo para nuevos; en los existentes
+                        # se respeta su fecha de registro original.
+                        if creado:
+                            Paciente.objects.filter(pk=pac.pk).update(creado_en=fecha_alta(creado))
                         creados += 1
-                    if creado:
-                        Paciente.objects.filter(pk=pac.pk).update(creado_en=fecha_alta(creado))
 
         self.stdout.write("\n--- muestra del mapeo (primeras 3) ---")
         for m in muestras:
