@@ -206,6 +206,9 @@ EVOLUTION_API_KEY = os.getenv("EVOLUTION_API_KEY", "")
 EVOLUTION_INSTANCE = os.getenv("EVOLUTION_INSTANCE", "")
 # Prefijo de país por defecto para normalizar teléfonos (Perú = 51).
 WHATSAPP_PAIS_PREFIJO = os.getenv("WHATSAPP_PAIS_PREFIJO", "51")
+# Versión de la Graph API para WhatsApp Cloud (Meta). Los números se configuran
+# en el apartado "Conexión WhatsApp" (core.NumeroWhatsapp), no aquí.
+WHATSAPP_CLOUD_API_VERSION = os.getenv("WHATSAPP_CLOUD_API_VERSION", "v21.0")
 
 
 # --- Google Calendar (opcional) ---
