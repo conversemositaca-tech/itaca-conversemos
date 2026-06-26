@@ -29,6 +29,10 @@ PLANTILLAS = [
     ("consentimiento", "Consentimiento informado",
      "Hola {nombre} 👋 Antes de tu primera sesión te compartimos el consentimiento informado. "
      "Por favor léelo y confírmanos tu aceptación. ¡Gracias! 🌿"),
+    ("cumpleanos", "Cumpleaños",
+     "¡Feliz cumpleaños, {nombre}! 🎉🎂 En {clinica} te deseamos un día lleno de bienestar y "
+     "momentos felices. Gracias por confiar en nosotros para cuidar tu salud emocional. "
+     "¡Un fuerte abrazo! 🌿"),
 ]
 
 
