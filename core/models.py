@@ -19,6 +19,11 @@ class Clinica(models.Model):
                   "Si se deja vacío, usa EVOLUTION_INSTANCE del entorno.",
     )
     # --- WhatsApp Cloud API (Meta) ---
+    # El Webhook URL y el Verify Token son ÚNICOS por clínica (los comparten todos
+    # los números bajo la misma app de Meta). Las credenciales de cada número
+    # (Phone Number ID, Access Token, WABA ID) viven ahora en NumeroWhatsapp.
+    # Los tres campos de abajo quedaron por compatibilidad: la migración 0008 copió
+    # su contenido al primer NumeroWhatsapp y el código ya no los usa.
     wa_phone_number_id = models.CharField("Phone Number ID", max_length=40, blank=True, default="")
     wa_access_token = models.TextField("Access Token", blank=True, default="")
     wa_waba_id = models.CharField("WABA ID", max_length=40, blank=True, default="")
@@ -90,6 +95,36 @@ class ModeloTenant(models.Model):
 
     class Meta:
         abstract = True
+
+
+class NumeroWhatsapp(ModeloTenant):
+    """Un número de WhatsApp Cloud API (Meta) conectado a la clínica.
+
+    Una clínica puede tener varios (uno por sede / línea). El Webhook URL y el
+    Verify Token son compartidos (viven en Clinica): cada número solo aporta su
+    Phone Number ID + Access Token + WABA ID. Los mensajes entrantes se enrutan
+    por el `phone_number_id` que Meta manda en el payload.
+    """
+
+    class Sede(models.TextChoices):
+        LIMA = "lima", "Lima"
+        PIURA = "piura", "Piura"
+        AMBAS = "ambas", "Ambas sedes"
+
+    sede = models.CharField(max_length=10, choices=Sede.choices, blank=True, default="")
+    wa_phone_number_id = models.CharField("Phone Number ID", max_length=40, blank=True, default="")
+    wa_access_token = models.TextField("Access Token", blank=True, default="")
+    wa_waba_id = models.CharField("WABA ID", max_length=40, blank=True, default="")
+    activo = models.BooleanField(default=True)
+
+    class Meta:
+        verbose_name = "Número de WhatsApp"
+        verbose_name_plural = "Números de WhatsApp"
+        ordering = ["sede", "id"]
+
+    def __str__(self):
+        etiqueta = self.get_sede_display() if self.sede else "WhatsApp"
+        return f"{etiqueta} · {self.wa_phone_number_id or 'sin número'}"
 
 
 class MetricaMensual(ModeloTenant):

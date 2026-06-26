@@ -208,6 +208,7 @@ export const api = {
   // Conexión WhatsApp Cloud API (Meta)
   whatsappConfig: () => req("/api/whatsapp/config/"),
   guardarWhatsappConfig: (data) => req("/api/whatsapp/config/", { method: "POST", body: JSON.stringify(data) }),
+  borrarWhatsappNumero: (id) => req(`/api/whatsapp/config/?id=${id}`, { method: "DELETE" }),
   // Paquetes de sesiones prepagadas
   paquetes: (pacienteId) => req(`/api/paquetes/${pacienteId ? `?paciente=${pacienteId}` : ""}`),
   crearPaquete: (data) => req("/api/paquetes/", { method: "POST", body: JSON.stringify(data) }),

@@ -3237,17 +3237,93 @@ const EGRESO_CATEGORIAS = [
   { v: "otro", l: "Otro" },
 ];
 
+function NumeroWaCard({ numero, esNuevo, onSaved, onCancel, showToast }) {
+  const [sede, setSede] = useState(numero?.sede || "");
+  const [phone, setPhone] = useState(numero?.phone_number_id || "");
+  const [waba, setWaba] = useState(numero?.waba_id || "");
+  const [token, setToken] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function guardar() {
+    if (!phone.trim()) { showToast("Falta el Phone Number ID"); return; }
+    if (esNuevo && !token.trim()) { showToast("Falta el Access Token"); return; }
+    setBusy(true);
+    try {
+      const c = await api.guardarWhatsappConfig({
+        id: numero?.id, sede, phone_number_id: phone, access_token: token, waba_id: waba,
+      });
+      setToken(""); onSaved(c);
+      showToast(esNuevo ? "Número agregado ✓" : "Número guardado ✓");
+    } catch (e) { showToast("Error: " + e.message); }
+    finally { setBusy(false); }
+  }
+  async function eliminar() {
+    if (!window.confirm("¿Eliminar este número de WhatsApp?")) return;
+    setBusy(true);
+    try { const c = await api.borrarWhatsappNumero(numero.id); onSaved(c); showToast("Número eliminado"); }
+    catch (e) { showToast("Error: " + e.message); }
+    finally { setBusy(false); }
+  }
+
+  const help = { fontSize: 12, color: "var(--muted)", marginTop: 6, lineHeight: 1.5 };
+  const titulo = esNuevo
+    ? "Nuevo número"
+    : (numero.sede_display || "Sin sede") + (phone ? ` · ${phone}` : "");
+
+  return (
+    <div className="ca-card" style={{ marginBottom: 14, ...(esNuevo ? { border: "1px dashed var(--line)" } : {}) }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+        <strong style={{ fontSize: 15 }}>{titulo}</strong>
+        {!esNuevo && (
+          <button className="ca-iconbtn" title="Eliminar número" onClick={eliminar} disabled={busy}>
+            <Trash2 size={15} strokeWidth={2} />
+          </button>
+        )}
+      </div>
+
+      <div style={{ marginBottom: 16 }}>
+        <div className="ca-label">Sede</div>
+        <select className="ca-input" value={sede} onChange={(e) => setSede(e.target.value)}>
+          <option value="">(Sin sede)</option>
+          <option value="lima">Lima</option>
+          <option value="piura">Piura</option>
+          <option value="ambas">Ambas sedes</option>
+        </select>
+      </div>
+
+      <div style={{ marginBottom: 16 }}>
+        <div className="ca-label">Phone Number ID <span style={{ color: "#B4564E" }}>*</span></div>
+        <input className="ca-input" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="1055543397650352" />
+        <div style={help}>Meta Business Suite › WhatsApp › API Setup.</div>
+      </div>
+
+      <div style={{ marginBottom: 16 }}>
+        <div className="ca-label">Access Token <span style={{ color: "#B4564E" }}>*</span></div>
+        <input className="ca-input" type="password" value={token} onChange={(e) => setToken(e.target.value)}
+          placeholder={numero?.token_set ? "•••••••• (guardado · escribe uno nuevo para cambiarlo)" : "Pega el token permanente de este número"} />
+      </div>
+
+      <div style={{ marginBottom: 18 }}>
+        <div className="ca-label">WABA ID <span style={{ color: "var(--muted)", fontWeight: 400 }}>(opcional)</span></div>
+        <input className="ca-input" value={waba} onChange={(e) => setWaba(e.target.value)} placeholder="984894134127366" />
+      </div>
+
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+        {esNuevo && <button className="ca-btn ghost" onClick={onCancel} disabled={busy}>Cancelar</button>}
+        <button className="ca-btn" style={{ opacity: busy ? 0.6 : 1, pointerEvents: busy ? "none" : "auto" }} onClick={guardar}>
+          {busy ? "Guardando…" : (esNuevo ? "Agregar número" : "Guardar")}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function ConexionWhatsapp({ showToast }) {
   const [cfg, setCfg] = useState(null);
-  const [phoneId, setPhoneId] = useState("");
-  const [token, setToken] = useState("");
-  const [waba, setWaba] = useState("");
-  const [guardando, setGuardando] = useState(false);
+  const [agregando, setAgregando] = useState(false);
 
   useEffect(() => {
-    api.whatsappConfig()
-      .then((c) => { setCfg(c); setPhoneId(c.phone_number_id || ""); setWaba(c.waba_id || ""); })
-      .catch((e) => showToast("Error: " + e.message));
+    api.whatsappConfig().then(setCfg).catch((e) => showToast("Error: " + e.message));
   }, []);
 
   function copiar(texto, que) {
@@ -3255,14 +3331,7 @@ function ConexionWhatsapp({ showToast }) {
       .then(() => showToast(`${que} copiado ✓`))
       .catch(() => showToast("No se pudo copiar"));
   }
-  async function guardar() {
-    setGuardando(true);
-    try {
-      const c = await api.guardarWhatsappConfig({ phone_number_id: phoneId, access_token: token, waba_id: waba });
-      setCfg(c); setToken(""); showToast("Conexión guardada ✓");
-    } catch (e) { showToast("Error: " + e.message); }
-    finally { setGuardando(false); }
-  }
+  function onSaved(c) { setCfg(c); setAgregando(false); }
 
   if (!cfg) return <div className="ca-empty" style={{ marginTop: 20 }}>Cargando…</div>;
 
@@ -3271,7 +3340,7 @@ function ConexionWhatsapp({ showToast }) {
     padding: "10px 12px", background: "var(--surface, #fff)", border: "1px solid var(--line)",
     borderRadius: 8, overflowX: "auto", whiteSpace: "nowrap", color: "var(--ink)",
   };
-  const caja = { border: "1px solid var(--line)", borderRadius: 10, padding: "13px 14px", marginBottom: 14 };
+  const caja = { border: "1px solid var(--line)", borderRadius: 10, padding: "13px 14px" };
   const help = { fontSize: 12, color: "var(--muted)", marginTop: 6, lineHeight: 1.5 };
 
   return (
@@ -3283,48 +3352,49 @@ function ConexionWhatsapp({ showToast }) {
         </div>
       </div>
 
-      <div className="ca-card" style={{ maxWidth: 740 }}>
-        <div style={{ marginBottom: 18 }}>
-          <div className="ca-label">Phone Number ID <span style={{ color: "#B4564E" }}>*</span></div>
-          <input className="ca-input" value={phoneId} onChange={(e) => setPhoneId(e.target.value)} placeholder="1055543397650352" />
-          <div style={help}>Lo encuentras en Meta Business Suite › WhatsApp › API Setup.</div>
-        </div>
-
-        <div style={{ marginBottom: 18 }}>
-          <div className="ca-label">Access Token <span style={{ color: "#B4564E" }}>*</span></div>
-          <input className="ca-input" type="password" value={token} onChange={(e) => setToken(e.target.value)}
-            placeholder={cfg.token_set ? "•••••••• (guardado · escribe uno nuevo para cambiarlo)" : "Pega tu token permanente"} />
-          <div style={help}>Genera un token permanente con un System User en Meta Business Settings.</div>
-        </div>
-
-        <div style={{ marginBottom: 20 }}>
-          <div className="ca-label">WABA ID <span style={{ color: "var(--muted)", fontWeight: 400 }}>(opcional)</span></div>
-          <input className="ca-input" value={waba} onChange={(e) => setWaba(e.target.value)} placeholder="984894134127366" />
-        </div>
-
-        <div style={caja}>
-          <div className="ca-label" style={{ marginBottom: 8 }}>Webhook URL</div>
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <code style={mono}>{cfg.webhook_url}</code>
-            <button className="ca-btn ghost" onClick={() => copiar(cfg.webhook_url, "URL")}><Copy size={14} strokeWidth={2} /> Copiar</button>
+      <div style={{ maxWidth: 740 }}>
+        {/* Datos compartidos por todos los números (se pegan una sola vez en Meta) */}
+        <div className="ca-card" style={{ marginBottom: 18 }}>
+          <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 14 }}>
+            Estos dos datos son los mismos para <strong>todos</strong> los números (misma app de Meta): se pegan una sola vez.
           </div>
-          <div style={help}>Pega esta URL en Meta Developer Console › Webhooks configuration.</div>
-        </div>
-
-        <div style={{ ...caja, marginBottom: 20 }}>
-          <div className="ca-label" style={{ marginBottom: 8 }}>Verify Token</div>
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <code style={mono}>{cfg.verify_token}</code>
-            <button className="ca-btn ghost" onClick={() => copiar(cfg.verify_token, "Token")}><Copy size={14} strokeWidth={2} /> Copiar</button>
+          <div style={{ ...caja, marginBottom: 14 }}>
+            <div className="ca-label" style={{ marginBottom: 8 }}>Webhook URL</div>
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <code style={mono}>{cfg.webhook_url}</code>
+              <button className="ca-btn ghost" onClick={() => copiar(cfg.webhook_url, "URL")}><Copy size={14} strokeWidth={2} /> Copiar</button>
+            </div>
+            <div style={help}>Meta Developer Console › Webhooks configuration.</div>
           </div>
-          <div style={help}>Pega este token en Meta Developer Console › Webhooks › Verify Token field.</div>
+          <div style={caja}>
+            <div className="ca-label" style={{ marginBottom: 8 }}>Verify Token</div>
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <code style={mono}>{cfg.verify_token}</code>
+              <button className="ca-btn ghost" onClick={() => copiar(cfg.verify_token, "Token")}><Copy size={14} strokeWidth={2} /> Copiar</button>
+            </div>
+            <div style={help}>Meta Developer Console › Webhooks › Verify Token field.</div>
+          </div>
         </div>
 
-        <div style={{ display: "flex", justifyContent: "flex-end" }}>
-          <button className="ca-btn" style={{ opacity: guardando ? 0.6 : 1, pointerEvents: guardando ? "none" : "auto" }} onClick={guardar}>
-            {guardando ? "Guardando…" : "Guardar conexión"}
-          </button>
+        {/* Lista de números */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", margin: "4px 2px 12px" }}>
+          <strong style={{ fontSize: 15 }}>Números conectados ({cfg.numeros.length})</strong>
+          {!agregando && (
+            <button className="ca-btn" onClick={() => setAgregando(true)}><Plus size={15} /> Agregar número</button>
+          )}
         </div>
+
+        {cfg.numeros.length === 0 && !agregando && (
+          <div className="ca-empty" style={{ marginBottom: 14 }}>Aún no hay números conectados.</div>
+        )}
+
+        {cfg.numeros.map((n) => (
+          <NumeroWaCard key={n.id} numero={n} esNuevo={false} onSaved={onSaved} showToast={showToast} />
+        ))}
+
+        {agregando && (
+          <NumeroWaCard key="nuevo" numero={null} esNuevo onSaved={onSaved} onCancel={() => setAgregando(false)} showToast={showToast} />
+        )}
       </div>
     </div>
   );
