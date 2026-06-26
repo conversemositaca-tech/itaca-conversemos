@@ -9,7 +9,7 @@ Orden de envío:
 """
 from . import cloud_api
 from .evolution import enviar_texto as enviar_evolution, wa_link
-from .models import Mensaje
+from .models import Mensaje, PlantillaMensaje, params_plantilla
 
 
 def _sede_de(paciente, cita):
@@ -20,15 +20,31 @@ def _sede_de(paciente, cita):
     return ""
 
 
-def registrar_y_enviar(clinica, *, telefono, texto, tipo, paciente=None, cita=None, usuario=None):
+def plantilla_por_clave(clinica, clave):
+    """Plantilla activa de una clínica por su clave (recordatorio, cumpleanos, …)."""
+    return PlantillaMensaje.objects.filter(clinica=clinica, clave=clave, activo=True).first()
+
+
+def registrar_y_enviar(clinica, *, telefono, texto, tipo, paciente=None, cita=None,
+                       usuario=None, plantilla=None):
     """Intenta enviar por WhatsApp y deja registro en la bitácora.
+
+    Si `plantilla` tiene una plantilla aprobada de Meta (wa_template_nombre) y la
+    Cloud API está configurada, envía por esa plantilla (HSM): se entrega aunque
+    hayan pasado >24h. Si no, envía texto libre (Cloud o Evolution).
 
     Devuelve (mensaje, resultado, wa_url). `wa_url` es el enlace de respaldo
     (wa.me) cuando el envío automático no salió (sin configurar o falló).
     """
     sede = _sede_de(paciente, cita)
     if cloud_api.esta_configurado(clinica, sede):
-        resultado = cloud_api.enviar_texto(clinica, telefono, texto, sede=sede)
+        if plantilla is not None and plantilla.wa_template_nombre:
+            params = params_plantilla(plantilla, paciente=paciente, cita=cita, clinica=clinica)
+            resultado = cloud_api.enviar_plantilla(
+                clinica, telefono, plantilla.wa_template_nombre,
+                plantilla.wa_template_idioma, params, sede=sede)
+        else:
+            resultado = cloud_api.enviar_texto(clinica, telefono, texto, sede=sede)
     else:
         resultado = enviar_evolution(clinica, telefono, texto)
 

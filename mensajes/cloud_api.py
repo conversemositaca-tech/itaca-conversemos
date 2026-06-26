@@ -42,26 +42,16 @@ def esta_configurado(clinica, sede=None):
     return numero_para(clinica, sede) is not None
 
 
-def enviar_texto(clinica, tel, texto, sede=None):
-    """Envía un texto por la Cloud API. Devuelve {estado, detalle}:
-    estado ∈ enviado | fallido | no_configurado."""
-    numero = numero_para(clinica, sede)
-    if numero is None:
-        return {"estado": "no_configurado", "detalle": "No hay número de WhatsApp Cloud configurado."}
-
-    to = normalizar_numero(tel)
-    if not to:
-        return {"estado": "fallido", "detalle": "El paciente no tiene un teléfono válido."}
-
+def _enviar(numero, to, payload):
+    """POST genérico al endpoint de mensajes de un número. Devuelve {estado, detalle}."""
     url = f"https://graph.facebook.com/{_api_version()}/{numero.wa_phone_number_id}/messages"
+    body = {"messaging_product": "whatsapp", "to": to, **payload}
     try:
         r = requests.post(
             url,
             headers={"Authorization": f"Bearer {numero.wa_access_token}",
                      "Content-Type": "application/json"},
-            json={"messaging_product": "whatsapp", "to": to, "type": "text",
-                  "text": {"body": texto, "preview_url": False}},
-            timeout=20,
+            json=body, timeout=20,
         )
     except requests.RequestException as e:
         return {"estado": "fallido", "detalle": f"No se pudo conectar con WhatsApp Cloud: {e}"}
@@ -70,3 +60,34 @@ def enviar_texto(clinica, tel, texto, sede=None):
     if r.status_code in (200, 201):
         return {"estado": "enviado", "detalle": f"Enviado por WhatsApp Cloud ({etiqueta})."}
     return {"estado": "fallido", "detalle": f"Meta respondió {r.status_code}: {r.text[:200]}"}
+
+
+def enviar_texto(clinica, tel, texto, sede=None):
+    """Envía un texto libre por la Cloud API (solo entrega dentro de las 24h).
+    Devuelve {estado, detalle}: estado ∈ enviado | fallido | no_configurado."""
+    numero = numero_para(clinica, sede)
+    if numero is None:
+        return {"estado": "no_configurado", "detalle": "No hay número de WhatsApp Cloud configurado."}
+    to = normalizar_numero(tel)
+    if not to:
+        return {"estado": "fallido", "detalle": "El paciente no tiene un teléfono válido."}
+    return _enviar(numero, to, {"type": "text", "text": {"body": texto, "preview_url": False}})
+
+
+def enviar_plantilla(clinica, tel, template_nombre, idioma, params, sede=None):
+    """Envía una plantilla APROBADA (HSM). Se entrega aunque hayan pasado >24h.
+    `params` son los valores ordenados de {{1}},{{2}}… del cuerpo de la plantilla."""
+    numero = numero_para(clinica, sede)
+    if numero is None:
+        return {"estado": "no_configurado", "detalle": "No hay número de WhatsApp Cloud configurado."}
+    to = normalizar_numero(tel)
+    if not to:
+        return {"estado": "fallido", "detalle": "El paciente no tiene un teléfono válido."}
+    componentes = []
+    if params:
+        componentes = [{"type": "body",
+                        "parameters": [{"type": "text", "text": str(p)} for p in params]}]
+    plantilla = {"name": template_nombre, "language": {"code": idioma or "es"}}
+    if componentes:
+        plantilla["components"] = componentes
+    return _enviar(numero, to, {"type": "template", "template": plantilla})

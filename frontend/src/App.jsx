@@ -559,9 +559,9 @@ export default function ClinicaApp() {
     } catch (e) { showToast("Error: " + e.message); }
   }
 
-  async function enviarMensajePaciente(paciente, texto, tipo) {
+  async function enviarMensajePaciente(paciente, texto, tipo, plantillaId) {
     try {
-      const r = await api.enviarMensajePaciente(paciente.id, texto, tipo);
+      const r = await api.enviarMensajePaciente(paciente.id, texto, tipo, plantillaId);
       await refrescarMensajes();
       setWaPaciente(null);
       manejarResultadoEnvio(r, "Mensaje enviado por WhatsApp ✓");
@@ -1099,7 +1099,7 @@ export default function ClinicaApp() {
             onConfirm={() => cancelarCita(cancelando)} onClose={() => setCancelando(null)}
           />
         )}
-        {waPaciente && <MensajePacienteModal paciente={waPaciente} onClose={() => setWaPaciente(null)} onSend={(texto, tipo) => enviarMensajePaciente(waPaciente, texto, tipo)} />}
+        {waPaciente && <MensajePacienteModal paciente={waPaciente} onClose={() => setWaPaciente(null)} onSend={(texto, tipo, plantillaId) => enviarMensajePaciente(waPaciente, texto, tipo, plantillaId)} />}
         {editingPaciente && (
           <PacienteModal paciente={editingPaciente.new ? null : editingPaciente}
             onClose={() => setEditingPaciente(null)} onSave={guardarPaciente} />
@@ -2698,10 +2698,16 @@ function Mensajes({ mensajes, esAdmin, showToast }) {
 
   useEffect(() => { api.plantillas().then(setPlantillas).catch(() => setPlantillas([])); }, []);
 
-  async function guardarPlantilla(id, texto) {
+  async function guardarPlantilla(ed) {
     try {
-      await api.actualizarPlantilla(id, { texto });
-      setPlantillas((ps) => ps.map((p) => (p.id === id ? { ...p, texto } : p)));
+      const datos = {
+        texto: ed.texto,
+        wa_template_nombre: (ed.wa_template_nombre || "").trim(),
+        wa_template_idioma: (ed.wa_template_idioma || "es").trim(),
+        wa_template_vars: (ed.wa_template_vars || "").trim(),
+      };
+      await api.actualizarPlantilla(ed.id, datos);
+      setPlantillas((ps) => ps.map((p) => (p.id === ed.id ? { ...p, ...datos } : p)));
       setEditando(null);
       showToast && showToast("Plantilla guardada ✓");
     } catch (e) { showToast && showToast("Error: " + e.message); }
@@ -2718,19 +2724,51 @@ function Mensajes({ mensajes, esAdmin, showToast }) {
       </div>
       {!plantillas ? <div className="ca-empty">Cargando…</div> : plantillas.map((p) => (
         <div key={p.id} className="ca-card" style={{ marginBottom: 10 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-            <strong style={{ fontSize: 13.5 }}>{p.nombre}</strong>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6, gap: 8 }}>
+            <strong style={{ fontSize: 13.5, display: "flex", alignItems: "center", gap: 8 }}>
+              {p.nombre}
+              {p.wa_template_nombre
+                ? <Tag colors={{ bg: "#E4F3E8", fg: "#1E7D45" }}>Aprobada: {p.wa_template_nombre}</Tag>
+                : <Tag colors={{ bg: "#FBF0D4", fg: "#8A6D14" }}>Texto (solo 24h)</Tag>}
+            </strong>
             {esAdmin && editando?.id !== p.id && (
-              <button className="ca-mini" onClick={() => setEditando({ id: p.id, texto: p.texto })}><Pencil size={13} strokeWidth={2} /> Editar</button>
+              <button className="ca-mini" onClick={() => setEditando({ id: p.id, texto: p.texto, wa_template_nombre: p.wa_template_nombre || "", wa_template_idioma: p.wa_template_idioma || "es", wa_template_vars: p.wa_template_vars || "" })}><Pencil size={13} strokeWidth={2} /> Editar</button>
             )}
           </div>
           {editando?.id === p.id ? (
             <>
               <textarea className="ca-input" style={{ minHeight: 80 }} value={editando.texto}
-                onChange={(e) => setEditando({ id: p.id, texto: e.target.value })} />
-              <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 8 }}>
+                onChange={(e) => setEditando({ ...editando, texto: e.target.value })} />
+              <div style={{ marginTop: 10, borderTop: "1px dashed var(--line)", paddingTop: 10 }}>
+                <div className="ca-pmeta" style={{ marginBottom: 8 }}>
+                  <strong>Plantilla aprobada de Meta (opcional)</strong> — para enviar fuera de las 24 h. Crea y aprueba la plantilla en Meta WhatsApp Manager y pega aquí su nombre exacto.
+                </div>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <div style={{ flex: "2 1 200px" }}>
+                    <div className="ca-label">Nombre de la plantilla en Meta</div>
+                    <input className="ca-input" value={editando.wa_template_nombre}
+                      placeholder="ej. cumpleanos_itaca"
+                      onChange={(e) => setEditando({ ...editando, wa_template_nombre: e.target.value })} />
+                  </div>
+                  <div style={{ width: 90 }}>
+                    <div className="ca-label">Idioma</div>
+                    <input className="ca-input" value={editando.wa_template_idioma}
+                      placeholder="es" onChange={(e) => setEditando({ ...editando, wa_template_idioma: e.target.value })} />
+                  </div>
+                  <div style={{ flex: "1 1 160px" }}>
+                    <div className="ca-label">Variables (en orden)</div>
+                    <input className="ca-input" value={editando.wa_template_vars}
+                      placeholder="nombre  ó  nombre,clinica"
+                      onChange={(e) => setEditando({ ...editando, wa_template_vars: e.target.value })} />
+                  </div>
+                </div>
+                <div className="ca-pmeta" style={{ marginTop: 6 }}>
+                  Las variables llenan {"{{1}}, {{2}}…"} de la plantilla, en ese orden. Disponibles: nombre, psicologo, fecha, hora, n_sesion, sede, clinica.
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 10 }}>
                 <button className="ca-btn ghost" onClick={() => setEditando(null)}>Cancelar</button>
-                <button className="ca-btn" onClick={() => guardarPlantilla(p.id, editando.texto)}>Guardar</button>
+                <button className="ca-btn" onClick={() => guardarPlantilla(editando)}>Guardar</button>
               </div>
             </>
           ) : (
@@ -2771,6 +2809,7 @@ function MensajePacienteModal({ paciente, onClose, onSend }) {
   const [enviando, setEnviando] = useState(false);
   const [plantillas, setPlantillas] = useState([]);
   const [tipoSel, setTipoSel] = useState("seguimiento");
+  const [plantillaSel, setPlantillaSel] = useState(null); // { id, hsm }
   const sinTel = !paciente.tel || paciente.tel === "—";
   const canSend = texto.trim().length > 0 && !sinTel && !enviando;
 
@@ -2789,12 +2828,13 @@ function MensajePacienteModal({ paciente, onClose, onSend }) {
       } catch (e) { /* si falla, se manda el texto sin enlace */ }
     }
     setTexto(txt);
+    setPlantillaSel({ id: p.id, hsm: !!p.wa_template_nombre });
     setTipoSel(["recordatorio", "confirmacion"].includes(p.clave) ? p.clave : "manual");
   }
 
   async function enviar() {
     setEnviando(true);
-    try { await onSend(texto.trim(), tipoSel); } finally { setEnviando(false); }
+    try { await onSend(texto.trim(), tipoSel, plantillaSel?.id); } finally { setEnviando(false); }
   }
 
   return (
@@ -2823,7 +2863,12 @@ function MensajePacienteModal({ paciente, onClose, onSend }) {
               </div>
             )}
             <textarea className="ca-input ca-textarea" style={{ minHeight: 120 }} value={texto}
-              onChange={(e) => setTexto(e.target.value)} autoFocus />
+              onChange={(e) => { setTexto(e.target.value); setPlantillaSel(null); }} autoFocus />
+            {plantillaSel?.hsm && (
+              <div className="ca-pmeta" style={{ marginTop: 8, background: "#E4F3E8", color: "#1E7D45", padding: "8px 10px", borderRadius: 8, lineHeight: 1.5 }}>
+                ✅ Plantilla aprobada en Meta: se entrega aunque hayan pasado más de 24 h. El contenido lo define la plantilla aprobada (solo se personaliza el nombre).
+              </div>
+            )}
           </>
         )}
         <div style={{ display: "flex", gap: 9, justifyContent: "flex-end", marginTop: 16 }}>

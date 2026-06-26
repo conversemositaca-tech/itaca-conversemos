@@ -11,7 +11,8 @@ class PlantillaMensajeSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = PlantillaMensaje
-        fields = ["id", "clave", "nombre", "texto", "activo", "orden", "preview"]
+        fields = ["id", "clave", "nombre", "texto", "activo", "orden", "preview",
+                  "wa_template_nombre", "wa_template_idioma", "wa_template_vars"]
         read_only_fields = ["clave"]
 
     def get_preview(self, obj):

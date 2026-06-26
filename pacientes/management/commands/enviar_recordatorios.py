@@ -16,7 +16,7 @@ from django.utils import timezone
 
 from core.models import Clinica
 from mensajes.models import Mensaje
-from mensajes.services import registrar_y_enviar
+from mensajes.services import plantilla_por_clave, registrar_y_enviar
 from pacientes.api import texto_recordatorio
 from pacientes.models import Cita
 
@@ -63,6 +63,7 @@ class Command(BaseCommand):
                 _, resultado, _ = registrar_y_enviar(
                     clinica, telefono=tel, texto=texto, tipo=Mensaje.Tipo.RECORDATORIO,
                     paciente=cita.paciente, cita=cita, usuario=None,
+                    plantilla=plantilla_por_clave(clinica, "recordatorio"),
                 )
                 if resultado["estado"] == "enviado":
                     cita.recordatorio_enviado = True

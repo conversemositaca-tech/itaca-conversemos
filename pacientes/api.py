@@ -10,8 +10,8 @@ from rest_framework.views import APIView
 
 from core import estructurar_nota, gcalendar, transcripcion
 from core.tenant import get_clinica_actual
-from mensajes.models import Mensaje
-from mensajes.services import registrar_y_enviar
+from mensajes.models import Mensaje, PlantillaMensaje
+from mensajes.services import plantilla_por_clave, registrar_y_enviar
 
 from .models import Adjunto, Atencion, Cita, Paciente, SeguimientoSesion
 from .serializers import AdjuntoSerializer, AtencionSerializer, CitaSerializer, PacienteSerializer
@@ -156,9 +156,14 @@ class PacienteViewSet(viewsets.ModelViewSet):
             return Response({"detail": "El mensaje no puede estar vacío."}, status=status.HTTP_400_BAD_REQUEST)
         if not paciente.telefono:
             return Response({"detail": "El paciente no tiene teléfono registrado."}, status=status.HTTP_400_BAD_REQUEST)
+        # Si se envió desde una plantilla con plantilla aprobada (HSM), se usa esa.
+        plantilla = None
+        pid = request.data.get("plantilla_id")
+        if pid:
+            plantilla = PlantillaMensaje.objects.del_tenant_actual().filter(pk=pid).first()
         mensaje, resultado, wa_url = registrar_y_enviar(
             paciente.clinica, telefono=paciente.telefono, texto=texto, tipo=tipo,
-            paciente=paciente, usuario=request.user,
+            paciente=paciente, usuario=request.user, plantilla=plantilla,
         )
         return Response({"estado": resultado["estado"], "detalle": resultado["detalle"],
                          "wa_url": wa_url, "mensaje_id": mensaje.id})
@@ -351,7 +356,7 @@ class CitaViewSet(viewsets.ModelViewSet):
         mensaje, resultado, wa_url = registrar_y_enviar(
             cita.clinica, telefono=cita.paciente.telefono, texto=texto,
             tipo=Mensaje.Tipo.RECORDATORIO, paciente=cita.paciente, cita=cita,
-            usuario=request.user,
+            usuario=request.user, plantilla=plantilla_por_clave(cita.clinica, "recordatorio"),
         )
         if resultado["estado"] == "enviado" or wa_url:
             cita.recordatorio_enviado = True

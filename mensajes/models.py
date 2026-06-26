@@ -55,6 +55,19 @@ class PlantillaMensaje(ModeloTenant):
     texto = models.TextField()
     activo = models.BooleanField(default=True)
     orden = models.PositiveIntegerField(default=0)
+    # --- Plantilla aprobada de WhatsApp Cloud (HSM), para envíos proactivos ---
+    # Si wa_template_nombre está puesto, los envíos por Cloud API usan la plantilla
+    # aprobada en Meta (se entrega aunque hayan pasado >24h). Si está vacío, se envía
+    # texto libre (solo dentro de la ventana de 24h).
+    wa_template_nombre = models.CharField(
+        "Plantilla aprobada (Meta)", max_length=120, blank=True, default="",
+        help_text="Nombre EXACTO de la plantilla aprobada en Meta WhatsApp Manager.")
+    wa_template_idioma = models.CharField(
+        "Idioma de la plantilla", max_length=10, blank=True, default="es",
+        help_text="Código de idioma de la plantilla aprobada (ej. es, es_ES, es_MX).")
+    wa_template_vars = models.CharField(
+        "Variables de la plantilla", max_length=200, blank=True, default="",
+        help_text="Variables que llenan {{1}},{{2}}… en orden, separadas por coma. Ej: nombre o nombre,clinica")
 
     class Meta:
         verbose_name = "Plantilla de mensaje"
@@ -71,8 +84,8 @@ class PlantillaMensaje(ModeloTenant):
 VARIABLES_PLANTILLA = ["nombre", "psicologo", "fecha", "hora", "n_sesion", "sede", "clinica"]
 
 
-def render_plantilla(texto, paciente=None, cita=None, clinica=None):
-    """Sustituye las variables {...} de una plantilla con datos del paciente/cita."""
+def valores_plantilla(paciente=None, cita=None, clinica=None):
+    """Devuelve el dict de variables {nombre, psicologo, fecha, …} con sus valores."""
     from django.utils import timezone
 
     nombre = (paciente.nombre.split(" ")[0] if paciente and paciente.nombre else "")
@@ -87,11 +100,24 @@ def render_plantilla(texto, paciente=None, cita=None, clinica=None):
     n_sesion = str(paciente.n_sesion) if paciente else ""
     sede = paciente.get_sede_display() if (paciente and paciente.sede) else ""
     cl = clinica or (paciente.clinica if paciente else None) or (cita.clinica if cita else None)
-    repl = {
+    return {
         "nombre": nombre, "psicologo": psicologo, "fecha": fecha, "hora": hora,
         "n_sesion": n_sesion, "sede": sede, "clinica": cl.nombre if cl else "",
     }
+
+
+def render_plantilla(texto, paciente=None, cita=None, clinica=None):
+    """Sustituye las variables {...} de una plantilla con datos del paciente/cita."""
+    repl = valores_plantilla(paciente=paciente, cita=cita, clinica=clinica)
     out = texto or ""
     for k, v in repl.items():
         out = out.replace("{" + k + "}", v)
     return out
+
+
+def params_plantilla(plantilla, paciente=None, cita=None, clinica=None):
+    """Valores ordenados para {{1}},{{2}}… de una plantilla aprobada (HSM),
+    según el campo wa_template_vars (lista de variables separadas por coma)."""
+    repl = valores_plantilla(paciente=paciente, cita=cita, clinica=clinica)
+    nombres = [v.strip() for v in (plantilla.wa_template_vars or "").split(",") if v.strip()]
+    return [repl.get(v, "") for v in nombres]
