@@ -246,6 +246,43 @@ function descargarCSV(nombre, headers, filas) {
   URL.revokeObjectURL(url);
 }
 
+// Exporta a un archivo .xls que abre Excel (sin librerías: tabla HTML con el mime de Excel).
+function descargarExcel(nombre, headers, filas) {
+  const esc = (v) => String(v ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const th = headers.map((h) => `<th style="background:#EDE7F6;border:1px solid #ccc;padding:4px 8px;text-align:left">${esc(h)}</th>`).join("");
+  const tr = filas.map((f) => `<tr>${f.map((c) => `<td style="border:1px solid #ccc;padding:4px 8px">${esc(c)}</td>`).join("")}</tr>`).join("");
+  const html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40"><head><meta charset="utf-8"></head><body><table><thead><tr>${th}</tr></thead><tbody>${tr}</tbody></table></body></html>`;
+  const blob = new Blob(["﻿" + html], { type: "application/vnd.ms-excel;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = nombre; a.click();
+  URL.revokeObjectURL(url);
+}
+
+// Abre una ventana con la tabla formateada para imprimir o guardar como PDF (igual que la historia clínica).
+function descargarPDF(titulo, headers, filas) {
+  const w = window.open("", "_blank", "width=1000,height=800");
+  if (!w) { alert("Permite las ventanas emergentes para descargar el PDF."); return; }
+  const esc = (v) => String(v ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const th = headers.map((h) => `<th>${esc(h)}</th>`).join("");
+  const tr = filas.map((f) => `<tr>${f.map((c) => `<td>${esc(c)}</td>`).join("")}</tr>`).join("");
+  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${esc(titulo)}</title>
+    <style>
+      body{font-family:Inter,Arial,sans-serif;color:#32302C;margin:24px}
+      .head{display:flex;justify-content:space-between;align-items:baseline;border-bottom:2px solid #4F8A77;padding-bottom:8px;margin-bottom:14px}
+      h1{font-size:18px;margin:0} .sub{color:#888;font-size:12px}
+      table{border-collapse:collapse;width:100%;font-size:11px}
+      th,td{border:1px solid #ddd;padding:5px 7px;text-align:left;vertical-align:top}
+      th{background:#EDE7F6;color:#3A2F46} tr:nth-child(even) td{background:#FAF8FD}
+      @media print{body{margin:8mm} .noprint{display:none}}
+    </style></head><body>
+    <div class="head"><h1>${esc(titulo)}</h1><div class="sub">${filas.length} registro(s)</div></div>
+    <table><thead><tr>${th}</tr></thead><tbody>${tr || `<tr><td colspan="${headers.length}">Sin datos.</td></tr>`}</tbody></table>
+    <button class="noprint" onclick="window.print()" style="margin-top:16px;padding:9px 16px;border:none;border-radius:7px;background:#4F8A77;color:#fff;font-size:14px;cursor:pointer">Imprimir / Guardar PDF</button>
+    </body></html>`);
+  w.document.close();
+}
+
 // Abre una ventana con la historia clínica formateada para imprimir o guardar en PDF.
 function imprimirHistoria(p, clinica) {
   const w = window.open("", "_blank", "width=840,height=920");
@@ -299,6 +336,28 @@ function imprimirHistoria(p, clinica) {
     <button class="noprint" onclick="window.print()" style="margin-top:18px;padding:9px 16px;border:none;border-radius:7px;background:#4F8A77;color:#fff;font-size:14px;cursor:pointer">Imprimir / Guardar PDF</button>
     </body></html>`);
   w.document.close();
+}
+
+// Grupo de botones de descarga (CSV / Excel / PDF) reutilizable en cada tabla.
+function ExportBtns({ nombre, titulo, headers, filas, disabled }) {
+  const off = disabled || !filas || filas.length === 0;
+  const base = String(nombre || "datos").replace(/\.(csv|xlsx?|pdf)$/i, "");
+  return (
+    <div style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
+      <button className="ca-btn ghost" disabled={off} title="Descargar CSV"
+        onClick={() => descargarCSV(base + ".csv", headers, filas)}>
+        <Download size={15} strokeWidth={2} /> CSV
+      </button>
+      <button className="ca-btn ghost" disabled={off} title="Descargar Excel"
+        onClick={() => descargarExcel(base + ".xls", headers, filas)}>
+        <Download size={15} strokeWidth={2} /> Excel
+      </button>
+      <button className="ca-btn ghost" disabled={off} title="Descargar PDF"
+        onClick={() => descargarPDF(titulo || base, headers, filas)}>
+        <Download size={15} strokeWidth={2} /> PDF
+      </button>
+    </div>
+  );
 }
 
 function Tag({ children, colors }) {
@@ -939,11 +998,9 @@ export default function ClinicaApp() {
                 <div className="ca-sub">{filtered.length === pacientes.length ? `${pacientes.length} en total` : `${filtered.length} de ${pacientes.length}`}</div>
               </div>
               <div style={{ display: "flex", gap: 9, alignItems: "center" }}>
-                <button className="ca-btn ghost" disabled={filtered.length === 0}
-                  onClick={() => descargarCSV("pacientes.csv", ["Nombre", "Documento", "Numero", "Edad", "Genero", "Telefono", "Direccion", "Especialidad", "Ultima visita", "Proxima sesion", "Pendiente S/"],
-                    filtered.map((p) => [p.nombre, p.tipo_documento_label || "", p.numero_documento || "", p.edad ?? "", p.genero_label || "", p.tel, p.direccion || "", p.especialidad, p.ultima, p.proxima ? `${p.proxima.fecha} ${p.proxima.hora}` : "", p.cuenta?.pendiente || 0]))}>
-                  <Download size={15} strokeWidth={2} /> CSV
-                </button>
+                <ExportBtns nombre="pacientes" titulo="Pacientes" disabled={filtered.length === 0}
+                  headers={["Nombre", "Documento", "Numero", "Edad", "Genero", "Telefono", "Direccion", "Especialidad", "Ultima visita", "Proxima sesion", "Pendiente S/"]}
+                  filas={filtered.map((p) => [p.nombre, p.tipo_documento_label || "", p.numero_documento || "", p.edad ?? "", p.genero_label || "", p.tel, p.direccion || "", p.especialidad, p.ultima, p.proxima ? `${p.proxima.fecha} ${p.proxima.hora}` : "", p.cuenta?.pendiente || 0])} />
                 <button className="ca-btn" onClick={() => setEditingPaciente({ new: true })}>
                   <UserPlus size={16} strokeWidth={2.1} /> Nuevo paciente
                 </button>
@@ -1605,6 +1662,22 @@ function HojaEditable({ formato, showToast, onSaved }) {
   }, [rows, filtro, formato]);
   const visibles = filtradas.slice(0, TOPE);
 
+  // Valor legible de cada celda para exportar (resuelve fk/select/check a su etiqueta).
+  const valorExport = (row, col) => {
+    if (col.tipo === "check") return row[col.campo] ? "Sí" : "No";
+    if (col.tipo === "fk") {
+      const o = fkOpcs(col.fk).find((x) => x.v === String(row[col.campo] ?? ""));
+      return o ? o.l : (row[col.labelCampo] ?? row[col.campo] ?? "");
+    }
+    if (col.tipo === "select") {
+      const o = (col.opciones || []).find((x) => String(x.v) === String(row[col.campo] ?? ""));
+      return o ? o.l : (row[col.campo] ?? "");
+    }
+    return row[col.campo] ?? "";
+  };
+  const expHeaders = formato.cols.map((c) => c.label);
+  const expFilas = filtradas.map((r) => formato.cols.map((c) => valorExport(r, c)));
+
   if (rows === null) return <div className="ca-empty">Cargando…</div>;
 
   return (
@@ -1616,6 +1689,7 @@ function HojaEditable({ formato, showToast, onSaved }) {
             style={{ border: 0, outline: "none", background: "transparent", width: "100%", font: "inherit", color: "var(--ink)" }} />
         </div>
         {formato.puedeAgregar && <button className="ca-btn" onClick={agregar}><Plus size={15} /> Nueva fila</button>}
+        <ExportBtns nombre={formato.label} titulo={formato.label} headers={expHeaders} filas={expFilas} disabled={filtradas.length === 0} />
         <span style={{ fontSize: 12.5, color: "var(--muted)" }}>
           {filtradas.length} fila{filtradas.length === 1 ? "" : "s"}{filtradas.length > TOPE ? ` · mostrando ${TOPE}` : ""}
         </span>
@@ -2270,7 +2344,12 @@ function Agenda({ citas, fecha, setFecha, vista, setVista, esAsistente, esMedico
           <h1 className="ca-h1">Agenda</h1>
           <div className="ca-sub">{subt} · {activas.length} {activas.length === 1 ? "sesión" : "sesiones"}</div>
         </div>
-        <button className="ca-btn" onClick={onAgendar}><Plus size={16} strokeWidth={2.2} /> Agendar sesión</button>
+        <div style={{ display: "flex", gap: 9, alignItems: "center" }}>
+          <ExportBtns nombre="agenda" titulo="Agenda" disabled={activas.length === 0}
+            headers={["Fecha", "Hora", "Paciente", "Psicologo", "Especialidad", "N° sesion", "Sede", "Modalidad", "Estado"]}
+            filas={activas.map((c) => [c.fecha, c.hora, c.paciente, c.medico, c.especialidad, c.n_sesion || "", c.sede_label || "", c.modalidad === "virtual" ? "Virtual" : "Presencial", c.estado_label])} />
+          <button className="ca-btn" onClick={onAgendar}><Plus size={16} strokeWidth={2.2} /> Agendar sesión</button>
+        </div>
       </div>
 
       <div className="ca-agnav">
@@ -2844,11 +2923,9 @@ function Marketing({ showToast, onConvertir, esAdmin }) {
           <div className="ca-sub">Leads, embudo y cierre por psicólogo</div>
         </div>
         <div style={{ display: "flex", gap: 9, alignItems: "center" }}>
-          <button className="ca-btn ghost" disabled={leads.length === 0}
-            onClick={() => descargarCSV("leads.csv", ["Nombre", "Telefono", "Fuente", "Pauta", "Campaña", "Especialidad", "Psicologo", "Estado", "Creado"],
-              leads.map((l) => [l.nombre, l.telefono, l.fuente_label, l.es_pauta ? "Si" : "No", l.campania, l.especialidad, l.medico_nombre, l.estado_label, l.creado]))}>
-            <Download size={15} strokeWidth={2} /> CSV
-          </button>
+          <ExportBtns nombre="leads" titulo="Captación · Leads" disabled={leads.length === 0}
+            headers={["Nombre", "Telefono", "Fuente", "Pauta", "Campaña", "Especialidad", "Psicologo", "Estado", "Creado"]}
+            filas={leads.map((l) => [l.nombre, l.telefono, l.fuente_label, l.es_pauta ? "Si" : "No", l.campania, l.especialidad, l.medico_nombre, l.estado_label, l.creado])} />
           <button className="ca-btn" onClick={() => setCreando(true)}>
             <Plus size={16} strokeWidth={2.2} /> Captar lead
           </button>
@@ -3547,11 +3624,9 @@ function Finanzas({ showToast, esAdmin }) {
           <div className="ca-sub">Ingresos reales · Soles (S/.)</div>
         </div>
         <div style={{ display: "flex", gap: 9, alignItems: "center" }}>
-          <button className="ca-btn ghost" disabled={cobros.length === 0}
-            onClick={() => descargarCSV(`cobros_${rangoActivo ? `${desde}_a_${hasta}` : periodo}${sede ? "_" + sede : ""}.csv`, ["Fecha", "Paciente", "Concepto", "Monto", "Estado", "Medio"],
-              cobros.map((c) => [c.fecha_label, c.paciente_nombre, c.concepto, c.monto, c.estado_label, c.medio_label]))}>
-            <Download size={15} strokeWidth={2} /> CSV
-          </button>
+          <ExportBtns nombre={`cobros_${rangoActivo ? `${desde}_a_${hasta}` : periodo}${sede ? "_" + sede : ""}`} titulo="Finanzas · Cobros" disabled={cobros.length === 0}
+            headers={["Fecha", "Paciente", "Concepto", "Monto", "Estado", "Medio"]}
+            filas={cobros.map((c) => [c.fecha_label, c.paciente_nombre, c.concepto, c.monto, c.estado_label, c.medio_label])} />
           {esAdmin && <button className="ca-btn ghost" onClick={() => setPrecios(true)}>Precios</button>}
           <button className="ca-btn" onClick={() => setNuevo({})}><Plus size={16} strokeWidth={2.2} /> Registrar cobro</button>
         </div>
@@ -4127,7 +4202,12 @@ function Profesionales({ showToast, esAdmin }) {
           <h1 className="ca-h1">Profesionales</h1>
           <div className="ca-sub">Directorio del equipo{lista ? ` · ${lista.length}` : ""}</div>
         </div>
-        {esAdmin && <button className="ca-btn" onClick={() => setEditar({ new: true })}><Plus size={16} strokeWidth={2.2} /> Nuevo profesional</button>}
+        <div style={{ display: "flex", gap: 9, alignItems: "center" }}>
+          <ExportBtns nombre="profesionales" titulo="Profesionales" disabled={!filtradas || filtradas.length === 0}
+            headers={["Nombre", "Titulo", "Colegiatura", "Sede", "Modalidad", "Enfoque", "Atiende", "Activo"]}
+            filas={(filtradas || []).map((p) => [p.nombre, p.titulo, p.colegiatura, p.sede_label, p.modalidad_label, p.enfoque, p.poblaciones, p.activo ? "Sí" : "No"])} />
+          {esAdmin && <button className="ca-btn" onClick={() => setEditar({ new: true })}><Plus size={16} strokeWidth={2.2} /> Nuevo profesional</button>}
+        </div>
       </div>
 
       <div className="ca-fchips" style={{ marginTop: 18 }}>
