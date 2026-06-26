@@ -9,6 +9,7 @@ from core.integraciones import NotaVozView, PacientesBuscarView, PsicologoView
 from core.metricas import MetricaMensualViewSet
 from core.ocupacion import OcupacionView
 from core.reportes import ReporteSemanalViewSet
+from core.whatsapp_cloud import WhatsappConfigView, WhatsappWebhookView
 from finanzas.api import (
     CajaView,
     CobroViewSet,
@@ -73,6 +74,9 @@ urlpatterns = [
     path("api/clinica/", ClinicaConfigView.as_view(), name="clinica-config"),
     path("api/gerencia/resumen/", GerenciaResumenView.as_view(), name="gerencia-resumen"),
     path("api/finanzas/caja/", CajaView.as_view(), name="finanzas-caja"),
+    # WhatsApp Cloud API (Meta): configuración (admin) + webhook público de Meta.
+    path("api/whatsapp/config/", WhatsappConfigView.as_view(), name="whatsapp-config"),
+    path("api/webhook/whatsapp", WhatsappWebhookView.as_view(), name="whatsapp-webhook"),
     path("api/finanzas/soto/", SotoResumenView.as_view(), name="finanzas-soto"),
     path("api/finanzas/soto/prueba/", SotoPruebaView.as_view(), name="finanzas-soto-prueba"),
 

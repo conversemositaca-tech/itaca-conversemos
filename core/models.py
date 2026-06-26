@@ -18,6 +18,11 @@ class Clinica(models.Model):
         help_text="Instancia de Evolution API para el WhatsApp de esta clínica. "
                   "Si se deja vacío, usa EVOLUTION_INSTANCE del entorno.",
     )
+    # --- WhatsApp Cloud API (Meta) ---
+    wa_phone_number_id = models.CharField("Phone Number ID", max_length=40, blank=True, default="")
+    wa_access_token = models.TextField("Access Token", blank=True, default="")
+    wa_waba_id = models.CharField("WABA ID", max_length=40, blank=True, default="")
+    wa_verify_token = models.CharField("Verify Token", max_length=64, blank=True, default="")
     # Token secreto para el ingreso automático de leads (URL pública de captación).
     # Identifica a la clínica en los endpoints sin sesión (web, campañas, WhatsApp).
     token_captacion = models.CharField(max_length=64, unique=True, null=True, blank=True)
@@ -44,6 +49,13 @@ class Clinica(models.Model):
         self.token_captacion = secrets.token_urlsafe(24)
         self.save(update_fields=["token_captacion"])
         return self.token_captacion
+
+    def asegurar_wa_verify_token(self):
+        """Token de verificación del webhook de WhatsApp (se genera una vez)."""
+        if not self.wa_verify_token:
+            self.wa_verify_token = f"{self.slug}_{secrets.token_hex(6)}"
+            self.save(update_fields=["wa_verify_token"])
+        return self.wa_verify_token
 
 
 class TenantQuerySet(models.QuerySet):

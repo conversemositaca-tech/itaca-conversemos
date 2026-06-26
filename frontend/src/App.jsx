@@ -421,6 +421,7 @@ export default function ClinicaApp() {
     // Finanzas: solo gerencia.
     ...(usuario?.rol === "admin" ? [{ id: "finanzas", label: "Finanzas", icon: TrendingUp }] : []),
     ...(usuario?.rol === "admin" ? [{ id: "equipo", label: "Equipo", icon: UserCog }] : []),
+    ...(usuario?.rol === "admin" ? [{ id: "whatsapp", label: "Conexión WhatsApp", icon: MessageCircle }] : []),
     ...(usuario?.rol === "admin" ? [{ id: "hojas", label: "Editar (Excel)", icon: Pencil }] : []),
   ];
 
@@ -1006,6 +1007,8 @@ export default function ClinicaApp() {
         {view === "ocupacion" && <Ocupacion showToast={showToast} />}
 
         {view === "equipo" && <Equipo showToast={showToast} miId={usuario?.id} />}
+
+        {view === "whatsapp" && <ConexionWhatsapp showToast={showToast} />}
 
         {view === "hojas" && <HojasExcel showToast={showToast} onCambio={cargarDatos} />}
 
@@ -3233,6 +3236,99 @@ const EGRESO_CATEGORIAS = [
   { v: "marketing", l: "Marketing / pauta" },
   { v: "otro", l: "Otro" },
 ];
+
+function ConexionWhatsapp({ showToast }) {
+  const [cfg, setCfg] = useState(null);
+  const [phoneId, setPhoneId] = useState("");
+  const [token, setToken] = useState("");
+  const [waba, setWaba] = useState("");
+  const [guardando, setGuardando] = useState(false);
+
+  useEffect(() => {
+    api.whatsappConfig()
+      .then((c) => { setCfg(c); setPhoneId(c.phone_number_id || ""); setWaba(c.waba_id || ""); })
+      .catch((e) => showToast("Error: " + e.message));
+  }, []);
+
+  function copiar(texto, que) {
+    navigator.clipboard?.writeText(texto)
+      .then(() => showToast(`${que} copiado ✓`))
+      .catch(() => showToast("No se pudo copiar"));
+  }
+  async function guardar() {
+    setGuardando(true);
+    try {
+      const c = await api.guardarWhatsappConfig({ phone_number_id: phoneId, access_token: token, waba_id: waba });
+      setCfg(c); setToken(""); showToast("Conexión guardada ✓");
+    } catch (e) { showToast("Error: " + e.message); }
+    finally { setGuardando(false); }
+  }
+
+  if (!cfg) return <div className="ca-empty" style={{ marginTop: 20 }}>Cargando…</div>;
+
+  const mono = {
+    flex: 1, minWidth: 0, fontFamily: "ui-monospace, 'Space Mono', monospace", fontSize: 13,
+    padding: "10px 12px", background: "var(--surface, #fff)", border: "1px solid var(--line)",
+    borderRadius: 8, overflowX: "auto", whiteSpace: "nowrap", color: "var(--ink)",
+  };
+  const caja = { border: "1px solid var(--line)", borderRadius: 10, padding: "13px 14px", marginBottom: 14 };
+  const help = { fontSize: 12, color: "var(--muted)", marginTop: 6, lineHeight: 1.5 };
+
+  return (
+    <div>
+      <div className="ca-tophead">
+        <div>
+          <h1 className="ca-h1">Conexión WhatsApp</h1>
+          <div className="ca-sub">WhatsApp Cloud API · Meta</div>
+        </div>
+      </div>
+
+      <div className="ca-card" style={{ maxWidth: 740 }}>
+        <div style={{ marginBottom: 18 }}>
+          <div className="ca-label">Phone Number ID <span style={{ color: "#B4564E" }}>*</span></div>
+          <input className="ca-input" value={phoneId} onChange={(e) => setPhoneId(e.target.value)} placeholder="1055543397650352" />
+          <div style={help}>Lo encuentras en Meta Business Suite › WhatsApp › API Setup.</div>
+        </div>
+
+        <div style={{ marginBottom: 18 }}>
+          <div className="ca-label">Access Token <span style={{ color: "#B4564E" }}>*</span></div>
+          <input className="ca-input" type="password" value={token} onChange={(e) => setToken(e.target.value)}
+            placeholder={cfg.token_set ? "•••••••• (guardado · escribe uno nuevo para cambiarlo)" : "Pega tu token permanente"} />
+          <div style={help}>Genera un token permanente con un System User en Meta Business Settings.</div>
+        </div>
+
+        <div style={{ marginBottom: 20 }}>
+          <div className="ca-label">WABA ID <span style={{ color: "var(--muted)", fontWeight: 400 }}>(opcional)</span></div>
+          <input className="ca-input" value={waba} onChange={(e) => setWaba(e.target.value)} placeholder="984894134127366" />
+        </div>
+
+        <div style={caja}>
+          <div className="ca-label" style={{ marginBottom: 8 }}>Webhook URL</div>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <code style={mono}>{cfg.webhook_url}</code>
+            <button className="ca-btn ghost" onClick={() => copiar(cfg.webhook_url, "URL")}><Copy size={14} strokeWidth={2} /> Copiar</button>
+          </div>
+          <div style={help}>Pega esta URL en Meta Developer Console › Webhooks configuration.</div>
+        </div>
+
+        <div style={{ ...caja, marginBottom: 20 }}>
+          <div className="ca-label" style={{ marginBottom: 8 }}>Verify Token</div>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <code style={mono}>{cfg.verify_token}</code>
+            <button className="ca-btn ghost" onClick={() => copiar(cfg.verify_token, "Token")}><Copy size={14} strokeWidth={2} /> Copiar</button>
+          </div>
+          <div style={help}>Pega este token en Meta Developer Console › Webhooks › Verify Token field.</div>
+        </div>
+
+        <div style={{ display: "flex", justifyContent: "flex-end" }}>
+          <button className="ca-btn" style={{ opacity: guardando ? 0.6 : 1, pointerEvents: guardando ? "none" : "auto" }} onClick={guardar}>
+            {guardando ? "Guardando…" : "Guardar conexión"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function ConsolidadoSoto({ showToast }) {
   const [abierto, setAbierto] = useState(false);

@@ -205,6 +205,9 @@ export const api = {
   // Consolidado de Soto (tablero financiero externo)
   sotoResumen: (mes) => req(`/api/finanzas/soto/${mes ? `?mes=${mes}` : ""}`),
   sotoPrueba: () => req("/api/finanzas/soto/prueba/", { method: "POST" }),
+  // Conexión WhatsApp Cloud API (Meta)
+  whatsappConfig: () => req("/api/whatsapp/config/"),
+  guardarWhatsappConfig: (data) => req("/api/whatsapp/config/", { method: "POST", body: JSON.stringify(data) }),
   // Paquetes de sesiones prepagadas
   paquetes: (pacienteId) => req(`/api/paquetes/${pacienteId ? `?paciente=${pacienteId}` : ""}`),
   crearPaquete: (data) => req("/api/paquetes/", { method: "POST", body: JSON.stringify(data) }),
