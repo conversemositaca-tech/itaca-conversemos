@@ -35,6 +35,7 @@ from pacientes.consentimiento import (
 )
 from usuarios.api import (
     CambiarPasswordView,
+    DocumentoLegalViewSet,
     LoginView,
     LogoutView,
     MedicosView,
@@ -55,6 +56,7 @@ router.register(r"paquetes", PaqueteViewSet, basename="paquete")
 router.register(r"egresos", EgresoViewSet, basename="egreso")
 router.register(r"usuarios", UsuarioViewSet, basename="usuario")
 router.register(r"profesionales", ProfesionalViewSet, basename="profesional")
+router.register(r"documentos-legales", DocumentoLegalViewSet, basename="documento-legal")
 router.register(r"metricas", MetricaMensualViewSet, basename="metrica")
 router.register(r"reportes-semanales", ReporteSemanalViewSet, basename="reporte-semanal")
 router.register(r"mensajes", MensajeViewSet, basename="mensaje")

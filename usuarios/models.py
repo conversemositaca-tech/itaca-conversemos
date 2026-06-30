@@ -96,9 +96,22 @@ class Profesional(ModeloTenant):
         VIRTUAL = "virtual", "Virtual"
         AMBAS = "ambas", "Presencial y virtual"
 
+    class ContratoEstado(models.TextChoices):
+        PREPARANDO = "preparando", "Preparando"
+        ENTREGADO = "entregado", "Entregado"
+        FIRMADO = "firmado", "Firmado"
+
     nombre = models.CharField(max_length=200)
     titulo = models.CharField(max_length=120, default="Lic. Psicología")
     colegiatura = models.CharField("C.PS.P", max_length=40, blank=True, default="")
+    # --- Legal / contrato (módulo de Gerencia) ---
+    dni = models.CharField("DNI", max_length=20, blank=True, default="")
+    fecha_nacimiento = models.DateField("fecha de nacimiento", null=True, blank=True)
+    fecha_ingreso = models.DateField("fecha de ingreso", null=True, blank=True,
+                                     help_text="Desde cuándo está con nosotros (para aniversarios).")
+    contrato_vencimiento = models.DateField("vencimiento del contrato", null=True, blank=True)
+    contrato_ultima_firma = models.DateField("última firma", null=True, blank=True)
+    contrato_estado = models.CharField(max_length=12, choices=ContratoEstado.choices, blank=True, default="")
     enfoque = models.TextField(blank=True, default="", help_text="Resumen del enfoque y especialidad.")
     poblaciones = models.CharField(max_length=200, blank=True, default="", help_text="niños, adolescentes, adultos, parejas…")
     problematicas = models.TextField(blank=True, default="")
@@ -127,3 +140,32 @@ class Profesional(ModeloTenant):
 
     def __str__(self):
         return self.nombre
+
+
+def ruta_doc_legal(instance, filename):
+    return f"legal/clinica_{instance.clinica_id}/prof_{instance.profesional_id}/{filename}"
+
+
+class DocumentoLegal(ModeloTenant):
+    """Archivo legal de un profesional: contrato, adenda u otro (PDF/imagen)."""
+
+    class Tipo(models.TextChoices):
+        CONTRATO = "contrato", "Contrato"
+        ADENDA = "adenda", "Adenda"
+        OTRO = "otro", "Otro"
+
+    profesional = models.ForeignKey(
+        "usuarios.Profesional", on_delete=models.CASCADE, related_name="documentos_legales"
+    )
+    tipo = models.CharField(max_length=12, choices=Tipo.choices, default=Tipo.CONTRATO)
+    fecha = models.DateField(null=True, blank=True)
+    archivo = models.FileField(upload_to=ruta_doc_legal, null=True, blank=True)
+    descripcion = models.CharField(max_length=200, blank=True, default="")
+
+    class Meta:
+        verbose_name = "Documento legal"
+        verbose_name_plural = "Documentos legales"
+        ordering = ["-fecha", "-id"]
+
+    def __str__(self):
+        return f"{self.get_tipo_display()} · {self.profesional.nombre}"

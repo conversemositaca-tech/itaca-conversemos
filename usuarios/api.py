@@ -11,8 +11,8 @@ from rest_framework.views import APIView
 
 from core.tenant import get_clinica_actual
 
-from .models import Profesional, Usuario
-from .serializers import ProfesionalSerializer, UsuarioSerializer
+from .models import DocumentoLegal, Profesional, Usuario
+from .serializers import DocumentoLegalSerializer, ProfesionalSerializer, UsuarioSerializer
 
 
 class EsAdmin(BasePermission):
@@ -238,3 +238,52 @@ class ProfesionalViewSet(viewsets.ModelViewSet):
         if not prof.foto:
             return Response({"detail": "Sin foto."}, status=status.HTTP_404_NOT_FOUND)
         return FileResponse(prof.foto.open("rb"))
+
+
+class DocumentoLegalViewSet(viewsets.ModelViewSet):
+    """Documentos legales (contratos/adendas) de un profesional. Solo admin.
+    Subida con multipart: campos profesional, tipo, fecha, descripcion, archivo."""
+
+    serializer_class = DocumentoLegalSerializer
+
+    def _solo_admin(self):
+        if getattr(self.request.user, "rol", None) != Usuario.Rol.ADMIN:
+            raise PermissionDenied("Solo el gerente (admin) puede gestionar documentos legales.")
+
+    def get_queryset(self):
+        qs = DocumentoLegal.objects.del_tenant_actual().order_by("-fecha", "-id")
+        prof = self.request.query_params.get("profesional")
+        if prof:
+            qs = qs.filter(profesional_id=prof)
+        return qs
+
+    def create(self, request, *args, **kwargs):
+        self._solo_admin()
+        clinica = get_clinica_actual()
+        prof = Profesional.objects.del_tenant_actual().filter(pk=request.data.get("profesional")).first()
+        if prof is None:
+            return Response({"detail": "Profesional no encontrado."}, status=status.HTTP_400_BAD_REQUEST)
+        archivo = request.FILES.get("archivo")
+        if archivo is not None and archivo.size > 15 * 1024 * 1024:
+            return Response({"detail": "El archivo supera el límite de 15 MB."}, status=status.HTTP_400_BAD_REQUEST)
+        tipo = request.data.get("tipo") if request.data.get("tipo") in dict(DocumentoLegal.Tipo.choices) else DocumentoLegal.Tipo.CONTRATO
+        doc = DocumentoLegal.objects.create(
+            clinica=clinica, profesional=prof, tipo=tipo,
+            fecha=(request.data.get("fecha") or None),
+            descripcion=(request.data.get("descripcion") or "").strip()[:200],
+            archivo=archivo,
+        )
+        return Response(DocumentoLegalSerializer(doc).data, status=status.HTTP_201_CREATED)
+
+    def perform_destroy(self, instance):
+        self._solo_admin()
+        if instance.archivo:
+            instance.archivo.delete(save=False)
+        instance.delete()
+
+    @action(detail=True, methods=["get"])
+    def archivo(self, request, pk=None):
+        doc = self.get_object()
+        if not doc.archivo:
+            return Response({"detail": "Sin archivo."}, status=status.HTTP_404_NOT_FOUND)
+        return FileResponse(doc.archivo.open("rb"))

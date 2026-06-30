@@ -509,6 +509,7 @@ export default function ClinicaApp() {
     // Finanzas: solo gerencia.
     ...(usuario?.rol === "admin" ? [{ id: "finanzas", label: "Finanzas", icon: TrendingUp }] : []),
     ...(usuario?.rol === "admin" ? [{ id: "equipo", label: "Equipo", icon: UserCog }] : []),
+    ...(usuario?.rol === "admin" ? [{ id: "legal", label: "Legal", icon: FileText }] : []),
     ...(usuario?.rol === "admin" ? [{ id: "whatsapp", label: "Conexión WhatsApp", icon: MessageCircle }] : []),
     ...(usuario?.rol === "admin" ? [{ id: "hojas", label: "Editar (Excel)", icon: Pencil }] : []),
   ];
@@ -1120,6 +1121,8 @@ export default function ClinicaApp() {
         {view === "ocupacion" && <Ocupacion showToast={showToast} />}
 
         {view === "equipo" && <Equipo showToast={showToast} miId={usuario?.id} />}
+
+        {view === "legal" && <Legal showToast={showToast} />}
 
         {view === "whatsapp" && <ConexionWhatsapp showToast={showToast} />}
 
@@ -1823,11 +1826,41 @@ function HojaEditable({ formato, showToast, onSaved }) {
 
 function Hoy({ proximas, citasHoy, porConfirmar, atendidas, onOpen, onGo, onRetencion, cumple, esAdmin }) {
   const [r, setR] = useState(null);
+  const [legalRec, setLegalRec] = useState(null);
   useEffect(() => { api.hoy().then(setR).catch(() => {}); }, []);
+  useEffect(() => {
+    if (!esAdmin) return;
+    api.profesionales().then((ps) => {
+      const hoy = new Date(), mes = hoy.getMonth(), anio = hoy.getFullYear();
+      const mesDe = (iso) => (iso ? Number(iso.slice(5, 7)) - 1 : null);
+      const cumpleN = ps.filter((p) => p.activo && p.fecha_nacimiento && mesDe(p.fecha_nacimiento) === mes).length;
+      let aniv = 0;
+      ps.forEach((p) => {
+        if (!p.activo || !p.fecha_ingreso) return;
+        const ini = dLocal(p.fecha_ingreso);
+        if (ini.getMonth() === mes && anio > ini.getFullYear()) aniv++;
+        const s = new Date(ini); s.setMonth(s.getMonth() + 6);
+        if (s.getMonth() === mes && s.getFullYear() === anio) aniv++;
+      });
+      const vence = ps.filter((p) => p.activo && p.contrato_vencimiento && (dLocal(p.contrato_vencimiento) - hoy) / 86400000 <= 45).length;
+      setLegalRec({ cumple: cumpleN, aniv, vence });
+    }).catch(() => {});
+  }, [esAdmin]);
+  const legalTotal = legalRec ? legalRec.cumple + legalRec.aniv + legalRec.vence : 0;
   return (
     <>
       <h1 className="ca-h1">Buenos días 🌞</h1>
       <div className="ca-sub">{labelLargo(HOY_ISO)} · Aquí está tu día, sin sorpresas.</div>
+
+      {esAdmin && legalTotal > 0 && (
+        <button onClick={() => onGo("legal")} className="ca-card" style={{ width: "100%", textAlign: "left", cursor: "pointer", marginTop: 14, borderColor: "#EAD9F2", background: "#FBF7FE", display: "flex", alignItems: "center", gap: 10 }}>
+          <FileText size={16} strokeWidth={2} style={{ color: "#6B4E96" }} />
+          <span style={{ fontSize: 13.5 }}>
+            <strong>Legal este mes:</strong> {legalRec.cumple} cumpleaños · {legalRec.aniv} aniversarios · {legalRec.vence} contrato(s) por vencer
+          </span>
+          <span style={{ marginLeft: "auto", color: "var(--accent)", fontWeight: 600, fontSize: 13 }}>Ver →</span>
+        </button>
+      )}
 
       <div className="ca-glance">
         <button className="ca-gcard" onClick={() => onGo("agenda")}>
@@ -3780,6 +3813,245 @@ function NumeroWaCard({ numero, esNuevo, onSaved, onCancel, showToast }) {
         <button className="ca-btn" style={{ opacity: busy ? 0.6 : 1, pointerEvents: busy ? "none" : "auto" }} onClick={guardar}>
           {busy ? "Guardando…" : (esNuevo ? "Agregar número" : "Guardar")}
         </button>
+      </div>
+    </div>
+  );
+}
+
+// ─── Legal / Contratos (Gerencia) ───────────────────────────────────
+const CONTRATO_ESTADOS = [
+  { v: "", l: "— Sin definir —" },
+  { v: "preparando", l: "Preparando" },
+  { v: "entregado", l: "Entregado" },
+  { v: "firmado", l: "Firmado" },
+];
+const CONTRATO_COLOR = {
+  preparando: { bg: "#FFF4DA", fg: "#9A7B1E" },
+  entregado: { bg: "#E7EEF6", fg: "#3D5C82" },
+  firmado: { bg: "#E1F2E8", fg: "#2E7D52" },
+};
+
+function dLocal(iso) { if (!iso) return null; const [y, m, d] = iso.split("-").map(Number); return new Date(y, m - 1, d, 12); }
+function fmtFecha(iso) { if (!iso) return "—"; const [y, m, d] = iso.split("-"); return `${d}/${m}/${y}`; }
+function antiguedad(iso) {
+  if (!iso) return "";
+  const ini = dLocal(iso), hoy = new Date();
+  let meses = (hoy.getFullYear() - ini.getFullYear()) * 12 + (hoy.getMonth() - ini.getMonth());
+  if (hoy.getDate() < ini.getDate()) meses--;
+  if (meses < 0) return "";
+  const a = Math.floor(meses / 12), m = meses % 12;
+  return a ? `${a} año${a > 1 ? "s" : ""}${m ? ` ${m}m` : ""}` : `${m} mes${m !== 1 ? "es" : ""}`;
+}
+
+function RecordCard({ titulo, items, vacio, alerta }) {
+  return (
+    <div className="ca-card" style={alerta ? { borderColor: "#F0DDBF" } : undefined}>
+      <div className="ca-secth" style={{ marginTop: 0, marginBottom: 8, fontSize: 13.5 }}>{titulo}</div>
+      {items.length === 0
+        ? <div style={{ color: "var(--muted)", fontSize: 13 }}>{vacio}</div>
+        : items.map((t, i) => <div key={i} style={{ fontSize: 13.5, padding: "3px 0" }}>{t}</div>)}
+    </div>
+  );
+}
+
+function Legal({ showToast }) {
+  const [profs, setProfs] = useState(null);
+  const [editar, setEditar] = useState(null);
+  function cargar() { api.profesionales().then(setProfs).catch((e) => showToast("Error: " + e.message)); }
+  useEffect(() => { cargar(); }, []);
+
+  const rec = useMemo(() => {
+    if (!profs) return { cumples: [], aniversarios: [], vencimientos: [] };
+    const hoy = new Date(), mesAct = hoy.getMonth(), anioAct = hoy.getFullYear();
+    const mesDe = (iso) => (iso ? Number(iso.slice(5, 7)) - 1 : null);
+    const cumples = profs.filter((p) => p.fecha_nacimiento && p.activo && mesDe(p.fecha_nacimiento) === mesAct)
+      .map((p) => ({ ...p, dia: Number(p.fecha_nacimiento.slice(8, 10)) })).sort((a, b) => a.dia - b.dia);
+    const aniversarios = [];
+    profs.forEach((p) => {
+      if (!p.fecha_ingreso || !p.activo) return;
+      const ini = dLocal(p.fecha_ingreso);
+      if (ini.getMonth() === mesAct && anioAct > ini.getFullYear())
+        aniversarios.push({ ...p, hito: `${anioAct - ini.getFullYear()} año${anioAct - ini.getFullYear() > 1 ? "s" : ""}`, dia: ini.getDate() });
+      const seis = new Date(ini); seis.setMonth(seis.getMonth() + 6);
+      if (seis.getMonth() === mesAct && seis.getFullYear() === anioAct)
+        aniversarios.push({ ...p, hito: "6 meses", dia: seis.getDate() });
+    });
+    aniversarios.sort((a, b) => a.dia - b.dia);
+    const vencimientos = profs.filter((p) => {
+      if (!p.contrato_vencimiento || !p.activo) return false;
+      return (dLocal(p.contrato_vencimiento) - hoy) / 86400000 <= 45;
+    }).sort((a, b) => dLocal(a.contrato_vencimiento) - dLocal(b.contrato_vencimiento));
+    return { cumples, aniversarios, vencimientos };
+  }, [profs]);
+
+  if (!profs) return <div className="ca-empty" style={{ marginTop: 20 }}>Cargando…</div>;
+
+  return (
+    <div>
+      <div className="ca-tophead">
+        <div><h1 className="ca-h1">Legal</h1><div className="ca-sub">Contratos, adendas y datos del equipo</div></div>
+        <button className="ca-btn" onClick={() => setEditar({ new: true })}><UserPlus size={16} strokeWidth={2.1} /> Agregar</button>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(240px,1fr))", gap: 14, marginTop: 18, marginBottom: 24 }}>
+        <RecordCard titulo="🎂 Cumpleaños del mes" vacio="Ninguno este mes"
+          items={rec.cumples.map((p) => `${p.nombre} · día ${p.dia}`)} />
+        <RecordCard titulo="🎉 Aniversarios del mes" vacio="Ninguno este mes"
+          items={rec.aniversarios.map((p) => `${p.nombre} · ${p.hito}`)} />
+        <RecordCard titulo="📄 Contratos por vencer" vacio="Nada por vencer (45 días)" alerta
+          items={rec.vencimientos.map((p) => `${p.nombre} · ${fmtFecha(p.contrato_vencimiento)}${p.contrato_estado_label ? ` (${p.contrato_estado_label})` : ""}`)} />
+      </div>
+
+      <table className="ca-tbl">
+        <thead><tr><th>Psicólogo</th><th>Sede</th><th>DNI</th><th>Nacimiento</th><th>Antigüedad</th><th>Vence</th><th>Contrato</th><th className="num">Docs</th></tr></thead>
+        <tbody>
+          {profs.map((p) => (
+            <tr key={p.id} style={{ cursor: "pointer" }} onClick={() => setEditar(p)}>
+              <td style={{ fontWeight: 500 }}>{p.nombre}{!p.activo && <span style={{ color: "var(--muted)", fontWeight: 400 }}> · inactivo</span>}</td>
+              <td>{p.sede_label || "—"}</td>
+              <td>{p.dni || "—"}</td>
+              <td>{fmtFecha(p.fecha_nacimiento)}</td>
+              <td>{antiguedad(p.fecha_ingreso) || "—"}</td>
+              <td>{fmtFecha(p.contrato_vencimiento)}</td>
+              <td>{p.contrato_estado ? <Tag colors={CONTRATO_COLOR[p.contrato_estado]}>{p.contrato_estado_label}</Tag> : "—"}</td>
+              <td className="num">{(p.documentos || []).length}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      {editar && <LegalModal prof={editar.new ? null : editar} onClose={() => setEditar(null)} onSaved={cargar} showToast={showToast} />}
+    </div>
+  );
+}
+
+function LegalModal({ prof, onClose, onSaved, showToast }) {
+  const nuevo = !prof;
+  const [nombre, setNombre] = useState(prof?.nombre || "");
+  const [sede, setSede] = useState(prof?.sede || "");
+  const [dni, setDni] = useState(prof?.dni || "");
+  const [nac, setNac] = useState(prof?.fecha_nacimiento || "");
+  const [ingreso, setIngreso] = useState(prof?.fecha_ingreso || "");
+  const [vence, setVence] = useState(prof?.contrato_vencimiento || "");
+  const [firma, setFirma] = useState(prof?.contrato_ultima_firma || "");
+  const [estado, setEstado] = useState(prof?.contrato_estado || "");
+  const [horas, setHoras] = useState(prof?.horas_disponibles ?? 0);
+  const [docs, setDocs] = useState(prof?.documentos || []);
+  const [guardando, setGuardando] = useState(false);
+  const [upTipo, setUpTipo] = useState("contrato");
+  const [upFecha, setUpFecha] = useState("");
+  const [upDesc, setUpDesc] = useState("");
+  const [upFile, setUpFile] = useState(null);
+  const [subiendo, setSubiendo] = useState(false);
+
+  async function guardar() {
+    if (!nombre.trim()) { showToast("Falta el nombre"); return; }
+    setGuardando(true);
+    const data = {
+      nombre: nombre.trim(), sede, dni: dni.trim(),
+      fecha_nacimiento: nac || null, fecha_ingreso: ingreso || null,
+      contrato_vencimiento: vence || null, contrato_ultima_firma: firma || null,
+      contrato_estado: estado, horas_disponibles: Number(horas) || 0,
+    };
+    try {
+      if (nuevo) await api.crearProfesional(data);
+      else await api.actualizarProfesional(prof.id, data);
+      showToast("Guardado ✓"); onSaved(); onClose();
+    } catch (e) { showToast("Error: " + e.message); }
+    finally { setGuardando(false); }
+  }
+
+  async function subir() {
+    if (!upFile) { showToast("Elige un archivo (PDF/imagen)"); return; }
+    setSubiendo(true);
+    try {
+      const d = await api.subirDocumentoLegal({ profesional: prof.id, tipo: upTipo, fecha: upFecha, descripcion: upDesc.trim(), archivo: upFile });
+      setDocs((ds) => [d, ...ds]); setUpFile(null); setUpDesc(""); setUpFecha("");
+      showToast("Documento subido ✓"); onSaved();
+    } catch (e) { showToast("Error: " + e.message); }
+    finally { setSubiendo(false); }
+  }
+  async function borrarDoc(id) {
+    if (!window.confirm("¿Eliminar este documento?")) return;
+    try { await api.borrarDocumentoLegal(id); setDocs((ds) => ds.filter((d) => d.id !== id)); showToast("Eliminado"); onSaved(); }
+    catch (e) { showToast("Error: " + e.message); }
+  }
+
+  const campo = { marginBottom: 12 };
+  return (
+    <div className="ca-modal-bg" onClick={onClose}>
+      <div className="ca-modal" style={{ maxWidth: 520 }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+          <strong style={{ fontSize: 16 }}>{nuevo ? "Agregar al equipo" : nombre}</strong>
+          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)" }}><X size={18} /></button>
+        </div>
+
+        <div style={campo}><div className="ca-label">Nombre completo</div>
+          <input className="ca-input" value={nombre} onChange={(e) => setNombre(e.target.value)} placeholder="Nombre y apellidos" /></div>
+        <div style={{ display: "flex", gap: 11, ...campo }}>
+          <div style={{ flex: 1 }}><div className="ca-label">Sede</div>
+            <select className="ca-input" value={sede} onChange={(e) => setSede(e.target.value)}>
+              <option value="">—</option><option value="lima">Lima</option><option value="piura">Piura</option>
+            </select></div>
+          <div style={{ flex: 1 }}><div className="ca-label">DNI</div>
+            <input className="ca-input" value={dni} onChange={(e) => setDni(e.target.value)} inputMode="numeric" /></div>
+          <div style={{ width: 110 }}><div className="ca-label">Horas/sem</div>
+            <input className="ca-input" value={horas} onChange={(e) => setHoras(e.target.value.replace(/[^\d]/g, ""))} inputMode="numeric" /></div>
+        </div>
+        <div style={{ display: "flex", gap: 11, ...campo }}>
+          <div style={{ flex: 1 }}><div className="ca-label">Nacimiento</div>
+            <input className="ca-input" type="date" value={nac || ""} onChange={(e) => setNac(e.target.value)} /></div>
+          <div style={{ flex: 1 }}><div className="ca-label">Ingreso</div>
+            <input className="ca-input" type="date" value={ingreso || ""} onChange={(e) => setIngreso(e.target.value)} /></div>
+        </div>
+
+        <div className="ca-secth" style={{ margin: "6px 0 10px" }}>Contrato</div>
+        <div style={{ display: "flex", gap: 11, ...campo }}>
+          <div style={{ flex: 1 }}><div className="ca-label">Vencimiento</div>
+            <input className="ca-input" type="date" value={vence || ""} onChange={(e) => setVence(e.target.value)} /></div>
+          <div style={{ flex: 1 }}><div className="ca-label">Última firma</div>
+            <input className="ca-input" type="date" value={firma || ""} onChange={(e) => setFirma(e.target.value)} /></div>
+          <div style={{ flex: 1 }}><div className="ca-label">Estado</div>
+            <select className="ca-input" value={estado} onChange={(e) => setEstado(e.target.value)}>
+              {CONTRATO_ESTADOS.map((s) => <option key={s.v} value={s.v}>{s.l}</option>)}
+            </select></div>
+        </div>
+
+        <div style={{ display: "flex", gap: 9, justifyContent: "flex-end", marginTop: 8, marginBottom: nuevo ? 0 : 18 }}>
+          <button className="ca-btn ghost" onClick={onClose}>Cancelar</button>
+          <button className="ca-btn" style={{ opacity: guardando ? 0.6 : 1, pointerEvents: guardando ? "none" : "auto" }} onClick={guardar}>{guardando ? "Guardando…" : "Guardar"}</button>
+        </div>
+
+        {!nuevo && (
+          <>
+            <div className="ca-secth" style={{ margin: "4px 0 10px" }}>Documentos (contrato / adendas)</div>
+            {docs.length === 0 ? <div style={{ color: "var(--muted)", fontSize: 13, marginBottom: 10 }}>Aún no hay documentos.</div> : (
+              <div style={{ marginBottom: 12 }}>
+                {docs.map((d) => (
+                  <div key={d.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", borderTop: "1px solid var(--line)", fontSize: 13.5 }}>
+                    <span style={{ width: 78, color: "var(--muted)" }}>{d.tipo_label}</span>
+                    <span style={{ flex: 1 }}>{d.descripcion || "—"}{d.fecha ? ` · ${fmtFecha(d.fecha)}` : ""}</span>
+                    {d.archivo_url && <a className="ca-mini" href={api.urlDocumentoLegal(d.id)} target="_blank" rel="noreferrer"><Download size={13} strokeWidth={2} /> Ver</a>}
+                    <button className="ca-iconbtn" title="Eliminar" onClick={() => borrarDoc(d.id)}><Trash2 size={14} strokeWidth={2} /></button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div style={{ border: "1px dashed var(--line)", borderRadius: 10, padding: 12 }}>
+              <div style={{ display: "flex", gap: 9, marginBottom: 9, flexWrap: "wrap" }}>
+                <select className="ca-input" style={{ width: 130 }} value={upTipo} onChange={(e) => setUpTipo(e.target.value)}>
+                  <option value="contrato">Contrato</option><option value="adenda">Adenda</option><option value="otro">Otro</option>
+                </select>
+                <input className="ca-input" type="date" style={{ width: 150 }} value={upFecha} onChange={(e) => setUpFecha(e.target.value)} />
+                <input className="ca-input" style={{ flex: 1, minWidth: 120 }} value={upDesc} onChange={(e) => setUpDesc(e.target.value)} placeholder="Descripción (opcional)" />
+              </div>
+              <div style={{ display: "flex", gap: 9, alignItems: "center" }}>
+                <input type="file" accept=".pdf,image/*" onChange={(e) => setUpFile(e.target.files?.[0] || null)} style={{ flex: 1, fontSize: 13 }} />
+                <button className="ca-btn" style={{ opacity: subiendo ? 0.6 : 1, pointerEvents: subiendo ? "none" : "auto" }} onClick={subir}><Paperclip size={14} strokeWidth={2} /> {subiendo ? "Subiendo…" : "Subir"}</button>
+              </div>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

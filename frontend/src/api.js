@@ -167,6 +167,15 @@ export const api = {
     return req(`/api/profesionales/${id}/foto/`, { method: "POST", body: fd });
   },
   urlFotoProfesional: (id) => `/api/profesionales/${id}/foto/`,
+  // Documentos legales (contratos / adendas)
+  documentosLegales: (profId) => req(`/api/documentos-legales/${profId ? `?profesional=${profId}` : ""}`),
+  subirDocumentoLegal: (data) => {
+    const fd = new FormData();
+    Object.entries(data).forEach(([k, v]) => { if (v != null && v !== "") fd.append(k, v); });
+    return req("/api/documentos-legales/", { method: "POST", body: fd });
+  },
+  borrarDocumentoLegal: (id) => req(`/api/documentos-legales/${id}/`, { method: "DELETE" }),
+  urlDocumentoLegal: (id) => `/api/documentos-legales/${id}/archivo/`,
   pacientesDeProfesional: (profId) => req(`/api/pacientes/?profesional=${profId}`),
   registrarSesion: (id, data) => req(`/api/pacientes/${id}/registrar-sesion/`, { method: "POST", body: JSON.stringify(data) }),
 
