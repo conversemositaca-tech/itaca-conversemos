@@ -13,8 +13,10 @@ from core.tenant import get_clinica_actual
 from mensajes.models import Mensaje, PlantillaMensaje
 from mensajes.services import plantilla_por_clave, registrar_y_enviar
 
-from .models import Adjunto, Atencion, Cita, Paciente, SeguimientoSesion
-from .serializers import AdjuntoSerializer, AtencionSerializer, CitaSerializer, PacienteSerializer
+from .models import Adjunto, Atencion, BloqueoAgenda, Cita, Paciente, SeguimientoSesion
+from .serializers import (
+    AdjuntoSerializer, AtencionSerializer, BloqueoAgendaSerializer, CitaSerializer, PacienteSerializer,
+)
 
 # Tipos de archivo permitidos para adjuntos clínicos.
 EXT_PERMITIDAS = {
@@ -418,6 +420,40 @@ class CitaViewSet(viewsets.ModelViewSet):
         else:
             gcalendar.sync_cita(cita)
         return Response(CitaSerializer(cita).data)
+
+
+class BloqueoAgendaViewSet(viewsets.ModelViewSet):
+    """Bloqueos de horario de la agenda (sin paciente). Listar/crear/borrar."""
+
+    serializer_class = BloqueoAgendaSerializer
+
+    def get_queryset(self):
+        return BloqueoAgenda.objects.del_tenant_actual().select_related("medico").order_by("inicio")
+
+    def create(self, request, *args, **kwargs):
+        clinica = get_clinica_actual()
+        try:
+            inicio = _inicio_desde(request.data.get("fecha"), request.data.get("hora_inicio"))
+            fin = _inicio_desde(request.data.get("fecha"), request.data.get("hora_fin"))
+        except (ValueError, TypeError):
+            return Response({"detail": "Fecha u hora inválida (usa fecha y HH:MM)."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        if fin <= inicio:
+            return Response({"detail": "La hora de fin debe ser posterior al inicio."},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        from usuarios.models import Usuario
+        medico_id = request.data.get("medicoId")
+        medico = (
+            Usuario.objects.filter(clinica=clinica, rol=Usuario.Rol.MEDICO, pk=medico_id).first()
+            if medico_id else None
+        )
+        sede = request.data.get("sede") if request.data.get("sede") in dict(Paciente.Sede.choices) else ""
+        bloqueo = BloqueoAgenda.objects.create(
+            clinica=clinica, medico=medico, sede=sede, inicio=inicio, fin=fin,
+            motivo=(request.data.get("motivo") or "").strip()[:200],
+        )
+        return Response(BloqueoAgendaSerializer(bloqueo).data, status=status.HTTP_201_CREATED)
 
 
 class TranscribirView(APIView):

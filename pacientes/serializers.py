@@ -5,7 +5,7 @@ from rest_framework import serializers
 
 from core.utils import fecha_corta
 
-from .models import Adjunto, Atencion, Cita, Paciente
+from .models import Adjunto, Atencion, BloqueoAgenda, Cita, Paciente
 
 
 class AdjuntoSerializer(serializers.ModelSerializer):
@@ -204,3 +204,31 @@ class CitaSerializer(serializers.ModelSerializer):
 
     def get_hora(self, obj):
         return timezone.localtime(obj.inicio).strftime("%H:%M")
+
+
+class BloqueoAgendaSerializer(serializers.ModelSerializer):
+    medico_nombre = serializers.SerializerMethodField()
+    sede_label = serializers.CharField(source="get_sede_display", read_only=True)
+    fecha = serializers.SerializerMethodField()
+    hora_inicio = serializers.SerializerMethodField()
+    hora_fin = serializers.SerializerMethodField()
+
+    class Meta:
+        model = BloqueoAgenda
+        fields = [
+            "id", "medico", "medico_nombre", "sede", "sede_label",
+            "inicio", "fin", "motivo", "fecha", "hora_inicio", "hora_fin",
+        ]
+        read_only_fields = ["inicio", "fin"]
+
+    def get_medico_nombre(self, obj):
+        return str(obj.medico) if obj.medico_id else ""
+
+    def get_fecha(self, obj):
+        return timezone.localtime(obj.inicio).date().isoformat()
+
+    def get_hora_inicio(self, obj):
+        return timezone.localtime(obj.inicio).strftime("%H:%M")
+
+    def get_hora_fin(self, obj):
+        return timezone.localtime(obj.fin).strftime("%H:%M")

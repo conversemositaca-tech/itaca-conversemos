@@ -169,6 +169,32 @@ class Cita(ModeloTenant):
         return f"{self.paciente} · {timezone.localtime(self.inicio):%d/%m %H:%M}"
 
 
+class BloqueoAgenda(ModeloTenant):
+    """Bloqueo de horario en la agenda, sin paciente (almuerzo, ausencia, viaje…).
+
+    Si tiene `medico`, bloquea solo a ese psicólogo; si no, vale para toda la sede.
+    Sirve para que ese horario no se ofrezca/agende por error.
+    """
+
+    medico = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="bloqueos",
+        null=True, blank=True, limit_choices_to={"rol": "medico"},
+    )
+    sede = models.CharField(max_length=10, choices=Paciente.Sede.choices, blank=True, default="")
+    inicio = models.DateTimeField()
+    fin = models.DateTimeField()
+    motivo = models.CharField(max_length=200, blank=True, default="")
+
+    class Meta:
+        verbose_name = "Bloqueo de agenda"
+        verbose_name_plural = "Bloqueos de agenda"
+        ordering = ["inicio"]
+        indexes = [models.Index(fields=["clinica", "inicio"])]
+
+    def __str__(self):
+        return f"Bloqueo {timezone.localtime(self.inicio):%d/%m %H:%M} · {self.motivo or 'No disponible'}"
+
+
 class Atencion(ModeloTenant):
     """Nota clínica de una atención. Forma parte de la historia clínica:
     se agrega, no se edita ni se borra (integridad médica · Ley 29733)."""

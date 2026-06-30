@@ -401,6 +401,7 @@ export default function ClinicaApp() {
   const [view, setView] = useState("hoy");
   const [pacientes, setPacientes] = useState([]);
   const [citas, setCitas] = useState([]);
+  const [bloqueos, setBloqueos] = useState([]);
   const [mensajes, setMensajes] = useState([]);
   const [servicios, setServicios] = useState([]);
   const [waPaciente, setWaPaciente] = useState(null);
@@ -419,6 +420,7 @@ export default function ClinicaApp() {
   const [cancelando, setCancelando] = useState(null);
   const [cobrando, setCobrando] = useState(null);
   const [citaDetalle, setCitaDetalle] = useState(null);
+  const [bloqueando, setBloqueando] = useState(null);
   const [cambiarPass, setCambiarPass] = useState(false);
   const [agendarPara, setAgendarPara] = useState(null);
   const [vendiendoPaquete, setVendiendoPaquete] = useState(null);
@@ -429,9 +431,12 @@ export default function ClinicaApp() {
   const [toast, setToast] = useState("");
 
   async function cargarDatos() {
-    const [pac, cit, msg, srv] = await Promise.all([api.pacientes(), api.citas(), api.mensajes(), api.servicios()]);
-    setPacientes(pac); setCitas(cit); setMensajes(msg); setServicios(srv);
+    const [pac, cit, msg, srv, blo] = await Promise.all([
+      api.pacientes(), api.citas(), api.mensajes(), api.servicios(), api.bloqueos().catch(() => []),
+    ]);
+    setPacientes(pac); setCitas(cit); setMensajes(msg); setServicios(srv); setBloqueos(blo);
   }
+  const refrescarBloqueos = async () => setBloqueos(await api.bloqueos().catch(() => []));
   async function iniciar() {
     const d = await api.me();
     if (d.autenticado) { setUsuario(d); await cargarDatos(); }
@@ -674,6 +679,20 @@ export default function ClinicaApp() {
       await refrescarCitas();
       showToast("Sesión confirmada ✓");
     } catch (e) { showToast("Error: " + e.message); }
+  }
+
+  async function guardarBloqueo(data) {
+    try {
+      await api.crearBloqueo(data);
+      await refrescarBloqueos();
+      setBloqueando(null);
+      showToast("Horario bloqueado ✓");
+    } catch (e) { showToast("Error: " + e.message); }
+  }
+  async function borrarBloqueo(b) {
+    if (!window.confirm("¿Quitar este bloqueo?")) return;
+    try { await api.borrarBloqueo(b.id); await refrescarBloqueos(); showToast("Bloqueo quitado"); }
+    catch (e) { showToast("Error: " + e.message); }
   }
 
   async function setEstadoCita(cita, estado) {
@@ -1014,8 +1033,9 @@ export default function ClinicaApp() {
 
         {view === "agenda" && (
           <Agenda
-            citas={citas} fecha={agendaFecha} setFecha={setAgendaFecha}
+            citas={citas} bloqueos={bloqueos} fecha={agendaFecha} setFecha={setAgendaFecha}
             vista={agendaVista} setVista={setAgendaVista} esAsistente={esAsistente} esMedico={usuario?.rol === "medico"}
+            onBloquear={() => setBloqueando({})} onBorrarBloqueo={borrarBloqueo}
             onAgendar={() => setAdding(true)} onAtender={setAtender} onRecordar={setRecordar}
             onReagendar={setReagendar} onCancelar={setCancelando} openFicha={openFicha}
             onConfirmar={confirmarCita} onSetEstado={setEstadoCita} onAbrirCita={setCitaDetalle}
@@ -1134,6 +1154,7 @@ export default function ClinicaApp() {
             onMensaje={(c) => { const p = pacientes.find((x) => x.id === c.pacienteId); if (p) setWaPaciente(p); else showToast("No se encontró el paciente"); }}
             onCobrar={(c) => setCobrando({ pacienteId: c.pacienteId, paciente: c.paciente, citaId: c.id, especialidad: c.especialidad })} />
         )}
+        {bloqueando && <BloqueoModal fechaInicial={agendaFecha} onClose={() => setBloqueando(null)} onSave={guardarBloqueo} />}
         {cancelando && (
           <ConfirmModal
             titulo="Cancelar sesión"
@@ -2331,6 +2352,77 @@ function AgendarModal({ pacientes, fechaInicial, pacienteFijo, onClose, onSave }
   );
 }
 
+function BloqueoModal({ fechaInicial, onClose, onSave }) {
+  const [fecha, setFecha] = useState(fechaInicial || HOY_ISO);
+  const [horaInicio, setHoraInicio] = useState("");
+  const [horaFin, setHoraFin] = useState("");
+  const [medicos, setMedicos] = useState([]);
+  const [medicoId, setMedicoId] = useState("");
+  const [sede, setSede] = useState("");
+  const [motivo, setMotivo] = useState("");
+  const [error, setError] = useState("");
+  useEffect(() => { api.medicos().then(setMedicos).catch(() => {}); }, []);
+  const medicosVisibles = medicos.filter((m) => !sede || !m.sede || m.sede === sede);
+
+  function guardar() {
+    if (!fecha) { setError("Falta la fecha."); return; }
+    if (!horaInicio || !horaFin) { setError("Pon hora de inicio y de fin."); return; }
+    if (horaFin <= horaInicio) { setError("La hora de fin debe ser posterior al inicio."); return; }
+    setError("");
+    onSave({ fecha, hora_inicio: horaInicio, hora_fin: horaFin, medicoId: medicoId || null, sede, motivo: motivo.trim() });
+  }
+
+  return (
+    <div className="ca-modal-bg" onClick={onClose}>
+      <div className="ca-modal" style={{ maxWidth: 420 }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+          <strong style={{ fontSize: 16 }}>Bloquear horario</strong>
+          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)" }}><X size={18} /></button>
+        </div>
+        <div style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 14 }}>Reserva un espacio sin paciente (almuerzo, ausencia, viaje…) para que no se agende.</div>
+
+        <div style={{ marginBottom: 13 }}>
+          <div className="ca-label">Fecha</div>
+          <input className="ca-input" type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} />
+        </div>
+        <div style={{ display: "flex", gap: 11, marginBottom: 13 }}>
+          <div style={{ flex: 1 }}><div className="ca-label">Desde</div>
+            <input className="ca-input" type="time" value={horaInicio} onChange={(e) => setHoraInicio(e.target.value)} /></div>
+          <div style={{ flex: 1 }}><div className="ca-label">Hasta</div>
+            <input className="ca-input" type="time" value={horaFin} onChange={(e) => setHoraFin(e.target.value)} /></div>
+        </div>
+        <div style={{ display: "flex", gap: 11, marginBottom: 13 }}>
+          <div style={{ flex: 1 }}>
+            <div className="ca-label">Sede</div>
+            <select className="ca-input" value={sede} onChange={(e) => { const s = e.target.value; setSede(s); if (medicoId && !medicos.some((m) => String(m.id) === String(medicoId) && (!s || m.sede === s))) setMedicoId(""); }}>
+              <option value="">— Todas —</option>
+              <option value="lima">Lima</option>
+              <option value="piura">Piura</option>
+            </select>
+          </div>
+          <div style={{ flex: 1.5 }}>
+            <div className="ca-label">Psicólogo <span style={{ color: "var(--muted)", fontWeight: 400 }}>(opcional)</span></div>
+            <select className="ca-input" value={medicoId} onChange={(e) => setMedicoId(e.target.value)}>
+              <option value="">— Toda la sede —</option>
+              {medicosVisibles.map((m) => <option key={m.id} value={m.id}>{m.nombre}</option>)}
+            </select>
+          </div>
+        </div>
+        <div style={{ marginBottom: 18 }}>
+          <div className="ca-label">Motivo <span style={{ color: "var(--muted)", fontWeight: 400 }}>(opcional)</span></div>
+          <input className="ca-input" value={motivo} onChange={(e) => setMotivo(e.target.value)} placeholder="Almuerzo, reunión, viaje…" />
+        </div>
+
+        {error && <div style={{ color: "#B4564E", fontSize: 13, marginBottom: 10, background: "#FDECEA", border: "1px solid #F3C9C4", borderRadius: 8, padding: "8px 10px" }}>{error}</div>}
+        <div style={{ display: "flex", gap: 9, justifyContent: "flex-end" }}>
+          <button className="ca-btn ghost" onClick={onClose}>Cancelar</button>
+          <button className="ca-btn" onClick={guardar}>Bloquear</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function CitaRow({ c, esAsistente, esMedico, onAtender, onRecordar, onReagendar, onCancelar, onConfirmar, onCobrar, onSetEstado, onMensaje, openFicha }) {
   const activa = c.estado !== "atendida" && c.estado !== "cancelada";
   const pendiente = c.estado === "agendada" || c.estado === "por_confirmar" || c.estado === "reprogramada";
@@ -2445,7 +2537,7 @@ function TerapeutasGrid({ citas, terapeutas, onAbrirCita }) {
   );
 }
 
-function Agenda({ citas, fecha, setFecha, vista, setVista, esAsistente, esMedico, onAgendar, onAtender, onRecordar, onReagendar, onCancelar, onConfirmar, onCobrar, onSetEstado, onAbrirCita, onMensaje, openFicha }) {
+function Agenda({ citas, bloqueos = [], fecha, setFecha, vista, setVista, esAsistente, esMedico, onAgendar, onBloquear, onBorrarBloqueo, onAtender, onRecordar, onReagendar, onCancelar, onConfirmar, onCobrar, onSetEstado, onAbrirCita, onMensaje, openFicha }) {
   const [filtroMedico, setFiltroMedico] = useState("");
   const [medicosDir, setMedicosDir] = useState([]);
   useEffect(() => { api.medicos().then(setMedicosDir).catch(() => {}); }, []);
@@ -2464,6 +2556,7 @@ function Agenda({ citas, fecha, setFecha, vista, setVista, esAsistente, esMedico
   const activas = visibles.filter((c) => c.estado !== "cancelada");
   // Resumen de cuántas citas hay en cada estado (del día/semana mostrado).
   const resumen = ESTADOS_CITA.map((e) => ({ ...e, n: visibles.filter((c) => c.estado === e.v).length })).filter((e) => e.n > 0);
+  const bloqueosDia = bloqueos.filter((b) => b.fecha === fecha).sort((a, b) => a.hora_inicio.localeCompare(b.hora_inicio));
   const subt = vista === "semana" ? `${labelNumMes(semana[0])} – ${labelNumMes(semana[6])}` : labelLargo(fecha);
   const paso = vista === "semana" ? 7 : 1;
 
@@ -2478,6 +2571,7 @@ function Agenda({ citas, fecha, setFecha, vista, setVista, esAsistente, esMedico
           <ExportBtns nombre="agenda" titulo="Agenda" disabled={activas.length === 0}
             headers={["Fecha", "Hora", "Paciente", "Psicologo", "Especialidad", "N° sesion", "Sede", "Modalidad", "Estado"]}
             filas={activas.map((c) => [c.fecha, c.hora, c.paciente, c.medico, c.especialidad, c.n_sesion || "", c.sede_label || "", c.modalidad === "virtual" ? "Virtual" : "Presencial", c.estado_label])} />
+          {!esMedico && <button className="ca-btn ghost" onClick={onBloquear}><Clock size={15} strokeWidth={2} /> Bloquear horario</button>}
           <button className="ca-btn" onClick={onAgendar}><Plus size={16} strokeWidth={2.2} /> Agendar sesión</button>
         </div>
       </div>
@@ -2515,8 +2609,16 @@ function Agenda({ citas, fecha, setFecha, vista, setVista, esAsistente, esMedico
 
       {vista === "dia" ? (
         <div style={{ marginTop: 18 }}>
+          {bloqueosDia.map((b) => (
+            <div key={`b${b.id}`} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", marginBottom: 8, borderRadius: 10, background: "#F1F0EE", border: "1px dashed var(--line)", color: "#6B675F" }}>
+              <Clock size={14} strokeWidth={2} />
+              <span style={{ fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>{b.hora_inicio}–{b.hora_fin}</span>
+              <span style={{ flex: 1 }}>🚫 {b.motivo || "No disponible"}{b.medico_nombre ? ` · ${b.medico_nombre}` : b.sede_label ? ` · ${b.sede_label}` : ""}</span>
+              {!esMedico && <button className="ca-iconbtn" title="Quitar bloqueo" onClick={() => onBorrarBloqueo(b)}><X size={14} strokeWidth={2} /></button>}
+            </div>
+          ))}
           {delDia(fecha).length === 0 ? (
-            <div className="ca-empty">No hay sesiones para este día. Usa «Agendar sesión» para reservar una.</div>
+            bloqueosDia.length === 0 && <div className="ca-empty">No hay sesiones para este día. Usa «Agendar sesión» para reservar una.</div>
           ) : (
             delDia(fecha).map((c) => (
               <CitaRow key={c.id} c={c} esAsistente={esAsistente} esMedico={esMedico}

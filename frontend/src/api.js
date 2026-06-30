@@ -63,6 +63,10 @@ export const api = {
   moverCita: (id, fecha, hora) =>
     req(`/api/citas/${id}/mover/`, { method: "POST", body: JSON.stringify({ fecha, hora }) }),
   cancelarCita: (id) => req(`/api/citas/${id}/cancelar/`, { method: "POST" }),
+  // Bloqueos de horario (sin paciente)
+  bloqueos: () => req("/api/bloqueos/"),
+  crearBloqueo: (data) => req("/api/bloqueos/", { method: "POST", body: JSON.stringify(data) }),
+  borrarBloqueo: (id) => req(`/api/bloqueos/${id}/`, { method: "DELETE" }),
   // `datos` = { motivo, presion_arterial, frecuencia_cardiaca, temperatura, peso,
   //             talla, diagnostico, indicaciones, nota } (todos opcionales).
   atenderCita: (id, datos) =>
