@@ -3147,6 +3147,59 @@ function UrlBox({ label, url, onCopy, copiado }) {
   );
 }
 
+function ReporteCierreMkt({ showToast }) {
+  const [abierto, setAbierto] = useState(false);
+  const [data, setData] = useState(null);
+  async function cargar() {
+    try { setData(await api.reporteCierre()); }
+    catch (e) { showToast && showToast("Error: " + e.message); }
+  }
+  function toggle() { const nv = !abierto; setAbierto(nv); if (nv && !data) cargar(); }
+
+  const Fila = ({ etq, valor, sub }) => (
+    <div style={{ display: "flex", alignItems: "baseline", gap: 10, padding: "6px 0", borderTop: "1px solid var(--line)" }}>
+      <span style={{ flex: 1, fontSize: 13.5 }}>{etq}</span>
+      <span style={{ fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>{valor}</span>
+      {sub != null && <span style={{ color: "var(--muted)", fontSize: 12, width: 78, textAlign: "right" }}>{sub}</span>}
+    </div>
+  );
+  const big = { fontSize: 24, fontWeight: 700, color: "#4F8A77" };
+  const bigSub = { fontSize: 13, fontWeight: 400, color: "var(--muted)" };
+
+  return (
+    <div className="ca-card" style={{ marginTop: 18 }}>
+      <button onClick={toggle} style={{ width: "100%", background: "none", border: "none", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center", padding: 0 }}>
+        <span className="ca-secth" style={{ margin: 0 }}>📊 Reporte de cierre (marketing)</span>
+        <ChevronDown size={18} style={{ transform: abierto ? "rotate(180deg)" : "none", color: "var(--muted)" }} />
+      </button>
+      {abierto && (!data ? <div className="ca-empty" style={{ marginTop: 12 }}>Cargando…</div> : (
+        <div style={{ marginTop: 14, display: "grid", gap: 24 }}>
+          <div>
+            <div className="ca-label" style={{ marginBottom: 4 }}>Cierre de leads → consulta</div>
+            <div style={big}>{data.leads_consulta.general.pct}% <span style={bigSub}>({data.leads_consulta.general.num}/{data.leads_consulta.general.den})</span></div>
+            {data.leads_consulta.por_sede.map((s) => <Fila key={s.sede || "x"} etq={s.sede_label} valor={`${s.pct}%`} sub={`${s.num}/${s.den}`} />)}
+          </div>
+          <div>
+            <div className="ca-label" style={{ marginBottom: 4 }}>Cierre de consultas → proceso</div>
+            <div style={big}>{data.consulta_proceso.general.pct}% <span style={bigSub}>({data.consulta_proceso.general.num}/{data.consulta_proceso.general.den})</span></div>
+            {data.consulta_proceso.por_sede.map((s) => <Fila key={"s" + (s.sede || "x")} etq={`Sede ${s.sede_label}`} valor={`${s.pct}%`} sub={`${s.num}/${s.den}`} />)}
+            {data.consulta_proceso.por_psicologo.map((p) => <Fila key={"p" + p.psicologo} etq={p.psicologo} valor={`${p.pct}%`} sub={`${p.num}/${p.den}`} />)}
+          </div>
+          <div>
+            <div className="ca-label" style={{ marginBottom: 4 }}>Sesiones promedio por paciente (LTV)</div>
+            <div style={big}>{data.ltv.general.promedio} <span style={bigSub}>({data.ltv.general.n} pacientes)</span></div>
+            {data.ltv.por_sede.map((s) => <Fila key={"ls" + (s.sede || "x")} etq={`Sede ${s.sede_label}`} valor={s.promedio} sub={`${s.n} pac.`} />)}
+            {data.ltv.por_psicologo.map((p) => <Fila key={"lp" + p.psicologo} etq={p.psicologo} valor={p.promedio} sub={`${p.n} pac.`} />)}
+          </div>
+          <div style={{ fontSize: 11.5, color: "var(--muted)", lineHeight: 1.5 }}>
+            Consulta = leads en evaluando/pendiente de pago/inició proceso. Proceso = inició proceso (ganado). LTV = N° de sesión promedio de pacientes con sesiones.
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function Marketing({ showToast, onConvertir, esAdmin }) {
   const [leads, setLeads] = useState([]);
   const [rep, setRep] = useState(null);
@@ -3266,6 +3319,8 @@ function Marketing({ showToast, onConvertir, esAdmin }) {
           </button>
         </div>
       </div>
+
+      <ReporteCierreMkt showToast={showToast} />
 
       {/* ---- Generador del reporte de pauta (listo para WhatsApp) ---- */}
       <div className="ca-card" style={{ marginTop: 22 }}>

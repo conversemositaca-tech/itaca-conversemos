@@ -126,6 +126,74 @@ class LeadViewSet(viewsets.ModelViewSet):
         resultado["hasta"] = hasta.isoformat()
         return Response(resultado)
 
+    @action(detail=False, methods=["get"], url_path="reporte-cierre")
+    def reporte_cierre(self, request):
+        """Métricas de marketing: % cierre leads→consulta, consulta→proceso, y
+        sesiones promedio (LTV). Por sede, por psicólogo y general.
+
+        Definiciones (acordadas): 'tuvo consulta' = estado evaluando/pendiente_pago/
+        ganado; 'inició proceso' = ganado; LTV = promedio de N° de sesión de los
+        pacientes con sesiones. Filtro opcional desde/hasta por fecha de alta del lead."""
+        leads = Lead.objects.del_tenant_actual().select_related("medico")
+        desde = request.query_params.get("desde")
+        hasta = request.query_params.get("hasta")
+        if desde:
+            leads = leads.filter(creado_en__date__gte=_parse_fecha(desde, date.min))
+        if hasta:
+            leads = leads.filter(creado_en__date__lte=_parse_fecha(hasta, date.max))
+        leads = list(leads)
+
+        E = Lead.Estado
+        CONSULTA = {E.EVALUANDO, E.PENDIENTE_PAGO, E.GANADO}
+        sede_label = dict(Lead.Sede.choices)
+
+        def pct(n, d):
+            return round(n / d * 100, 1) if d else 0.0
+
+        def bloque_leads(items):
+            den = len(items)
+            num = sum(1 for l in items if l.estado in CONSULTA)
+            return {"num": num, "den": den, "pct": pct(num, den)}
+
+        def bloque_proc(items):
+            con_consulta = [l for l in items if l.estado in CONSULTA]
+            den = len(con_consulta)
+            num = sum(1 for l in con_consulta if l.estado == E.GANADO)
+            return {"num": num, "den": den, "pct": pct(num, den)}
+
+        sedes = sorted({l.sede for l in leads})
+        por_medico = {}
+        for l in leads:
+            por_medico.setdefault(str(l.medico) if l.medico_id else "Sin psicólogo", []).append(l)
+
+        leads_consulta = {
+            "general": bloque_leads(leads),
+            "por_sede": [{"sede": s, "sede_label": sede_label.get(s, s or "Sin sede"), **bloque_leads([l for l in leads if l.sede == s])} for s in sedes],
+        }
+        consulta_proceso = {
+            "general": bloque_proc(leads),
+            "por_sede": [{"sede": s, "sede_label": sede_label.get(s, s or "Sin sede"), **bloque_proc([l for l in leads if l.sede == s])} for s in sedes],
+            "por_psicologo": [{"psicologo": k, **bloque_proc(v)} for k, v in sorted(por_medico.items())],
+        }
+
+        # LTV — promedio de N° de sesión de los pacientes con sesiones.
+        pacientes = list(Paciente.objects.del_tenant_actual().filter(n_sesion__gt=0).select_related("profesional"))
+
+        def avg_ses(items):
+            return round(sum(p.n_sesion for p in items) / len(items), 1) if items else 0.0
+
+        psede = sorted({p.sede for p in pacientes})
+        pprof = {}
+        for p in pacientes:
+            pprof.setdefault(p.profesional.nombre if p.profesional_id else "Sin psicólogo", []).append(p)
+        ltv = {
+            "general": {"promedio": avg_ses(pacientes), "n": len(pacientes)},
+            "por_sede": [{"sede": s, "sede_label": sede_label.get(s, s or "Sin sede"), "promedio": avg_ses([p for p in pacientes if p.sede == s]), "n": len([p for p in pacientes if p.sede == s])} for s in psede],
+            "por_psicologo": [{"psicologo": k, "promedio": avg_ses(v), "n": len(v)} for k, v in sorted(pprof.items())],
+        }
+
+        return Response({"leads_consulta": leads_consulta, "consulta_proceso": consulta_proceso, "ltv": ltv})
+
     @action(detail=False, methods=["get"])
     def reportes(self, request):
         """Embudo global + cierre por doctor + por fuente."""

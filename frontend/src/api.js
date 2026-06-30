@@ -125,6 +125,12 @@ export const api = {
     if (hasta) qs.set("hasta", hasta);
     return req(`/api/leads/reporte-pauta/?${qs.toString()}`);
   },
+  reporteCierre: ({ desde, hasta } = {}) => {
+    const qs = new URLSearchParams();
+    if (desde) qs.set("desde", desde);
+    if (hasta) qs.set("hasta", hasta);
+    return req(`/api/leads/reporte-cierre/?${qs.toString()}`);
+  },
   // Catálogo de anuncios (pauta)
   anuncios: () => req("/api/anuncios/"),
   crearAnuncio: (data) => req("/api/anuncios/", { method: "POST", body: JSON.stringify(data) }),
