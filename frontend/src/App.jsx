@@ -625,7 +625,7 @@ export default function ClinicaApp() {
     try {
       let pacienteId = data.pacienteId;
       if (data.nuevoNombre) {
-        const nuevo = await api.crearPaciente({ nombre: data.nuevoNombre, especialidad: data.especialidad, sede: data.sede || "" });
+        const nuevo = await api.crearPaciente({ nombre: data.nuevoNombre, especialidad: data.especialidad, sede: data.sede || "", tel: data.nuevoTel || "" });
         pacienteId = nuevo.id;
       }
       const r = await api.agendarCita({
@@ -1019,6 +1019,7 @@ export default function ClinicaApp() {
             onAgendar={() => setAdding(true)} onAtender={setAtender} onRecordar={setRecordar}
             onReagendar={setReagendar} onCancelar={setCancelando} openFicha={openFicha}
             onConfirmar={confirmarCita} onSetEstado={setEstadoCita} onAbrirCita={setCitaDetalle}
+            onMensaje={(c) => { const p = pacientes.find((x) => x.id === c.pacienteId); if (p) setWaPaciente(p); else showToast("No se encontró el paciente"); }}
             onCobrar={(c) => setCobrando({ pacienteId: c.pacienteId, paciente: c.paciente, citaId: c.id, especialidad: c.especialidad })}
           />
         )}
@@ -1130,6 +1131,7 @@ export default function ClinicaApp() {
           <CitaDetalleModal cita={citaDetalle} esMedico={usuario?.rol === "medico"} esAsistente={esAsistente}
             onClose={() => setCitaDetalle(null)} onSetEstado={setEstadoCita} openFicha={openFicha}
             onAtender={setAtender} onReagendar={setReagendar} onCancelar={setCancelando}
+            onMensaje={(c) => { const p = pacientes.find((x) => x.id === c.pacienteId); if (p) setWaPaciente(p); else showToast("No se encontró el paciente"); }}
             onCobrar={(c) => setCobrando({ pacienteId: c.pacienteId, paciente: c.paciente, citaId: c.id, especialidad: c.especialidad })} />
         )}
         {cancelando && (
@@ -2143,6 +2145,7 @@ function AgendarModal({ pacientes, fechaInicial, pacienteFijo, onClose, onSave }
   const [busca, setBusca] = useState("");
   const [sel, setSel] = useState(pacienteFijo || null);
   const [nuevo, setNuevo] = useState(false);
+  const [nuevoTel, setNuevoTel] = useState("");
   const [fecha, setFecha] = useState(fechaInicial || HOY_ISO);
   const [hora, setHora] = useState("");
   const [esp, setEsp] = useState(pacienteFijo?.especialidad || "Terapia individual");
@@ -2190,7 +2193,7 @@ function AgendarModal({ pacientes, fechaInicial, pacienteFijo, onClose, onSave }
       notas: notas.trim(), n_sesion: nSesion ? Number(nSesion) : null,
     };
     if (sel) onSave({ pacienteId: sel.id, paciente: sel.nombre, ...extra });
-    else if (nuevo) onSave({ nuevoNombre: busca.trim(), ...extra });
+    else if (nuevo) onSave({ nuevoNombre: busca.trim(), nuevoTel: nuevoTel.trim(), ...extra });
   }
 
   return (
@@ -2237,6 +2240,14 @@ function AgendarModal({ pacientes, fechaInicial, pacienteFijo, onClose, onSave }
             </>
           )}
         </div>
+
+        {nuevo && (
+          <div style={{ marginBottom: 13 }}>
+            <div className="ca-label">Teléfono del paciente nuevo <span style={{ color: "var(--muted)", fontWeight: 400 }}>(opcional)</span></div>
+            <input className="ca-input" value={nuevoTel} onChange={(e) => setNuevoTel(e.target.value)} placeholder="987 654 321" inputMode="tel" />
+            <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 6 }}>Se crea la ficha con nombre, teléfono, sede y especialidad. Lo demás se completa luego desde Pacientes.</div>
+          </div>
+        )}
 
         <div style={{ display: "flex", gap: 11, marginBottom: 13 }}>
           <div style={{ flex: 1.3 }}>
@@ -2320,7 +2331,7 @@ function AgendarModal({ pacientes, fechaInicial, pacienteFijo, onClose, onSave }
   );
 }
 
-function CitaRow({ c, esAsistente, esMedico, onAtender, onRecordar, onReagendar, onCancelar, onConfirmar, onCobrar, onSetEstado, openFicha }) {
+function CitaRow({ c, esAsistente, esMedico, onAtender, onRecordar, onReagendar, onCancelar, onConfirmar, onCobrar, onSetEstado, onMensaje, openFicha }) {
   const activa = c.estado !== "atendida" && c.estado !== "cancelada";
   const pendiente = c.estado === "agendada" || c.estado === "por_confirmar" || c.estado === "reprogramada";
   const col = STATUS[c.estado] || {};
@@ -2356,6 +2367,9 @@ function CitaRow({ c, esAsistente, esMedico, onAtender, onRecordar, onReagendar,
         ) : (
           <button className="ca-mini wa" onClick={() => onRecordar(c)}><MessageCircle size={13} strokeWidth={2} /> Recordar</button>
         ))}
+        {!esMedico && (
+          <button className="ca-mini wa" onClick={() => onMensaje(c)} title="Enviar mensaje con plantillas"><MessageCircle size={13} strokeWidth={2} /> Mensaje</button>
+        )}
         {activa && !esAsistente && (
           <button className="ca-mini" onClick={() => onAtender(c)}><Stethoscope size={13} strokeWidth={2} /> {esMedico ? "Registrar sesión" : "Atender"}</button>
         )}
@@ -2431,7 +2445,7 @@ function TerapeutasGrid({ citas, terapeutas, onAbrirCita }) {
   );
 }
 
-function Agenda({ citas, fecha, setFecha, vista, setVista, esAsistente, esMedico, onAgendar, onAtender, onRecordar, onReagendar, onCancelar, onConfirmar, onCobrar, onSetEstado, onAbrirCita, openFicha }) {
+function Agenda({ citas, fecha, setFecha, vista, setVista, esAsistente, esMedico, onAgendar, onAtender, onRecordar, onReagendar, onCancelar, onConfirmar, onCobrar, onSetEstado, onAbrirCita, onMensaje, openFicha }) {
   const [filtroMedico, setFiltroMedico] = useState("");
   const [medicosDir, setMedicosDir] = useState([]);
   useEffect(() => { api.medicos().then(setMedicosDir).catch(() => {}); }, []);
@@ -2508,7 +2522,7 @@ function Agenda({ citas, fecha, setFecha, vista, setVista, esAsistente, esMedico
               <CitaRow key={c.id} c={c} esAsistente={esAsistente} esMedico={esMedico}
                 onAtender={onAtender} onRecordar={onRecordar} onReagendar={onReagendar}
                 onCancelar={onCancelar} onConfirmar={onConfirmar} onCobrar={onCobrar}
-                onSetEstado={onSetEstado} openFicha={openFicha} />
+                onSetEstado={onSetEstado} onMensaje={onMensaje} openFicha={openFicha} />
             ))
           )}
         </div>
@@ -2545,7 +2559,7 @@ function Agenda({ citas, fecha, setFecha, vista, setVista, esAsistente, esMedico
   );
 }
 
-function CitaDetalleModal({ cita, esMedico, esAsistente, onClose, onSetEstado, openFicha, onAtender, onCobrar, onReagendar, onCancelar }) {
+function CitaDetalleModal({ cita, esMedico, esAsistente, onClose, onSetEstado, openFicha, onAtender, onCobrar, onReagendar, onCancelar, onMensaje }) {
   const [estado, setEstado] = useState(cita.estado);
   const col = STATUS[estado] || {};
   const activa = estado !== "atendida" && estado !== "cancelada";
@@ -2578,6 +2592,7 @@ function CitaDetalleModal({ cita, esMedico, esAsistente, onClose, onSetEstado, o
 
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }}>
           <button className="ca-mini" onClick={() => { onClose(); openFicha(cita.pacienteId); }}><FileText size={13} strokeWidth={2} /> Ficha / pagos</button>
+          {!esMedico && <button className="ca-mini wa" onClick={() => { onClose(); onMensaje(cita); }}><MessageCircle size={13} strokeWidth={2} /> Mensaje</button>}
           {activa && !esAsistente && <button className="ca-mini" onClick={() => { onClose(); onAtender(cita); }}><Stethoscope size={13} strokeWidth={2} /> {esMedico ? "Registrar sesión" : "Atender"}</button>}
           {!esMedico && <button className="ca-mini" onClick={() => { onClose(); onCobrar(cita); }}><Receipt size={13} strokeWidth={2} /> Cobrar</button>}
           {activa && <button className="ca-mini" onClick={() => { onClose(); onReagendar(cita); }}><Calendar size={13} strokeWidth={2} /> Mover</button>}
