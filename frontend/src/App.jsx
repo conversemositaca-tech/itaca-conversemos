@@ -661,7 +661,7 @@ export default function ClinicaApp() {
   async function guardarCobro(data) {
     try {
       await api.crearCobro(data);
-      await refrescarCitas();
+      await Promise.all([refrescarCitas(), refrescarPacientes()]);
       setCobrando(null);
       showToast("Cobro registrado ✓");
     } catch (e) { showToast("Error: " + e.message); }
@@ -1083,6 +1083,8 @@ export default function ClinicaApp() {
             onWhatsApp={() => setWaPaciente(selected)} clinica={nombreClinica} onAgendar={() => setAgendarPara(selected)}
             onRegistrarSesion={() => setRegistrandoSesion(selected)} puedeRegistrar={usuario?.rol === "medico" || usuario?.rol === "admin"}
             onVenderPaquete={() => setVendiendoPaquete(selected)} puedeVenderPaquete={usuario?.rol === "asistente" || usuario?.rol === "admin"}
+            onRegistrarPago={() => setCobrando({ pacienteId: selected.id, paciente: selected.nombre, especialidad: selected.especialidad })}
+            puedeCobrar={usuario?.rol === "asistente" || usuario?.rol === "admin"}
             onSubirAdjunto={(file) => subirAdjunto(selected, file)}
             onEliminarAdjunto={eliminarAdjunto} puedeEliminar={usuario?.rol === "medico" || usuario?.rol === "admin"} />
         )}
@@ -1924,7 +1926,7 @@ function AdjuntoRow({ a, puedeEliminar, onEliminar }) {
   );
 }
 
-function Ficha({ p, onBack, onEdit, onWhatsApp, onSubirAdjunto, onEliminarAdjunto, puedeEliminar, clinica, onAgendar, onRegistrarSesion, puedeRegistrar, onVenderPaquete, puedeVenderPaquete }) {
+function Ficha({ p, onBack, onEdit, onWhatsApp, onSubirAdjunto, onEliminarAdjunto, puedeEliminar, clinica, onAgendar, onRegistrarSesion, puedeRegistrar, onVenderPaquete, puedeVenderPaquete, onRegistrarPago, puedeCobrar }) {
   return (
     <div>
       <button className="ca-back" onClick={onBack}><ChevronLeft size={16} strokeWidth={2} /> Pacientes</button>
@@ -2004,15 +2006,22 @@ function Ficha({ p, onBack, onEdit, onWhatsApp, onSubirAdjunto, onEliminarAdjunt
         <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 14 }}>Edita los antecedentes desde el botón «Editar» del paciente.</div>
       </div>
 
-      {p.cuenta && (p.cuenta.items.length > 0 || p.cuenta.pendiente > 0) && (
+      {(p.cuenta || puedeCobrar) && (
         <>
-          <h2 className="ca-secth">Estado de cuenta</h2>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <h2 className="ca-secth">Pagos y estado de cuenta</h2>
+            {puedeCobrar && (
+              <button className="ca-mini" onClick={onRegistrarPago}><Receipt size={13} strokeWidth={2} /> Registrar pago</button>
+            )}
+          </div>
           <div className="ca-card" style={{ marginBottom: 26 }}>
-            <div style={{ display: "flex", gap: 28, flexWrap: "wrap", marginBottom: p.cuenta.items.length ? 12 : 0 }}>
-              <div><div style={{ fontSize: 20, fontWeight: 600, color: "#4F8A77" }}>{money(p.cuenta.cobrado)}</div><div className="ca-pmeta">Pagado</div></div>
-              <div><div style={{ fontSize: 20, fontWeight: 600, color: p.cuenta.pendiente > 0 ? "#C9923A" : "var(--muted)" }}>{money(p.cuenta.pendiente)}</div><div className="ca-pmeta">Pendiente</div></div>
+            <div style={{ display: "flex", gap: 28, flexWrap: "wrap", marginBottom: (p.cuenta && p.cuenta.items.length) ? 12 : 0 }}>
+              <div><div style={{ fontSize: 20, fontWeight: 600, color: "#4F8A77" }}>{money(p.cuenta ? p.cuenta.cobrado : 0)}</div><div className="ca-pmeta">Pagado</div></div>
+              <div><div style={{ fontSize: 20, fontWeight: 600, color: (p.cuenta && p.cuenta.pendiente > 0) ? "#C9923A" : "var(--muted)" }}>{money(p.cuenta ? p.cuenta.pendiente : 0)}</div><div className="ca-pmeta">Pendiente</div></div>
             </div>
-            {p.cuenta.items.map((c) => (
+            {(!p.cuenta || p.cuenta.items.length === 0) ? (
+              <div style={{ color: "var(--muted)", fontSize: 13.5 }}>Sin pagos registrados todavía.{puedeCobrar ? " Usa «Registrar pago» para agregar uno." : ""}</div>
+            ) : p.cuenta.items.map((c) => (
               <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderTop: "1px solid var(--line)", fontSize: 13.5 }}>
                 <span style={{ color: "var(--muted)", width: 86, flexShrink: 0 }}>{c.fecha}</span>
                 <span style={{ flex: 1, minWidth: 0 }}>{c.concepto}{c.comprobante ? <span style={{ color: "var(--muted)", fontSize: 12 }}> · {c.comprobante}{c.comprobante_numero ? ` ${c.comprobante_numero}` : ""}</span> : null}</span>
