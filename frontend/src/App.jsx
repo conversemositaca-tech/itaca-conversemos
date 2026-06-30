@@ -1981,6 +1981,7 @@ function Ficha({ p, onBack, onEdit, onWhatsApp, onSubirAdjunto, onEliminarAdjunt
         {p.numero_documento && <div className="ca-field"><FileText size={15} strokeWidth={1.9} style={{ color: "var(--muted)" }} /> {p.tipo_documento_label} {p.numero_documento}</div>}
         <div className="ca-field"><Phone size={15} strokeWidth={1.9} style={{ color: "var(--muted)" }} /> {p.tel || "Sin teléfono"}</div>
         {p.direccion && <div className="ca-field"><MapPin size={15} strokeWidth={1.9} style={{ color: "var(--muted)" }} /> {p.direccion}</div>}
+        {p.tutor_nombre && <div className="ca-field"><Users size={15} strokeWidth={1.9} style={{ color: "var(--muted)" }} /> Tutor: {p.tutor_nombre}{p.tutor_parentesco ? ` (${p.tutor_parentesco})` : ""}{p.tutor_telefono ? ` · ${p.tutor_telefono}` : ""}</div>}
         <div className="ca-field"><Clock size={15} strokeWidth={1.9} style={{ color: "var(--muted)" }} /> Última visita: {p.ultima}</div>
         {p.proxima && (
           <div className="ca-field" style={{ color: "var(--accent)" }}><Calendar size={15} strokeWidth={1.9} /> Próxima: {p.proxima.fecha} · {p.proxima.hora}</div>
@@ -5515,6 +5516,10 @@ function PacienteModal({ paciente, onClose, onSave }) {
   const [alergias, setAlergias] = useState(paciente?.alergias || "");
   const [antecedentes, setAntecedentes] = useState(paciente?.antecedentes || "");
   const [medicacion, setMedicacion] = useState(paciente?.medicacion_habitual || "");
+  const [tutorNombre, setTutorNombre] = useState(paciente?.tutor_nombre || "");
+  const [tutorParentesco, setTutorParentesco] = useState(paciente?.tutor_parentesco || "");
+  const [tutorTel, setTutorTel] = useState(paciente?.tutor_telefono || "");
+  const [tutorDoc, setTutorDoc] = useState(paciente?.tutor_documento || "");
   const [sede, setSede] = useState(paciente?.sede || "");
   const [profId, setProfId] = useState(paciente?.profesional || "");
   const [nSesion, setNSesion] = useState(paciente?.n_sesion ?? 0);
@@ -5618,6 +5623,28 @@ function PacienteModal({ paciente, onClose, onSave }) {
           </div>
         </div>
 
+        <div className="ca-secth" style={{ margin: "4px 0 12px" }}>Datos del padre/madre/tutor <span style={{ color: "var(--muted)", fontWeight: 400, fontSize: 12.5 }}>(menores · opcional)</span></div>
+        <div style={{ display: "flex", gap: 11, marginBottom: 13 }}>
+          <div style={{ flex: 1.6 }}>
+            <div className="ca-label">Nombre del tutor</div>
+            <input className="ca-input" value={tutorNombre} onChange={(e) => setTutorNombre(e.target.value)} placeholder="Nombre y apellidos" />
+          </div>
+          <div style={{ flex: 1 }}>
+            <div className="ca-label">Parentesco</div>
+            <input className="ca-input" value={tutorParentesco} onChange={(e) => setTutorParentesco(e.target.value)} placeholder="Madre, padre, tutor…" />
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 11, marginBottom: 20 }}>
+          <div style={{ flex: 1 }}>
+            <div className="ca-label">Teléfono del tutor</div>
+            <input className="ca-input" value={tutorTel} onChange={(e) => setTutorTel(e.target.value)} placeholder="987 654 321" inputMode="tel" />
+          </div>
+          <div style={{ flex: 1 }}>
+            <div className="ca-label">Documento del tutor</div>
+            <input className="ca-input" value={tutorDoc} onChange={(e) => setTutorDoc(e.target.value)} placeholder="DNI" inputMode="numeric" />
+          </div>
+        </div>
+
         <div className="ca-secth" style={{ margin: "4px 0 12px" }}>Antecedentes</div>
         <div style={{ marginBottom: 13 }}>
           <div className="ca-label">Alergias</div>
@@ -5638,7 +5665,7 @@ function PacienteModal({ paciente, onClose, onSave }) {
         <div style={{ display: "flex", gap: 9, justifyContent: "flex-end" }}>
           <button className="ca-btn ghost" onClick={onClose}>Cancelar</button>
           <button className="ca-btn" style={{ opacity: canSave ? 1 : 0.5, pointerEvents: canSave ? "auto" : "none" }}
-            onClick={() => onSave({ ...(paciente?.id ? { id: paciente.id } : {}), nombre: nombre.trim(), fecha_nacimiento: fechaNac || null, tel: tel.trim(), especialidad: esp, sede, profesional: profId ? Number(profId) : null, n_sesion: Number(nSesion) || 0, proceso, tipo_documento: tipoDoc, numero_documento: numDoc.trim(), direccion: direccion.trim(), genero, alergias: alergias.trim(), antecedentes: antecedentes.trim(), medicacion_habitual: medicacion.trim() })}>
+            onClick={() => onSave({ ...(paciente?.id ? { id: paciente.id } : {}), nombre: nombre.trim(), fecha_nacimiento: fechaNac || null, tel: tel.trim(), especialidad: esp, sede, profesional: profId ? Number(profId) : null, n_sesion: Number(nSesion) || 0, proceso, tipo_documento: tipoDoc, numero_documento: numDoc.trim(), direccion: direccion.trim(), genero, alergias: alergias.trim(), antecedentes: antecedentes.trim(), medicacion_habitual: medicacion.trim(), tutor_nombre: tutorNombre.trim(), tutor_parentesco: tutorParentesco.trim(), tutor_telefono: tutorTel.trim(), tutor_documento: tutorDoc.trim() })}>
             Guardar
           </button>
         </div>

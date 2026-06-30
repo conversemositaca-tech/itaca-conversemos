@@ -91,6 +91,7 @@ class PacienteSerializer(serializers.ModelSerializer):
             "id", "nombre", "fecha_nacimiento", "edad", "tel", "email",
             "tipo_documento", "tipo_documento_label", "numero_documento", "direccion",
             "genero", "genero_label",
+            "tutor_nombre", "tutor_parentesco", "tutor_telefono", "tutor_documento",
             "sede", "sede_label", "profesional", "profesional_nombre",
             "n_sesion", "proceso", "proceso_label", "seguimiento",
             "especialidad", "alergias", "antecedentes", "medicacion_habitual",

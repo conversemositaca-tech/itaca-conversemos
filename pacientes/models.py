@@ -56,6 +56,12 @@ class Paciente(ModeloTenant):
     direccion = models.CharField(max_length=255, blank=True, default="")
     genero = models.CharField(max_length=12, choices=Genero.choices, blank=True, default="")
 
+    # --- Datos del padre/madre/tutor (para pacientes menores; todo opcional) ---
+    tutor_nombre = models.CharField("Nombre del tutor", max_length=200, blank=True, default="")
+    tutor_parentesco = models.CharField("Parentesco", max_length=40, blank=True, default="")
+    tutor_telefono = models.CharField("Teléfono del tutor", max_length=40, blank=True, default="")
+    tutor_documento = models.CharField("Documento del tutor", max_length=20, blank=True, default="")
+
     # --- Antecedentes (datos permanentes de la historia clínica) ---
     alergias = models.TextField(blank=True, default="")
     antecedentes = models.TextField(
