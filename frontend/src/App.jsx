@@ -504,8 +504,8 @@ export default function ClinicaApp() {
     ...(usuario?.rol !== "comercial" ? [{ id: "profesionales", label: "Profesionales", icon: HeartPulse }] : []),
     // Mensajes: gerencia, coordinación y comercial (no psicólogo).
     ...(usuario?.rol !== "medico" ? [{ id: "mensajes", label: "Mensajes", icon: MessageCircle }] : []),
-    // Marketing / Leads: gerencia y comercial.
-    ...((usuario?.rol === "admin" || usuario?.rol === "comercial") ? [{ id: "marketing", label: "Marketing", icon: Megaphone }] : []),
+    // Marketing / Leads: gerencia, comercial y coordinación (asistente).
+    ...((usuario?.rol === "admin" || usuario?.rol === "comercial" || usuario?.rol === "asistente") ? [{ id: "marketing", label: "Marketing", icon: Megaphone }] : []),
     // Finanzas: solo gerencia.
     ...(usuario?.rol === "admin" ? [{ id: "finanzas", label: "Finanzas", icon: TrendingUp }] : []),
     ...(usuario?.rol === "admin" ? [{ id: "equipo", label: "Equipo", icon: UserCog }] : []),
