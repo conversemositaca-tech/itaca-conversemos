@@ -97,6 +97,9 @@ def valores_plantilla(paciente=None, cita=None, clinica=None):
             psicologo = str(cita.medico)
     if not psicologo and paciente is not None and paciente.profesional_id:
         psicologo = paciente.profesional.nombre
+    # Anteponer "psic." al nombre (los mensajes deben decir "psic. Karol García").
+    if psicologo and not psicologo.lower().startswith(("psic", "lic", "dr", "dra", "ps.")):
+        psicologo = f"psic. {psicologo}"
     n_sesion = str(paciente.n_sesion) if paciente else ""
     sede = paciente.get_sede_display() if (paciente and paciente.sede) else ""
     cl = clinica or (paciente.clinica if paciente else None) or (cita.clinica if cita else None)

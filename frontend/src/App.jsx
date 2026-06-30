@@ -42,12 +42,30 @@ const TEMPLATES = {
 
 // Estados de cita (claves = códigos del backend).
 const STATUS = {
+  agendada: { bg: "#E7EEF6", fg: "#3D5C82" },
   confirmada: { bg: "#E9F1ED", fg: "#3E7A65" },
-  por_confirmar: { bg: "#F7ECDD", fg: "#9C6B2E" },
-  reprogramada: { bg: "#EAE6F2", fg: "#6B5B9C" },
+  en_espera: { bg: "#FFF4DA", fg: "#9A7B1E" },
+  pendiente: { bg: "#F7ECDD", fg: "#9C6B2E" },
+  asistio: { bg: "#E1F2E8", fg: "#2E7D52" },
+  no_asistio: { bg: "#F7E5E5", fg: "#9C4646" },
   atendida: { bg: "#EFEDE8", fg: "#7C7870" },
+  reprogramada: { bg: "#EAE6F2", fg: "#6B5B9C" },
   cancelada: { bg: "#F7E5E5", fg: "#9C4646" },
+  por_confirmar: { bg: "#F7ECDD", fg: "#9C6B2E" },
 };
+
+// Estados que el coordinador puede fijar desde la fila de la agenda.
+const ESTADOS_CITA = [
+  { v: "agendada", l: "Agendada" },
+  { v: "confirmada", l: "Confirmada" },
+  { v: "en_espera", l: "En espera" },
+  { v: "pendiente", l: "Pendiente" },
+  { v: "asistio", l: "Asistió" },
+  { v: "no_asistio", l: "No asistió" },
+  { v: "atendida", l: "Atendida" },
+  { v: "reprogramada", l: "Reprogramada" },
+  { v: "cancelada", l: "Cancelada" },
+];
 
 const MENSAJE_ESTADO = {
   enviado: { bg: "#E9F1ED", fg: "#3E7A65" },
@@ -499,7 +517,7 @@ export default function ClinicaApp() {
     });
   }, [pacientes]);
   const proximas = citasHoy.filter((c) => c.estado !== "atendida").slice(0, 3);
-  const porConfirmar = citasHoy.filter((c) => c.estado === "por_confirmar").length;
+  const porConfirmar = citasHoy.filter((c) => c.estado === "agendada" || c.estado === "por_confirmar").length;
   const atendidas = citasHoy.filter((c) => c.estado === "atendida").length;
 
   function showToast(msg) { setToast(msg); setTimeout(() => setToast(""), 2800); }
@@ -654,6 +672,15 @@ export default function ClinicaApp() {
       await api.confirmarCita(cita.id);
       await refrescarCitas();
       showToast("Sesión confirmada ✓");
+    } catch (e) { showToast("Error: " + e.message); }
+  }
+
+  async function setEstadoCita(cita, estado) {
+    try {
+      await api.setEstadoCita(cita.id, estado);
+      await refrescarCitas();
+      const lbl = (ESTADOS_CITA.find((e) => e.v === estado) || {}).l || estado;
+      showToast(`Estado: ${lbl} ✓`);
     } catch (e) { showToast("Error: " + e.message); }
   }
 
@@ -990,7 +1017,7 @@ export default function ClinicaApp() {
             vista={agendaVista} setVista={setAgendaVista} esAsistente={esAsistente} esMedico={usuario?.rol === "medico"}
             onAgendar={() => setAdding(true)} onAtender={setAtender} onRecordar={setRecordar}
             onReagendar={setReagendar} onCancelar={setCancelando} openFicha={openFicha}
-            onConfirmar={confirmarCita}
+            onConfirmar={confirmarCita} onSetEstado={setEstadoCita}
             onCobrar={(c) => setCobrando({ pacienteId: c.pacienteId, paciente: c.paciente, citaId: c.id, especialidad: c.especialidad })}
           />
         )}
@@ -2277,9 +2304,10 @@ function AgendarModal({ pacientes, fechaInicial, pacienteFijo, onClose, onSave }
   );
 }
 
-function CitaRow({ c, esAsistente, esMedico, onAtender, onRecordar, onReagendar, onCancelar, onConfirmar, onCobrar, openFicha }) {
+function CitaRow({ c, esAsistente, esMedico, onAtender, onRecordar, onReagendar, onCancelar, onConfirmar, onCobrar, onSetEstado, openFicha }) {
   const activa = c.estado !== "atendida" && c.estado !== "cancelada";
-  const pendiente = c.estado === "por_confirmar" || c.estado === "reprogramada";
+  const pendiente = c.estado === "agendada" || c.estado === "por_confirmar" || c.estado === "reprogramada";
+  const col = STATUS[c.estado] || {};
   return (
     <div className="ca-row">
       <div className="ca-time"><Clock size={13} strokeWidth={2} style={{ color: "var(--muted)" }} />{c.hora}</div>
@@ -2292,7 +2320,16 @@ function CitaRow({ c, esAsistente, esMedico, onAtender, onRecordar, onReagendar,
         {c.notas && <div className="ca-pmeta" style={{ fontStyle: "italic" }}>{c.notas}</div>}
       </div>
       <SpecialtyTag name={c.especialidad} />
-      <Tag colors={STATUS[c.estado]}>{c.estado_label}</Tag>
+      {esMedico ? (
+        <Tag colors={STATUS[c.estado]}>{c.estado_label}</Tag>
+      ) : (
+        <select className="ca-input" title="Cambiar estado de la cita"
+          style={{ width: "auto", padding: "5px 9px", fontSize: 12.5, fontWeight: 600, borderRadius: 999, cursor: "pointer", background: col.bg || "var(--bg)", color: col.fg || "var(--ink)", borderColor: col.bg || "var(--line)" }}
+          value={ESTADOS_CITA.some((e) => e.v === c.estado) ? c.estado : "agendada"}
+          onChange={(e) => onSetEstado(c, e.target.value)}>
+          {ESTADOS_CITA.map((e) => <option key={e.v} value={e.v} style={{ background: "#fff", color: "var(--ink)" }}>{e.l}</option>)}
+        </select>
+      )}
       <div className="ca-actions">
         {/* El psicólogo no ve acciones comerciales (confirmar, recordar, cobrar). */}
         {!esMedico && pendiente && (
@@ -2381,7 +2418,7 @@ function TerapeutasGrid({ citas, openFicha }) {
   );
 }
 
-function Agenda({ citas, fecha, setFecha, vista, setVista, esAsistente, esMedico, onAgendar, onAtender, onRecordar, onReagendar, onCancelar, onConfirmar, onCobrar, openFicha }) {
+function Agenda({ citas, fecha, setFecha, vista, setVista, esAsistente, esMedico, onAgendar, onAtender, onRecordar, onReagendar, onCancelar, onConfirmar, onCobrar, onSetEstado, openFicha }) {
   const [filtroMedico, setFiltroMedico] = useState("");
   const [medicosDir, setMedicosDir] = useState([]);
   useEffect(() => { api.medicos().then(setMedicosDir).catch(() => {}); }, []);
@@ -2398,6 +2435,8 @@ function Agenda({ citas, fecha, setFecha, vista, setVista, esAsistente, esMedico
     .sort((a, b) => a.hora.localeCompare(b.hora));
   const visibles = vista === "semana" ? citas.filter((c) => semana.includes(c.fecha)) : delDia(fecha);
   const activas = visibles.filter((c) => c.estado !== "cancelada");
+  // Resumen de cuántas citas hay en cada estado (del día/semana mostrado).
+  const resumen = ESTADOS_CITA.map((e) => ({ ...e, n: visibles.filter((c) => c.estado === e.v).length })).filter((e) => e.n > 0);
   const subt = vista === "semana" ? `${labelNumMes(semana[0])} – ${labelNumMes(semana[6])}` : labelLargo(fecha);
   const paso = vista === "semana" ? 7 : 1;
 
@@ -2436,6 +2475,17 @@ function Agenda({ citas, fecha, setFecha, vista, setVista, esAsistente, esMedico
         </div>
       </div>
 
+      {resumen.length > 0 && (
+        <div style={{ display: "flex", gap: 7, flexWrap: "wrap", margin: "2px 0 4px" }}>
+          {resumen.map((e) => (
+            <span key={e.v} style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 12.5, fontWeight: 600,
+              padding: "3px 10px", borderRadius: 999, background: (STATUS[e.v] || {}).bg, color: (STATUS[e.v] || {}).fg }}>
+              {e.l}: {e.n}
+            </span>
+          ))}
+        </div>
+      )}
+
       {vista === "dia" ? (
         <div style={{ marginTop: 18 }}>
           {delDia(fecha).length === 0 ? (
@@ -2444,7 +2494,8 @@ function Agenda({ citas, fecha, setFecha, vista, setVista, esAsistente, esMedico
             delDia(fecha).map((c) => (
               <CitaRow key={c.id} c={c} esAsistente={esAsistente} esMedico={esMedico}
                 onAtender={onAtender} onRecordar={onRecordar} onReagendar={onReagendar}
-                onCancelar={onCancelar} onConfirmar={onConfirmar} onCobrar={onCobrar} openFicha={openFicha} />
+                onCancelar={onCancelar} onConfirmar={onConfirmar} onCobrar={onCobrar}
+                onSetEstado={onSetEstado} openFicha={openFicha} />
             ))
           )}
         </div>

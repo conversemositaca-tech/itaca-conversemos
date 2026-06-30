@@ -78,6 +78,7 @@ export const api = {
     return req("/api/transcribir/", { method: "POST", body: fd });
   },
   confirmarCita: (id) => req(`/api/citas/${id}/confirmar/`, { method: "POST" }),
+  setEstadoCita: (id, estado) => req(`/api/citas/${id}/estado/`, { method: "POST", body: JSON.stringify({ estado }) }),
 
   // Adjuntos (archivos clínicos: laboratorios, ecografías, PDFs, imágenes)
   subirAdjunto: (pacienteId, file, nombre, atencionId) => {

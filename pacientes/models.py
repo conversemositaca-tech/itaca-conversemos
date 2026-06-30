@@ -119,11 +119,17 @@ class Cita(ModeloTenant):
     """Cita agendada. El estado sigue el flujo del prototipo."""
 
     class Estado(models.TextChoices):
-        POR_CONFIRMAR = "por_confirmar", "Por confirmar"
+        AGENDADA = "agendada", "Agendada"
         CONFIRMADA = "confirmada", "Confirmada"
-        REPROGRAMADA = "reprogramada", "Reprogramada"
+        EN_ESPERA = "en_espera", "En espera"
+        PENDIENTE = "pendiente", "Pendiente"
+        ASISTIO = "asistio", "Asistió"
+        NO_ASISTIO = "no_asistio", "No asistió"
         ATENDIDA = "atendida", "Atendida"
+        REPROGRAMADA = "reprogramada", "Reprogramada"
         CANCELADA = "cancelada", "Cancelada"
+        # Legado: citas creadas antes del cambio de estados (se migran a "agendada").
+        POR_CONFIRMAR = "por_confirmar", "Por confirmar"
 
     class Modalidad(models.TextChoices):
         PRESENCIAL = "presencial", "Presencial"
@@ -140,7 +146,7 @@ class Cita(ModeloTenant):
     )
     inicio = models.DateTimeField()
     especialidad = models.CharField(max_length=120, blank=True)
-    estado = models.CharField(max_length=20, choices=Estado.choices, default=Estado.POR_CONFIRMAR)
+    estado = models.CharField(max_length=20, choices=Estado.choices, default=Estado.AGENDADA)
     recordatorio_enviado = models.BooleanField(default=False)
 
     # --- Datos de la sesión (estilo AgendaPro) ---

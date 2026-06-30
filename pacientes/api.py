@@ -234,7 +234,7 @@ class CitaViewSet(viewsets.ModelViewSet):
             medico=medico,
             inicio=inicio,
             especialidad=especialidad or paciente.especialidad_habitual,
-            estado=Cita.Estado.POR_CONFIRMAR,
+            estado=Cita.Estado.AGENDADA,
             sede=sede,
             modalidad=modalidad,
             enlace=enlace,
@@ -401,6 +401,22 @@ class CitaViewSet(viewsets.ModelViewSet):
         cita.estado = Cita.Estado.CONFIRMADA
         cita.save(update_fields=["estado"])
         gcalendar.sync_cita(cita)
+        return Response(CitaSerializer(cita).data)
+
+    @action(detail=True, methods=["post"])
+    def estado(self, request, pk=None):
+        """Fija el estado de la cita a cualquiera de los válidos (selector de la agenda)."""
+        cita = self.get_object()
+        nuevo = request.data.get("estado")
+        if nuevo not in dict(Cita.Estado.choices):
+            return Response({"detail": "Estado no válido."}, status=status.HTTP_400_BAD_REQUEST)
+        cita.estado = nuevo
+        cita.save(update_fields=["estado"])
+        # Sincroniza o quita el evento del calendario según el estado.
+        if nuevo == Cita.Estado.CANCELADA:
+            gcalendar.eliminar_cita(cita)
+        else:
+            gcalendar.sync_cita(cita)
         return Response(CitaSerializer(cita).data)
 
 
