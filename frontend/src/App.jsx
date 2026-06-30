@@ -25,6 +25,10 @@ const SPECIALTY = {
   "Terapia familiar": { bg: "#E3F0E8", fg: "#2F6B4F", dot: "🏠" },
   "Terapia infantil/adolescente": { bg: "#FFF1DA", fg: "#9C6B2E", dot: "🧸" },
   "Evaluación psicológica": { bg: "#EDE6F4", fg: "#6B4E96", dot: "📋" },
+  "Consulta psicológica": { bg: "#E1F0FB", fg: "#2A6FA6", dot: "💬" },
+  "Sesión brújula": { bg: "#E8F5E9", fg: "#2E7D52", dot: "🧭" },
+  "Constancia de terapia": { bg: "#F3EEE6", fg: "#8A6D3B", dot: "📄" },
+  "Reprogramación": { bg: "#FDE9E7", fg: "#B4564E", dot: "🔁" },
 };
 
 // ---- Plantillas de nota por especialidad ----
@@ -457,9 +461,10 @@ export default function ClinicaApp() {
   }, [pacientes, query, filterEsp, filterSede, filterProf, soloSinProxima]);
 
   // Psicólogos presentes en la lista de pacientes (para el filtro).
+  // Psicólogos del filtro: solo los que tienen pacientes en la sede elegida.
   const profsEnPacientes = useMemo(
-    () => [...new Set(pacientes.map((p) => p.profesional_nombre).filter(Boolean))].sort(),
-    [pacientes]
+    () => [...new Set(pacientes.filter((p) => !filterSede || p.sede === filterSede).map((p) => p.profesional_nombre).filter(Boolean))].sort(),
+    [pacientes, filterSede]
   );
 
   const nav = [
@@ -1011,9 +1016,9 @@ export default function ClinicaApp() {
               <input placeholder="Buscar por nombre o teléfono…" value={query} onChange={(e) => setQuery(e.target.value)} />
             </div>
             <div className="ca-fchips">
-              <button className={`ca-fchip ${!filterSede ? "on" : ""}`} onClick={() => setFilterSede(null)}>Todas las sedes</button>
-              <button className={`ca-fchip ${filterSede === "piura" ? "on" : ""}`} onClick={() => setFilterSede("piura")}>Piura</button>
-              <button className={`ca-fchip ${filterSede === "lima" ? "on" : ""}`} onClick={() => setFilterSede("lima")}>Lima</button>
+              <button className={`ca-fchip ${!filterSede ? "on" : ""}`} onClick={() => { setFilterSede(null); setFilterProf(""); }}>Todas las sedes</button>
+              <button className={`ca-fchip ${filterSede === "piura" ? "on" : ""}`} onClick={() => { setFilterSede("piura"); setFilterProf(""); }}>Piura</button>
+              <button className={`ca-fchip ${filterSede === "lima" ? "on" : ""}`} onClick={() => { setFilterSede("lima"); setFilterProf(""); }}>Lima</button>
               {profsEnPacientes.length > 0 && (
                 <select className="ca-input" style={{ width: "auto", padding: "6px 10px", marginLeft: 6 }} value={filterProf} onChange={(e) => setFilterProf(e.target.value)}>
                   <option value="">Todos los psicólogos</option>
@@ -2104,11 +2109,15 @@ function AgendarModal({ pacientes, fechaInicial, pacienteFijo, onClose, onSave }
   const [modalidad, setModalidad] = useState("presencial");
   const [enlace, setEnlace] = useState("");
   const [notas, setNotas] = useState("");
+  const [error, setError] = useState("");
   const [nSesion, setNSesion] = useState(
     pacienteFijo?.n_sesion != null ? String(pacienteFijo.n_sesion + 1) : ""
   );
 
   useEffect(() => { api.medicos().then(setMedicos).catch(() => {}); }, []);
+
+  // Solo psicólogos de la sede elegida (si hay sede); si no, todos los activos.
+  const medicosVisibles = medicos.filter((m) => !sede || !m.sede || m.sede === sede);
 
   const matches = useMemo(
     () => (busca.trim() ? pacientes.filter((p) => p.nombre.toLowerCase().includes(busca.toLowerCase())).slice(0, 4) : []),
@@ -2124,9 +2133,14 @@ function AgendarModal({ pacientes, fechaInicial, pacienteFijo, onClose, onSave }
   function elegirNuevo() { setNuevo(true); setSel(null); }
   function limpiar() { setSel(null); setNuevo(false); setBusca(""); }
 
-  const canSave = (sel || (nuevo && busca.trim())) && fecha && hora.trim();
-
   function guardar() {
+    if (!sel && !(nuevo && busca.trim())) {
+      setError("Selecciona un paciente: búscalo y haz clic en su nombre, o usa «Crear paciente nuevo».");
+      return;
+    }
+    if (!fecha) { setError("Falta la fecha."); return; }
+    if (!hora.trim()) { setError("Falta la hora."); return; }
+    setError("");
     const extra = {
       especialidad: esp, fecha, hora, medicoId: medicoId || null, sede,
       modalidad, enlace: modalidad === "virtual" ? enlace.trim() : "",
@@ -2203,7 +2217,7 @@ function AgendarModal({ pacientes, fechaInicial, pacienteFijo, onClose, onSave }
             <div className="ca-label">Psicólogo</div>
             <select className="ca-input" value={medicoId} onChange={(e) => setMedicoId(e.target.value)}>
               <option value="">— Sin asignar —</option>
-              {medicos.map((m) => <option key={m.id} value={m.id}>{m.nombre}</option>)}
+              {medicosVisibles.map((m) => <option key={m.id} value={m.id}>{m.nombre}</option>)}
             </select>
           </div>
           <div style={{ width: 92 }}>
@@ -2215,7 +2229,11 @@ function AgendarModal({ pacientes, fechaInicial, pacienteFijo, onClose, onSave }
         <div style={{ display: "flex", gap: 11, marginBottom: 13 }}>
           <div style={{ flex: 1 }}>
             <div className="ca-label">Sede</div>
-            <select className="ca-input" value={sede} onChange={(e) => setSede(e.target.value)}>
+            <select className="ca-input" value={sede} onChange={(e) => {
+              const s = e.target.value; setSede(s);
+              // Si el psicólogo elegido no es de la nueva sede, se limpia.
+              if (medicoId && !medicos.some((m) => String(m.id) === String(medicoId) && (!s || !m.sede || m.sede === s))) setMedicoId("");
+            }}>
               <option value="">— Sin sede —</option>
               <option value="lima">Lima</option>
               <option value="piura">Piura</option>
@@ -2249,11 +2267,10 @@ function AgendarModal({ pacientes, fechaInicial, pacienteFijo, onClose, onSave }
           <textarea className="ca-input" style={{ minHeight: 52, resize: "vertical", lineHeight: 1.5 }} value={notas} onChange={(e) => setNotas(e.target.value)} placeholder="Indicaciones para la cita, recordatorios…" />
         </div>
 
+        {error && <div style={{ color: "#B4564E", fontSize: 13, marginBottom: 10, background: "#FDECEA", border: "1px solid #F3C9C4", borderRadius: 8, padding: "8px 10px" }}>{error}</div>}
         <div style={{ display: "flex", gap: 9, justifyContent: "flex-end" }}>
           <button className="ca-btn ghost" onClick={onClose}>Cancelar</button>
-          <button className="ca-btn" style={{ opacity: canSave ? 1 : 0.5, pointerEvents: canSave ? "auto" : "none" }} onClick={guardar}>
-            Agendar
-          </button>
+          <button className="ca-btn" onClick={guardar}>Agendar</button>
         </div>
       </div>
     </div>
@@ -2366,7 +2383,15 @@ function TerapeutasGrid({ citas, openFicha }) {
 
 function Agenda({ citas, fecha, setFecha, vista, setVista, esAsistente, esMedico, onAgendar, onAtender, onRecordar, onReagendar, onCancelar, onConfirmar, onCobrar, openFicha }) {
   const [filtroMedico, setFiltroMedico] = useState("");
-  const medicos = useMemo(() => [...new Set(citas.map((c) => c.medico).filter(Boolean))].sort(), [citas]);
+  const [medicosDir, setMedicosDir] = useState([]);
+  useEffect(() => { api.medicos().then(setMedicosDir).catch(() => {}); }, []);
+  // Lista de psicólogos activos del directorio + cualquiera presente en las citas,
+  // para que aparezcan todos (no solo los que ya tienen sesiones).
+  const medicos = useMemo(() => {
+    const nombres = new Set(medicosDir.map((m) => m.nombre).filter(Boolean));
+    citas.forEach((c) => { if (c.medico) nombres.add(c.medico); });
+    return [...nombres].sort();
+  }, [medicosDir, citas]);
   const semana = vista === "semana" ? semanaDe(fecha) : null;
   const delDia = (iso) => citas
     .filter((c) => c.fecha === iso && (!filtroMedico || c.medico === filtroMedico))
@@ -5244,6 +5269,9 @@ function PacienteModal({ paciente, onClose, onSave }) {
   const [profs, setProfs] = useState([]);
   useEffect(() => { api.profesionales().then(setProfs).catch(() => {}); }, []);
   const canSave = nombre.trim().length > 0;
+  const esNuevo = !paciente;
+  // Psicólogos activos de la sede elegida (más el ya asignado, aunque esté inactivo).
+  const profsVisibles = profs.filter((pr) => (pr.activo || String(pr.id) === String(profId)) && (!sede || pr.sede === sede));
 
   return (
     <div className="ca-modal-bg" onClick={onClose}>
@@ -5273,11 +5301,15 @@ function PacienteModal({ paciente, onClose, onSave }) {
           </select>
         </div>
 
-        <div className="ca-secth" style={{ margin: "4px 0 12px" }}>Sede y proceso</div>
-        <div style={{ display: "flex", gap: 11, marginBottom: 13 }}>
+        <div className="ca-secth" style={{ margin: "4px 0 12px" }}>Sede y psicólogo</div>
+        <div style={{ display: "flex", gap: 11, marginBottom: esNuevo ? 16 : 13 }}>
           <div style={{ flex: 1 }}>
             <div className="ca-label">Sede</div>
-            <select className="ca-input" value={sede} onChange={(e) => setSede(e.target.value)}>
+            <select className="ca-input" value={sede} onChange={(e) => {
+              const s = e.target.value; setSede(s);
+              // Si el psicólogo elegido no es de la nueva sede, se limpia.
+              if (profId && !profs.some((pr) => String(pr.id) === String(profId) && (!s || pr.sede === s))) setProfId("");
+            }}>
               <option value="">—</option>
               {SEDES.map((s) => <option key={s.v} value={s.v}>{s.l}</option>)}
             </select>
@@ -5286,22 +5318,26 @@ function PacienteModal({ paciente, onClose, onSave }) {
             <div className="ca-label">Psicólogo</div>
             <select className="ca-input" value={profId} onChange={(e) => setProfId(e.target.value)}>
               <option value="">Sin asignar</option>
-              {profs.map((pr) => <option key={pr.id} value={pr.id}>{pr.nombre} ({pr.sede_label})</option>)}
+              {profsVisibles.map((pr) => <option key={pr.id} value={pr.id}>{pr.nombre} ({pr.sede_label})</option>)}
             </select>
           </div>
         </div>
-        <div style={{ display: "flex", gap: 11, marginBottom: 16 }}>
-          <div style={{ width: 120 }}>
-            <div className="ca-label">N° de sesión</div>
-            <input className="ca-input" value={nSesion} onChange={(e) => setNSesion(e.target.value.replace(/[^\d]/g, ""))} inputMode="numeric" />
+        {/* N° de sesión y proceso solo al EDITAR; en un paciente nuevo no se piden
+            (arrancan en 0 y se actualizan solos con las sesiones). */}
+        {!esNuevo && (
+          <div style={{ display: "flex", gap: 11, marginBottom: 16 }}>
+            <div style={{ width: 120 }}>
+              <div className="ca-label">N° de sesión</div>
+              <input className="ca-input" value={nSesion} onChange={(e) => setNSesion(e.target.value.replace(/[^\d]/g, ""))} inputMode="numeric" />
+            </div>
+            <div style={{ flex: 1 }}>
+              <div className="ca-label">Proceso</div>
+              <select className="ca-input" value={proceso} onChange={(e) => setProceso(e.target.value)}>
+                {PROCESOS.map((p) => <option key={p || "none"} value={p}>{p ? p.charAt(0).toUpperCase() + p.slice(1) : "—"}</option>)}
+              </select>
+            </div>
           </div>
-          <div style={{ flex: 1 }}>
-            <div className="ca-label">Proceso</div>
-            <select className="ca-input" value={proceso} onChange={(e) => setProceso(e.target.value)}>
-              {PROCESOS.map((p) => <option key={p || "none"} value={p}>{p ? p.charAt(0).toUpperCase() + p.slice(1) : "—"}</option>)}
-            </select>
-          </div>
-        </div>
+        )}
 
         <div className="ca-secth" style={{ margin: "4px 0 12px" }}>Identificación</div>
         <div style={{ display: "flex", gap: 11, marginBottom: 13 }}>

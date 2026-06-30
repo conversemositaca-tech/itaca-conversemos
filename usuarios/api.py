@@ -70,20 +70,34 @@ class LogoutView(APIView):
 
 
 class MedicosView(APIView):
-    """Lista de médicos de la clínica activa (para asignar como 'doctor de la pauta')."""
+    """Lista de psicólogos con los que se puede agendar: solo los que tienen
+    ficha ACTIVA en el directorio (los que atienden hoy), con su sede.
+
+    Se ordena por nombre y se devuelve el id del Usuario (que es lo que guardan
+    las citas en el campo `medico`)."""
 
     def get(self, request):
         from core.tenant import get_clinica_actual
 
-        from .models import Usuario
+        from .models import Profesional, Usuario
 
         clinica = get_clinica_actual()
-        medicos = Usuario.objects.filter(
-            clinica=clinica, rol=Usuario.Rol.MEDICO, is_active=True
-        ).order_by("nombre")
+        fichas = (
+            Profesional.objects.filter(
+                clinica=clinica, activo=True, usuario__isnull=False,
+                usuario__rol=Usuario.Rol.MEDICO, usuario__is_active=True,
+            )
+            .select_related("usuario")
+            .order_by("usuario__nombre")
+        )
         return Response([
-            {"id": m.id, "nombre": m.nombre or str(m), "especialidad": m.especialidad}
-            for m in medicos
+            {
+                "id": f.usuario_id,
+                "nombre": f.usuario.nombre or str(f.usuario),
+                "especialidad": f.usuario.especialidad,
+                "sede": f.sede,
+            }
+            for f in fichas
         ])
 
 
