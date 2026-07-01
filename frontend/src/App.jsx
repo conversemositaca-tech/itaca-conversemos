@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from "react";
+import { createPortal } from "react-dom";
 import {
   Home, Calendar, Users, Receipt, Search, Plus, Clock, ChevronLeft, ChevronDown,
   Phone, Cake, X, Stethoscope, MessageCircle, Check, Pencil, UserPlus, FileText,
@@ -966,10 +967,11 @@ export default function ClinicaApp() {
           padding:5px 13px; font-size:12.5px; font-weight:500; cursor:pointer; font-family:inherit; transition:background .12s, color .12s, border-color .12s; }
         .ca-fchip:hover { background:var(--hover); }
         .ca-fchip.on { background:var(--ink); color:#fff; border-color:var(--ink); }
-        .ca-toast { position:fixed; bottom:30px; left:50%; transform:translateX(-50%); background:#fff; color:var(--ink);
-          padding:12px 20px 12px 13px; border-radius:14px; font-size:14.5px; font-weight:600; z-index:100;
+        .ca-toast { position:fixed; bottom:30px; left:50%; transform:translateX(-50%); background:#fff; color:#343434;
+          padding:12px 20px 12px 13px; border-radius:14px; font-size:14.5px; font-weight:600; z-index:9999;
           box-shadow:0 12px 38px rgba(40,38,34,.20); display:flex; align-items:center; gap:11px; min-width:210px;
-          border:1px solid var(--line); animation:caUp .26s cubic-bezier(.2,.85,.25,1); }
+          border:1px solid #DCEBEF; font-family:'Inter',-apple-system,system-ui,sans-serif;
+          animation:caUp .26s cubic-bezier(.2,.85,.25,1); }
         .ca-toast .ca-toast-ic { width:28px; height:28px; border-radius:999px; display:flex; align-items:center;
           justify-content:center; flex-shrink:0; color:#fff; }
         .ca-toast.ok { border-color:#BFE6CE; } .ca-toast.ok .ca-toast-ic { background:#2F8F5B; }
@@ -1189,15 +1191,18 @@ export default function ClinicaApp() {
       </main>
 
       {cambiarPass && <CambiarPasswordModal onClose={() => setCambiarPass(false)} onSave={cambiarMiPassword} />}
-      {toast && (() => {
-        const esError = /^error\b/i.test(toast);
-        return (
-          <div className={`ca-toast ${esError ? "err" : "ok"}`}>
-            <span className="ca-toast-ic">{esError ? <X size={16} strokeWidth={3} /> : <Check size={16} strokeWidth={3.2} />}</span>
-            <span>{toast.replace(/^Error:\s*/i, "").replace(/\s*✓\s*$/, "")}</span>
-          </div>
-        );
-      })()}
+      {toast && createPortal(
+        (() => {
+          const esError = /^error\b/i.test(toast);
+          return (
+            <div className={`ca-toast ${esError ? "err" : "ok"}`}>
+              <span className="ca-toast-ic">{esError ? <X size={16} strokeWidth={3} /> : <Check size={16} strokeWidth={3.2} />}</span>
+              <span>{toast.replace(/^Error:\s*/i, "").replace(/\s*✓\s*$/, "")}</span>
+            </div>
+          );
+        })(),
+        document.body
+      )}
     </div>
   );
 }
