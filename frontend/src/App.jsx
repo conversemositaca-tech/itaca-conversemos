@@ -622,15 +622,16 @@ export default function ClinicaApp() {
     try {
       if (data.id) {
         await api.actualizarPaciente(data.id, payload);
-        await refrescarPacientes();
+        setEditingPaciente(null);
         showToast("Datos actualizados ✓");
+        refrescarPacientes().catch(() => {});
       } else {
         const nuevo = await api.crearPaciente(payload);
+        setEditingPaciente(null);
+        showToast("Paciente agregado ✓");
         await refrescarPacientes();
         setSelectedId(nuevo.id);
-        showToast("Paciente agregado ✓");
       }
-      setEditingPaciente(null);
     } catch (e) { showToast("Error: " + e.message); }
   }
 
@@ -646,69 +647,70 @@ export default function ClinicaApp() {
         medicoId: data.medicoId || null, sede: data.sede || "", modalidad: data.modalidad || "presencial",
         enlace: data.enlace || "", notas: data.notas || "", n_sesion: data.n_sesion || null,
       });
-      await Promise.all([refrescarCitas(), refrescarPacientes()]);
+      // Feedback inmediato: cerrar modal + toast ya; la recarga va en segundo plano.
       setAdding(false);
       if (data.fecha) setAgendaFecha(data.fecha); // saltar al día de la cita recién creada
       showToast(r?.aviso ? r.aviso : "Sesión agendada ✓");
+      Promise.all([refrescarCitas(), refrescarPacientes()]).catch(() => {});
     } catch (e) { showToast("Error: " + e.message); }
   }
 
   async function moverCita(cita, fecha, hora) {
     try {
       await api.moverCita(cita.id, fecha, hora);
-      await refrescarCitas();
       setReagendar(null);
       setAgendaFecha(fecha);
       showToast("Sesión reagendada ✓");
+      refrescarCitas().catch(() => {});
     } catch (e) { showToast("Error: " + e.message); }
   }
 
   async function cancelarCita(cita) {
     try {
       await api.cancelarCita(cita.id);
-      await refrescarCitas();
       setCancelando(null);
       showToast("Sesión cancelada");
+      refrescarCitas().catch(() => {});
     } catch (e) { showToast("Error: " + e.message); }
   }
 
   async function guardarCobro(data) {
     try {
       await api.crearCobro(data);
-      await Promise.all([refrescarCitas(), refrescarPacientes()]);
       setCobrando(null);
       showToast("Cobro registrado ✓");
+      Promise.all([refrescarCitas(), refrescarPacientes()]).catch(() => {});
     } catch (e) { showToast("Error: " + e.message); }
   }
 
   async function confirmarCita(cita) {
     try {
       await api.confirmarCita(cita.id);
-      await refrescarCitas();
       showToast("Sesión confirmada ✓");
+      refrescarCitas().catch(() => {});
     } catch (e) { showToast("Error: " + e.message); }
   }
 
   async function guardarBloqueo(data) {
     try {
       await api.crearBloqueo(data);
-      await refrescarBloqueos();
       setBloqueando(null);
       showToast("Horario bloqueado ✓");
+      refrescarBloqueos().catch(() => {});
     } catch (e) { showToast("Error: " + e.message); }
   }
   async function borrarBloqueo(b) {
     if (!window.confirm("¿Quitar este bloqueo?")) return;
-    try { await api.borrarBloqueo(b.id); await refrescarBloqueos(); showToast("Bloqueo quitado"); }
+    try { await api.borrarBloqueo(b.id); showToast("Bloqueo quitado"); refrescarBloqueos().catch(() => {}); }
     catch (e) { showToast("Error: " + e.message); }
   }
 
   async function setEstadoCita(cita, estado) {
     try {
       await api.setEstadoCita(cita.id, estado);
-      await refrescarCitas();
       const lbl = (ESTADOS_CITA.find((e) => e.v === estado) || {}).l || estado;
       showToast(`Estado: ${lbl} ✓`);
+      refrescarCitas().catch(() => {});
     } catch (e) { showToast("Error: " + e.message); }
   }
 
@@ -967,16 +969,16 @@ export default function ClinicaApp() {
           padding:5px 13px; font-size:12.5px; font-weight:500; cursor:pointer; font-family:inherit; transition:background .12s, color .12s, border-color .12s; }
         .ca-fchip:hover { background:var(--hover); }
         .ca-fchip.on { background:var(--ink); color:#fff; border-color:var(--ink); }
-        .ca-toast { position:fixed; bottom:30px; left:50%; transform:translateX(-50%); background:#fff; color:#343434;
+        .ca-toast { position:fixed; top:22px; left:50%; transform:translateX(-50%); background:#fff; color:#343434;
           padding:12px 20px 12px 13px; border-radius:14px; font-size:14.5px; font-weight:600; z-index:9999;
-          box-shadow:0 12px 38px rgba(40,38,34,.20); display:flex; align-items:center; gap:11px; min-width:210px;
+          box-shadow:0 14px 40px rgba(40,38,34,.22); display:flex; align-items:center; gap:11px; min-width:210px;
           border:1px solid #DCEBEF; font-family:'Inter',-apple-system,system-ui,sans-serif;
-          animation:caUp .26s cubic-bezier(.2,.85,.25,1); }
+          animation:caUp .2s cubic-bezier(.2,.85,.25,1); }
         .ca-toast .ca-toast-ic { width:28px; height:28px; border-radius:999px; display:flex; align-items:center;
           justify-content:center; flex-shrink:0; color:#fff; }
         .ca-toast.ok { border-color:#BFE6CE; } .ca-toast.ok .ca-toast-ic { background:#2F8F5B; }
         .ca-toast.err { border-color:#F0C4BF; } .ca-toast.err .ca-toast-ic { background:#C9453B; }
-        @keyframes caUp { from { opacity:0; transform:translate(-50%,14px) scale(.96); } to { opacity:1; transform:translate(-50%,0) scale(1); } }
+        @keyframes caUp { from { opacity:0; transform:translate(-50%,-14px) scale(.96); } to { opacity:1; transform:translate(-50%,0) scale(1); } }
         @media (prefers-reduced-motion: reduce) { .ca-toast { animation:none; } }
         @media (max-width:720px) {
           .clinica-app { flex-direction:column; height:auto; }
