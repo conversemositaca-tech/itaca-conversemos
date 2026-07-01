@@ -517,7 +517,8 @@ export default function ClinicaApp() {
     // Clínico (Agenda, Pacientes, Profesionales): gerencia, coordinación y psicólogo (no comercial).
     ...(usuario?.rol !== "comercial" ? [{ id: "agenda", label: "Agenda", icon: Calendar }] : []),
     ...(usuario?.rol !== "comercial" ? [{ id: "pacientes", label: "Pacientes", icon: Users }] : []),
-    ...(usuario?.rol !== "comercial" ? [{ id: "profesionales", label: "Profesionales", icon: HeartPulse }] : []),
+    // Profesionales (directorio): gerencia y coordinación; el psicólogo no lo ve.
+    ...((usuario?.rol !== "comercial" && usuario?.rol !== "medico") ? [{ id: "profesionales", label: "Profesionales", icon: HeartPulse }] : []),
     // Mensajes: gerencia, coordinación y comercial (no psicólogo).
     ...(usuario?.rol !== "medico" ? [{ id: "mensajes", label: "Mensajes", icon: MessageCircle }] : []),
     // Marketing / Leads: gerencia, comercial y coordinación (asistente).
@@ -528,6 +529,8 @@ export default function ClinicaApp() {
     ...(usuario?.rol === "admin" ? [{ id: "legal", label: "Legal", icon: FileText }] : []),
     ...(usuario?.rol === "admin" ? [{ id: "whatsapp", label: "Conexión WhatsApp", icon: MessageCircle }] : []),
     ...(usuario?.rol === "admin" ? [{ id: "hojas", label: "Editar (Excel)", icon: Pencil }] : []),
+    // El buzón de sugerencias lo ve todo el equipo (dejar sugerencia); gerencia además ve la bandeja.
+    { id: "buzon", label: "Buzón", icon: MessageCircle },
   ];
 
   const citasHoy = citas.filter((c) => c.fecha === HOY_ISO && c.estado !== "cancelada");
@@ -1167,6 +1170,8 @@ export default function ClinicaApp() {
         {view === "equipo" && <Equipo showToast={showToast} miId={usuario?.id} />}
 
         {view === "legal" && <Legal showToast={showToast} />}
+
+        {view === "buzon" && <Buzon showToast={showToast} esAdmin={usuario?.rol === "admin"} />}
 
         {view === "whatsapp" && <ConexionWhatsapp showToast={showToast} />}
 
@@ -2681,7 +2686,7 @@ function Agenda({ citas, bloqueos = [], fecha, setFecha, vista, setVista, esAsis
             filas={activas.map((c) => [c.fecha, c.hora, c.paciente, c.medico, c.especialidad, c.n_sesion || "", c.sede_label || "", c.modalidad === "virtual" ? "Virtual" : "Presencial", c.estado_label])} />}
           {!esMedico && <button className="ca-btn ghost" onClick={onVenta}><Receipt size={15} strokeWidth={2} /> Venta</button>}
           {!esMedico && <button className="ca-btn ghost" onClick={onBloquear}><Clock size={15} strokeWidth={2} /> Bloquear horario</button>}
-          <button className="ca-btn" onClick={onAgendar}><Plus size={16} strokeWidth={2.2} /> Agendar sesión</button>
+          {!esMedico && <button className="ca-btn" onClick={onAgendar}><Plus size={16} strokeWidth={2.2} /> Agendar sesión</button>}
         </div>
       </div>
 
@@ -3975,6 +3980,109 @@ function RecordCard({ titulo, items, vacio, alerta }) {
       {items.length === 0
         ? <div style={{ color: "var(--muted)", fontSize: 13 }}>{vacio}</div>
         : items.map((t, i) => <div key={i} style={{ fontSize: 13.5, padding: "3px 0" }}>{t}</div>)}
+    </div>
+  );
+}
+
+const BUZON_DESEA = [
+  { v: "", l: "—" },
+  { v: "tener_en_cuenta", l: "Que se tenga en cuenta" },
+  { v: "revisar_proceso", l: "Que se revise un proceso" },
+  { v: "me_contacten", l: "Que alguien me contacte" },
+  { v: "solo_observacion", l: "Que solo quede como observación" },
+  { v: "conversar", l: "Que se converse con alguien" },
+];
+const SUGERENCIA_ESTADO_COLOR = {
+  nueva: { bg: "#FCF3D4", fg: "#8A6D14" },
+  vista: { bg: "#E7EEF6", fg: "#3D5C82" },
+  atendida: { bg: "#E4F3E8", fg: "#1E7D45" },
+};
+
+function Buzon({ showToast, esAdmin }) {
+  const [tab, setTab] = useState(esAdmin ? "bandeja" : "dejar");
+  const [f, setF] = useState({ area: "", mensaje: "", contexto: "", desea: "", contacto: "" });
+  const [anon, setAnon] = useState(false);
+  const [enviando, setEnviando] = useState(false);
+  const [lista, setLista] = useState(null);
+  const set = (k) => (e) => setF((p) => ({ ...p, [k]: e.target.value }));
+  function cargar() { if (esAdmin) api.sugerencias().then(setLista).catch(() => setLista([])); }
+  useEffect(() => { cargar(); }, []);
+
+  async function enviar() {
+    if (!f.mensaje.trim()) { showToast("Escribe tu sugerencia"); return; }
+    setEnviando(true);
+    try {
+      await api.crearSugerencia({ ...f, anonimo: anon });
+      setF({ area: "", mensaje: "", contexto: "", desea: "", contacto: "" }); setAnon(false);
+      showToast("¡Gracias! Tu sugerencia fue enviada ✓");
+      if (esAdmin) cargar();
+    } catch (e) { showToast("Error: " + e.message); }
+    finally { setEnviando(false); }
+  }
+  async function marcar(s, estado) {
+    try { await api.actualizarSugerencia(s.id, { estado }); setLista((l) => l.map((x) => (x.id === s.id ? { ...x, estado } : x))); }
+    catch (e) { showToast("Error: " + e.message); }
+  }
+
+  return (
+    <div>
+      <div className="ca-tophead">
+        <div><h1 className="ca-h1">Buzón de sugerencias</h1><div className="ca-sub">Un espacio seguro para ideas, sugerencias y observaciones</div></div>
+        {esAdmin && (
+          <div className="ca-seg">
+            <button className={tab === "bandeja" ? "on" : ""} onClick={() => setTab("bandeja")}>Bandeja{lista ? ` (${lista.filter((x) => x.estado === "nueva").length})` : ""}</button>
+            <button className={tab === "dejar" ? "on" : ""} onClick={() => setTab("dejar")}>Dejar una</button>
+          </div>
+        )}
+      </div>
+
+      {(!esAdmin || tab === "dejar") ? (
+        <div className="ca-card" style={{ maxWidth: 640, marginTop: 18 }}>
+          <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 14, lineHeight: 1.5 }}>
+            En Ítaca creemos que los equipos sanos se construyen con diálogo, respeto y escucha real. Cuéntanos ideas, sugerencias, observaciones o propuestas de mejora 🤍
+          </div>
+          <div style={{ marginBottom: 12 }}><div className="ca-label">¿Sobre qué es? (área / tema)</div>
+            <input className="ca-input" value={f.area} onChange={set("area")} placeholder="Organización, comunicación, procesos, clima, coordinación…" /></div>
+          <div style={{ marginBottom: 12 }}><div className="ca-label">Tu sugerencia u observación</div>
+            <textarea className="ca-input" style={{ minHeight: 90, resize: "vertical", lineHeight: 1.5 }} value={f.mensaje} onChange={set("mensaje")} placeholder="¿Qué estás notando? ¿Qué te gustaría que mejore?" /></div>
+          <div style={{ marginBottom: 12 }}><div className="ca-label">¿Tiene que ver con una situación o persona específica? (opcional)</div>
+            <textarea className="ca-input" style={{ minHeight: 60, resize: "vertical", lineHeight: 1.5 }} value={f.contexto} onChange={set("contexto")} placeholder="No es para acusar, sino para comprender mejor el contexto." /></div>
+          <div style={{ display: "flex", gap: 11, marginBottom: 12, flexWrap: "wrap" }}>
+            <div style={{ flex: 2, minWidth: 200 }}><div className="ca-label">¿Qué te gustaría que pase?</div>
+              <select className="ca-input" value={f.desea} onChange={set("desea")}>{BUZON_DESEA.map((d) => <option key={d.v} value={d.v}>{d.l}</option>)}</select></div>
+            <div style={{ flex: 1.5, minWidth: 160 }}><div className="ca-label">Contacto (si deseas que te contacten)</div>
+              <input className="ca-input" value={f.contacto} onChange={set("contacto")} placeholder="Correo / WhatsApp (opcional)" /></div>
+          </div>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13.5, color: "var(--ink-soft)", cursor: "pointer", marginBottom: 16 }}>
+            <input type="checkbox" checked={anon} onChange={(e) => setAnon(e.target.checked)} /> Enviar de forma anónima
+          </label>
+          <div style={{ display: "flex", justifyContent: "flex-end" }}>
+            <button className="ca-btn" style={{ opacity: enviando ? 0.6 : 1, pointerEvents: enviando ? "none" : "auto" }} onClick={enviar}>{enviando ? "Enviando…" : "Enviar"}</button>
+          </div>
+        </div>
+      ) : (
+        !lista ? <div className="ca-empty" style={{ marginTop: 18 }}>Cargando…</div> :
+        lista.length === 0 ? <div className="ca-empty" style={{ marginTop: 18 }}>Aún no hay sugerencias.</div> : (
+          <div style={{ marginTop: 18 }}>
+            {lista.map((s) => (
+              <div key={s.id} className="ca-card" style={{ marginBottom: 12 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+                  <Tag colors={SUGERENCIA_ESTADO_COLOR[s.estado]}>{s.estado_label}</Tag>
+                  {s.area && <span style={{ fontSize: 12.5, fontWeight: 600 }}>{s.area}</span>}
+                  <span style={{ marginLeft: "auto", fontSize: 12, color: "var(--muted)" }}>{s.autor_nombre} · {s.fecha}</span>
+                </div>
+                <div style={{ fontSize: 14, whiteSpace: "pre-wrap", lineHeight: 1.5 }}>{s.mensaje}</div>
+                {s.contexto && <div style={{ fontSize: 13, color: "var(--ink-soft)", marginTop: 6, whiteSpace: "pre-wrap" }}><b>Contexto:</b> {s.contexto}</div>}
+                {(s.desea_label || s.contacto) && <div style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 6 }}>{s.desea_label}{s.contacto ? ` · 📞 ${s.contacto}` : ""}</div>}
+                <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+                  {s.estado !== "vista" && <button className="ca-mini" onClick={() => marcar(s, "vista")}><Check size={13} strokeWidth={2} /> Vista</button>}
+                  {s.estado !== "atendida" && <button className="ca-mini" onClick={() => marcar(s, "atendida")}><Check size={13} strokeWidth={2} /> Atendida</button>}
+                </div>
+              </div>
+            ))}
+          </div>
+        )
+      )}
     </div>
   );
 }

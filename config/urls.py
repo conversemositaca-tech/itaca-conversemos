@@ -4,6 +4,7 @@ from django.urls import include, path, re_path
 from django.views.generic import TemplateView
 from rest_framework.routers import DefaultRouter
 
+from core.buzon import SugerenciaViewSet
 from core.gerencia import ClinicaConfigView, GerenciaResumenView, HoyResumenView
 from core.integraciones import NotaVozView, PacientesBuscarView, PsicologoView
 from core.metricas import MetricaMensualViewSet
@@ -63,6 +64,7 @@ router.register(r"mensajes", MensajeViewSet, basename="mensaje")
 router.register(r"plantillas", PlantillaMensajeViewSet, basename="plantilla")
 router.register(r"consentimientos", ConsentimientoViewSet, basename="consentimiento")
 router.register(r"leads", LeadViewSet, basename="lead")
+router.register(r"sugerencias", SugerenciaViewSet, basename="sugerencia")
 router.register(r"anuncios", AnuncioViewSet, basename="anuncio")
 
 urlpatterns = [

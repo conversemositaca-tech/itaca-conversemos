@@ -261,3 +261,39 @@ class ReporteSemanal(ModeloTenant):
 
     def __str__(self):
         return f"Semana {self.semana} · {self.MESES[self.mes]} {self.anio}"
+
+
+class Sugerencia(ModeloTenant):
+    """Buzón de sugerencias del equipo. Cualquiera del equipo puede dejar una
+    (anónima o firmada); la gerencia las ve en su bandeja."""
+
+    class Desea(models.TextChoices):
+        TENER_EN_CUENTA = "tener_en_cuenta", "Que se tenga en cuenta"
+        REVISAR_PROCESO = "revisar_proceso", "Que se revise un proceso"
+        ME_CONTACTEN = "me_contacten", "Que alguien me contacte"
+        SOLO_OBSERVACION = "solo_observacion", "Que solo quede como observación"
+        CONVERSAR = "conversar", "Que se converse con alguien"
+
+    class Estado(models.TextChoices):
+        NUEVA = "nueva", "Nueva"
+        VISTA = "vista", "Vista"
+        ATENDIDA = "atendida", "Atendida"
+
+    autor = models.ForeignKey(
+        "usuarios.Usuario", on_delete=models.SET_NULL, related_name="sugerencias",
+        null=True, blank=True,
+    )
+    area = models.CharField("tema / área", max_length=120, blank=True, default="")
+    mensaje = models.TextField()
+    contexto = models.TextField(blank=True, default="")
+    desea = models.CharField(max_length=20, choices=Desea.choices, blank=True, default="")
+    contacto = models.CharField(max_length=200, blank=True, default="")
+    estado = models.CharField(max_length=10, choices=Estado.choices, default=Estado.NUEVA)
+
+    class Meta:
+        verbose_name = "Sugerencia"
+        verbose_name_plural = "Sugerencias"
+        ordering = ["-creado_en"]
+
+    def __str__(self):
+        return f"Sugerencia · {self.get_estado_display()} · {self.creado_en:%d/%m}"
