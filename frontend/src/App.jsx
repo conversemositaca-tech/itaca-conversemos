@@ -5561,8 +5561,8 @@ function Ocupacion({ showToast }) {
         <ExportBtns nombre={`ocupacion_${data.anio}_${data.mes}_s${data.semana}`}
           titulo={`Ocupación de agenda · Sem ${data.semana} · ${MESES_FULL[data.mes] || ""} ${data.anio}`}
           disabled={data.sedes.length === 0}
-          headers={["Sede", "Psicologo", "Horas", "Sesiones", "% Ocupacion", "Consultas", "1er proceso", "Recompra"]}
-          filas={data.sedes.flatMap((g) => g.psicologos.map((p) => [g.sede_label, p.nombre, p.horas_disponibles, p.sesiones, `${p.ocupacion}%`, p.consultas, p.primer_proceso, p.recompra]))} />
+          headers={["Sede", "Psicologo", "Horas/sem", "Sesiones", "Libres", "% Ocupacion", "Consultas", "1er proceso", "Recompra"]}
+          filas={data.sedes.flatMap((g) => g.psicologos.map((p) => [g.sede_label, p.nombre, p.horas_disponibles, p.sesiones, Math.max(0, p.horas_disponibles - p.sesiones), `${p.ocupacion}%`, p.consultas, p.primer_proceso, p.recompra]))} />
       </div>
 
       <div className="ca-fchips" style={{ marginTop: 18, alignItems: "flex-end" }}>
@@ -5585,8 +5585,9 @@ function Ocupacion({ showToast }) {
               <thead>
                 <tr>
                   <th>Psicólogo</th>
-                  <th style={{ textAlign: "right" }}>Horas</th>
+                  <th style={{ textAlign: "right" }}>Horas/sem</th>
                   <th style={{ textAlign: "right" }}>Sesiones</th>
+                  <th style={{ textAlign: "right" }}>Libres</th>
                   <th style={{ textAlign: "right" }}>% Ocup.</th>
                   <th style={{ textAlign: "right" }}>Consultas</th>
                   <th style={{ textAlign: "right" }}>1er proc.</th>
@@ -5601,6 +5602,7 @@ function Ocupacion({ showToast }) {
                       <td>{p.nombre}</td>
                       <td style={{ textAlign: "right" }}>{p.horas_disponibles}</td>
                       <td style={{ textAlign: "right" }}>{p.sesiones}</td>
+                      <td style={{ textAlign: "right", color: "#3D5C82", fontWeight: 600 }}>{Math.max(0, p.horas_disponibles - p.sesiones)}</td>
                       <td style={{ textAlign: "right" }}><span style={{ color: pc.fg, fontWeight: 600 }}>{p.ocupacion}%</span></td>
                       <td style={{ textAlign: "right" }}>{p.consultas}</td>
                       <td style={{ textAlign: "right" }}>{p.primer_proceso}</td>
