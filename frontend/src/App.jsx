@@ -76,6 +76,8 @@ const MENSAJE_ESTADO = {
 const LEAD_ESTADOS = [
   { v: "nuevo", l: "Nuevo" },
   { v: "contactado", l: "Contactado" },
+  { v: "seguimiento", l: "En seguimiento" },
+  { v: "recontacto", l: "Recontactar" },
   { v: "agendado", l: "Consulta agendada" },
   { v: "no_realizada", l: "Consulta no realizada" },
   { v: "evaluando", l: "Evaluando inicio" },
@@ -86,6 +88,8 @@ const LEAD_ESTADOS = [
 const LEAD_ESTADO_COLOR = {
   nuevo: { bg: "#EFEDE8", fg: "#7C7870" },
   contactado: { bg: "#E2ECF5", fg: "#2E5C86" },
+  seguimiento: { bg: "#E1F2E8", fg: "#2E7D52" },
+  recontacto: { bg: "#EAE6F2", fg: "#6B5B9C" },
   agendado: { bg: "#F7ECDD", fg: "#9C6B2E" },
   no_realizada: { bg: "#F0E7E7", fg: "#8A5A5A" },
   evaluando: { bg: "#E6EEF5", fg: "#2E5C86" },
@@ -93,14 +97,16 @@ const LEAD_ESTADO_COLOR = {
   ganado: { bg: "#E9F1ED", fg: "#3E7A65" },
   perdido: { bg: "#F7E5E5", fg: "#9C4646" },
 };
+const LEAD_FRECUENCIAS = [{ v: "", l: "—" }, { v: "semanal", l: "Semanal" }, { v: "quincenal", l: "Quincenal" }];
 const FUENTES = [
   { v: "meta_ads", l: "Meta Ads" }, { v: "google", l: "Google" },
   { v: "instagram", l: "Instagram" }, { v: "facebook", l: "Facebook" },
   { v: "tiktok", l: "TikTok" }, { v: "referido_paciente", l: "Referido por paciente" },
   { v: "referido_psicologo", l: "Referido por psicólogo" }, { v: "referido", l: "Referido" },
-  { v: "convenio", l: "Convenio" }, { v: "organico", l: "Orgánico" },
+  { v: "convenio", l: "Convenio" }, { v: "alianza", l: "Alianza" },
+  { v: "organico", l: "Orgánico" },
   { v: "web", l: "Página web" }, { v: "whatsapp", l: "WhatsApp directo" },
-  { v: "bot", l: "Bot / Chatbot" }, { v: "agendapro", l: "AgendaPro web" },
+  { v: "bot", l: "Bot / Chatbot" }, { v: "agendapro", l: "Sistema (agenda directa)" },
   { v: "derivado", l: "Derivado de otra sede" }, { v: "linkedin", l: "LinkedIn" },
   { v: "otro", l: "Otro" },
 ];
@@ -3515,7 +3521,7 @@ function Marketing({ showToast, onConvertir, esAdmin }) {
         leads.filter((l) => !filtroSedeLead || l.sede === filtroSedeLead).map((lead) => {
           const sem = LEAD_SEM[lead.semaforo];
           return (
-          <div key={lead.id} className="ca-row" style={lead.agendo_consulta === false ? { borderLeft: "3px solid #D85656" } : undefined}>
+          <div key={lead.id} className="ca-row" style={(lead.agendo_consulta === false || lead.recontacto_vencido) ? { borderLeft: "3px solid #D85656" } : undefined}>
             {sem ? <span title={`${sem.l} (${lead.dias_sin_contacto}d sin contacto)`} style={{ width: 10, height: 10, borderRadius: 999, background: sem.c, flexShrink: 0, alignSelf: "center" }} /> : <span style={{ width: 10, flexShrink: 0 }} />}
             <div style={{ flex: 1, minWidth: 160 }}>
               <div className="ca-pname">
@@ -3528,6 +3534,12 @@ function Marketing({ showToast, onConvertir, esAdmin }) {
                 )}
                 {lead.agendo_consulta === true && lead.fecha_consulta && (
                   <span style={{ marginLeft: 8, fontSize: 10.5, background: "#E9F1ED", color: "#3E7A65", padding: "1px 7px", borderRadius: 999, fontWeight: 600, verticalAlign: "middle" }}>📅 {lead.fecha_consulta}</span>
+                )}
+                {lead.estado === "seguimiento" && lead.seguimiento_frecuencia_label && (
+                  <span style={{ marginLeft: 8, fontSize: 10.5, background: "#E1F2E8", color: "#2E7D52", padding: "1px 7px", borderRadius: 999, fontWeight: 600, verticalAlign: "middle" }}>🔁 Seguimiento {lead.seguimiento_frecuencia_label.toLowerCase()}</span>
+                )}
+                {lead.estado === "recontacto" && lead.recontacto_fecha && (
+                  <span style={{ marginLeft: 8, fontSize: 10.5, background: lead.recontacto_vencido ? "#F7E5E5" : "#EAE6F2", color: lead.recontacto_vencido ? "#B4564E" : "#6B5B9C", padding: "1px 7px", borderRadius: 999, fontWeight: 600, verticalAlign: "middle" }}>⏰ {lead.recontacto_vencido ? "Recontactar hoy" : `Recontactar ${lead.recontacto_fecha}`}</span>
                 )}
               </div>
               <div className="ca-pmeta">
@@ -3593,6 +3605,8 @@ function CrearLeadModal({ lead, medicos, anuncios, onClose, onSave }) {
     agendo_consulta: lead?.agendo_consulta ?? null,
     fecha_consulta: lead?.fecha_consulta || "",
     fecha_cierre: lead?.fecha_cierre || "",
+    seguimiento_frecuencia: lead?.seguimiento_frecuencia || "",
+    recontacto_fecha: lead?.recontacto_fecha || "",
     campania: lead?.campania || "",
     especialidad: lead?.especialidad || Object.keys(SPECIALTY)[0],
     medico: lead?.medico || "",
@@ -3611,9 +3625,11 @@ function CrearLeadModal({ lead, medicos, anuncios, onClose, onSave }) {
     onSave({
       ...(lead?.id ? { id: lead.id } : {}),
       nombre: f.nombre.trim(), telefono: f.telefono.trim(), sede: f.sede, fuente: f.fuente,
-      fuente_otro: f.fuente === "otro" ? f.fuente_otro.trim() : "",
+      fuente_otro: ["otro", "convenio", "alianza"].includes(f.fuente) ? f.fuente_otro.trim() : "",
       es_pauta: f.es_pauta, anuncio: f.anuncio ? Number(f.anuncio) : null, es_pareja: f.es_pareja,
       estado: f.estado, agendo_consulta: f.agendo_consulta,
+      seguimiento_frecuencia: f.estado === "seguimiento" ? f.seguimiento_frecuencia : "",
+      recontacto_fecha: f.estado === "recontacto" ? (f.recontacto_fecha || null) : null,
       fecha_consulta: f.agendo_consulta === false ? null : (f.fecha_consulta || null), fecha_cierre: f.fecha_cierre || null,
       campania: f.campania.trim(), especialidad: f.especialidad, medico: f.medico ? Number(f.medico) : null,
       tipo_servicio: f.tipo_servicio, motivo_consulta: f.motivo_consulta.trim(),
@@ -3641,10 +3657,26 @@ function CrearLeadModal({ lead, medicos, anuncios, onClose, onSave }) {
           <div style={{ flex: 1 }}><div className="ca-label">Origen</div><select className="ca-input" value={f.fuente} onChange={set("fuente")}>{FUENTES.map((x) => <option key={x.v} value={x.v}>{x.l}</option>)}</select></div>
           <div style={{ flex: 1 }}><div className="ca-label">Etapa</div><select className="ca-input" value={f.estado} onChange={set("estado")}>{LEAD_ESTADOS.map((s) => <option key={s.v} value={s.v}>{s.l}</option>)}</select></div>
         </div>
-        {f.fuente === "otro" && (
+        {["otro", "convenio", "alianza"].includes(f.fuente) && (
           <div style={{ marginBottom: 12 }}>
-            <div className="ca-label">¿Cuál otro origen?</div>
-            <input className="ca-input" value={f.fuente_otro} onChange={set("fuente_otro")} placeholder="Especifica de dónde vino el lead" />
+            <div className="ca-label">{f.fuente === "convenio" ? "¿Cuál convenio?" : f.fuente === "alianza" ? "¿Cuál alianza?" : "¿Cuál otro origen?"}</div>
+            <input className="ca-input" value={f.fuente_otro} onChange={set("fuente_otro")}
+              placeholder={f.fuente === "convenio" ? "Nombre del convenio" : f.fuente === "alianza" ? "Nombre de la alianza" : "Especifica de dónde vino el lead"} />
+          </div>
+        )}
+        {f.estado === "seguimiento" && (
+          <div style={{ marginBottom: 12 }}>
+            <div className="ca-label">Frecuencia del seguimiento</div>
+            <select className="ca-input" value={f.seguimiento_frecuencia} onChange={set("seguimiento_frecuencia")}>
+              {LEAD_FRECUENCIAS.map((x) => <option key={x.v} value={x.v}>{x.l}</option>)}
+            </select>
+          </div>
+        )}
+        {f.estado === "recontacto" && (
+          <div style={{ marginBottom: 12 }}>
+            <div className="ca-label">Recontactar el</div>
+            <input className="ca-input" type="date" value={f.recontacto_fecha || ""} onChange={set("recontacto_fecha")} />
+            <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 4 }}>Ej. el lead quiere agendar en quincena — te aparecerá como recordatorio.</div>
           </div>
         )}
         <div style={{ display: "flex", gap: 16, marginBottom: 12, flexWrap: "wrap" }}>

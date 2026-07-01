@@ -29,6 +29,8 @@ class LeadSerializer(serializers.ModelSerializer):
     tipo_servicio_label = serializers.CharField(source="get_tipo_servicio_display", read_only=True)
     dias_sin_contacto = serializers.SerializerMethodField()
     semaforo = serializers.SerializerMethodField()
+    seguimiento_frecuencia_label = serializers.CharField(source="get_seguimiento_frecuencia_display", read_only=True)
+    recontacto_vencido = serializers.SerializerMethodField()
 
     class Meta:
         model = Lead
@@ -36,6 +38,7 @@ class LeadSerializer(serializers.ModelSerializer):
             "id", "nombre", "telefono", "sede", "sede_label", "fuente", "fuente_label", "fuente_otro",
             "es_pauta", "anuncio", "anuncio_nombre", "es_pareja",
             "agendo_consulta", "fecha_consulta", "fecha_cierre",
+            "seguimiento_frecuencia", "seguimiento_frecuencia_label", "recontacto_fecha", "recontacto_vencido",
             "campania", "especialidad", "tipo_servicio", "tipo_servicio_label",
             "medico", "medico_nombre", "estado", "estado_label", "motivo_perdida", "notas",
             "motivo_consulta", "resumen_conversacion", "objeciones", "observaciones",
@@ -45,10 +48,16 @@ class LeadSerializer(serializers.ModelSerializer):
         read_only_fields = ["paciente"]
 
     def get_fuente_label(self, obj):
-        # Si el origen es "Otro" y se especificó, muestra ese texto.
-        if obj.fuente == Lead.Fuente.OTRO and obj.fuente_otro:
-            return obj.fuente_otro
+        # Si el origen es Otro/Convenio/Alianza y se especificó, muestra ese texto.
+        if obj.fuente in (Lead.Fuente.OTRO, Lead.Fuente.CONVENIO, Lead.Fuente.ALIANZA) and obj.fuente_otro:
+            return f"{obj.get_fuente_display()}: {obj.fuente_otro}" if obj.fuente != Lead.Fuente.OTRO else obj.fuente_otro
         return obj.get_fuente_display()
+
+    def get_recontacto_vencido(self, obj):
+        """True si el lead está en 'recontacto' y la fecha ya llegó (hoy o antes)."""
+        if obj.estado != Lead.Estado.RECONTACTO or not obj.recontacto_fecha:
+            return False
+        return obj.recontacto_fecha <= timezone.localdate()
 
     def get_medico_nombre(self, obj):
         return str(obj.medico) if obj.medico_id else ""

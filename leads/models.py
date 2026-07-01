@@ -45,10 +45,11 @@ class Lead(ModeloTenant):
         WHATSAPP = "whatsapp", "WhatsApp directo"
         BOT = "bot", "Bot / Chatbot"
         WEB = "web", "Web"
-        AGENDAPRO = "agendapro", "AgendaPro web"
+        AGENDAPRO = "agendapro", "Sistema (agenda directa)"
         DERIVADO = "derivado", "Derivado de otra sede"
         LINKEDIN = "linkedin", "LinkedIn"
         CONVENIO = "convenio", "Convenio"
+        ALIANZA = "alianza", "Alianza"
         META_ADS = "meta_ads", "Meta Ads"
         GOOGLE = "google", "Google"
         REFERIDO_PACIENTE = "referido_paciente", "Referido por paciente"
@@ -69,12 +70,18 @@ class Lead(ModeloTenant):
     class Estado(models.TextChoices):
         NUEVO = "nuevo", "Nuevo"
         CONTACTADO = "contactado", "Contactado"
+        SEGUIMIENTO = "seguimiento", "En seguimiento"
+        RECONTACTO = "recontacto", "Recontactar"
         AGENDADO = "agendado", "Consulta agendada"
         NO_REALIZADA = "no_realizada", "Consulta no realizada"
         EVALUANDO = "evaluando", "Evaluando inicio"
         PENDIENTE_PAGO = "pendiente_pago", "Pendiente de pago"
         GANADO = "ganado", "Inició proceso"
         PERDIDO = "perdido", "Perdido"
+
+    class Frecuencia(models.TextChoices):
+        SEMANAL = "semanal", "Semanal"
+        QUINCENAL = "quincenal", "Quincenal"
 
     nombre = models.CharField(max_length=200)
     telefono = models.CharField(max_length=40, blank=True)
@@ -92,6 +99,9 @@ class Lead(ModeloTenant):
     es_pareja = models.BooleanField("¿Consulta de pareja?", default=False)
     fecha_consulta = models.DateField("fecha de la consulta", null=True, blank=True)
     fecha_cierre = models.DateField("fecha en que inició proceso", null=True, blank=True)
+    # Seguimiento (estado "seguimiento") y recontacto (estado "recontacto").
+    seguimiento_frecuencia = models.CharField(max_length=12, choices=Frecuencia.choices, blank=True, default="")
+    recontacto_fecha = models.DateField("recontactar el", null=True, blank=True)
     campania = models.CharField("campaña", max_length=120, blank=True)
     especialidad = models.CharField(max_length=120, blank=True)
     tipo_servicio = models.CharField(max_length=20, choices=TipoServicio.choices, blank=True, default="")
