@@ -77,6 +77,8 @@ class PacienteSerializer(serializers.ModelSerializer):
     sede_label = serializers.CharField(source="get_sede_display", read_only=True)
     profesional_nombre = serializers.CharField(source="profesional.nombre", read_only=True, default="")
     proceso_label = serializers.SerializerMethodField()
+    frecuencia_label = serializers.CharField(source="get_frecuencia_display", read_only=True)
+    modalidad_label = serializers.CharField(source="get_modalidad_display", read_only=True)
     seguimiento = serializers.SerializerMethodField()
     ultima = serializers.SerializerMethodField()
     proxima = serializers.SerializerMethodField()
@@ -94,6 +96,7 @@ class PacienteSerializer(serializers.ModelSerializer):
             "tutor_nombre", "tutor_parentesco", "tutor_telefono", "tutor_documento",
             "sede", "sede_label", "profesional", "profesional_nombre",
             "n_sesion", "proceso", "proceso_label", "seguimiento",
+            "frecuencia", "frecuencia_label", "modalidad", "modalidad_label",
             "especialidad", "alergias", "antecedentes", "medicacion_habitual",
             "ultima", "proxima", "historial", "adjuntos", "cuenta", "paquetes",
         ]

@@ -86,17 +86,23 @@ const LEAD_ESTADOS = [
   { v: "ganado", l: "Inició proceso" },
   { v: "perdido", l: "Perdido" },
 ];
+// Semáforo de leads (pedido de Gaby): verde=lead activo ok, amarillo=hacer
+// seguimiento, naranja=hay que verificar/recontactar, rojo=seguimiento espaciado.
+const _VERDE = { bg: "#E4F3E8", fg: "#1E7D45" };
+const _AMARILLO = { bg: "#FCF3D4", fg: "#8A6D14" };
+const _NARANJA = { bg: "#FBE7D4", fg: "#B5701F" };
+const _ROJO = { bg: "#F7E5E5", fg: "#9C4646" };
 const LEAD_ESTADO_COLOR = {
   nuevo: { bg: "#EFEDE8", fg: "#7C7870" },
-  contactado: { bg: "#E2ECF5", fg: "#2E5C86" },
-  seguimiento: { bg: "#E1F2E8", fg: "#2E7D52" },
-  recontacto: { bg: "#EAE6F2", fg: "#6B5B9C" },
-  agendado: { bg: "#F7ECDD", fg: "#9C6B2E" },
-  no_realizada: { bg: "#F0E7E7", fg: "#8A5A5A" },
-  evaluando: { bg: "#E6EEF5", fg: "#2E5C86" },
-  pendiente_pago: { bg: "#F7ECDD", fg: "#9C6B2E" },
-  ganado: { bg: "#E9F1ED", fg: "#3E7A65" },
-  perdido: { bg: "#F7E5E5", fg: "#9C4646" },
+  agendado: _VERDE,        // consulta agendada
+  ganado: _VERDE,          // inició proceso
+  contactado: _AMARILLO,
+  seguimiento: _AMARILLO,
+  evaluando: _AMARILLO,
+  pendiente_pago: _AMARILLO,
+  recontacto: _NARANJA,
+  no_realizada: _ROJO,     // consulta no realizada
+  perdido: _ROJO,
 };
 const LEAD_FRECUENCIAS = [{ v: "", l: "—" }, { v: "semanal", l: "Semanal" }, { v: "quincenal", l: "Quincenal" }];
 const FUENTES = [
@@ -612,13 +618,23 @@ export default function ClinicaApp() {
       fecha_nacimiento: data.fecha_nacimiento || null,
       tel: data.tel || "",
       especialidad: data.especialidad || "",
+      sede: data.sede || "",
+      profesional: data.profesional ?? null,
+      frecuencia: data.frecuencia || "",
+      modalidad: data.modalidad || "",
       tipo_documento: data.tipo_documento || "dni",
       numero_documento: data.numero_documento || "",
       direccion: data.direccion || "",
       genero: data.genero || "",
+      tutor_nombre: data.tutor_nombre || "",
+      tutor_parentesco: data.tutor_parentesco || "",
+      tutor_telefono: data.tutor_telefono || "",
+      tutor_documento: data.tutor_documento || "",
       alergias: data.alergias || "",
       antecedentes: data.antecedentes || "",
       medicacion_habitual: data.medicacion_habitual || "",
+      ...(data.n_sesion !== undefined ? { n_sesion: data.n_sesion } : {}),
+      ...(data.proceso !== undefined ? { proceso: data.proceso } : {}),
     };
     try {
       if (data.id) {
@@ -2037,6 +2053,7 @@ function Ficha({ p, onBack, onEdit, onWhatsApp, onSubirAdjunto, onEliminarAdjunt
         {p.profesional_nombre && <div className="ca-field"><HeartPulse size={15} strokeWidth={1.9} style={{ color: "var(--accent)" }} /> {p.profesional_nombre}</div>}
         {p.sede_label && <div className="ca-field"><MapPin size={15} strokeWidth={1.9} style={{ color: "var(--muted)" }} /> Sede {p.sede_label}</div>}
         {(p.n_sesion > 0 || p.proceso_label) && <div className="ca-field"><Activity size={15} strokeWidth={1.9} style={{ color: "var(--muted)" }} /> {p.proceso === "consulta" ? "Consulta inicial" : `Sesión ${p.n_sesion}${p.proceso_label ? ` · ${p.proceso_label}` : ""}`}</div>}
+        {(p.frecuencia_label || p.modalidad_label) && <div className="ca-field"><Clock size={15} strokeWidth={1.9} style={{ color: "var(--muted)" }} /> {[p.frecuencia_label, p.modalidad_label].filter(Boolean).join(" · ")}</div>}
         <div className="ca-field"><Cake size={15} strokeWidth={1.9} style={{ color: "var(--muted)" }} /> {p.edad != null ? `${p.edad} años` : "Edad no registrada"}{p.genero_label ? ` · ${p.genero_label}` : ""}</div>
         {p.numero_documento && <div className="ca-field"><FileText size={15} strokeWidth={1.9} style={{ color: "var(--muted)" }} /> {p.tipo_documento_label} {p.numero_documento}</div>}
         <div className="ca-field"><Phone size={15} strokeWidth={1.9} style={{ color: "var(--muted)" }} /> {p.tel || "Sin teléfono"}</div>
@@ -3585,7 +3602,8 @@ function Marketing({ showToast, onConvertir, esAdmin }) {
                 {lead.sede_label ? `${lead.sede_label} · ` : ""}{lead.fuente_label}{lead.tipo_servicio_label ? ` · ${lead.tipo_servicio_label}` : ""}{lead.anuncio_nombre ? ` · 📣 ${lead.anuncio_nombre}` : ""}{lead.medico_nombre ? ` · ${lead.medico_nombre}` : ""}
               </div>
             </div>
-            <select className="ca-tplsel" value={lead.estado} onChange={(ev) => moverEstado(lead, ev.target.value)}>
+            <select className="ca-tplsel" value={lead.estado} onChange={(ev) => moverEstado(lead, ev.target.value)}
+              style={{ fontWeight: 600, background: (LEAD_ESTADO_COLOR[lead.estado] || {}).bg, color: (LEAD_ESTADO_COLOR[lead.estado] || {}).fg }}>
               {LEAD_ESTADOS.map((s) => <option key={s.v} value={s.v}>{s.l}</option>)}
             </select>
             {!lead.paciente_nombre && (
@@ -5611,8 +5629,8 @@ function Ocupacion({ showToast }) {
         <ExportBtns nombre={`ocupacion_${data.anio}_${data.mes}_s${data.semana}`}
           titulo={`Ocupación de agenda · Sem ${data.semana} · ${MESES_FULL[data.mes] || ""} ${data.anio}`}
           disabled={data.sedes.length === 0}
-          headers={["Sede", "Psicologo", "Horas/sem", "Sesiones", "Libres", "% Ocupacion", "Consultas", "1er proceso", "Recompra"]}
-          filas={data.sedes.flatMap((g) => g.psicologos.map((p) => [g.sede_label, p.nombre, p.horas_disponibles, p.sesiones, Math.max(0, p.horas_disponibles - p.sesiones), `${p.ocupacion}%`, p.consultas, p.primer_proceso, p.recompra]))} />
+          headers={["Sede", "Psicologo", "Horas/sem", "Sesiones", "Libres", "% Ocupacion", "Consultas", "1er proceso", "% Cierre", "Recompra"]}
+          filas={data.sedes.flatMap((g) => g.psicologos.map((p) => [g.sede_label, p.nombre, p.horas_disponibles, p.sesiones, Math.max(0, p.horas_disponibles - p.sesiones), `${p.ocupacion}%`, p.consultas, p.primer_proceso, `${p.consultas ? Math.round((p.primer_proceso / p.consultas) * 100) : 0}%`, p.recompra]))} />
       </div>
 
       <div className="ca-fchips" style={{ marginTop: 18, alignItems: "flex-end" }}>
@@ -5641,6 +5659,7 @@ function Ocupacion({ showToast }) {
                   <th style={{ textAlign: "right" }}>% Ocup.</th>
                   <th style={{ textAlign: "right" }}>Consultas</th>
                   <th style={{ textAlign: "right" }}>1er proc.</th>
+                  <th style={{ textAlign: "right" }}>% Cierre</th>
                   <th style={{ textAlign: "right" }}>Recompra</th>
                 </tr>
               </thead>
@@ -5656,6 +5675,7 @@ function Ocupacion({ showToast }) {
                       <td style={{ textAlign: "right" }}><span style={{ color: pc.fg, fontWeight: 600 }}>{p.ocupacion}%</span></td>
                       <td style={{ textAlign: "right" }}>{p.consultas}</td>
                       <td style={{ textAlign: "right" }}>{p.primer_proceso}</td>
+                      <td style={{ textAlign: "right", fontWeight: 600 }}>{p.consultas ? Math.round((p.primer_proceso / p.consultas) * 100) : 0}%</td>
                       <td style={{ textAlign: "right" }}>{p.recompra}</td>
                     </tr>
                   );
@@ -5959,6 +5979,8 @@ function PacienteModal({ paciente, onClose, onSave }) {
   const [tutorDoc, setTutorDoc] = useState(paciente?.tutor_documento || "");
   const [sede, setSede] = useState(paciente?.sede || "");
   const [profId, setProfId] = useState(paciente?.profesional || "");
+  const [frecuencia, setFrecuencia] = useState(paciente?.frecuencia || "");
+  const [modalidadP, setModalidadP] = useState(paciente?.modalidad || "");
   const [nSesion, setNSesion] = useState(paciente?.n_sesion ?? 0);
   const [proceso, setProceso] = useState(paciente?.proceso || "");
   const [profs, setProfs] = useState([]);
@@ -5987,6 +6009,20 @@ function PacienteModal({ paciente, onClose, onSave }) {
           <div style={{ flex: 1 }}>
             <div className="ca-label">Teléfono</div>
             <input className="ca-input" value={tel} onChange={(e) => setTel(e.target.value)} placeholder="987 654 321" />
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 11, marginBottom: 16 }}>
+          <div style={{ flex: 1 }}>
+            <div className="ca-label">Frecuencia</div>
+            <select className="ca-input" value={frecuencia} onChange={(e) => setFrecuencia(e.target.value)}>
+              <option value="">—</option><option value="semanal">Semanal</option><option value="quincenal">Quincenal</option><option value="esporadico">Esporádico</option>
+            </select>
+          </div>
+          <div style={{ flex: 1 }}>
+            <div className="ca-label">Modalidad</div>
+            <select className="ca-input" value={modalidadP} onChange={(e) => setModalidadP(e.target.value)}>
+              <option value="">—</option><option value="presencial">Presencial</option><option value="virtual">Virtual</option><option value="hibrido">Híbrido</option>
+            </select>
           </div>
         </div>
         <div style={{ marginBottom: 16 }}>
@@ -6102,7 +6138,7 @@ function PacienteModal({ paciente, onClose, onSave }) {
         <div style={{ display: "flex", gap: 9, justifyContent: "flex-end" }}>
           <button className="ca-btn ghost" onClick={onClose}>Cancelar</button>
           <button className="ca-btn" style={{ opacity: canSave ? 1 : 0.5, pointerEvents: canSave ? "auto" : "none" }}
-            onClick={() => onSave({ ...(paciente?.id ? { id: paciente.id } : {}), nombre: nombre.trim(), fecha_nacimiento: fechaNac || null, tel: tel.trim(), especialidad: esp, sede, profesional: profId ? Number(profId) : null, n_sesion: Number(nSesion) || 0, proceso, tipo_documento: tipoDoc, numero_documento: numDoc.trim(), direccion: direccion.trim(), genero, alergias: alergias.trim(), antecedentes: antecedentes.trim(), medicacion_habitual: medicacion.trim(), tutor_nombre: tutorNombre.trim(), tutor_parentesco: tutorParentesco.trim(), tutor_telefono: tutorTel.trim(), tutor_documento: tutorDoc.trim() })}>
+            onClick={() => onSave({ ...(paciente?.id ? { id: paciente.id } : {}), nombre: nombre.trim(), fecha_nacimiento: fechaNac || null, tel: tel.trim(), especialidad: esp, sede, profesional: profId ? Number(profId) : null, frecuencia, modalidad: modalidadP, n_sesion: Number(nSesion) || 0, proceso, tipo_documento: tipoDoc, numero_documento: numDoc.trim(), direccion: direccion.trim(), genero, alergias: alergias.trim(), antecedentes: antecedentes.trim(), medicacion_habitual: medicacion.trim(), tutor_nombre: tutorNombre.trim(), tutor_parentesco: tutorParentesco.trim(), tutor_telefono: tutorTel.trim(), tutor_documento: tutorDoc.trim() })}>
             Guardar
           </button>
         </div>

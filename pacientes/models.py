@@ -50,6 +50,19 @@ class Paciente(ModeloTenant):
         help_text="Etapa del proceso: consulta, primero, segundo, … o quincenal.",
     )
 
+    class Frecuencia(models.TextChoices):
+        SEMANAL = "semanal", "Semanal"
+        QUINCENAL = "quincenal", "Quincenal"
+        ESPORADICO = "esporadico", "Esporádico"
+
+    class ModalidadPref(models.TextChoices):
+        PRESENCIAL = "presencial", "Presencial"
+        VIRTUAL = "virtual", "Virtual"
+        HIBRIDO = "hibrido", "Híbrido"
+
+    frecuencia = models.CharField(max_length=12, choices=Frecuencia.choices, blank=True, default="")
+    modalidad = models.CharField(max_length=12, choices=ModalidadPref.choices, blank=True, default="")
+
     # --- Identificación (estilo peruano: para boletas y búsqueda por documento) ---
     tipo_documento = models.CharField(max_length=12, choices=TipoDoc.choices, default=TipoDoc.DNI)
     numero_documento = models.CharField(max_length=20, blank=True, default="")
