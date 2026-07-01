@@ -98,10 +98,11 @@ export const api = {
 
   // Mensajes (WhatsApp)
   mensajes: () => req("/api/mensajes/"),
-  enviarMensajePaciente: (id, texto, tipo, plantillaId) =>
-    req(`/api/pacientes/${id}/mensaje/`, { method: "POST", body: JSON.stringify({ texto, tipo, plantilla_id: plantillaId || null }) }),
+  enviarMensajePaciente: (id, texto, tipo, plantillaId, citaId) =>
+    req(`/api/pacientes/${id}/mensaje/`, { method: "POST", body: JSON.stringify({ texto, tipo, plantilla_id: plantillaId || null, cita_id: citaId || null }) }),
   // Plantillas de mensaje (con variables). pacienteId opcional → trae preview sustituido.
-  plantillas: (pacienteId) => req(`/api/plantillas/${pacienteId ? `?paciente=${pacienteId}` : ""}`),
+  // citaId opcional → el recordatorio se renderiza con la fecha/hora de esa cita.
+  plantillas: (pacienteId, citaId) => req(`/api/plantillas/${pacienteId ? `?paciente=${pacienteId}${citaId ? `&cita=${citaId}` : ""}` : ""}`),
   actualizarPlantilla: (id, data) => req(`/api/plantillas/${id}/`, { method: "PATCH", body: JSON.stringify(data) }),
 
   // Consentimiento informado (firma digital del paciente)

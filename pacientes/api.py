@@ -163,10 +163,19 @@ class PacienteViewSet(viewsets.ModelViewSet):
         pid = request.data.get("plantilla_id")
         if pid:
             plantilla = PlantillaMensaje.objects.del_tenant_actual().filter(pk=pid).first()
+        # Si se abrió desde una cita, se pasa como contexto (fecha/hora del recordatorio).
+        cita = None
+        cid = request.data.get("cita_id")
+        if cid:
+            cita = Cita.objects.del_tenant_actual().filter(pk=cid, paciente=paciente).first()
         mensaje, resultado, wa_url = registrar_y_enviar(
             paciente.clinica, telefono=paciente.telefono, texto=texto, tipo=tipo,
-            paciente=paciente, usuario=request.user, plantilla=plantilla,
+            paciente=paciente, cita=cita, usuario=request.user, plantilla=plantilla,
         )
+        # Si fue el recordatorio de una cita, se marca la cita como recordada.
+        if cita and tipo == Mensaje.Tipo.RECORDATORIO and (resultado["estado"] == "enviado" or wa_url):
+            cita.recordatorio_enviado = True
+            cita.save(update_fields=["recordatorio_enviado"])
         return Response({"estado": resultado["estado"], "detalle": resultado["detalle"],
                          "wa_url": wa_url, "mensaje_id": mensaje.id})
 

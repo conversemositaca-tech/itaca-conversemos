@@ -412,6 +412,7 @@ export default function ClinicaApp() {
   const [mensajes, setMensajes] = useState([]);
   const [servicios, setServicios] = useState([]);
   const [waPaciente, setWaPaciente] = useState(null);
+  const [waCita, setWaCita] = useState(null);
   const [usuario, setUsuario] = useState(null);
   const [iniciando, setIniciando] = useState(true);
   const [query, setQuery] = useState("");
@@ -596,12 +597,12 @@ export default function ClinicaApp() {
     } catch (e) { showToast("Error: " + e.message); }
   }
 
-  async function enviarMensajePaciente(paciente, texto, tipo, plantillaId) {
+  async function enviarMensajePaciente(paciente, texto, tipo, plantillaId, citaId) {
     try {
-      const r = await api.enviarMensajePaciente(paciente.id, texto, tipo, plantillaId);
-      await refrescarMensajes();
-      setWaPaciente(null);
+      const r = await api.enviarMensajePaciente(paciente.id, texto, tipo, plantillaId, citaId);
+      setWaPaciente(null); setWaCita(null);
       manejarResultadoEnvio(r, "Mensaje enviado por WhatsApp ✓");
+      Promise.all([refrescarMensajes(), refrescarCitas()]).catch(() => {});
     } catch (e) { showToast("Error: " + e.message); }
   }
 
@@ -1055,7 +1056,7 @@ export default function ClinicaApp() {
             onAgendar={() => setAdding(true)} onAtender={setAtender} onRecordar={setRecordar}
             onReagendar={setReagendar} onCancelar={setCancelando} openFicha={openFicha}
             onConfirmar={confirmarCita} onSetEstado={setEstadoCita} onAbrirCita={setCitaDetalle}
-            onMensaje={(c) => { const p = pacientes.find((x) => x.id === c.pacienteId); if (p) setWaPaciente(p); else showToast("No se encontró el paciente"); }}
+            onMensaje={(c) => { const p = pacientes.find((x) => x.id === c.pacienteId); if (p) { setWaPaciente(p); setWaCita(c); } else showToast("No se encontró el paciente"); }}
             onCobrar={(c) => setCobrando({ pacienteId: c.pacienteId, paciente: c.paciente, citaId: c.id, especialidad: c.especialidad })}
           />
         )}
@@ -1118,7 +1119,7 @@ export default function ClinicaApp() {
 
         {view === "pacientes" && selected && (
           <Ficha p={selected} onBack={() => setSelectedId(null)} onEdit={() => setEditingPaciente(selected)}
-            onWhatsApp={() => setWaPaciente(selected)} clinica={nombreClinica} onAgendar={() => setAgendarPara(selected)}
+            onWhatsApp={() => { setWaPaciente(selected); setWaCita(null); }} clinica={nombreClinica} onAgendar={() => setAgendarPara(selected)}
             onRegistrarSesion={() => setRegistrandoSesion(selected)} puedeRegistrar={usuario?.rol === "medico" || usuario?.rol === "admin"}
             onVenderPaquete={() => setVendiendoPaquete(selected)} puedeVenderPaquete={usuario?.rol === "asistente" || usuario?.rol === "admin"}
             onRegistrarPago={() => setCobrando({ pacienteId: selected.id, paciente: selected.nombre, especialidad: selected.especialidad })}
@@ -1169,7 +1170,7 @@ export default function ClinicaApp() {
           <CitaDetalleModal cita={citaDetalle} esMedico={usuario?.rol === "medico"} esAsistente={esAsistente}
             onClose={() => setCitaDetalle(null)} onSetEstado={setEstadoCita} openFicha={openFicha}
             onAtender={setAtender} onReagendar={setReagendar} onCancelar={setCancelando}
-            onMensaje={(c) => { const p = pacientes.find((x) => x.id === c.pacienteId); if (p) setWaPaciente(p); else showToast("No se encontró el paciente"); }}
+            onMensaje={(c) => { const p = pacientes.find((x) => x.id === c.pacienteId); if (p) { setWaPaciente(p); setWaCita(c); } else showToast("No se encontró el paciente"); }}
             onCobrar={(c) => setCobrando({ pacienteId: c.pacienteId, paciente: c.paciente, citaId: c.id, especialidad: c.especialidad })} />
         )}
         {bloqueando && <BloqueoModal fechaInicial={agendaFecha} onClose={() => setBloqueando(null)} onSave={guardarBloqueo} />}
@@ -1181,7 +1182,7 @@ export default function ClinicaApp() {
             onConfirm={() => cancelarCita(cancelando)} onClose={() => setCancelando(null)}
           />
         )}
-        {waPaciente && <MensajePacienteModal paciente={waPaciente} onClose={() => setWaPaciente(null)} onSend={(texto, tipo, plantillaId) => enviarMensajePaciente(waPaciente, texto, tipo, plantillaId)} />}
+        {waPaciente && <MensajePacienteModal paciente={waPaciente} cita={waCita} onClose={() => { setWaPaciente(null); setWaCita(null); }} onSend={(texto, tipo, plantillaId) => enviarMensajePaciente(waPaciente, texto, tipo, plantillaId, waCita?.id)} />}
         {editingPaciente && (
           <PacienteModal paciente={editingPaciente.new ? null : editingPaciente}
             onClose={() => setEditingPaciente(null)} onSave={guardarPaciente} />
@@ -2485,7 +2486,6 @@ function BloqueoModal({ fechaInicial, onClose, onSave }) {
 
 function CitaRow({ c, esAsistente, esMedico, onAtender, onRecordar, onReagendar, onCancelar, onConfirmar, onCobrar, onSetEstado, onMensaje, openFicha }) {
   const activa = c.estado !== "atendida" && c.estado !== "cancelada";
-  const pendiente = c.estado === "agendada" || c.estado === "por_confirmar" || c.estado === "reprogramada";
   const col = STATUS[c.estado] || {};
   return (
     <div className="ca-row">
@@ -2510,17 +2510,10 @@ function CitaRow({ c, esAsistente, esMedico, onAtender, onRecordar, onReagendar,
         </select>
       )}
       <div className="ca-actions">
-        {/* El psicólogo no ve acciones comerciales (confirmar, recordar, cobrar). */}
-        {!esMedico && pendiente && (
-          <button className="ca-mini" onClick={() => onConfirmar(c)} title="Marcar confirmada"><Check size={13} strokeWidth={2.2} /> Confirmar</button>
-        )}
-        {!esMedico && pendiente && (c.recordado ? (
-          <span className="ca-mini done"><Check size={13} strokeWidth={2.4} /> Recordado</span>
-        ) : (
-          <button className="ca-mini wa" onClick={() => onRecordar(c)}><MessageCircle size={13} strokeWidth={2} /> Recordar</button>
-        ))}
+        {/* Estado (confirmar/asistió/cancelar…) se maneja con el desplegable de arriba.
+            Aquí solo acciones que NO son estado: mensaje, atender, cobrar, mover. */}
         {!esMedico && (
-          <button className="ca-mini wa" onClick={() => onMensaje(c)} title="Enviar mensaje con plantillas"><MessageCircle size={13} strokeWidth={2} /> Mensaje</button>
+          <button className="ca-mini wa" onClick={() => onMensaje(c)} title="Enviar mensaje (recordatorio y demás plantillas)"><MessageCircle size={13} strokeWidth={2} /> Mensaje{c.recordado ? " ✓" : ""}</button>
         )}
         {activa && !esAsistente && (
           <button className="ca-mini" onClick={() => onAtender(c)}><Stethoscope size={13} strokeWidth={2} /> {esMedico ? "Registrar sesión" : "Atender"}</button>
@@ -2534,10 +2527,7 @@ function CitaRow({ c, esAsistente, esMedico, onAtender, onRecordar, onReagendar,
           <button className="ca-mini" onClick={() => onCobrar(c)} title="Registrar cobro"><Receipt size={13} strokeWidth={2} /> Cobrar</button>
         ))}
         {activa && (
-          <>
-            <button className="ca-mini" onClick={() => onReagendar(c)} title="Reagendar"><Calendar size={13} strokeWidth={2} /> Mover</button>
-            <button className="ca-iconbtn" onClick={() => onCancelar(c)} title="Cancelar sesión"><X size={14} strokeWidth={2} /></button>
-          </>
+          <button className="ca-mini" onClick={() => onReagendar(c)} title="Reagendar (cambiar fecha/hora)"><Calendar size={13} strokeWidth={2} /> Mover</button>
         )}
       </div>
     </div>
@@ -3120,7 +3110,7 @@ function Mensajes({ mensajes, esAdmin, showToast }) {
   );
 }
 
-function MensajePacienteModal({ paciente, onClose, onSend }) {
+function MensajePacienteModal({ paciente, cita, onClose, onSend }) {
   const primer = (paciente.nombre || "").split(" ")[0];
   const inicial = `Hola ${primer} 👋 Desde Itaca Conversemos queremos saber cómo te encuentras. Si lo deseas, podemos agendar tu próxima sesión. Estamos para ayudarte 🌿`;
   const [texto, setTexto] = useState(inicial);
@@ -3133,8 +3123,9 @@ function MensajePacienteModal({ paciente, onClose, onSend }) {
 
   useEffect(() => {
     if (sinTel) return;
-    api.plantillas(paciente.id).then((ps) => setPlantillas(ps.filter((p) => p.activo))).catch(() => {});
-  }, [paciente.id, sinTel]);
+    // Con la cita en contexto, el recordatorio trae fecha/hora ya sustituidas.
+    api.plantillas(paciente.id, cita?.id).then((ps) => setPlantillas(ps.filter((p) => p.activo))).catch(() => {});
+  }, [paciente.id, sinTel, cita?.id]);
 
   async function usarPlantilla(p) {
     let txt = p.preview || p.texto;
