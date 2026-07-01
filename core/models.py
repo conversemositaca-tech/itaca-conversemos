@@ -297,3 +297,37 @@ class Sugerencia(ModeloTenant):
 
     def __str__(self):
         return f"Sugerencia · {self.get_estado_display()} · {self.creado_en:%d/%m}"
+
+
+class Recurso(ModeloTenant):
+    """Contenido que la gerencia publica para el equipo. Un solo modelo cubre:
+
+    - `herramienta`: material/enlace (Drive, PDF, video) para compartir con pacientes.
+    - `tip`: consejo clínico o de gestión para el psicólogo.
+    - `recordatorio`: aviso de gerencia (capacitación, supervisión, NPS, info) que
+      aparece en el inicio del equipo.
+
+    La gerencia crea/edita; el equipo (incluido el psicólogo) solo lee los activos.
+    """
+
+    class Tipo(models.TextChoices):
+        HERRAMIENTA = "herramienta", "Herramienta para pacientes"
+        TIP = "tip", "Tip para el psicólogo"
+        RECORDATORIO = "recordatorio", "Recordatorio de gerencia"
+
+    tipo = models.CharField(max_length=15, choices=Tipo.choices, default=Tipo.HERRAMIENTA)
+    titulo = models.CharField(max_length=200)
+    descripcion = models.TextField(blank=True, default="")
+    link = models.URLField(blank=True, default="")
+    categoria = models.CharField(max_length=120, blank=True, default="", help_text="Ej: Ansiedad, Pareja, Onboarding…")
+    fijado = models.BooleanField(default=False, help_text="Los recordatorios fijados salen primero en el inicio.")
+    activo = models.BooleanField(default=True)
+
+    class Meta:
+        verbose_name = "Recurso"
+        verbose_name_plural = "Recursos"
+        ordering = ["-fijado", "-creado_en"]
+        indexes = [models.Index(fields=["clinica", "tipo", "activo"])]
+
+    def __str__(self):
+        return f"{self.get_tipo_display()} · {self.titulo}"

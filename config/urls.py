@@ -5,6 +5,7 @@ from django.views.generic import TemplateView
 from rest_framework.routers import DefaultRouter
 
 from core.buzon import SugerenciaViewSet
+from core.recursos import RecursoViewSet
 from core.gerencia import ClinicaConfigView, GerenciaResumenView, HoyResumenView
 from core.integraciones import NotaVozView, PacientesBuscarView, PsicologoView
 from core.metricas import MetricaMensualViewSet
@@ -65,6 +66,7 @@ router.register(r"plantillas", PlantillaMensajeViewSet, basename="plantilla")
 router.register(r"consentimientos", ConsentimientoViewSet, basename="consentimiento")
 router.register(r"leads", LeadViewSet, basename="lead")
 router.register(r"sugerencias", SugerenciaViewSet, basename="sugerencia")
+router.register(r"recursos", RecursoViewSet, basename="recurso")
 router.register(r"anuncios", AnuncioViewSet, basename="anuncio")
 
 urlpatterns = [

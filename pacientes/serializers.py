@@ -101,6 +101,17 @@ class PacienteSerializer(serializers.ModelSerializer):
             "ultima", "proxima", "historial", "adjuntos", "cuenta", "paquetes",
         ]
 
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        # El psicólogo NO ve los datos de contacto del paciente (correo, teléfono,
+        # dirección, documento): solo lo clínico y su estado. Privacidad (Ley 29733).
+        req = self.context.get("request")
+        if req is not None and getattr(req.user, "rol", None) == "medico":
+            for k in ("tel", "email", "direccion", "numero_documento"):
+                if k in data:
+                    data[k] = ""
+        return data
+
     def get_proceso_label(self, obj):
         return obj.proceso.capitalize() if obj.proceso else ""
 

@@ -118,6 +118,11 @@ export const api = {
   crearSugerencia: (data) => req("/api/sugerencias/", { method: "POST", body: JSON.stringify(data) }),
   actualizarSugerencia: (id, data) => req(`/api/sugerencias/${id}/`, { method: "PATCH", body: JSON.stringify(data) }),
   borrarSugerencia: (id) => req(`/api/sugerencias/${id}/`, { method: "DELETE" }),
+  // Recursos del equipo (herramientas para pacientes, tips, recordatorios de gerencia)
+  recursos: (tipo) => req(`/api/recursos/${tipo ? `?tipo=${tipo}` : ""}`),
+  crearRecurso: (data) => req("/api/recursos/", { method: "POST", body: JSON.stringify(data) }),
+  actualizarRecurso: (id, data) => req(`/api/recursos/${id}/`, { method: "PATCH", body: JSON.stringify(data) }),
+  borrarRecurso: (id) => req(`/api/recursos/${id}/`, { method: "DELETE" }),
   leads: () => req("/api/leads/"),
   reportesLeads: () => req("/api/leads/reportes/"),
   crearLead: (data) => req("/api/leads/", { method: "POST", body: JSON.stringify(data) }),

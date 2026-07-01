@@ -213,6 +213,10 @@ class Command(BaseCommand):
                 if not nombre:
                     continue
                 doc = solo_digitos(celda(fila, c_doc))
+                # Más de 12 dígitos no es un documento peruano válido (DNI=8, RUC=11,
+                # CE≤12): suele ser relleno/basura. Se trata como sin documento.
+                if len(doc) > 12:
+                    doc = ""
                 if not doc:
                     sin_doc += 1
                 ciudad = celda(fila, c_ciudad).lower()

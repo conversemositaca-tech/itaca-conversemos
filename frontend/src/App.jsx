@@ -5,7 +5,7 @@ import {
   Phone, Cake, X, Stethoscope, MessageCircle, Check, Pencil, UserPlus, FileText,
   TrendingUp, Download, AlertTriangle, Megaphone, LogOut,
   Paperclip, Trash2, Activity, Pill, HeartPulse, Copy, BarChart3, UserCog, KeyRound, MapPin,
-  Mic,
+  Mic, FolderOpen, Lightbulb, ExternalLink, Bell, GraduationCap,
 } from "lucide-react";
 import { api } from "./api";
 import Login from "./Login";
@@ -40,6 +40,38 @@ const TEMPLATES = {
   "Terapia infantil/adolescente": "Motivo de consulta:\n\nObservación (juego / conducta):\n\nTemas trabajados:\n\nIndicaciones a los padres:\n\nTarea:\n\nPróxima sesión:",
   "Evaluación psicológica": "Motivo de la evaluación:\n\nPruebas aplicadas:\n\nObservaciones:\n\nResultados / hallazgos:\n\nConclusiones y recomendaciones:",
 };
+
+// Guía de notas — Decisión del Paciente (DP). Estandariza cómo se registra la
+// decisión del paciente/apoderado/pareja tras la orientación clínica.
+// Al elegir un código se inserta "DP-XX | Etiqueta. " en la nota para completar.
+const DP_CODES = [
+  { cat: "Inicio", items: [
+    { c: "DP-01", l: "Inicia proceso" },
+    { c: "DP-02", l: "Solicita tiempo para decidir" },
+    { c: "DP-03", l: "Seguimiento posterior" },
+    { c: "DP-04", l: "No inicia proceso" },
+  ] },
+  { cat: "Servicios específicos", items: [
+    { c: "DP-05", l: "Evaluación psicológica" },
+    { c: "DP-06", l: "Informe psicológico" },
+    { c: "DP-07", l: "Convenio / Empresa" },
+  ] },
+  { cat: "Continuidad", items: [
+    { c: "DP-08", l: "Continúa proceso" },
+    { c: "DP-09", l: "Suspensión temporal / Finaliza proceso" },
+    { c: "DP-10", l: "Alta terapéutica" },
+  ] },
+  { cat: "Derivaciones e interconsultas", items: [
+    { c: "DP-11", l: "Derivación interna" },
+    { c: "DP-12", l: "Derivación externa" },
+    { c: "DP-13", l: "Interconsulta (interna o externa)" },
+  ] },
+  { cat: "Dificultades o barreras", items: [
+    { c: "DP-14", l: "Limitación económica" },
+    { c: "DP-15", l: "Limitación de horario" },
+    { c: "DP-16", l: "Inconformidad con la atención" },
+  ] },
+];
 
 // Estados de cita (claves = códigos del backend).
 const STATUS = {
@@ -216,6 +248,19 @@ function semanaDe(iso) {
 const labelLargo = (iso) => cap(dDeISO(iso).toLocaleDateString("es-PE", { weekday: "long", day: "numeric", month: "long" }));
 const labelDiaSemana = (iso) => cap(dDeISO(iso).toLocaleDateString("es-PE", { weekday: "short" }).replace(".", ""));
 const labelNumMes = (iso) => { const d = dDeISO(iso); return `${d.getDate()} ${_MESES[d.getMonth()]}`; };
+const labelMes = (iso) => cap(dDeISO(iso).toLocaleDateString("es-PE", { month: "long", year: "numeric" }));
+// Grilla de un mes: filas de 7 días (lunes primero), rellenando semanas parciales.
+function mesDe(iso) {
+  const d = dDeISO(iso);
+  const primero = aISO(new Date(d.getFullYear(), d.getMonth(), 1));
+  const inicio = semanaDe(primero)[0]; // lunes de la 1ª semana
+  const dias = [];
+  for (let i = 0; i < 42; i++) dias.push(sumarDias(inicio, i));
+  // Recorta la última fila si queda entera fuera del mes.
+  while (dias.length > 35 && dDeISO(dias[dias.length - 7]).getMonth() !== d.getMonth()) dias.splice(-7);
+  return dias;
+}
+const sumarMeses = (iso, n) => { const d = dDeISO(iso); return aISO(new Date(d.getFullYear(), d.getMonth() + n, Math.min(d.getDate(), 28))); };
 
 // ---- Reporte semanal (datos de ejemplo · módulo en construcción) ----
 const FIN = {
@@ -519,6 +564,9 @@ export default function ClinicaApp() {
     ...(usuario?.rol !== "comercial" ? [{ id: "pacientes", label: "Pacientes", icon: Users }] : []),
     // Profesionales (directorio): gerencia y coordinación; el psicólogo no lo ve.
     ...((usuario?.rol !== "comercial" && usuario?.rol !== "medico") ? [{ id: "profesionales", label: "Profesionales", icon: HeartPulse }] : []),
+    // Herramientas (materiales para pacientes + tips): equipo clínico (no comercial).
+    // Para el psicólogo reemplaza el acceso a Profesionales.
+    ...(usuario?.rol !== "comercial" ? [{ id: "herramientas", label: "Herramientas", icon: FolderOpen }] : []),
     // Mensajes: gerencia, coordinación y comercial (no psicólogo).
     ...(usuario?.rol !== "medico" ? [{ id: "mensajes", label: "Mensajes", icon: MessageCircle }] : []),
     // Marketing / Leads: gerencia, comercial y coordinación (asistente).
@@ -834,6 +882,9 @@ export default function ClinicaApp() {
         .ca-mini.wa { color:var(--wa); }
         .ca-mini.wa:hover { background:var(--wa-soft); }
         .ca-mini.done { color:var(--wa); border-color:var(--wa-soft); background:var(--wa-soft); cursor:default; }
+        .ca-mini.danger { color:#B4564E; }
+        .ca-mini.danger:hover { background:#FDE9E7; }
+        a.ca-mini { text-decoration:none; }
         .ca-search { display:flex; align-items:center; gap:9px; background:var(--surface); border:1px solid var(--line);
           border-radius:9px; padding:9px 13px; max-width:340px; margin-bottom:18px; }
         .ca-search input { border:none; outline:none; font-size:14px; font-family:inherit; width:100%;
@@ -913,6 +964,19 @@ export default function ClinicaApp() {
         .ca-evt .p { font-size:11.5px; color:var(--ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
         .ca-evt.cancel { opacity:.55; }
         .ca-evt.cancel .p { text-decoration:line-through; }
+        .ca-mes { margin-top:18px; }
+        .ca-mes-hd { display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:6px; margin-bottom:6px; }
+        .ca-mes-hd > div { text-align:center; font-size:11.5px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.03em; }
+        .ca-mes-grid { display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:6px; }
+        .ca-mes-cel { background:var(--surface); border:1px solid var(--line); border-radius:9px; padding:5px 5px 6px; min-height:92px; cursor:pointer; transition:background .12s; }
+        .ca-mes-cel:hover { background:rgba(0,0,0,.02); }
+        .ca-mes-cel.off { background:transparent; border-color:transparent; }
+        .ca-mes-cel.off .d { color:var(--line); }
+        .ca-mes-cel.hoy { border-color:var(--accent); background:var(--accent-soft); }
+        .ca-mes-cel .d { font-size:12.5px; font-weight:600; color:var(--ink); margin-bottom:3px; text-align:right; padding-right:2px; }
+        .ca-mes-evt { font-size:10.5px; font-weight:600; border-radius:5px; padding:2px 5px; margin-bottom:3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .ca-mes-mas { font-size:10.5px; color:var(--muted); font-weight:600; padding-left:3px; }
+        @media (max-width:820px){ .ca-mes-grid, .ca-mes-hd { gap:3px; } .ca-mes-cel { min-height:64px; } .ca-mes-evt { font-size:9px; } }
         @media (max-width:640px){ .ca-anteced { grid-template-columns:1fr; gap:14px; } }
         @media (max-width:560px){ .ca-vitgrid { grid-template-columns:repeat(3,1fr); } }
         @media (max-width:820px){ .ca-wk { grid-auto-flow:column; grid-template-columns:none; grid-auto-columns:minmax(118px,1fr);
@@ -1149,7 +1213,7 @@ export default function ClinicaApp() {
         )}
 
         {view === "pacientes" && selected && (
-          <Ficha p={selected} onBack={() => setSelectedId(null)} onEdit={() => setEditingPaciente(selected)}
+          <Ficha p={selected} esMedico={usuario?.rol === "medico"} onBack={() => setSelectedId(null)} onEdit={() => setEditingPaciente(selected)}
             onWhatsApp={() => { setWaPaciente(selected); setWaCita(null); }} clinica={nombreClinica} onAgendar={() => setAgendarPara(selected)}
             onRegistrarSesion={() => setRegistrandoSesion(selected)} puedeRegistrar={usuario?.rol === "medico" || usuario?.rol === "admin"}
             onVenderPaquete={() => setVendiendoPaquete(selected)} puedeVenderPaquete={usuario?.rol === "asistente" || usuario?.rol === "admin"}
@@ -1178,6 +1242,8 @@ export default function ClinicaApp() {
         {view === "hojas" && <HojasExcel showToast={showToast} onCambio={cargarDatos} />}
 
         {view === "profesionales" && <Profesionales showToast={showToast} esAdmin={usuario?.rol === "admin"} />}
+
+        {view === "herramientas" && <Recursos showToast={showToast} esAdmin={usuario?.rol === "admin"} />}
 
         {view === "mensajes" && <Mensajes mensajes={mensajes} esAdmin={usuario?.rol === "admin"} showToast={showToast} />}
 
@@ -1887,7 +1953,9 @@ function HojaEditable({ formato, showToast, onSaved }) {
 function Hoy({ proximas, citasHoy, porConfirmar, atendidas, onOpen, onGo, onRetencion, cumple, esAdmin }) {
   const [r, setR] = useState(null);
   const [legalRec, setLegalRec] = useState(null);
+  const [recordatorios, setRecordatorios] = useState([]);
   useEffect(() => { api.hoy().then(setR).catch(() => {}); }, []);
+  useEffect(() => { api.recursos("recordatorio").then((rs) => setRecordatorios((rs || []).filter((x) => x.activo))).catch(() => {}); }, []);
   useEffect(() => {
     if (!esAdmin) return;
     api.profesionales().then((ps) => {
@@ -1913,6 +1981,27 @@ function Hoy({ proximas, citasHoy, porConfirmar, atendidas, onOpen, onGo, onRete
     <>
       <h1 className="ca-h1">{saludo}</h1>
       <div className="ca-sub">{labelLargo(HOY_ISO)} · Aquí está tu día, sin sorpresas.</div>
+
+      {recordatorios.length > 0 && (
+        <div className="ca-card" style={{ marginTop: 14, borderColor: "#F0E4C9", background: "#FDFAF1" }}>
+          <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 10, display: "flex", alignItems: "center", gap: 7 }}>
+            <Bell size={15} strokeWidth={2} style={{ color: "#B0822F" }} /> Recordatorios del equipo
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {recordatorios.map((rc) => (
+              <div key={rc.id} style={{ display: "flex", gap: 9, alignItems: "flex-start" }}>
+                <span style={{ fontSize: 15, lineHeight: 1.3 }}>{rc.fijado ? "📌" : "•"}</span>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 13.8, fontWeight: 600 }}>{rc.titulo}{rc.categoria ? <span style={{ marginLeft: 8, fontSize: 11.5, fontWeight: 600, padding: "1px 8px", borderRadius: 999, background: "#F1E8CF", color: "#8A6D2E" }}>{rc.categoria}</span> : null}</div>
+                  {rc.descripcion && <div style={{ fontSize: 13, color: "var(--ink-soft)", whiteSpace: "pre-wrap", lineHeight: 1.5, marginTop: 2 }}>{rc.descripcion}</div>}
+                  {rc.link && <a href={rc.link} target="_blank" rel="noreferrer" style={{ fontSize: 12.5, color: "var(--accent)", fontWeight: 600, display: "inline-flex", alignItems: "center", gap: 4, marginTop: 3 }}><ExternalLink size={12} strokeWidth={2} /> Abrir</a>}
+                </div>
+              </div>
+            ))}
+          </div>
+          {esAdmin && <button className="ca-mini" style={{ marginTop: 12 }} onClick={() => onGo("herramientas")}><Pencil size={13} strokeWidth={2} /> Gestionar recordatorios</button>}
+        </div>
+      )}
 
       {esAdmin && legalTotal > 0 && (
         <button onClick={() => onGo("legal")} className="ca-card" style={{ width: "100%", textAlign: "left", cursor: "pointer", marginTop: 14, borderColor: "#EAD9F2", background: "#FBF7FE", display: "flex", alignItems: "center", gap: 10 }}>
@@ -2055,7 +2144,7 @@ function AdjuntoRow({ a, puedeEliminar, onEliminar }) {
   );
 }
 
-function Ficha({ p, onBack, onEdit, onWhatsApp, onSubirAdjunto, onEliminarAdjunto, puedeEliminar, clinica, onAgendar, onRegistrarSesion, puedeRegistrar, onVenderPaquete, puedeVenderPaquete, onRegistrarPago, puedeCobrar }) {
+function Ficha({ p, onBack, onEdit, onWhatsApp, onSubirAdjunto, onEliminarAdjunto, puedeEliminar, clinica, onAgendar, onRegistrarSesion, puedeRegistrar, onVenderPaquete, puedeVenderPaquete, onRegistrarPago, puedeCobrar, esMedico }) {
   return (
     <div>
       <button className="ca-back" onClick={onBack}><ChevronLeft size={16} strokeWidth={2} /> Pacientes</button>
@@ -2067,7 +2156,7 @@ function Ficha({ p, onBack, onEdit, onWhatsApp, onSubirAdjunto, onEliminarAdjunt
         </div>
         {puedeRegistrar && <button className="ca-mini" onClick={onRegistrarSesion}><Activity size={13} strokeWidth={2} /> Registrar sesión</button>}
         <button className="ca-mini" onClick={onAgendar}><Calendar size={13} strokeWidth={2} /> Agendar</button>
-        <button className="ca-mini wa" onClick={onWhatsApp}><MessageCircle size={13} strokeWidth={2} /> WhatsApp</button>
+        {!esMedico && <button className="ca-mini wa" onClick={onWhatsApp}><MessageCircle size={13} strokeWidth={2} /> WhatsApp</button>}
         <button className="ca-mini" onClick={() => imprimirHistoria(p, clinica)}><FileText size={13} strokeWidth={2} /> Imprimir</button>
         <button className="ca-mini" onClick={onEdit}><Pencil size={13} strokeWidth={2} /> Editar</button>
       </div>
@@ -2079,7 +2168,7 @@ function Ficha({ p, onBack, onEdit, onWhatsApp, onSubirAdjunto, onEliminarAdjunt
         {(p.frecuencia_label || p.modalidad_label) && <div className="ca-field"><Clock size={15} strokeWidth={1.9} style={{ color: "var(--muted)" }} /> {[p.frecuencia_label, p.modalidad_label].filter(Boolean).join(" · ")}</div>}
         <div className="ca-field"><Cake size={15} strokeWidth={1.9} style={{ color: "var(--muted)" }} /> {p.edad != null ? `${p.edad} años` : "Edad no registrada"}{p.genero_label ? ` · ${p.genero_label}` : ""}</div>
         {p.numero_documento && <div className="ca-field"><FileText size={15} strokeWidth={1.9} style={{ color: "var(--muted)" }} /> {p.tipo_documento_label} {p.numero_documento}</div>}
-        <div className="ca-field"><Phone size={15} strokeWidth={1.9} style={{ color: "var(--muted)" }} /> {p.tel || "Sin teléfono"}</div>
+        {p.tel && <div className="ca-field"><Phone size={15} strokeWidth={1.9} style={{ color: "var(--muted)" }} /> {p.tel}</div>}
         {p.direccion && <div className="ca-field"><MapPin size={15} strokeWidth={1.9} style={{ color: "var(--muted)" }} /> {p.direccion}</div>}
         {p.tutor_nombre && <div className="ca-field"><Users size={15} strokeWidth={1.9} style={{ color: "var(--muted)" }} /> Tutor: {p.tutor_nombre}{p.tutor_parentesco ? ` (${p.tutor_parentesco})` : ""}{p.tutor_telefono ? ` · ${p.tutor_telefono}` : ""}</div>}
         <div className="ca-field"><Clock size={15} strokeWidth={1.9} style={{ color: "var(--muted)" }} /> Última visita: {p.ultima}</div>
@@ -2660,18 +2749,29 @@ function Agenda({ citas, bloqueos = [], fecha, setFecha, vista, setVista, esAsis
   }, [medicosDir, citas, filtroSede]);
   const horariosPorNombre = useMemo(() => Object.fromEntries(medicosDir.map((m) => [m.nombre, m.horario || {}])), [medicosDir]);
   const semana = vista === "semana" ? semanaDe(fecha) : null;
+  const dias = vista === "mes" ? mesDe(fecha) : null;
+  const mesActual = vista === "mes" ? dDeISO(fecha).getMonth() : null;
   const delDia = (iso) => citas
     .filter((c) => c.fecha === iso && (!filtroMedico || c.medico === filtroMedico) && (!filtroSede || c.sede === filtroSede))
     .sort((a, b) => a.hora.localeCompare(b.hora));
   const visibles = vista === "semana"
     ? citas.filter((c) => semana.includes(c.fecha) && (!filtroMedico || c.medico === filtroMedico) && (!filtroSede || c.sede === filtroSede))
+    : vista === "mes"
+    ? citas.filter((c) => dias.includes(c.fecha) && dDeISO(c.fecha).getMonth() === mesActual && (!filtroMedico || c.medico === filtroMedico) && (!filtroSede || c.sede === filtroSede))
     : delDia(fecha);
   const activas = visibles.filter((c) => c.estado !== "cancelada");
   // Resumen de cuántas citas hay en cada estado (del día/semana mostrado).
   const resumen = ESTADOS_CITA.map((e) => ({ ...e, n: visibles.filter((c) => c.estado === e.v).length })).filter((e) => e.n > 0);
+  // Resumen por tipo de servicio (no cuenta canceladas).
+  const resumenTipos = Object.entries(
+    visibles.filter((c) => c.estado !== "cancelada").reduce((acc, c) => { const k = c.especialidad || "Sin tipo"; acc[k] = (acc[k] || 0) + 1; return acc; }, {})
+  ).sort((a, b) => b[1] - a[1]);
   const bloqueosDia = bloqueos.filter((b) => b.fecha === fecha).sort((a, b) => a.hora_inicio.localeCompare(b.hora_inicio));
-  const subt = vista === "semana" ? `${labelNumMes(semana[0])} – ${labelNumMes(semana[6])}` : labelLargo(fecha);
+  const subt = vista === "semana" ? `${labelNumMes(semana[0])} – ${labelNumMes(semana[6])}`
+    : vista === "mes" ? labelMes(fecha) : labelLargo(fecha);
   const paso = vista === "semana" ? 7 : 1;
+  const irAtras = () => setFecha(vista === "mes" ? sumarMeses(fecha, -1) : sumarDias(fecha, -paso));
+  const irAdelante = () => setFecha(vista === "mes" ? sumarMeses(fecha, 1) : sumarDias(fecha, paso));
 
   return (
     <>
@@ -2692,9 +2792,9 @@ function Agenda({ citas, bloqueos = [], fecha, setFecha, vista, setVista, esAsis
 
       <div className="ca-agnav">
         <div className="ca-navgrp">
-          <button className="ca-navbtn" onClick={() => setFecha(sumarDias(fecha, -paso))} aria-label="Anterior"><ChevronLeft size={16} strokeWidth={2.2} /></button>
+          <button className="ca-navbtn" onClick={irAtras} aria-label="Anterior"><ChevronLeft size={16} strokeWidth={2.2} /></button>
           <button className={`ca-navbtn ${fecha === HOY_ISO ? "on" : ""}`} onClick={() => setFecha(HOY_ISO)}>Hoy</button>
-          <button className="ca-navbtn" onClick={() => setFecha(sumarDias(fecha, paso))} aria-label="Siguiente"><ChevronLeft size={16} strokeWidth={2.2} style={{ transform: "rotate(180deg)" }} /></button>
+          <button className="ca-navbtn" onClick={irAdelante} aria-label="Siguiente"><ChevronLeft size={16} strokeWidth={2.2} style={{ transform: "rotate(180deg)" }} /></button>
         </div>
         <input className="ca-datein" type="date" value={fecha} onChange={(e) => e.target.value && setFecha(e.target.value)} />
         {/* El psicólogo solo ve SU agenda: sin filtros de sede/psicólogo ni vista de todos. */}
@@ -2715,6 +2815,7 @@ function Agenda({ citas, bloqueos = [], fecha, setFecha, vista, setVista, esAsis
           <button className={vista === "dia" ? "on" : ""} onClick={() => setVista("dia")}>Día</button>
           {!esMedico && <button className={vista === "terapeutas" ? "on" : ""} onClick={() => setVista("terapeutas")}>Terapeutas</button>}
           <button className={vista === "semana" ? "on" : ""} onClick={() => setVista("semana")}>Semana</button>
+          <button className={vista === "mes" ? "on" : ""} onClick={() => setVista("mes")}>Mes</button>
         </div>
       </div>
 
@@ -2724,6 +2825,17 @@ function Agenda({ citas, bloqueos = [], fecha, setFecha, vista, setVista, esAsis
             <span key={e.v} style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 12.5, fontWeight: 600,
               padding: "3px 10px", borderRadius: 999, background: (STATUS[e.v] || {}).bg, color: (STATUS[e.v] || {}).fg }}>
               {e.l}: {e.n}
+            </span>
+          ))}
+        </div>
+      )}
+      {resumenTipos.length > 0 && (
+        <div style={{ display: "flex", gap: 7, flexWrap: "wrap", margin: "0 0 6px", alignItems: "center" }}>
+          <span style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>Por tipo:</span>
+          {resumenTipos.map(([tipo, n]) => (
+            <span key={tipo} style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 12.5, fontWeight: 600,
+              padding: "3px 10px", borderRadius: 999, background: (SPECIALTY[tipo]?.bg) || "#EFEDE8", color: (SPECIALTY[tipo]?.fg) || "#7C7870" }}>
+              {(SPECIALTY[tipo]?.dot) || ""} {n} {tipo}
             </span>
           ))}
         </div>
@@ -2752,6 +2864,34 @@ function Agenda({ citas, bloqueos = [], fecha, setFecha, vista, setVista, esAsis
         </div>
       ) : vista === "terapeutas" ? (
         <TerapeutasGrid citas={delDia(fecha)} terapeutas={filtroMedico ? [filtroMedico] : medicos} horarios={horariosPorNombre} fecha={fecha} onAbrirCita={onAbrirCita} />
+      ) : vista === "mes" ? (
+        <div className="ca-mes">
+          <div className="ca-mes-hd">
+            {["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"].map((d) => <div key={d}>{d}</div>)}
+          </div>
+          <div className="ca-mes-grid">
+            {dias.map((iso) => {
+              const delMes = dDeISO(iso).getMonth() === mesActual;
+              const dc = delDia(iso).filter((c) => c.estado !== "cancelada");
+              return (
+                <div key={iso} className={`ca-mes-cel ${delMes ? "" : "off"} ${iso === HOY_ISO ? "hoy" : ""}`}
+                  onClick={() => { setFecha(iso); setVista("dia"); }} title={dc.length ? `${dc.length} sesiones` : ""}>
+                  <div className="d">{dDeISO(iso).getDate()}</div>
+                  {dc.slice(0, 3).map((c) => {
+                    const col = STATUS[c.estado] || STATUS.por_confirmar;
+                    return (
+                      <div key={c.id} className="ca-mes-evt" style={{ background: col.bg, color: col.fg }}
+                        title={`${c.hora} · ${c.paciente} · ${c.especialidad}`}>
+                        {c.hora} {c.paciente}
+                      </div>
+                    );
+                  })}
+                  {dc.length > 3 && <div className="ca-mes-mas">+{dc.length - 3} más</div>}
+                </div>
+              );
+            })}
+          </div>
+        </div>
       ) : (
         <div className="ca-wk">
           {semana.map((iso) => (
@@ -2952,6 +3092,18 @@ function AtenderModal({ cita, servicios, onClose, onSave }) {
     }
   }
 
+  // Inserta el código DP estandarizado en la nota (campo "próximos pasos" si existe;
+  // si no, en el último campo del tipo activo).
+  function insertarDP(codigo, label) {
+    const target = (fichaCampos.find((c) => c.k === "proximos_pasos") || fichaCampos[fichaCampos.length - 1] || {}).k;
+    if (!target) return;
+    const texto = `${codigo} | ${label}. `;
+    setCampos((p) => {
+      const prev = (p[target] || "").replace(/\s*$/, "");
+      return { ...p, [target]: prev ? prev + "\n" + texto : texto };
+    });
+  }
+
   function guardar() {
     // Solo se guardan los campos del tipo activo (los demás van vacíos: sin mezcla entre tipos).
     const datos = { tipo };
@@ -2999,6 +3151,21 @@ function AtenderModal({ cita, servicios, onClose, onSave }) {
           <div className="ca-label">Tipo de documento</div>
           <select className="ca-input" value={tipo} onChange={(e) => setTipo(e.target.value)}>
             {TIPOS_HC.map((t) => <option key={t.v} value={t.v}>{t.l}</option>)}
+          </select>
+        </div>
+
+        {/* Guía de notas: Decisión del Paciente (DP). Estandariza el registro. */}
+        <div style={{ marginBottom: 14 }}>
+          <div className="ca-label" style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <FileText size={13} strokeWidth={2} style={{ color: "var(--accent)" }} /> Decisión del paciente (DP) — insertar en la nota
+          </div>
+          <select className="ca-input" value="" onChange={(e) => { if (e.target.value) { const [c, l] = e.target.value.split("|::|"); insertarDP(c, l); } }}>
+            <option value="">Elige un código para insertarlo…</option>
+            {DP_CODES.map((g) => (
+              <optgroup key={g.cat} label={g.cat}>
+                {g.items.map((it) => <option key={it.c} value={`${it.c}|::|${it.l}`}>{it.c} · {it.l}</option>)}
+              </optgroup>
+            ))}
           </select>
         </div>
 
@@ -3997,6 +4164,117 @@ const SUGERENCIA_ESTADO_COLOR = {
   vista: { bg: "#E7EEF6", fg: "#3D5C82" },
   atendida: { bg: "#E4F3E8", fg: "#1E7D45" },
 };
+
+// Herramientas para pacientes + Tips para el psicólogo. La gerencia los edita;
+// el equipo (incluido el psicólogo) solo los consulta. Reemplaza el acceso a
+// Profesionales para el rol psicólogo.
+const RECURSO_TABS = [
+  { v: "herramienta", l: "Herramientas para pacientes", icon: FolderOpen, hint: "Materiales, guías y enlaces para compartir con los pacientes." },
+  { v: "tip", l: "Tips para el psicólogo", icon: Lightbulb, hint: "Buenas prácticas clínicas y de gestión para el equipo." },
+  { v: "recordatorio", l: "Recordatorios del equipo", icon: Bell, hint: "Avisos de gerencia (capacitación, supervisión, NPS…) que salen en el inicio del equipo.", soloAdmin: true },
+];
+
+function Recursos({ showToast, esAdmin }) {
+  const tabs = RECURSO_TABS.filter((t) => !t.soloAdmin || esAdmin);
+  const [tipo, setTipo] = useState("herramienta");
+  const [lista, setLista] = useState(null);
+  const [editando, setEditando] = useState(null); // objeto recurso o {tipo} nuevo
+  const meta = RECURSO_TABS.find((t) => t.v === tipo);
+
+  function cargar() { setLista(null); api.recursos(tipo).then(setLista).catch(() => setLista([])); }
+  useEffect(() => { cargar(); }, [tipo]);
+
+  async function guardar(data) {
+    try {
+      if (data.id) await api.actualizarRecurso(data.id, data);
+      else await api.crearRecurso({ ...data, tipo });
+      setEditando(null); showToast("Guardado ✓"); cargar();
+    } catch (e) { showToast("Error: " + e.message); }
+  }
+  async function borrar(r) {
+    if (!window.confirm(`¿Eliminar "${r.titulo}"?`)) return;
+    try { await api.borrarRecurso(r.id); setLista((l) => l.filter((x) => x.id !== r.id)); showToast("Eliminado"); }
+    catch (e) { showToast("Error: " + e.message); }
+  }
+  async function toggleActivo(r) {
+    try { await api.actualizarRecurso(r.id, { activo: !r.activo }); setLista((l) => l.map((x) => (x.id === r.id ? { ...x, activo: !r.activo } : x))); }
+    catch (e) { showToast("Error: " + e.message); }
+  }
+
+  return (
+    <div>
+      <div className="ca-tophead">
+        <div><h1 className="ca-h1">Herramientas</h1><div className="ca-sub">{meta.hint}</div></div>
+        {esAdmin && <button className="ca-btn" onClick={() => setEditando({ tipo, titulo: "", descripcion: "", link: "", categoria: "", fijado: false, activo: true })}><Plus size={16} strokeWidth={2.2} /> Agregar</button>}
+      </div>
+
+      <div className="ca-seg" style={{ marginTop: 4 }}>
+        {tabs.map((t) => (
+          <button key={t.v} className={tipo === t.v ? "on" : ""} onClick={() => setTipo(t.v)}>{t.l}</button>
+        ))}
+      </div>
+
+      {!lista ? <div className="ca-empty" style={{ marginTop: 18 }}>Cargando…</div> :
+        lista.length === 0 ? <div className="ca-empty" style={{ marginTop: 18 }}>Aún no hay {meta.l.toLowerCase()}.{esAdmin ? " Usa «Agregar» para publicar el primero." : ""}</div> : (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(280px,1fr))", gap: 12, marginTop: 18 }}>
+            {lista.map((r) => (
+              <div key={r.id} className="ca-card" style={{ opacity: r.activo ? 1 : 0.55, display: "flex", flexDirection: "column", gap: 6 }}>
+                <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
+                  <meta.icon size={17} strokeWidth={2} style={{ color: "var(--accent)", flexShrink: 0, marginTop: 1 }} />
+                  <div style={{ fontWeight: 600, fontSize: 14.5, lineHeight: 1.35, flex: 1 }}>{r.titulo}</div>
+                  {!r.activo && <span style={{ fontSize: 10.5, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase" }}>Oculto</span>}
+                </div>
+                {r.categoria && <span style={{ alignSelf: "flex-start", fontSize: 11.5, fontWeight: 600, padding: "2px 9px", borderRadius: 999, background: "#EEF2EC", color: "#4B6B4E" }}>{r.categoria}</span>}
+                {r.descripcion && <div style={{ fontSize: 13, color: "var(--ink-soft)", whiteSpace: "pre-wrap", lineHeight: 1.5 }}>{r.descripcion}</div>}
+                <div style={{ display: "flex", gap: 8, marginTop: "auto", paddingTop: 6, flexWrap: "wrap" }}>
+                  {r.link && <a className="ca-mini" href={r.link} target="_blank" rel="noreferrer"><ExternalLink size={13} strokeWidth={2} /> Abrir</a>}
+                  {esAdmin && <button className="ca-mini" onClick={() => setEditando(r)}><Pencil size={13} strokeWidth={2} /> Editar</button>}
+                  {esAdmin && <button className="ca-mini" onClick={() => toggleActivo(r)}>{r.activo ? "Ocultar" : "Mostrar"}</button>}
+                  {esAdmin && <button className="ca-mini danger" onClick={() => borrar(r)}><Trash2 size={13} strokeWidth={2} /></button>}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+      {editando && <RecursoModal rec={editando} tabLabel={meta.l} onClose={() => setEditando(null)} onGuardar={guardar} />}
+    </div>
+  );
+}
+
+function RecursoModal({ rec, tabLabel, onClose, onGuardar }) {
+  const [f, setF] = useState({ titulo: rec.titulo || "", descripcion: rec.descripcion || "", link: rec.link || "", categoria: rec.categoria || "", fijado: !!rec.fijado, activo: rec.activo !== false });
+  const set = (k) => (e) => setF((p) => ({ ...p, [k]: e.target.value }));
+  return (
+    <div className="ca-modal-bg" onClick={onClose}>
+      <div className="ca-modal" onClick={(e) => e.stopPropagation()}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+          <strong style={{ fontSize: 16 }}>{rec.id ? "Editar" : "Nuevo"} · {tabLabel}</strong>
+          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)" }}><X size={18} /></button>
+        </div>
+        <div style={{ marginBottom: 12 }}><div className="ca-label">Título</div>
+          <input className="ca-input" value={f.titulo} onChange={set("titulo")} placeholder="Ej: Guía de respiración para la ansiedad" autoFocus /></div>
+        <div style={{ marginBottom: 12 }}><div className="ca-label">Descripción (opcional)</div>
+          <textarea className="ca-input" style={{ minHeight: 72, resize: "vertical", lineHeight: 1.5 }} value={f.descripcion} onChange={set("descripcion")} placeholder="¿Para qué sirve? ¿Cuándo usarlo?" /></div>
+        <div style={{ display: "flex", gap: 11, marginBottom: 14, flexWrap: "wrap" }}>
+          <div style={{ flex: 2, minWidth: 200 }}><div className="ca-label">Enlace (Drive, PDF, video…)</div>
+            <input className="ca-input" value={f.link} onChange={set("link")} placeholder="https://…" /></div>
+          <div style={{ flex: 1, minWidth: 140 }}><div className="ca-label">Categoría (opcional)</div>
+            <input className="ca-input" value={f.categoria} onChange={set("categoria")} placeholder={rec.tipo === "recordatorio" ? "Capacitación, NPS…" : "Ansiedad, Pareja…"} /></div>
+        </div>
+        {rec.tipo === "recordatorio" && (
+          <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13.5, color: "var(--ink-soft)", cursor: "pointer", marginBottom: 14 }}>
+            <input type="checkbox" checked={f.fijado} onChange={(e) => setF((p) => ({ ...p, fijado: e.target.checked }))} /> Fijar arriba en el inicio del equipo
+          </label>
+        )}
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+          <button className="ca-btn ghost" onClick={onClose}>Cancelar</button>
+          <button className="ca-btn" onClick={() => f.titulo.trim() ? onGuardar({ ...rec, ...f }) : null}>Guardar</button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function Buzon({ showToast, esAdmin }) {
   const [tab, setTab] = useState(esAdmin ? "bandeja" : "dejar");
