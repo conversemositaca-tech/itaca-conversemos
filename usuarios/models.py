@@ -127,6 +127,11 @@ class Profesional(ModeloTenant):
     # (1=Lunes … 6=Sábado) y el valor las horas (enteras, 0-23) en que atiende.
     horario_semanal = models.JSONField(default=dict, blank=True)
     frase = models.CharField(max_length=300, blank=True, default="")
+    # % de lo cobrado que le corresponde al psicólogo (liquidación de honorarios).
+    porcentaje_liquidacion = models.DecimalField(
+        "% de honorarios", max_digits=5, decimal_places=2, default=0,
+        help_text="Porcentaje de lo cobrado en sus sesiones que se le paga al psicólogo (ej: 40 = 40%).",
+    )
     foto = models.FileField(upload_to=ruta_foto_profesional, null=True, blank=True)
     usuario = models.OneToOneField(
         "usuarios.Usuario", on_delete=models.SET_NULL, related_name="ficha", null=True, blank=True,

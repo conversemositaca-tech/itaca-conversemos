@@ -573,6 +573,7 @@ export default function ClinicaApp() {
     ...((usuario?.rol === "admin" || usuario?.rol === "comercial" || usuario?.rol === "asistente") ? [{ id: "marketing", label: "Marketing", icon: Megaphone }] : []),
     // Finanzas: solo gerencia.
     ...(usuario?.rol === "admin" ? [{ id: "finanzas", label: "Finanzas", icon: TrendingUp }] : []),
+    ...(usuario?.rol === "admin" ? [{ id: "liquidacion", label: "Liquidación", icon: Receipt }] : []),
     ...(usuario?.rol === "admin" ? [{ id: "equipo", label: "Equipo", icon: UserCog }] : []),
     ...(usuario?.rol === "admin" ? [{ id: "legal", label: "Legal", icon: FileText }] : []),
     ...(usuario?.rol === "admin" ? [{ id: "whatsapp", label: "Conexión WhatsApp", icon: MessageCircle }] : []),
@@ -848,6 +849,7 @@ export default function ClinicaApp() {
         .ca-table th { text-align:left; font-weight:600; color:var(--muted); font-size:12px; padding:7px 10px; border-bottom:1px solid var(--line); white-space:nowrap; }
         .ca-table td { padding:8px 10px; border-bottom:1px solid var(--line); }
         .ca-table tr:last-child td { border-bottom:none; }
+        .ca-table .num { text-align:right; font-variant-numeric:tabular-nums; }
         .ca-demo { display:grid; grid-template-columns:1fr 1fr; gap:18px; }
         @media (max-width:760px){ .ca-demo { grid-template-columns:1fr; } }
         .ca-stat { flex:1; min-width:130px; background:var(--surface); border:1px solid var(--line);
@@ -1250,6 +1252,8 @@ export default function ClinicaApp() {
         {view === "marketing" && <Marketing showToast={showToast} onConvertir={refrescarPacientes} esAdmin={usuario?.rol === "admin"} />}
 
         {view === "finanzas" && <Finanzas showToast={showToast} esAdmin={usuario?.rol === "admin"} />}
+
+        {view === "liquidacion" && <Liquidacion showToast={showToast} />}
 
         {adding && <AgendarModal pacientes={pacientes} fechaInicial={agendaFecha} onClose={() => setAdding(false)} onSave={agendarCita} />}
         {agendarPara && (
@@ -4756,6 +4760,104 @@ function ConsolidadoSoto({ showToast }) {
   );
 }
 
+// Liquidación de honorarios: cuánto pagar a cada psicólogo según el % de lo
+// cobrado en sus sesiones, en un rango de fechas. Solo gerencia.
+function Liquidacion({ showToast }) {
+  const primerDia = HOY_ISO.slice(0, 8) + "01";
+  const [desde, setDesde] = useState(primerDia);
+  const [hasta, setHasta] = useState(HOY_ISO);
+  const [data, setData] = useState(null);
+  const [cargando, setCargando] = useState(true);
+
+  useEffect(() => {
+    if (!desde || !hasta) return;
+    setCargando(true);
+    api.liquidacion(desde, hasta).then(setData).catch((e) => showToast("Error: " + e.message)).finally(() => setCargando(false));
+  }, [desde, hasta]);
+
+  const filas = data?.filas || [];
+
+  return (
+    <div>
+      <div className="ca-tophead">
+        <div>
+          <h1 className="ca-h1">Liquidación de honorarios</h1>
+          <div className="ca-sub">Cuánto pagar a cada psicólogo · % de lo cobrado en sus sesiones</div>
+        </div>
+        <ExportBtns nombre={`liquidacion_${desde}_a_${hasta}`} titulo={`Liquidación · ${desde} a ${hasta}`} disabled={filas.length === 0}
+          headers={["Psicologo", "% honorarios", "Sesiones cobradas", "Cobrado (S/)", "A pagar (S/)"]}
+          filas={filas.map((f) => [f.nombre, f.porcentaje, f.cobros, f.cobrado, f.a_pagar])} />
+      </div>
+
+      <div className="ca-agnav" style={{ justifyContent: "flex-end", flexWrap: "wrap", gap: 10 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <input className="ca-input" style={{ width: "auto" }} type="date" value={desde} max={hasta || undefined} onChange={(e) => setDesde(e.target.value)} title="Desde" />
+          <span style={{ color: "var(--muted)" }}>–</span>
+          <input className="ca-input" style={{ width: "auto" }} type="date" value={hasta} min={desde || undefined} onChange={(e) => setHasta(e.target.value)} title="Hasta" />
+        </div>
+      </div>
+
+      {!data ? (
+        <div className="ca-empty">{cargando ? "Cargando…" : "Sin datos."}</div>
+      ) : filas.length === 0 ? (
+        <div className="ca-empty">No hay cobros pagados en este rango.</div>
+      ) : (
+        <>
+          <div className="ca-glance" style={{ marginBottom: 16 }}>
+            <div className="ca-gcard" style={{ cursor: "default" }}>
+              <div className="ca-ghead"><TrendingUp size={14} strokeWidth={2} /> Total cobrado</div>
+              <div className="ca-gmain">{money(data.total_cobrado)}</div>
+              <div className="ca-gsub">en el rango seleccionado</div>
+            </div>
+            <div className="ca-gcard" style={{ cursor: "default", borderColor: "#EAD9F2", background: "#FBF7FE" }}>
+              <div className="ca-ghead" style={{ color: "#6B4E96" }}><Receipt size={14} strokeWidth={2} /> Total a pagar</div>
+              <div className="ca-gmain">{money(data.total_a_pagar)}</div>
+              <div className="ca-gsub">honorarios de psicólogos</div>
+            </div>
+          </div>
+
+          <div className="ca-card" style={{ padding: 0, overflow: "hidden" }}>
+            <table className="ca-table">
+              <thead>
+                <tr>
+                  <th>Psicólogo</th>
+                  <th className="num">% honorarios</th>
+                  <th className="num">Sesiones cobradas</th>
+                  <th className="num">Cobrado</th>
+                  <th className="num">A pagar</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filas.map((f) => (
+                  <tr key={f.medico_id || "sin"}>
+                    <td>{f.nombre}{f.medico_id && f.porcentaje === 0 ? <span style={{ marginLeft: 7, fontSize: 11.5, color: "#B0822F" }}>· sin % configurado</span> : null}</td>
+                    <td className="num">{f.porcentaje}%</td>
+                    <td className="num">{f.cobros}</td>
+                    <td className="num">{money(f.cobrado)}</td>
+                    <td className="num" style={{ fontWeight: 600 }}>{money(f.a_pagar)}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr style={{ fontWeight: 600, borderTop: "2px solid var(--line)" }}>
+                  <td>Total</td><td className="num"></td>
+                  <td className="num">{filas.reduce((a, f) => a + f.cobros, 0)}</td>
+                  <td className="num">{money(data.total_cobrado)}</td>
+                  <td className="num">{money(data.total_a_pagar)}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+          <div style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 12, display: "flex", gap: 7, alignItems: "flex-start", lineHeight: 1.5 }}>
+            <AlertTriangle size={14} strokeWidth={2} style={{ color: "#B0822F", flexShrink: 0, marginTop: 1 }} />
+            <span>Solo cuenta cobros <strong>pagados</strong>, atribuidos al psicólogo de la cita o de la atención. El % se configura en la ficha de cada profesional.</span>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 function Finanzas({ showToast, esAdmin }) {
   const [periodo, setPeriodo] = useState("mes");
   const [sede, setSede] = useState("");
@@ -5521,6 +5623,7 @@ function ProfesionalModal({ prof, onClose, onSave }) {
     problematicas: prof?.problematicas || "", formacion: prof?.formacion || "", trayectoria: prof?.trayectoria || "",
     frase: prof?.frase || "", activo: prof?.activo ?? true,
     horas_disponibles: prof?.horas_disponibles ?? 0,
+    porcentaje_liquidacion: prof?.porcentaje_liquidacion ?? 0,
     horario_semanal: prof?.horario_semanal || {},
   });
   const [foto, setFoto] = useState(null);
@@ -5555,6 +5658,7 @@ function ProfesionalModal({ prof, onClose, onSave }) {
           <div style={{ flex: 1 }}><div className="ca-label">Sede</div><select className="ca-input" value={f.sede} onChange={set("sede")}>{SEDES.map((s) => <option key={s.v} value={s.v}>{s.l}</option>)}</select></div>
           <div style={{ flex: 1 }}><div className="ca-label">Modalidad</div><select className="ca-input" value={f.modalidad} onChange={set("modalidad")}>{MODALIDADES.map((m) => <option key={m.v} value={m.v}>{m.l}</option>)}</select></div>
           <div style={{ width: 90 }}><div className="ca-label">Horas/sem</div><input className="ca-input" value={f.horas_disponibles} onChange={(e) => setF((prev) => ({ ...prev, horas_disponibles: e.target.value.replace(/[^\d]/g, "") }))} inputMode="numeric" /></div>
+          <div style={{ width: 100 }}><div className="ca-label" title="Porcentaje de lo cobrado que se le paga">% honorarios</div><input className="ca-input" value={f.porcentaje_liquidacion} onChange={(e) => setF((prev) => ({ ...prev, porcentaje_liquidacion: e.target.value.replace(/[^\d.]/g, "") }))} inputMode="decimal" placeholder="40" /></div>
         </div>
         <div style={{ marginBottom: 12 }}><div className="ca-label">Enfoque</div><textarea className="ca-input" style={ta} value={f.enfoque} onChange={set("enfoque")} placeholder="Psicoterapeuta clínica con enfoque…" /></div>
         <div style={{ marginBottom: 12 }}><div className="ca-label">Poblaciones que atiende</div><input className="ca-input" value={f.poblaciones} onChange={set("poblaciones")} placeholder="Niños, adolescentes, adultos, parejas" /></div>
@@ -5599,7 +5703,7 @@ function ProfesionalModal({ prof, onClose, onSave }) {
         <div style={{ display: "flex", gap: 9, justifyContent: "flex-end" }}>
           <button className="ca-btn ghost" onClick={onClose}>Cancelar</button>
           <button className="ca-btn" style={{ opacity: canSave ? 1 : 0.5, pointerEvents: canSave ? "auto" : "none" }}
-            onClick={() => onSave({ ...(prof?.id ? { id: prof.id } : {}), ...f, nombre: f.nombre.trim(), horas_disponibles: Number(f.horas_disponibles) || 0 }, foto)}>Guardar</button>
+            onClick={() => onSave({ ...(prof?.id ? { id: prof.id } : {}), ...f, nombre: f.nombre.trim(), horas_disponibles: Number(f.horas_disponibles) || 0, porcentaje_liquidacion: Number(f.porcentaje_liquidacion) || 0 }, foto)}>Guardar</button>
         </div>
       </div>
     </div>

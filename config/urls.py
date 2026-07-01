@@ -21,6 +21,7 @@ from finanzas.api import (
     SotoPruebaView,
     SotoResumenView,
 )
+from finanzas.liquidacion import LiquidacionView
 from leads.api import AnuncioViewSet, LeadViewSet
 from leads.captacion import (
     CaptacionConfigView,
@@ -81,6 +82,7 @@ urlpatterns = [
     path("api/clinica/", ClinicaConfigView.as_view(), name="clinica-config"),
     path("api/gerencia/resumen/", GerenciaResumenView.as_view(), name="gerencia-resumen"),
     path("api/finanzas/caja/", CajaView.as_view(), name="finanzas-caja"),
+    path("api/finanzas/liquidacion/", LiquidacionView.as_view(), name="finanzas-liquidacion"),
     # WhatsApp Cloud API (Meta): configuración (admin) + webhook público de Meta.
     path("api/whatsapp/config/", WhatsappConfigView.as_view(), name="whatsapp-config"),
     path("api/webhook/whatsapp", WhatsappWebhookView.as_view(), name="whatsapp-webhook"),

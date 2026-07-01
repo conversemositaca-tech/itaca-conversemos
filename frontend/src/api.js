@@ -233,6 +233,8 @@ export const api = {
   crearEgreso: (data) => req("/api/egresos/", { method: "POST", body: JSON.stringify(data) }),
   eliminarEgreso: (id) => req(`/api/egresos/${id}/`, { method: "DELETE" }),
   cajaFinanzas: (f) => req(`/api/finanzas/caja/?${finanzasQS(f)}`),
+  // Liquidación de honorarios por psicólogo (% de lo cobrado) en un rango
+  liquidacion: (desde, hasta) => req(`/api/finanzas/liquidacion/?desde=${desde}&hasta=${hasta}`),
   // Consolidado de Soto (tablero financiero externo)
   sotoResumen: (mes) => req(`/api/finanzas/soto/${mes ? `?mes=${mes}` : ""}`),
   sotoPrueba: () => req("/api/finanzas/soto/prueba/", { method: "POST" }),
