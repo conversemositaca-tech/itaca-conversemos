@@ -4978,6 +4978,7 @@ function Profesionales({ showToast, esAdmin }) {
                   <div style={{ display: "flex", gap: 6, marginTop: 5, flexWrap: "wrap" }}>
                     <Tag colors={{ bg: "var(--accent-soft)", fg: "var(--accent)" }}>{p.sede_label}</Tag>
                     <Tag colors={{ bg: "#EFEDE8", fg: "#7C7870" }}>{p.modalidad_label}</Tag>
+                    {p.horas_disponibles > 0 && <Tag colors={{ bg: "#E7EEF6", fg: "#3D5C82" }}>{p.horas_disponibles} h/sem</Tag>}
                     {!p.activo && <Tag colors={{ bg: "#F7E5E5", fg: "#9C4646" }}>Inactivo</Tag>}
                   </div>
                 </div>
