@@ -54,6 +54,8 @@ class Paciente(ModeloTenant):
         SEMANAL = "semanal", "Semanal"
         QUINCENAL = "quincenal", "Quincenal"
         ESPORADICO = "esporadico", "Esporádico"
+        EN_PAUSA = "en_pausa", "En pausa"
+        ALTA = "alta", "Alta"
 
     class ModalidadPref(models.TextChoices):
         PRESENCIAL = "presencial", "Presencial"

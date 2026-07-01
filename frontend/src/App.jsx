@@ -425,6 +425,7 @@ export default function ClinicaApp() {
   const [filterEsp, setFilterEsp] = useState(null);
   const [filterSede, setFilterSede] = useState(null);
   const [filterProf, setFilterProf] = useState("");
+  const [filterFrec, setFilterFrec] = useState("");
   const [soloSinProxima, setSoloSinProxima] = useState(false);
   const [selectedId, setSelectedId] = useState(null);
   const [adding, setAdding] = useState(false);
@@ -495,8 +496,9 @@ export default function ClinicaApp() {
       (!filterEsp || p.especialidad === filterEsp) &&
       (!filterSede || p.sede === filterSede) &&
       (!filterProf || p.profesional_nombre === filterProf) &&
+      (!filterFrec || p.frecuencia === filterFrec) &&
       (!soloSinProxima || !p.proxima));
-  }, [pacientes, query, filterEsp, filterSede, filterProf, soloSinProxima]);
+  }, [pacientes, query, filterEsp, filterSede, filterProf, filterFrec, soloSinProxima]);
 
   // Psicólogos presentes en la lista de pacientes (para el filtro).
   // Psicólogos del filtro: solo los que tienen pacientes en la sede elegida.
@@ -1107,6 +1109,14 @@ export default function ClinicaApp() {
                   {profsEnPacientes.map((n) => <option key={n} value={n}>{n}</option>)}
                 </select>
               )}
+              <select className="ca-input" style={{ width: "auto", padding: "6px 10px", marginLeft: 6 }} value={filterFrec} onChange={(e) => setFilterFrec(e.target.value)}>
+                <option value="">Todos los estados</option>
+                <option value="semanal">Semanal</option>
+                <option value="quincenal">Quincenal</option>
+                <option value="esporadico">Esporádico</option>
+                <option value="en_pausa">En pausa</option>
+                <option value="alta">Alta</option>
+              </select>
               <button className={`ca-fchip ${soloSinProxima ? "on" : ""}`} onClick={() => setSoloSinProxima((v) => !v)}
                 style={{ marginLeft: 6, color: soloSinProxima ? undefined : "#B0822F" }}>⏰ Sin próxima sesión</button>
             </div>
@@ -1125,6 +1135,8 @@ export default function ClinicaApp() {
                       <div className="ca-pmeta">{p.profesional_nombre ? `${p.profesional_nombre} · ` : ""}{meta || `última visita ${p.ultima}`}</div>
                     </div>
                     {p.cuenta?.pendiente > 0 && <Tag colors={ESTADO_COBRO_COLOR.pendiente}>Debe {money(p.cuenta.pendiente)}</Tag>}
+                    {p.frecuencia_label && <Tag colors={p.frecuencia === "alta" ? { bg: "#E7EEF6", fg: "#3D5C82" } : p.frecuencia === "en_pausa" ? { bg: "#FCF3D4", fg: "#8A6D14" } : { bg: "#E4F3E8", fg: "#1E7D45" }}>{p.frecuencia_label}</Tag>}
+                    {p.modalidad_label && <Tag colors={{ bg: "#EFEDE8", fg: "#7C7870" }}>{p.modalidad_label}</Tag>}
                     {p.sede_label && <Tag colors={p.sede === "piura" ? { bg: "#D7F4FA", fg: "#0A7D92" } : { bg: "#FBE9D6", fg: "#B5701F" }}>{p.sede_label}</Tag>}
                   </div>
                 );
@@ -3307,6 +3319,14 @@ function Marketing({ showToast, onConvertir, esAdmin }) {
   const [creando, setCreando] = useState(false);
   const [editandoLead, setEditandoLead] = useState(null);
   const [filtroSedeLead, setFiltroSedeLead] = useState("");
+  const [filtroEstadoLead, setFiltroEstadoLead] = useState("");
+  const [desdeLead, setDesdeLead] = useState("");
+  const [hastaLead, setHastaLead] = useState("");
+  const leadsFiltrados = leads.filter((l) =>
+    (!filtroSedeLead || l.sede === filtroSedeLead) &&
+    (!filtroEstadoLead || l.estado === filtroEstadoLead) &&
+    (!desdeLead || (l.creado_iso || "") >= desdeLead) &&
+    (!hastaLead || (l.creado_iso || "") <= hastaLead));
   const [pauta, setPauta] = useState({ sede: "lima", desde: "", hasta: "", data: null, cargando: false });
   const origen = window.location.origin;
 
@@ -3564,17 +3584,26 @@ function Marketing({ showToast, onConvertir, esAdmin }) {
       </div>
 
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap", marginTop: 30 }}>
-        <h2 className="ca-secth" style={{ marginTop: 0 }}>Leads ({leads.filter((l) => !filtroSedeLead || l.sede === filtroSedeLead).length})</h2>
-        <div className="ca-seg">
-          {[["", "Todas"], ["lima", "Lima"], ["piura", "Piura"]].map(([v, l]) => (
-            <button key={v || "todas"} className={filtroSedeLead === v ? "on" : ""} onClick={() => setFiltroSedeLead(v)}>{l}</button>
-          ))}
+        <h2 className="ca-secth" style={{ marginTop: 0 }}>Leads ({leadsFiltrados.length})</h2>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          <div className="ca-seg">
+            {[["", "Todas"], ["lima", "Lima"], ["piura", "Piura"]].map(([v, l]) => (
+              <button key={v || "todas"} className={filtroSedeLead === v ? "on" : ""} onClick={() => setFiltroSedeLead(v)}>{l}</button>
+            ))}
+          </div>
+          <select className="ca-input" style={{ width: "auto", padding: "6px 10px" }} value={filtroEstadoLead} onChange={(e) => setFiltroEstadoLead(e.target.value)}>
+            <option value="">Todos los estados</option>
+            {LEAD_ESTADOS.map((s) => <option key={s.v} value={s.v}>{s.l}</option>)}
+          </select>
+          <input className="ca-input" type="date" style={{ width: "auto", padding: "6px 8px" }} value={desdeLead} onChange={(e) => setDesdeLead(e.target.value)} title="Desde (fecha de llegada)" />
+          <input className="ca-input" type="date" style={{ width: "auto", padding: "6px 8px" }} value={hastaLead} onChange={(e) => setHastaLead(e.target.value)} title="Hasta" />
+          {(filtroEstadoLead || desdeLead || hastaLead) && <button className="ca-fchip" onClick={() => { setFiltroEstadoLead(""); setDesdeLead(""); setHastaLead(""); }}>Limpiar</button>}
         </div>
       </div>
-      {leads.filter((l) => !filtroSedeLead || l.sede === filtroSedeLead).length === 0 ? (
-        <div className="ca-empty">No hay leads{filtroSedeLead ? " en esta sede" : ". Capta el primero con el botón de arriba."}.</div>
+      {leadsFiltrados.length === 0 ? (
+        <div className="ca-empty">No hay leads con ese filtro.</div>
       ) : (
-        leads.filter((l) => !filtroSedeLead || l.sede === filtroSedeLead).map((lead) => {
+        leadsFiltrados.map((lead) => {
           const sem = LEAD_SEM[lead.semaforo];
           return (
           <div key={lead.id} className="ca-row" style={(lead.agendo_consulta === false || lead.recontacto_vencido) ? { borderLeft: "3px solid #D85656" } : undefined}>
@@ -3738,10 +3767,7 @@ function CrearLeadModal({ lead, medicos, anuncios, onClose, onSave }) {
         )}
         <div style={{ display: "flex", gap: 16, marginBottom: 12, flexWrap: "wrap" }}>
           <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13.5, color: "var(--ink-soft)", cursor: "pointer" }}>
-            <input type="checkbox" checked={f.es_pauta} onChange={setChk("es_pauta")} /> Vino de pauta (pagado)
-          </label>
-          <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13.5, color: "var(--ink-soft)", cursor: "pointer" }}>
-            <input type="checkbox" checked={f.es_pareja} onChange={setChk("es_pareja")} /> Consulta de pareja
+            <input type="checkbox" checked={f.es_pauta} onChange={setChk("es_pauta")} /> Vino de pauta (anuncio pagado)
           </label>
         </div>
         {f.es_pauta && (
@@ -6015,7 +6041,7 @@ function PacienteModal({ paciente, onClose, onSave }) {
           <div style={{ flex: 1 }}>
             <div className="ca-label">Frecuencia</div>
             <select className="ca-input" value={frecuencia} onChange={(e) => setFrecuencia(e.target.value)}>
-              <option value="">—</option><option value="semanal">Semanal</option><option value="quincenal">Quincenal</option><option value="esporadico">Esporádico</option>
+              <option value="">—</option><option value="semanal">Semanal</option><option value="quincenal">Quincenal</option><option value="esporadico">Esporádico</option><option value="en_pausa">En pausa</option><option value="alta">Alta</option>
             </select>
           </div>
           <div style={{ flex: 1 }}>

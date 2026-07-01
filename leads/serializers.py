@@ -43,7 +43,7 @@ class LeadSerializer(serializers.ModelSerializer):
             "medico", "medico_nombre", "estado", "estado_label", "motivo_perdida", "notas",
             "motivo_consulta", "resumen_conversacion", "objeciones", "observaciones",
             "ultimo_contacto", "dias_sin_contacto", "semaforo",
-            "paciente", "paciente_nombre", "creado",
+            "paciente", "paciente_nombre", "creado", "creado_iso",
         ]
         read_only_fields = ["paciente"]
 
@@ -67,6 +67,11 @@ class LeadSerializer(serializers.ModelSerializer):
 
     def get_creado(self, obj):
         return fecha_corta(timezone.localtime(obj.creado_en))
+
+    creado_iso = serializers.SerializerMethodField()
+
+    def get_creado_iso(self, obj):
+        return timezone.localtime(obj.creado_en).date().isoformat()
 
     def get_dias_sin_contacto(self, obj):
         ref = obj.ultimo_contacto or obj.creado_en
