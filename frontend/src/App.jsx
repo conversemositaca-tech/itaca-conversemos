@@ -966,10 +966,15 @@ export default function ClinicaApp() {
           padding:5px 13px; font-size:12.5px; font-weight:500; cursor:pointer; font-family:inherit; transition:background .12s, color .12s, border-color .12s; }
         .ca-fchip:hover { background:var(--hover); }
         .ca-fchip.on { background:var(--ink); color:#fff; border-color:var(--ink); }
-        .ca-toast { position:fixed; bottom:26px; left:50%; transform:translateX(-50%); background:#32302C; color:#fff;
-          padding:11px 18px; border-radius:10px; font-size:13.5px; font-weight:500; z-index:40;
-          box-shadow:0 8px 28px rgba(40,38,34,.28); display:flex; align-items:center; gap:8px; animation:caUp .22s ease; }
-        @keyframes caUp { from { opacity:0; transform:translate(-50%,8px); } to { opacity:1; transform:translate(-50%,0); } }
+        .ca-toast { position:fixed; bottom:30px; left:50%; transform:translateX(-50%); background:#fff; color:var(--ink);
+          padding:12px 20px 12px 13px; border-radius:14px; font-size:14.5px; font-weight:600; z-index:100;
+          box-shadow:0 12px 38px rgba(40,38,34,.20); display:flex; align-items:center; gap:11px; min-width:210px;
+          border:1px solid var(--line); animation:caUp .26s cubic-bezier(.2,.85,.25,1); }
+        .ca-toast .ca-toast-ic { width:28px; height:28px; border-radius:999px; display:flex; align-items:center;
+          justify-content:center; flex-shrink:0; color:#fff; }
+        .ca-toast.ok { border-color:#BFE6CE; } .ca-toast.ok .ca-toast-ic { background:#2F8F5B; }
+        .ca-toast.err { border-color:#F0C4BF; } .ca-toast.err .ca-toast-ic { background:#C9453B; }
+        @keyframes caUp { from { opacity:0; transform:translate(-50%,14px) scale(.96); } to { opacity:1; transform:translate(-50%,0) scale(1); } }
         @media (prefers-reduced-motion: reduce) { .ca-toast { animation:none; } }
         @media (max-width:720px) {
           .clinica-app { flex-direction:column; height:auto; }
@@ -1184,7 +1189,15 @@ export default function ClinicaApp() {
       </main>
 
       {cambiarPass && <CambiarPasswordModal onClose={() => setCambiarPass(false)} onSave={cambiarMiPassword} />}
-      {toast && <div className="ca-toast">{toast}</div>}
+      {toast && (() => {
+        const esError = /^error\b/i.test(toast);
+        return (
+          <div className={`ca-toast ${esError ? "err" : "ok"}`}>
+            <span className="ca-toast-ic">{esError ? <X size={16} strokeWidth={3} /> : <Check size={16} strokeWidth={3.2} />}</span>
+            <span>{toast.replace(/^Error:\s*/i, "").replace(/\s*✓\s*$/, "")}</span>
+          </div>
+        );
+      })()}
     </div>
   );
 }
