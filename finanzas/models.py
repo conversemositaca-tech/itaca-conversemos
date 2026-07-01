@@ -39,6 +39,7 @@ class Cobro(ModeloTenant):
         PLIN = "plin", "Plin"
         TARJETA = "tarjeta", "Tarjeta"
         TRANSFERENCIA = "transferencia", "Transferencia"
+        MERCADO_PAGO = "mercado_pago", "Mercado Pago"
 
     class Comprobante(models.TextChoices):
         BOLETA = "boleta", "Boleta"

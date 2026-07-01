@@ -1554,7 +1554,7 @@ const _op = (pares) => pares.map(([v, l]) => ({ v, l }));
 const OPC_FUENTE = _op([["instagram", "Instagram"], ["facebook", "Facebook"], ["tiktok", "TikTok"], ["referido", "Referido"], ["whatsapp", "WhatsApp"], ["bot", "Bot"], ["web", "Web"], ["agendapro", "AgendaPro"], ["derivado", "Derivado"], ["linkedin", "LinkedIn"], ["convenio", "Convenio"], ["otro", "Otro"]]);
 const OPC_ESTADO_LEAD = _op([["nuevo", "Nuevo"], ["contactado", "Contactado"], ["agendado", "Agendado"], ["no_realizada", "No realizada"], ["evaluando", "Evaluando"], ["pendiente_pago", "Pend. pago"], ["ganado", "Inició proceso"], ["perdido", "Perdido"]]);
 const OPC_ESTADO_COBRO = _op([["pagado", "Pagado"], ["pendiente", "Pendiente"], ["anulado", "Anulado"]]);
-const OPC_MEDIO = _op([["", "—"], ["efectivo", "Efectivo"], ["yape", "Yape"], ["plin", "Plin"], ["tarjeta", "Tarjeta"], ["transferencia", "Transferencia"]]);
+const OPC_MEDIO = _op([["", "—"], ["efectivo", "Efectivo"], ["yape", "Yape"], ["plin", "Plin"], ["tarjeta", "Tarjeta"], ["transferencia", "Transferencia"], ["mercado_pago", "Mercado Pago"]]);
 const OPC_CAT_EGRESO = _op([["insumos", "Insumos"], ["sueldos", "Sueldos"], ["alquiler", "Alquiler"], ["equipos", "Equipos"], ["marketing", "Marketing"], ["otro", "Otro"]]);
 const OPC_MODALIDAD = _op([["presencial", "Presencial"], ["virtual", "Virtual"], ["ambas", "Ambas"]]);
 
@@ -2238,6 +2238,7 @@ function AgendarModal({ pacientes, fechaInicial, pacienteFijo, onClose, onSave }
   const [enlace, setEnlace] = useState("");
   const [notas, setNotas] = useState("");
   const [error, setError] = useState("");
+  const [enviando, setEnviando] = useState(false);
   const [nSesion, setNSesion] = useState(
     pacienteFijo?.n_sesion != null ? String(pacienteFijo.n_sesion + 1) : ""
   );
@@ -2261,7 +2262,8 @@ function AgendarModal({ pacientes, fechaInicial, pacienteFijo, onClose, onSave }
   function elegirNuevo() { setNuevo(true); setSel(null); }
   function limpiar() { setSel(null); setNuevo(false); setBusca(""); }
 
-  function guardar() {
+  async function guardar() {
+    if (enviando) return;
     if (!sel && !(nuevo && busca.trim())) {
       setError("Selecciona un paciente: búscalo y haz clic en su nombre, o usa «Crear paciente nuevo».");
       return;
@@ -2274,8 +2276,11 @@ function AgendarModal({ pacientes, fechaInicial, pacienteFijo, onClose, onSave }
       modalidad, enlace: modalidad === "virtual" ? enlace.trim() : "",
       notas: notas.trim(), n_sesion: nSesion ? Number(nSesion) : null,
     };
-    if (sel) onSave({ pacienteId: sel.id, paciente: sel.nombre, ...extra });
-    else if (nuevo) onSave({ nuevoNombre: busca.trim(), nuevoTel: nuevoTel.trim(), ...extra });
+    setEnviando(true);
+    try {
+      if (sel) await onSave({ pacienteId: sel.id, paciente: sel.nombre, ...extra });
+      else if (nuevo) await onSave({ nuevoNombre: busca.trim(), nuevoTel: nuevoTel.trim(), ...extra });
+    } finally { setEnviando(false); }
   }
 
   return (
@@ -2406,7 +2411,7 @@ function AgendarModal({ pacientes, fechaInicial, pacienteFijo, onClose, onSave }
         {error && <div style={{ color: "#B4564E", fontSize: 13, marginBottom: 10, background: "#FDECEA", border: "1px solid #F3C9C4", borderRadius: 8, padding: "8px 10px" }}>{error}</div>}
         <div style={{ display: "flex", gap: 9, justifyContent: "flex-end" }}>
           <button className="ca-btn ghost" onClick={onClose}>Cancelar</button>
-          <button className="ca-btn" onClick={guardar}>Agendar</button>
+          <button className="ca-btn" style={{ opacity: enviando ? 0.7 : 1, pointerEvents: enviando ? "none" : "auto" }} onClick={guardar}>{enviando ? "Agendando…" : "Agendar"}</button>
         </div>
       </div>
     </div>
@@ -3768,6 +3773,7 @@ function CrearLeadModal({ lead, medicos, anuncios, onClose, onSave }) {
 const MEDIOS_PAGO = [
   { v: "efectivo", l: "Efectivo" }, { v: "yape", l: "Yape" }, { v: "plin", l: "Plin" },
   { v: "tarjeta", l: "Tarjeta" }, { v: "transferencia", l: "Transferencia" },
+  { v: "mercado_pago", l: "Mercado Pago" },
 ];
 const COMPROBANTES = [
   { v: "", l: "Sin comprobante" }, { v: "boleta", l: "Boleta" }, { v: "factura", l: "Factura" },
