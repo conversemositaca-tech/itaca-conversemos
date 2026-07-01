@@ -96,6 +96,7 @@ class MedicosView(APIView):
                 "nombre": f.usuario.nombre or str(f.usuario),
                 "especialidad": f.usuario.especialidad,
                 "sede": f.sede,
+                "horario": f.horario_semanal or {},
             }
             for f in fichas
         ])

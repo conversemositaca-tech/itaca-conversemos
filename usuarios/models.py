@@ -123,6 +123,9 @@ class Profesional(ModeloTenant):
         "horas/sesiones disponibles por semana", default=0,
         help_text="Cupos de sesión que ofrece a la semana (para la ocupación de agenda).",
     )
+    # Horario semanal de atención: { "1": [15,16,17], ... } donde la clave es el día
+    # (1=Lunes … 6=Sábado) y el valor las horas (enteras, 0-23) en que atiende.
+    horario_semanal = models.JSONField(default=dict, blank=True)
     frase = models.CharField(max_length=300, blank=True, default="")
     foto = models.FileField(upload_to=ruta_foto_profesional, null=True, blank=True)
     usuario = models.OneToOneField(

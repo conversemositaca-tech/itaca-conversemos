@@ -2541,12 +2541,22 @@ function CitaRow({ c, esAsistente, esMedico, onAtender, onRecordar, onReagendar,
 
 // Agenda multi-terapeuta (estilo AgendaPro): horas a la izquierda, una columna por
 // CADA psicólogo activo (atienda o no ese día). Clic en una cita abre su detalle.
-function TerapeutasGrid({ citas, terapeutas, onAbrirCita }) {
-  const horas = citas.map((c) => parseInt(c.hora.slice(0, 2), 10)).filter((h) => !isNaN(h));
-  const hIni = horas.length ? Math.max(6, Math.min(...horas, 8)) : 8;
-  const hFin = horas.length ? Math.min(22, Math.max(...horas, 19) + 1) : 20;
+function TerapeutasGrid({ citas, terapeutas, horarios = {}, fecha, onAbrirCita }) {
+  // Día de la semana (1=Lun … 7=Dom) de la fecha mostrada, sin líos de zona horaria.
+  const wd = (() => { if (!fecha) return null; const [y, m, d] = fecha.split("-").map(Number); const g = new Date(y, m - 1, d).getDay(); return g === 0 ? 7 : g; })();
+  const horasSet = new Set();
+  citas.forEach((c) => { const h = parseInt(c.hora.slice(0, 2), 10); if (!isNaN(h)) horasSet.add(h); });
+  terapeutas.forEach((t) => (horarios[t]?.[String(wd)] || []).forEach((h) => horasSet.add(Number(h))));
+  const arr = [...horasSet];
+  const hIni = arr.length ? Math.max(6, Math.min(...arr, 8)) : 8;
+  const hFin = arr.length ? Math.min(22, Math.max(...arr, 19) + 1) : 20;
   const rows = [];
   for (let h = hIni; h <= hFin; h++) rows.push(h);
+  const trabaja = (t, h) => {
+    const hor = horarios[t];
+    if (!hor || Object.keys(hor).length === 0) return true; // sin horario definido → no se grisea
+    return (hor[String(wd)] || []).map(Number).includes(h);
+  };
 
   if (terapeutas.length === 0)
     return <div className="ca-empty" style={{ marginTop: 18 }}>No hay psicólogos activos para mostrar.</div>;
@@ -2566,8 +2576,12 @@ function TerapeutasGrid({ citas, terapeutas, onAbrirCita }) {
               <td style={{ color: "var(--muted)", fontSize: 12, whiteSpace: "nowrap", verticalAlign: "top" }}>{String(h).padStart(2, "0")}:00</td>
               {terapeutas.map((t) => {
                 const evs = citas.filter((c) => c.medico === t && parseInt(c.hora.slice(0, 2), 10) === h && c.estado !== "cancelada");
+                const disp = trabaja(t, h);
                 return (
-                  <td key={t} style={{ verticalAlign: "top" }}>
+                  <td key={t} style={{ verticalAlign: "top", background: evs.length ? undefined : (disp ? "#F3FBF6" : "repeating-linear-gradient(45deg,#F1F0EE,#F1F0EE 6px,#ECEBE8 6px,#ECEBE8 12px)") }}>
+                    {evs.length === 0 && (
+                      <span style={{ fontSize: 10.5, color: disp ? "#3E7A65" : "var(--muted)", opacity: 0.75 }}>{disp ? "Libre" : "No disp."}</span>
+                    )}
                     {evs.map((c) => {
                       const col = STATUS[c.estado] || STATUS.agendada;
                       return (
@@ -2604,6 +2618,7 @@ function Agenda({ citas, bloqueos = [], fecha, setFecha, vista, setVista, esAsis
     citas.forEach((c) => { if (c.medico && (!filtroSede || c.sede === filtroSede)) nombres.add(c.medico); });
     return [...nombres].sort();
   }, [medicosDir, citas, filtroSede]);
+  const horariosPorNombre = useMemo(() => Object.fromEntries(medicosDir.map((m) => [m.nombre, m.horario || {}])), [medicosDir]);
   const semana = vista === "semana" ? semanaDe(fecha) : null;
   const delDia = (iso) => citas
     .filter((c) => c.fecha === iso && (!filtroMedico || c.medico === filtroMedico) && (!filtroSede || c.sede === filtroSede))
@@ -2693,7 +2708,7 @@ function Agenda({ citas, bloqueos = [], fecha, setFecha, vista, setVista, esAsis
           )}
         </div>
       ) : vista === "terapeutas" ? (
-        <TerapeutasGrid citas={delDia(fecha)} terapeutas={filtroMedico ? [filtroMedico] : medicos} onAbrirCita={onAbrirCita} />
+        <TerapeutasGrid citas={delDia(fecha)} terapeutas={filtroMedico ? [filtroMedico] : medicos} horarios={horariosPorNombre} fecha={fecha} onAbrirCita={onAbrirCita} />
       ) : (
         <div className="ca-wk">
           {semana.map((iso) => (
@@ -5051,11 +5066,22 @@ function ProfesionalModal({ prof, onClose, onSave }) {
     problematicas: prof?.problematicas || "", formacion: prof?.formacion || "", trayectoria: prof?.trayectoria || "",
     frase: prof?.frase || "", activo: prof?.activo ?? true,
     horas_disponibles: prof?.horas_disponibles ?? 0,
+    horario_semanal: prof?.horario_semanal || {},
   });
   const [foto, setFoto] = useState(null);
   const set = (k) => (e) => setF((prev) => ({ ...prev, [k]: e.target.value }));
   const canSave = f.nombre.trim().length > 0;
   const ta = { minHeight: 70, resize: "vertical", lineHeight: 1.5 };
+  function toggleHora(dia, hora) {
+    setF((prev) => {
+      const h = { ...(prev.horario_semanal || {}) };
+      const list = new Set((h[dia] || []).map(Number));
+      if (list.has(hora)) list.delete(hora); else list.add(hora);
+      const arr = [...list].sort((a, b) => a - b);
+      if (arr.length) h[dia] = arr; else delete h[dia];
+      return { ...prev, horario_semanal: h };
+    });
+  }
 
   return (
     <div className="ca-modal-bg" onClick={onClose}>
@@ -5081,6 +5107,30 @@ function ProfesionalModal({ prof, onClose, onSave }) {
         <div style={{ marginBottom: 12 }}><div className="ca-label">Formación / especialidades</div><textarea className="ca-input" style={ta} value={f.formacion} onChange={set("formacion")} /></div>
         <div style={{ marginBottom: 12 }}><div className="ca-label">Trayectoria</div><textarea className="ca-input" style={ta} value={f.trayectoria} onChange={set("trayectoria")} /></div>
         <div style={{ marginBottom: 12 }}><div className="ca-label">Frase / lema</div><input className="ca-input" value={f.frase} onChange={set("frase")} /></div>
+
+        <div className="ca-secth" style={{ margin: "4px 0 8px" }}>Horario de atención <span style={{ color: "var(--muted)", fontWeight: 400, fontSize: 12 }}>(clic para marcar las horas que atiende)</span></div>
+        <div style={{ overflowX: "auto", marginBottom: 16 }}>
+          <table style={{ borderCollapse: "collapse", fontSize: 11 }}>
+            <thead><tr><th></th>{[["1", "Lun"], ["2", "Mar"], ["3", "Mié"], ["4", "Jue"], ["5", "Vie"], ["6", "Sáb"]].map(([d, l]) => <th key={d} style={{ padding: "2px 5px", color: "var(--muted)", fontWeight: 600 }}>{l}</th>)}</tr></thead>
+            <tbody>
+              {Array.from({ length: 15 }, (_, i) => 7 + i).map((h) => (
+                <tr key={h}>
+                  <td style={{ color: "var(--muted)", paddingRight: 6, textAlign: "right", whiteSpace: "nowrap" }}>{h}:00</td>
+                  {["1", "2", "3", "4", "5", "6"].map((d) => {
+                    const on = ((f.horario_semanal || {})[d] || []).map(Number).includes(h);
+                    return (
+                      <td key={d} style={{ padding: 2 }}>
+                        <button type="button" title={`${["", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"][d]} ${h}:00`} onClick={() => toggleHora(d, h)}
+                          style={{ width: 36, height: 20, borderRadius: 4, cursor: "pointer", border: "1px solid var(--line)", background: on ? "#4F8A77" : "var(--bg)" }} />
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
         <div style={{ display: "flex", gap: 16, alignItems: "center", marginBottom: 18, flexWrap: "wrap" }}>
           <label className="ca-upload" style={{ cursor: "pointer" }}>
             <Paperclip size={14} strokeWidth={2} /> {foto ? foto.name : "Subir foto"}
