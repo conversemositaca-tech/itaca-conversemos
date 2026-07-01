@@ -1902,9 +1902,11 @@ function Hoy({ proximas, citasHoy, porConfirmar, atendidas, onOpen, onGo, onRete
     }).catch(() => {});
   }, [esAdmin]);
   const legalTotal = legalRec ? legalRec.cumple + legalRec.aniv + legalRec.vence : 0;
+  const _hh = new Date().getHours();
+  const saludo = _hh < 12 ? "Buenos días 🌞" : _hh < 19 ? "Buenas tardes ☀️" : "Buenas noches 🌙";
   return (
     <>
-      <h1 className="ca-h1">Buenos días 🌞</h1>
+      <h1 className="ca-h1">{saludo}</h1>
       <div className="ca-sub">{labelLargo(HOY_ISO)} · Aquí está tu día, sin sorpresas.</div>
 
       {esAdmin && legalTotal > 0 && (
@@ -1975,6 +1977,10 @@ function Hoy({ proximas, citasHoy, porConfirmar, atendidas, onOpen, onGo, onRete
           </div>
         ))
       )}
+
+      <div style={{ textAlign: "center", marginTop: 34, marginBottom: 6, fontSize: 13.5, fontWeight: 600, color: "var(--accent)", letterSpacing: "-0.01em" }}>
+        Sigamos cambiando vidas juntos 💚
+      </div>
     </>
   );
 }
@@ -2670,9 +2676,9 @@ function Agenda({ citas, bloqueos = [], fecha, setFecha, vista, setVista, esAsis
           <div className="ca-sub">{subt} · {activas.length} {activas.length === 1 ? "sesión" : "sesiones"}</div>
         </div>
         <div style={{ display: "flex", gap: 9, alignItems: "center" }}>
-          <ExportBtns nombre="agenda" titulo="Agenda" disabled={activas.length === 0}
+          {!esMedico && <ExportBtns nombre="agenda" titulo="Agenda" disabled={activas.length === 0}
             headers={["Fecha", "Hora", "Paciente", "Psicologo", "Especialidad", "N° sesion", "Sede", "Modalidad", "Estado"]}
-            filas={activas.map((c) => [c.fecha, c.hora, c.paciente, c.medico, c.especialidad, c.n_sesion || "", c.sede_label || "", c.modalidad === "virtual" ? "Virtual" : "Presencial", c.estado_label])} />
+            filas={activas.map((c) => [c.fecha, c.hora, c.paciente, c.medico, c.especialidad, c.n_sesion || "", c.sede_label || "", c.modalidad === "virtual" ? "Virtual" : "Presencial", c.estado_label])} />}
           {!esMedico && <button className="ca-btn ghost" onClick={onVenta}><Receipt size={15} strokeWidth={2} /> Venta</button>}
           {!esMedico && <button className="ca-btn ghost" onClick={onBloquear}><Clock size={15} strokeWidth={2} /> Bloquear horario</button>}
           <button className="ca-btn" onClick={onAgendar}><Plus size={16} strokeWidth={2.2} /> Agendar sesión</button>
@@ -2686,12 +2692,15 @@ function Agenda({ citas, bloqueos = [], fecha, setFecha, vista, setVista, esAsis
           <button className="ca-navbtn" onClick={() => setFecha(sumarDias(fecha, paso))} aria-label="Siguiente"><ChevronLeft size={16} strokeWidth={2.2} style={{ transform: "rotate(180deg)" }} /></button>
         </div>
         <input className="ca-datein" type="date" value={fecha} onChange={(e) => e.target.value && setFecha(e.target.value)} />
-        <select className="ca-datein" value={filtroSede} onChange={(e) => { setFiltroSede(e.target.value); setFiltroMedico(""); }}>
-          <option value="">Todas las sedes</option>
-          <option value="lima">Lima</option>
-          <option value="piura">Piura</option>
-        </select>
-        {medicos.length > 1 && (
+        {/* El psicólogo solo ve SU agenda: sin filtros de sede/psicólogo ni vista de todos. */}
+        {!esMedico && (
+          <select className="ca-datein" value={filtroSede} onChange={(e) => { setFiltroSede(e.target.value); setFiltroMedico(""); }}>
+            <option value="">Todas las sedes</option>
+            <option value="lima">Lima</option>
+            <option value="piura">Piura</option>
+          </select>
+        )}
+        {!esMedico && medicos.length > 1 && (
           <select className="ca-datein" value={filtroMedico} onChange={(e) => setFiltroMedico(e.target.value)}>
             <option value="">Todos los psicólogos</option>
             {medicos.map((m) => <option key={m} value={m}>{m}</option>)}
@@ -2699,7 +2708,7 @@ function Agenda({ citas, bloqueos = [], fecha, setFecha, vista, setVista, esAsis
         )}
         <div className="ca-seg">
           <button className={vista === "dia" ? "on" : ""} onClick={() => setVista("dia")}>Día</button>
-          <button className={vista === "terapeutas" ? "on" : ""} onClick={() => setVista("terapeutas")}>Terapeutas</button>
+          {!esMedico && <button className={vista === "terapeutas" ? "on" : ""} onClick={() => setVista("terapeutas")}>Terapeutas</button>}
           <button className={vista === "semana" ? "on" : ""} onClick={() => setVista("semana")}>Semana</button>
         </div>
       </div>
@@ -3973,6 +3982,8 @@ function RecordCard({ titulo, items, vacio, alerta }) {
 function Legal({ showToast }) {
   const [profs, setProfs] = useState(null);
   const [editar, setEditar] = useState(null);
+  const [fSede, setFSede] = useState("");
+  const [fEstado, setFEstado] = useState("activos"); // activos | inactivos | todos
   function cargar() { api.profesionales().then(setProfs).catch((e) => showToast("Error: " + e.message)); }
   useEffect(() => { cargar(); }, []);
 
@@ -4002,11 +4013,25 @@ function Legal({ showToast }) {
 
   if (!profs) return <div className="ca-empty" style={{ marginTop: 20 }}>Cargando…</div>;
 
+  const profsFiltrados = profs.filter((p) =>
+    (!fSede || p.sede === fSede) &&
+    (fEstado === "todos" || (fEstado === "activos" ? p.activo : !p.activo)));
+
   return (
     <div>
       <div className="ca-tophead">
         <div><h1 className="ca-h1">Legal</h1><div className="ca-sub">Contratos, adendas y datos del equipo</div></div>
         <button className="ca-btn" onClick={() => setEditar({ new: true })}><UserPlus size={16} strokeWidth={2.1} /> Agregar</button>
+      </div>
+
+      <div className="ca-fchips" style={{ marginTop: 14 }}>
+        {[["", "Todas las sedes"], ["piura", "Piura"], ["lima", "Lima"]].map(([v, l]) => (
+          <button key={v || "t"} className={`ca-fchip ${fSede === v ? "on" : ""}`} onClick={() => setFSede(v)}>{l}</button>
+        ))}
+        <span style={{ width: 10 }} />
+        {[["activos", "Activos"], ["inactivos", "Inactivos"], ["todos", "Todos"]].map(([v, l]) => (
+          <button key={v} className={`ca-fchip ${fEstado === v ? "on" : ""}`} onClick={() => setFEstado(v)}>{l}</button>
+        ))}
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(240px,1fr))", gap: 14, marginTop: 18, marginBottom: 24 }}>
@@ -4019,9 +4044,9 @@ function Legal({ showToast }) {
       </div>
 
       <table className="ca-tbl">
-        <thead><tr><th>Psicólogo</th><th>Sede</th><th>DNI</th><th>Nacimiento</th><th>Antigüedad</th><th>Vence</th><th>Contrato</th><th className="num">Docs</th></tr></thead>
+        <thead><tr><th>Psicólogo ({profsFiltrados.length})</th><th>Sede</th><th>DNI</th><th>Nacimiento</th><th>Antigüedad</th><th>Vence</th><th>Contrato</th><th className="num">Docs</th></tr></thead>
         <tbody>
-          {profs.map((p) => (
+          {profsFiltrados.map((p) => (
             <tr key={p.id} style={{ cursor: "pointer" }} onClick={() => setEditar(p)}>
               <td style={{ fontWeight: 500 }}>{p.nombre}{!p.activo && <span style={{ color: "var(--muted)", fontWeight: 400 }}> · inactivo</span>}</td>
               <td>{p.sede_label || "—"}</td>
