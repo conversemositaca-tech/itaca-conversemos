@@ -2579,20 +2579,23 @@ function TerapeutasGrid({ citas, terapeutas, onAbrirCita }) {
 
 function Agenda({ citas, bloqueos = [], fecha, setFecha, vista, setVista, esAsistente, esMedico, onAgendar, onBloquear, onBorrarBloqueo, onVenta, onAtender, onRecordar, onReagendar, onCancelar, onConfirmar, onCobrar, onSetEstado, onAbrirCita, onMensaje, openFicha }) {
   const [filtroMedico, setFiltroMedico] = useState("");
+  const [filtroSede, setFiltroSede] = useState("");
   const [medicosDir, setMedicosDir] = useState([]);
   useEffect(() => { api.medicos().then(setMedicosDir).catch(() => {}); }, []);
   // Lista de psicólogos activos del directorio + cualquiera presente en las citas,
-  // para que aparezcan todos (no solo los que ya tienen sesiones).
+  // para que aparezcan todos (no solo los que ya tienen sesiones) — filtrados por sede.
   const medicos = useMemo(() => {
-    const nombres = new Set(medicosDir.map((m) => m.nombre).filter(Boolean));
-    citas.forEach((c) => { if (c.medico) nombres.add(c.medico); });
+    const nombres = new Set(medicosDir.filter((m) => !filtroSede || m.sede === filtroSede).map((m) => m.nombre).filter(Boolean));
+    citas.forEach((c) => { if (c.medico && (!filtroSede || c.sede === filtroSede)) nombres.add(c.medico); });
     return [...nombres].sort();
-  }, [medicosDir, citas]);
+  }, [medicosDir, citas, filtroSede]);
   const semana = vista === "semana" ? semanaDe(fecha) : null;
   const delDia = (iso) => citas
-    .filter((c) => c.fecha === iso && (!filtroMedico || c.medico === filtroMedico))
+    .filter((c) => c.fecha === iso && (!filtroMedico || c.medico === filtroMedico) && (!filtroSede || c.sede === filtroSede))
     .sort((a, b) => a.hora.localeCompare(b.hora));
-  const visibles = vista === "semana" ? citas.filter((c) => semana.includes(c.fecha)) : delDia(fecha);
+  const visibles = vista === "semana"
+    ? citas.filter((c) => semana.includes(c.fecha) && (!filtroMedico || c.medico === filtroMedico) && (!filtroSede || c.sede === filtroSede))
+    : delDia(fecha);
   const activas = visibles.filter((c) => c.estado !== "cancelada");
   // Resumen de cuántas citas hay en cada estado (del día/semana mostrado).
   const resumen = ESTADOS_CITA.map((e) => ({ ...e, n: visibles.filter((c) => c.estado === e.v).length })).filter((e) => e.n > 0);
@@ -2624,6 +2627,11 @@ function Agenda({ citas, bloqueos = [], fecha, setFecha, vista, setVista, esAsis
           <button className="ca-navbtn" onClick={() => setFecha(sumarDias(fecha, paso))} aria-label="Siguiente"><ChevronLeft size={16} strokeWidth={2.2} style={{ transform: "rotate(180deg)" }} /></button>
         </div>
         <input className="ca-datein" type="date" value={fecha} onChange={(e) => e.target.value && setFecha(e.target.value)} />
+        <select className="ca-datein" value={filtroSede} onChange={(e) => { setFiltroSede(e.target.value); setFiltroMedico(""); }}>
+          <option value="">Todas las sedes</option>
+          <option value="lima">Lima</option>
+          <option value="piura">Piura</option>
+        </select>
         {medicos.length > 1 && (
           <select className="ca-datein" value={filtroMedico} onChange={(e) => setFiltroMedico(e.target.value)}>
             <option value="">Todos los psicólogos</option>
