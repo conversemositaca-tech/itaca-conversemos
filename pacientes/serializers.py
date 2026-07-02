@@ -104,10 +104,13 @@ class PacienteSerializer(serializers.ModelSerializer):
     def to_representation(self, instance):
         data = super().to_representation(instance)
         # El psicólogo NO ve los datos de contacto del paciente (correo, teléfono,
-        # dirección, documento): solo lo clínico y su estado. Privacidad (Ley 29733).
+        # dirección, documento) ni el contacto del tutor: solo lo clínico y su
+        # estado. Privacidad (Ley 29733). El nombre/parentesco del tutor sí queda
+        # (es contexto clínico), pero su teléfono y documento no.
         req = self.context.get("request")
         if req is not None and getattr(req.user, "rol", None) == "medico":
-            for k in ("tel", "email", "direccion", "numero_documento"):
+            for k in ("tel", "email", "direccion", "numero_documento",
+                      "tutor_telefono", "tutor_documento"):
                 if k in data:
                     data[k] = ""
         return data

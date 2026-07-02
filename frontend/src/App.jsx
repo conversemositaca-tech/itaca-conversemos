@@ -1156,9 +1156,9 @@ export default function ClinicaApp() {
                 <div className="ca-sub">{filtered.length === pacientes.length ? `${pacientes.length} en total` : `${filtered.length} de ${pacientes.length}`}</div>
               </div>
               <div style={{ display: "flex", gap: 9, alignItems: "center" }}>
-                <ExportBtns nombre="pacientes" titulo="Pacientes" disabled={filtered.length === 0}
+                {usuario?.rol !== "medico" && <ExportBtns nombre="pacientes" titulo="Pacientes" disabled={filtered.length === 0}
                   headers={["Nombre", "Documento", "Numero", "Edad", "Genero", "Telefono", "Direccion", "Especialidad", "Ultima visita", "Proxima sesion", "Pendiente S/"]}
-                  filas={filtered.map((p) => [p.nombre, p.tipo_documento_label || "", p.numero_documento || "", p.edad ?? "", p.genero_label || "", p.tel, p.direccion || "", p.especialidad, p.ultima, p.proxima ? `${p.proxima.fecha} ${p.proxima.hora}` : "", p.cuenta?.pendiente || 0])} />
+                  filas={filtered.map((p) => [p.nombre, p.tipo_documento_label || "", p.numero_documento || "", p.edad ?? "", p.genero_label || "", p.tel, p.direccion || "", p.especialidad, p.ultima, p.proxima ? `${p.proxima.fecha} ${p.proxima.hora}` : "", p.cuenta?.pendiente || 0])} />}
                 <button className="ca-btn" onClick={() => setEditingPaciente({ new: true })}>
                   <UserPlus size={16} strokeWidth={2.1} /> Nuevo paciente
                 </button>
@@ -1287,7 +1287,7 @@ export default function ClinicaApp() {
         )}
         {waPaciente && <MensajePacienteModal paciente={waPaciente} cita={waCita} onClose={() => { setWaPaciente(null); setWaCita(null); }} onSend={(texto, tipo, plantillaId) => enviarMensajePaciente(waPaciente, texto, tipo, plantillaId, waCita?.id)} />}
         {editingPaciente && (
-          <PacienteModal paciente={editingPaciente.new ? null : editingPaciente}
+          <PacienteModal paciente={editingPaciente.new ? null : editingPaciente} esMedico={usuario?.rol === "medico"}
             onClose={() => setEditingPaciente(null)} onSave={guardarPaciente} />
         )}
         {registrandoSesion && (
@@ -6502,7 +6502,7 @@ function UsuarioModal({ usuario, onClose, onSave }) {
   );
 }
 
-function PacienteModal({ paciente, onClose, onSave }) {
+function PacienteModal({ paciente, onClose, onSave, esMedico }) {
   const [nombre, setNombre] = useState(paciente?.nombre || "");
   const [fechaNac, setFechaNac] = useState(paciente?.fecha_nacimiento || "");
   const [tel, setTel] = useState(paciente?.tel && paciente.tel !== "—" ? paciente.tel : "");
@@ -6547,10 +6547,12 @@ function PacienteModal({ paciente, onClose, onSave }) {
             <div className="ca-label">Fecha de nacimiento</div>
             <input className="ca-input" type="date" value={fechaNac || ""} onChange={(e) => setFechaNac(e.target.value)} />
           </div>
-          <div style={{ flex: 1 }}>
-            <div className="ca-label">Teléfono</div>
-            <input className="ca-input" value={tel} onChange={(e) => setTel(e.target.value)} placeholder="987 654 321" />
-          </div>
+          {!esMedico && (
+            <div style={{ flex: 1 }}>
+              <div className="ca-label">Teléfono</div>
+              <input className="ca-input" value={tel} onChange={(e) => setTel(e.target.value)} placeholder="987 654 321" />
+            </div>
+          )}
         </div>
         <div style={{ display: "flex", gap: 11, marginBottom: 16 }}>
           <div style={{ flex: 1 }}>
@@ -6611,7 +6613,8 @@ function PacienteModal({ paciente, onClose, onSave }) {
           </div>
         )}
 
-        <div className="ca-secth" style={{ margin: "4px 0 12px" }}>Identificación</div>
+        {!esMedico && <div className="ca-secth" style={{ margin: "4px 0 12px" }}>Identificación</div>}
+        {!esMedico && (
         <div style={{ display: "flex", gap: 11, marginBottom: 13 }}>
           <div style={{ flex: 1 }}>
             <div className="ca-label">Tipo de documento</div>
@@ -6624,11 +6627,14 @@ function PacienteModal({ paciente, onClose, onSave }) {
             <input className="ca-input" value={numDoc} onChange={(e) => setNumDoc(e.target.value)} placeholder="Ej. 12345678" inputMode="numeric" />
           </div>
         </div>
+        )}
         <div style={{ display: "flex", gap: 11, marginBottom: 20 }}>
-          <div style={{ flex: 2 }}>
-            <div className="ca-label">Dirección</div>
-            <input className="ca-input" value={direccion} onChange={(e) => setDireccion(e.target.value)} placeholder="Calle, urbanización, distrito…" />
-          </div>
+          {!esMedico && (
+            <div style={{ flex: 2 }}>
+              <div className="ca-label">Dirección</div>
+              <input className="ca-input" value={direccion} onChange={(e) => setDireccion(e.target.value)} placeholder="Calle, urbanización, distrito…" />
+            </div>
+          )}
           <div style={{ flex: 1 }}>
             <div className="ca-label">Género</div>
             <select className="ca-input" value={genero} onChange={(e) => setGenero(e.target.value)}>
@@ -6648,6 +6654,7 @@ function PacienteModal({ paciente, onClose, onSave }) {
             <input className="ca-input" value={tutorParentesco} onChange={(e) => setTutorParentesco(e.target.value)} placeholder="Madre, padre, tutor…" />
           </div>
         </div>
+        {!esMedico && (
         <div style={{ display: "flex", gap: 11, marginBottom: 20 }}>
           <div style={{ flex: 1 }}>
             <div className="ca-label">Teléfono del tutor</div>
@@ -6658,6 +6665,7 @@ function PacienteModal({ paciente, onClose, onSave }) {
             <input className="ca-input" value={tutorDoc} onChange={(e) => setTutorDoc(e.target.value)} placeholder="DNI" inputMode="numeric" />
           </div>
         </div>
+        )}
 
         <div className="ca-secth" style={{ margin: "4px 0 12px" }}>Antecedentes</div>
         <div style={{ marginBottom: 13 }}>

@@ -113,6 +113,16 @@ class PacienteViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         serializer.save(clinica=get_clinica_actual())
 
+    def perform_update(self, serializer):
+        # El psicólogo no ve ni gestiona los datos de contacto del paciente. Si
+        # guarda desde su vista, esos campos llegan vacíos: los descartamos para
+        # NO sobrescribir los valores reales en la base (evita pérdida de datos).
+        if _es_medico(self.request.user):
+            for campo in ("telefono", "email", "direccion", "numero_documento",
+                          "tutor_telefono", "tutor_documento"):
+                serializer.validated_data.pop(campo, None)
+        serializer.save()
+
     @action(detail=True, methods=["post"], url_path="registrar-sesion")
     def registrar_sesion(self, request, pk=None):
         """Registra (o actualiza) la sesión del paciente para una semana. Deja el
