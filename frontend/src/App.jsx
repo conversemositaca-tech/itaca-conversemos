@@ -3545,6 +3545,11 @@ function Marketing({ showToast, onConvertir, esAdmin }) {
       showToast(data.id ? "Lead actualizado ✓" : "Lead captado ✓");
     } catch (err) { showToast("Error: " + err.message); }
   }
+  async function borrarLead(lead) {
+    if (!window.confirm(`¿Eliminar el lead "${lead.nombre}"? Se usa para quitar duplicados (ej. el mismo que llegó por IG y WhatsApp).`)) return;
+    try { await api.eliminarLead(lead.id); await cargar(); showToast("Lead eliminado"); }
+    catch (err) { showToast("Error: " + err.message); }
+  }
   useEffect(() => {
     cargar().catch((err) => showToast("Error: " + err.message)).finally(() => setCargando(false));
   }, []);
@@ -3759,7 +3764,7 @@ function Marketing({ showToast, onConvertir, esAdmin }) {
             {anuncios.map((a) => (
               <div key={a.id} style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 13.5 }}>
                 <span style={{ fontWeight: 600 }}>{a.nombre}</span>
-                <span className="ca-pmeta">{a.plataforma_label} · {a.n_leads} lead{a.n_leads === 1 ? "" : "s"}</span>
+                <span className="ca-pmeta">{a.plataforma_label}{a.sede_label ? ` · ${a.sede_label}` : ""} · {a.n_leads} lead{a.n_leads === 1 ? "" : "s"}</span>
                 {a.link && <a href={a.link} target="_blank" rel="noreferrer" style={{ color: "var(--accent)", fontSize: 12.5 }}>ver</a>}
                 <button className="ca-iconbtn" style={{ marginLeft: "auto" }} title="Eliminar" onClick={() => quitarAnuncio(a.id)}><Trash2 size={13} strokeWidth={2} /></button>
               </div>
@@ -3831,6 +3836,7 @@ function Marketing({ showToast, onConvertir, esAdmin }) {
                 <UserPlus size={13} strokeWidth={2} /> Convertir
               </button>
             )}
+            {esAdmin && <button className="ca-iconbtn" title="Eliminar lead (solo gerencia)" onClick={() => borrarLead(lead)}><Trash2 size={14} strokeWidth={2} /></button>}
           </div>
           );
         })
@@ -3848,14 +3854,17 @@ function AnuncioForm({ onSave }) {
   const [nombre, setNombre] = useState("");
   const [link, setLink] = useState("");
   const [plataforma, setPlataforma] = useState("instagram");
+  const [sede, setSede] = useState("ambas");
   const PLATS = [{ v: "instagram", l: "Instagram" }, { v: "facebook", l: "Facebook" }, { v: "tiktok", l: "TikTok" }, { v: "otro", l: "Otro" }];
+  const SEDES_A = [{ v: "ambas", l: "Todas las sedes" }, { v: "lima", l: "Lima" }, { v: "piura", l: "Piura" }];
   return (
     <div style={{ display: "flex", gap: 9, alignItems: "flex-end", flexWrap: "wrap" }}>
       <div style={{ flex: 2, minWidth: 160 }}><div className="ca-label">Anuncio / publicación</div><input className="ca-input" value={nombre} onChange={(e) => setNombre(e.target.value)} placeholder='ej. "reaccionas y luego te arrepientes"' /></div>
       <div style={{ flex: 2, minWidth: 160 }}><div className="ca-label">Link (opcional)</div><input className="ca-input" value={link} onChange={(e) => setLink(e.target.value)} placeholder="https://instagram.com/p/…" /></div>
       <div style={{ flex: 1, minWidth: 110 }}><div className="ca-label">Plataforma</div><select className="ca-input" value={plataforma} onChange={(e) => setPlataforma(e.target.value)}>{PLATS.map((p) => <option key={p.v} value={p.v}>{p.l}</option>)}</select></div>
+      <div style={{ flex: 1, minWidth: 120 }}><div className="ca-label">Sede</div><select className="ca-input" value={sede} onChange={(e) => setSede(e.target.value)}>{SEDES_A.map((s) => <option key={s.v} value={s.v}>{s.l}</option>)}</select></div>
       <button className="ca-btn" style={{ opacity: nombre.trim() ? 1 : 0.5, pointerEvents: nombre.trim() ? "auto" : "none" }}
-        onClick={() => { onSave({ nombre: nombre.trim(), link: link.trim(), plataforma }); setNombre(""); setLink(""); }}>
+        onClick={() => { onSave({ nombre: nombre.trim(), link: link.trim(), plataforma, sede }); setNombre(""); setLink(""); }}>
         <Plus size={15} strokeWidth={2.2} /> Agregar
       </button>
     </div>

@@ -8,11 +8,12 @@ from .models import Anuncio, Lead
 
 class AnuncioSerializer(serializers.ModelSerializer):
     plataforma_label = serializers.CharField(source="get_plataforma_display", read_only=True)
+    sede_label = serializers.CharField(source="get_sede_display", read_only=True)
     n_leads = serializers.SerializerMethodField()
 
     class Meta:
         model = Anuncio
-        fields = ["id", "nombre", "link", "plataforma", "plataforma_label", "activo", "n_leads"]
+        fields = ["id", "nombre", "link", "plataforma", "plataforma_label", "sede", "sede_label", "activo", "n_leads"]
 
     def get_n_leads(self, obj):
         return obj.leads.count()

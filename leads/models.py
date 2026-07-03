@@ -14,9 +14,15 @@ class Anuncio(ModeloTenant):
         TIKTOK = "tiktok", "TikTok"
         OTRO = "otro", "Otro"
 
+    class Sede(models.TextChoices):
+        LIMA = "lima", "Lima"
+        PIURA = "piura", "Piura"
+        AMBAS = "ambas", "Todas las sedes"
+
     nombre = models.CharField(max_length=200, help_text="Título del anuncio o publicación.")
     link = models.URLField(blank=True, default="")
     plataforma = models.CharField(max_length=15, choices=Plataforma.choices, default=Plataforma.INSTAGRAM)
+    sede = models.CharField(max_length=10, choices=Sede.choices, blank=True, default="", help_text="Sede a la que apunta la pauta.")
     activo = models.BooleanField(default=True)
 
     class Meta:

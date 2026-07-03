@@ -84,6 +84,15 @@ class LeadViewSet(viewsets.ModelViewSet):
         if lead.estado == Lead.Estado.GANADO and not lead.paciente_id:
             convertir_lead_en_paciente(lead)
 
+    def destroy(self, request, *args, **kwargs):
+        # Solo la gerencia elimina leads (p. ej. un duplicado que llegó por IG y
+        # por WhatsApp). El resto del equipo no puede borrarlos.
+        from usuarios.models import Usuario
+        if getattr(request.user, "rol", None) != Usuario.Rol.ADMIN:
+            return Response({"detail": "Solo la gerencia puede eliminar leads."},
+                            status=status.HTTP_403_FORBIDDEN)
+        return super().destroy(request, *args, **kwargs)
+
     @action(detail=True, methods=["post"])
     def convertir(self, request, pk=None):
         """Convierte el lead en paciente (crea el paciente y marca el cierre)."""
