@@ -61,6 +61,8 @@ class Lead(ModeloTenant):
         REFERIDO_PACIENTE = "referido_paciente", "Referido por paciente"
         REFERIDO_PSICOLOGO = "referido_psicologo", "Referido por psicólogo"
         ORGANICO = "organico", "Orgánico"
+        TIKTOK_ADS = "tiktok_ads", "TikTok Ads"
+        FACEBOOK_ADS = "facebook_ads", "Facebook Ads"
         OTRO = "otro", "Otro"
 
     class TipoServicio(models.TextChoices):
@@ -93,6 +95,9 @@ class Lead(ModeloTenant):
     telefono = models.CharField(max_length=40, blank=True)
     sede = models.CharField(max_length=10, choices=Sede.choices, blank=True, default="")
     fuente = models.CharField(max_length=20, choices=Fuente.choices, default=Fuente.INSTAGRAM)
+    # Subfuente: canal concreto dentro del origen (ej. TikTok Ads → WhatsApp;
+    # Referidos → Emma). Depende de la fuente; se guarda la etiqueta directa.
+    subfuente = models.CharField("subfuente / canal", max_length=60, blank=True, default="")
     fuente_otro = models.CharField("origen (especificar)", max_length=120, blank=True, default="")
     # ¿Agendó una consulta? None = sin definir, True = sí (ver fecha_consulta),
     # False = no (se marca para seguimiento).

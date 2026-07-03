@@ -138,17 +138,28 @@ const LEAD_ESTADO_COLOR = {
 };
 const LEAD_FRECUENCIAS = [{ v: "", l: "—" }, { v: "semanal", l: "Semanal" }, { v: "quincenal", l: "Quincenal" }];
 const FUENTES = [
+  // Los 5 orígenes principales de captación (con subfuentes, ver SUBFUENTES).
+  { v: "tiktok_ads", l: "TikTok Ads" }, { v: "facebook_ads", l: "Facebook Ads" },
+  { v: "bot", l: "Bot / Chatbot" }, { v: "convenio", l: "Convenio" },
+  { v: "referido", l: "Referidos" },
+  // Otros orígenes (se conservan para datos previos y casos sueltos).
   { v: "meta_ads", l: "Meta Ads" }, { v: "google", l: "Google" },
   { v: "instagram", l: "Instagram" }, { v: "facebook", l: "Facebook" },
   { v: "tiktok", l: "TikTok" }, { v: "referido_paciente", l: "Referido por paciente" },
-  { v: "referido_psicologo", l: "Referido por psicólogo" }, { v: "referido", l: "Referido" },
-  { v: "convenio", l: "Convenio" }, { v: "alianza", l: "Alianza" },
-  { v: "organico", l: "Orgánico" },
+  { v: "referido_psicologo", l: "Referido por psicólogo" },
+  { v: "alianza", l: "Alianza" }, { v: "organico", l: "Orgánico" },
   { v: "web", l: "Página web" }, { v: "whatsapp", l: "WhatsApp directo" },
-  { v: "bot", l: "Bot / Chatbot" }, { v: "agendapro", l: "Sistema (agenda directa)" },
+  { v: "agendapro", l: "Sistema (agenda directa)" },
   { v: "derivado", l: "Derivado de otra sede" }, { v: "linkedin", l: "LinkedIn" },
   { v: "otro", l: "Otro" },
 ];
+// Subfuentes (canal concreto) por origen. Solo aplican a estos orígenes.
+const SUBFUENTES = {
+  tiktok_ads: ["WhatsApp", "Mensajería de TikTok"],
+  facebook_ads: ["WhatsApp", "Mensajería de Facebook", "Mensajería de Instagram"],
+  bot: ["WhatsApp Piura", "WhatsApp Lima"],
+  referido: ["Psicólogos", "Paciente", "Gabi", "Emma", "Ayvi", "Yazmin"],
+};
 const TIPOS_SERVICIO = [
   { v: "", l: "—" }, { v: "adultos", l: "Adultos" }, { v: "ninos", l: "Niños" },
   { v: "adolescentes", l: "Adolescentes" }, { v: "pareja", l: "Pareja" },
@@ -3617,8 +3628,8 @@ function Marketing({ showToast, onConvertir, esAdmin }) {
         </div>
         <div style={{ display: "flex", gap: 9, alignItems: "center" }}>
           <ExportBtns nombre="leads" titulo="Captación · Leads" disabled={leads.length === 0}
-            headers={["Nombre", "Telefono", "Fuente", "Pauta", "Campaña", "Especialidad", "Psicologo", "Estado", "Creado"]}
-            filas={leads.map((l) => [l.nombre, l.telefono, l.fuente_label, l.es_pauta ? "Si" : "No", l.campania, l.especialidad, l.medico_nombre, l.estado_label, l.creado])} />
+            headers={["Nombre", "Telefono", "Fuente", "Subfuente", "Pauta", "Campaña", "Especialidad", "Psicologo", "Estado", "Creado"]}
+            filas={leads.map((l) => [l.nombre, l.telefono, l.fuente_label, l.subfuente || "", l.es_pauta ? "Si" : "No", l.campania, l.especialidad, l.medico_nombre, l.estado_label, l.creado])} />
           <button className="ca-btn" onClick={() => setCreando(true)}>
             <Plus size={16} strokeWidth={2.2} /> Captar lead
           </button>
@@ -3818,7 +3829,7 @@ function Marketing({ showToast, onConvertir, esAdmin }) {
                 )}
               </div>
               <div className="ca-pmeta">
-                {lead.sede_label ? `${lead.sede_label} · ` : ""}{lead.fuente_label}{lead.tipo_servicio_label ? ` · ${lead.tipo_servicio_label}` : ""}{lead.anuncio_nombre ? ` · 📣 ${lead.anuncio_nombre}` : ""}{lead.medico_nombre ? ` · ${lead.medico_nombre}` : ""}
+                {lead.sede_label ? `${lead.sede_label} · ` : ""}{lead.fuente_label}{lead.subfuente ? ` › ${lead.subfuente}` : ""}{lead.tipo_servicio_label ? ` · ${lead.tipo_servicio_label}` : ""}{lead.anuncio_nombre ? ` · 📣 ${lead.anuncio_nombre}` : ""}{lead.medico_nombre ? ` · ${lead.medico_nombre}` : ""}
               </div>
             </div>
             <select className="ca-tplsel" value={lead.estado} onChange={(ev) => moverEstado(lead, ev.target.value)}
@@ -3876,7 +3887,8 @@ function CrearLeadModal({ lead, medicos, anuncios, onClose, onSave }) {
     nombre: lead?.nombre || "",
     telefono: lead?.telefono && lead.telefono !== "—" ? lead.telefono : "",
     sede: lead?.sede || "lima",
-    fuente: lead?.fuente || "instagram",
+    fuente: lead?.fuente || "tiktok_ads",
+    subfuente: lead?.subfuente || "",
     fuente_otro: lead?.fuente_otro || "",
     es_pauta: lead ? lead.es_pauta : true,
     anuncio: lead?.anuncio || "",
@@ -3898,6 +3910,9 @@ function CrearLeadModal({ lead, medicos, anuncios, onClose, onSave }) {
   });
   const set = (k) => (e) => setF((p) => ({ ...p, [k]: e.target.value }));
   const setChk = (k) => (e) => setF((p) => ({ ...p, [k]: e.target.checked }));
+  // Al cambiar el origen, se limpia la subfuente (depende del origen).
+  const setFuente = (e) => setF((p) => ({ ...p, fuente: e.target.value, subfuente: "" }));
+  const subOpciones = SUBFUENTES[f.fuente] || [];
   const canSave = f.nombre.trim().length > 0;
   const anunciosActivos = (anuncios || []).filter((a) => a.activo);
 
@@ -3905,6 +3920,7 @@ function CrearLeadModal({ lead, medicos, anuncios, onClose, onSave }) {
     onSave({
       ...(lead?.id ? { id: lead.id } : {}),
       nombre: f.nombre.trim(), telefono: f.telefono.trim(), sede: f.sede, fuente: f.fuente,
+      subfuente: (SUBFUENTES[f.fuente] || []).includes(f.subfuente) ? f.subfuente : "",
       fuente_otro: ["otro", "convenio", "alianza"].includes(f.fuente) ? f.fuente_otro.trim() : "",
       es_pauta: f.es_pauta, anuncio: f.anuncio ? Number(f.anuncio) : null, es_pareja: f.es_pareja,
       estado: f.estado, agendo_consulta: f.agendo_consulta,
@@ -3934,9 +3950,18 @@ function CrearLeadModal({ lead, medicos, anuncios, onClose, onSave }) {
           <div style={{ flex: 1 }}><div className="ca-label">Sede</div><select className="ca-input" value={f.sede} onChange={set("sede")}><option value="">—</option>{SEDES.map((s) => <option key={s.v} value={s.v}>{s.l}</option>)}</select></div>
         </div>
         <div style={{ display: "flex", gap: 11, marginBottom: 12 }}>
-          <div style={{ flex: 1 }}><div className="ca-label">Origen</div><select className="ca-input" value={f.fuente} onChange={set("fuente")}>{FUENTES.map((x) => <option key={x.v} value={x.v}>{x.l}</option>)}</select></div>
+          <div style={{ flex: 1 }}><div className="ca-label">Origen</div><select className="ca-input" value={f.fuente} onChange={setFuente}>{FUENTES.map((x) => <option key={x.v} value={x.v}>{x.l}</option>)}</select></div>
           <div style={{ flex: 1 }}><div className="ca-label">Etapa</div><select className="ca-input" value={f.estado} onChange={set("estado")}>{LEAD_ESTADOS.map((s) => <option key={s.v} value={s.v}>{s.l}</option>)}</select></div>
         </div>
+        {subOpciones.length > 0 && (
+          <div style={{ marginBottom: 12 }}>
+            <div className="ca-label">{f.fuente === "referido" ? "¿Quién refirió?" : "Canal / subfuente"}</div>
+            <select className="ca-input" value={f.subfuente} onChange={set("subfuente")}>
+              <option value="">—</option>
+              {subOpciones.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+        )}
         {["otro", "convenio", "alianza"].includes(f.fuente) && (
           <div style={{ marginBottom: 12 }}>
             <div className="ca-label">{f.fuente === "convenio" ? "¿Cuál convenio?" : f.fuente === "alianza" ? "¿Cuál alianza?" : "¿Cuál otro origen?"}</div>
