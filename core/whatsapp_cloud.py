@@ -27,6 +27,83 @@ def _es_admin(user):
     return getattr(user, "rol", None) == Usuario.Rol.ADMIN
 
 
+def _texto_del_mensaje(msg):
+    """Saca el texto legible de un mensaje entrante de Meta (según su tipo)."""
+    tipo = msg.get("type")
+    if tipo == "text":
+        return ((msg.get("text") or {}).get("body") or "").strip()
+    for k in ("image", "video", "document", "audio"):
+        cap = (msg.get(k) or {}).get("caption")
+        if cap:
+            return cap.strip()
+    if tipo == "button":
+        return ((msg.get("button") or {}).get("text") or "").strip()
+    if tipo == "interactive":
+        inter = msg.get("interactive") or {}
+        for k in ("button_reply", "list_reply"):
+            titulo = (inter.get(k) or {}).get("title")
+            if titulo:
+                return titulo.strip()
+    return ""
+
+
+def _capturar_leads(data):
+    """Convierte los mensajes entrantes de WhatsApp (Meta Cloud API) en leads.
+
+    - Solo procesa mensajes reales (ignora acuses de entrega/lectura).
+    - Enruta cada mensaje a su clínica/sede por el `phone_number_id`.
+    - No duplica: si ya hay un lead reciente o es paciente, solo deja una nota.
+    """
+    from leads.captacion import _agregar_nota, _es_paciente, _lead_existente
+    from leads.models import Lead
+
+    for entry in (data.get("entry") or []):
+        for cambio in (entry.get("changes") or []):
+            value = cambio.get("value") or {}
+            mensajes = value.get("messages") or []
+            if not mensajes:
+                continue  # acuses de estado (sent/delivered/read): no es un lead
+            meta = value.get("metadata") or {}
+            phone_number_id = meta.get("phone_number_id")
+            numero_wa = (
+                NumeroWhatsapp.objects.filter(wa_phone_number_id=phone_number_id)
+                .select_related("clinica").first()
+                if phone_number_id else None
+            )
+            if numero_wa is None:
+                log.warning("WhatsApp: mensaje de un phone_number_id no configurado (%s)", phone_number_id)
+                continue
+            clinica = numero_wa.clinica
+            sede = numero_wa.sede if numero_wa.sede in ("lima", "piura") else ""
+            # Nombre de perfil por número (wa_id).
+            nombres = {}
+            for c in (value.get("contacts") or []):
+                wa_id = c.get("wa_id")
+                if wa_id:
+                    nombres[wa_id] = ((c.get("profile") or {}).get("name") or "").strip()
+
+            for msg in mensajes:
+                numero = msg.get("from") or ""
+                if not numero:
+                    continue
+                texto = _texto_del_mensaje(msg)
+                if _es_paciente(clinica, numero):
+                    continue  # ya es paciente: no es un lead nuevo
+                existente = _lead_existente(clinica, numero, dias=60)
+                if existente:
+                    _agregar_nota(existente, f"WhatsApp: {texto}" if texto else "Volvió a escribir por WhatsApp.")
+                    continue
+                Lead.objects.create(
+                    clinica=clinica,
+                    nombre=(nombres.get(numero) or "")[:200] or f"WhatsApp {numero[-9:]}",
+                    telefono=numero,
+                    sede=sede,
+                    fuente=Lead.Fuente.WHATSAPP,
+                    notas=texto,
+                    estado=Lead.Estado.NUEVO,
+                )
+
+
 def _webhook_url(request):
     host = request.get_host()
     local = host.startswith("localhost") or host.startswith("127.")
