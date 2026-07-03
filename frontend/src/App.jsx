@@ -137,22 +137,17 @@ const LEAD_ESTADO_COLOR = {
   perdido: _ROJO,
 };
 const LEAD_FRECUENCIAS = [{ v: "", l: "—" }, { v: "semanal", l: "Semanal" }, { v: "quincenal", l: "Quincenal" }];
+// Orígenes de captación (lista limpia). Los valores antiguos (instagram, meta_ads,
+// etc.) siguen mostrándose bien porque su etiqueta viene del backend; aquí solo se
+// listan los que se ofrecen al captar/editar un lead.
 const FUENTES = [
-  // Los 5 orígenes principales de captación (con subfuentes, ver SUBFUENTES).
   { v: "tiktok_ads", l: "TikTok Ads" }, { v: "facebook_ads", l: "Facebook Ads" },
   { v: "bot", l: "Bot / Chatbot" }, { v: "convenio", l: "Convenio" },
-  { v: "referido", l: "Referidos" },
-  // Otros orígenes (se conservan para datos previos y casos sueltos).
-  { v: "meta_ads", l: "Meta Ads" }, { v: "google", l: "Google" },
-  { v: "instagram", l: "Instagram" }, { v: "facebook", l: "Facebook" },
-  { v: "tiktok", l: "TikTok" }, { v: "referido_paciente", l: "Referido por paciente" },
-  { v: "referido_psicologo", l: "Referido por psicólogo" },
-  { v: "alianza", l: "Alianza" }, { v: "organico", l: "Orgánico" },
-  { v: "web", l: "Página web" }, { v: "whatsapp", l: "WhatsApp directo" },
-  { v: "agendapro", l: "Sistema (agenda directa)" },
-  { v: "derivado", l: "Derivado de otra sede" }, { v: "linkedin", l: "LinkedIn" },
+  { v: "referido", l: "Referidos" }, { v: "whatsapp", l: "WhatsApp directo" },
   { v: "otro", l: "Otro" },
 ];
+// Orígenes que son pauta/anuncio pagado (muestran «Vino de pauta» y el anuncio).
+const FUENTES_PAUTA = ["tiktok_ads", "facebook_ads", "meta_ads", "google", "instagram", "facebook", "tiktok"];
 // Subfuentes (canal concreto) por origen. Solo aplican a estos orígenes.
 const SUBFUENTES = {
   tiktok_ads: ["WhatsApp", "Mensajería de TikTok"],
@@ -3910,9 +3905,14 @@ function CrearLeadModal({ lead, medicos, anuncios, onClose, onSave }) {
   });
   const set = (k) => (e) => setF((p) => ({ ...p, [k]: e.target.value }));
   const setChk = (k) => (e) => setF((p) => ({ ...p, [k]: e.target.checked }));
-  // Al cambiar el origen, se limpia la subfuente (depende del origen).
-  const setFuente = (e) => setF((p) => ({ ...p, fuente: e.target.value, subfuente: "" }));
+  // Al cambiar el origen: limpia la subfuente y ajusta «pauta» según el origen.
+  const setFuente = (e) => { const v = e.target.value; setF((p) => ({ ...p, fuente: v, subfuente: "", es_pauta: FUENTES_PAUTA.includes(v) })); };
   const subOpciones = SUBFUENTES[f.fuente] || [];
+  const esFuentePauta = FUENTES_PAUTA.includes(f.fuente);
+  // Si se edita un lead con un origen antiguo (no listado), se agrega para no perderlo.
+  const fuentesOpciones = FUENTES.some((x) => x.v === f.fuente)
+    ? FUENTES
+    : [{ v: f.fuente, l: lead?.fuente_label || f.fuente }, ...FUENTES];
   const canSave = f.nombre.trim().length > 0;
   const anunciosActivos = (anuncios || []).filter((a) => a.activo);
 
@@ -3922,7 +3922,8 @@ function CrearLeadModal({ lead, medicos, anuncios, onClose, onSave }) {
       nombre: f.nombre.trim(), telefono: f.telefono.trim(), sede: f.sede, fuente: f.fuente,
       subfuente: (SUBFUENTES[f.fuente] || []).includes(f.subfuente) ? f.subfuente : "",
       fuente_otro: ["otro", "convenio", "alianza"].includes(f.fuente) ? f.fuente_otro.trim() : "",
-      es_pauta: f.es_pauta, anuncio: f.anuncio ? Number(f.anuncio) : null, es_pareja: f.es_pareja,
+      es_pauta: esFuentePauta ? f.es_pauta : false,
+      anuncio: esFuentePauta && f.es_pauta && f.anuncio ? Number(f.anuncio) : null, es_pareja: f.es_pareja,
       estado: f.estado, agendo_consulta: f.agendo_consulta,
       seguimiento_frecuencia: f.estado === "seguimiento" ? f.seguimiento_frecuencia : "",
       recontacto_fecha: f.estado === "recontacto" ? (f.recontacto_fecha || null) : null,
@@ -3950,7 +3951,7 @@ function CrearLeadModal({ lead, medicos, anuncios, onClose, onSave }) {
           <div style={{ flex: 1 }}><div className="ca-label">Sede</div><select className="ca-input" value={f.sede} onChange={set("sede")}><option value="">—</option>{SEDES.map((s) => <option key={s.v} value={s.v}>{s.l}</option>)}</select></div>
         </div>
         <div style={{ display: "flex", gap: 11, marginBottom: 12 }}>
-          <div style={{ flex: 1 }}><div className="ca-label">Origen</div><select className="ca-input" value={f.fuente} onChange={setFuente}>{FUENTES.map((x) => <option key={x.v} value={x.v}>{x.l}</option>)}</select></div>
+          <div style={{ flex: 1 }}><div className="ca-label">Origen</div><select className="ca-input" value={f.fuente} onChange={setFuente}>{fuentesOpciones.map((x) => <option key={x.v} value={x.v}>{x.l}</option>)}</select></div>
           <div style={{ flex: 1 }}><div className="ca-label">Etapa</div><select className="ca-input" value={f.estado} onChange={set("estado")}>{LEAD_ESTADOS.map((s) => <option key={s.v} value={s.v}>{s.l}</option>)}</select></div>
         </div>
         {subOpciones.length > 0 && (
@@ -3984,18 +3985,21 @@ function CrearLeadModal({ lead, medicos, anuncios, onClose, onSave }) {
             <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 4 }}>Ej. el lead quiere agendar en quincena — te aparecerá como recordatorio.</div>
           </div>
         )}
-        <div style={{ display: "flex", gap: 16, marginBottom: 12, flexWrap: "wrap" }}>
-          <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13.5, color: "var(--ink-soft)", cursor: "pointer" }}>
-            <input type="checkbox" checked={f.es_pauta} onChange={setChk("es_pauta")} /> Vino de pauta (anuncio pagado)
-          </label>
-        </div>
-        {f.es_pauta && (
+        {esFuentePauta && (
+          <div style={{ display: "flex", gap: 16, marginBottom: 12, flexWrap: "wrap" }}>
+            <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13.5, color: "var(--ink-soft)", cursor: "pointer" }}>
+              <input type="checkbox" checked={f.es_pauta} onChange={setChk("es_pauta")} /> Vino de pauta (anuncio pagado)
+            </label>
+          </div>
+        )}
+        {esFuentePauta && f.es_pauta && (
           <div style={{ marginBottom: 12 }}>
             <div className="ca-label">Anuncio que lo atrajo</div>
             <select className="ca-input" value={f.anuncio} onChange={set("anuncio")}>
               <option value="">— (sin especificar)</option>
               {anunciosActivos.map((a) => <option key={a.id} value={a.id}>{a.nombre}</option>)}
             </select>
+            {anunciosActivos.length === 0 && <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 4 }}>Aún no has agregado anuncios. Puedes crearlos abajo, en «Generar reporte de pauta».</div>}
           </div>
         )}
         <div style={{ marginBottom: 12 }}>
