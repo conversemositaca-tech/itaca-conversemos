@@ -1,5 +1,6 @@
 from decimal import Decimal, InvalidOperation
 
+from django.db.models import Prefetch
 from django.http import FileResponse
 from django.utils import timezone
 from rest_framework import status, viewsets
@@ -13,7 +14,7 @@ from core.tenant import get_clinica_actual
 from mensajes.models import Mensaje, PlantillaMensaje
 from mensajes.services import plantilla_por_clave, registrar_y_enviar
 
-from .models import Adjunto, Atencion, BloqueoAgenda, Cita, Paciente, SeguimientoSesion
+from .models import Adjunto, Atencion, BloqueoAgenda, Cita, EdicionAtencion, Paciente, SeguimientoSesion
 from .serializers import (
     AdjuntoSerializer, AtencionSerializer, BloqueoAgendaSerializer, CitaSerializer, PacienteSerializer,
 )
@@ -92,9 +93,22 @@ class PacienteViewSet(viewsets.ModelViewSet):
     serializer_class = PacienteSerializer
 
     def get_queryset(self):
+        # Prefetch profundo para servir la lista de pacientes SIN N+1: cada campo
+        # calculado del serializer (próxima cita, última atención, historial,
+        # adjuntos, cuenta, paquetes) trabaja sobre estas relaciones ya cargadas.
+        # Antes cada uno re-consultaba por paciente (~1900 × varias queries = ~30s).
+        atenciones_qs = Atencion.objects.select_related("medico").prefetch_related(
+            Prefetch("adjuntos", queryset=Adjunto.objects.select_related("subido_por")),
+            Prefetch("ediciones", queryset=EdicionAtencion.objects.select_related("editado_por")),
+        )
         qs = (
             Paciente.objects.del_tenant_actual()
-            .prefetch_related("atenciones__adjuntos", "adjuntos", "cobros", "citas", "seguimientos")
+            .select_related("profesional")
+            .prefetch_related(
+                Prefetch("atenciones", queryset=atenciones_qs),
+                Prefetch("adjuntos", queryset=Adjunto.objects.select_related("subido_por")),
+                "cobros", "citas", "seguimientos", "paquetes",
+            )
         )
         if _es_comercial(self.request.user):
             return qs.none()

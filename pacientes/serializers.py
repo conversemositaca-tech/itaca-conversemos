@@ -52,7 +52,7 @@ class AtencionSerializer(serializers.ModelSerializer):
         return str(obj.registrado_por) if obj.registrado_por_id else ""
 
     def get_ultima_edicion(self, obj):
-        e = obj.ediciones.all().first()  # ordenadas por -creado_en
+        e = next(iter(obj.ediciones.all()), None)  # prefetch (Meta.ordering -creado_en)
         if not e:
             return ""
         quien = str(e.editado_por) if e.editado_por_id else "—"
@@ -127,12 +127,13 @@ class PacienteSerializer(serializers.ModelSerializer):
         ]
 
     def get_proxima(self, obj):
-        prox = (
-            obj.citas.filter(inicio__gte=timezone.now())
-            .exclude(estado=Cita.Estado.CANCELADA)
-            .order_by("inicio")
-            .first()
-        )
+        # Sobre las citas ya prefetcheadas (evita una query por paciente).
+        ahora = timezone.now()
+        futuras = [
+            c for c in obj.citas.all()
+            if c.inicio and c.inicio >= ahora and c.estado != Cita.Estado.CANCELADA
+        ]
+        prox = min(futuras, key=lambda c: c.inicio) if futuras else None
         if not prox:
             return None
         loc = timezone.localtime(prox.inicio)
@@ -169,16 +170,17 @@ class PacienteSerializer(serializers.ModelSerializer):
         ]
 
     def get_ultima(self, obj):
-        ult = obj.atenciones.order_by("-fecha").first()
-        return fecha_corta(timezone.localtime(ult.fecha)) if ult else "—"
+        # atenciones viene prefetcheado y ordenado por -fecha (Meta.ordering).
+        ats = list(obj.atenciones.all())
+        return fecha_corta(timezone.localtime(ats[0].fecha)) if ats else "—"
 
     def get_historial(self, obj):
-        atenciones = obj.atenciones.order_by("-fecha")
-        return AtencionSerializer(atenciones, many=True).data
+        # Usa el prefetch (ya ordenado por -fecha); no re-consultar por paciente.
+        return AtencionSerializer(obj.atenciones.all(), many=True).data
 
     def get_adjuntos(self, obj):
-        # Archivos del paciente que no cuelgan de una atención concreta.
-        sueltos = obj.adjuntos.filter(atencion__isnull=True).order_by("-creado_en")
+        # Archivos sueltos (sin atención) desde el prefetch (ordenado por -creado_en).
+        sueltos = [a for a in obj.adjuntos.all() if a.atencion_id is None]
         return AdjuntoSerializer(sueltos, many=True).data
 
 
