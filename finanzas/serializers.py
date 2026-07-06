@@ -9,7 +9,7 @@ from .models import Cobro, Egreso, Paquete, Servicio
 class ServicioSerializer(serializers.ModelSerializer):
     class Meta:
         model = Servicio
-        fields = ["id", "nombre", "especialidad", "precio", "activo"]
+        fields = ["id", "nombre", "especialidad", "precio", "monto_referencia", "activo"]
 
 
 class PaqueteSerializer(serializers.ModelSerializer):

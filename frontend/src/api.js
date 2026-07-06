@@ -248,6 +248,51 @@ export const api = {
   crearPaquete: (data) => req("/api/paquetes/", { method: "POST", body: JSON.stringify(data) }),
   anularPaquete: (id) => req(`/api/paquetes/${id}/anular/`, { method: "POST" }),
 
+  // --- Espacios profesionales (alquiler de consultorios) — solo gerencia ---
+  espConsultorios: (sede) => req(`/api/espacios/consultorios/${sede ? `?sede=${sede}` : ""}`),
+  espCrearConsultorio: (data) => req("/api/espacios/consultorios/", { method: "POST", body: JSON.stringify(data) }),
+  espActualizarConsultorio: (id, data) => req(`/api/espacios/consultorios/${id}/`, { method: "PATCH", body: JSON.stringify(data) }),
+  espBorrarConsultorio: (id) => req(`/api/espacios/consultorios/${id}/`, { method: "DELETE" }),
+  espInteresados: (params = {}) => {
+    const p = new URLSearchParams();
+    if (params.estado) p.set("estado", params.estado);
+    if (params.sede) p.set("sede", params.sede);
+    return req(`/api/espacios/interesados/?${p.toString()}`);
+  },
+  espCrearInteresado: (data) => req("/api/espacios/interesados/", { method: "POST", body: JSON.stringify(data) }),
+  espActualizarInteresado: (id, data) => req(`/api/espacios/interesados/${id}/`, { method: "PATCH", body: JSON.stringify(data) }),
+  espBorrarInteresado: (id) => req(`/api/espacios/interesados/${id}/`, { method: "DELETE" }),
+  espContratos: (params = {}) => {
+    const p = new URLSearchParams();
+    if (params.estado) p.set("estado", params.estado);
+    if (params.sede) p.set("sede", params.sede);
+    return req(`/api/espacios/contratos/?${p.toString()}`);
+  },
+  espCrearContrato: (data) => req("/api/espacios/contratos/", { method: "POST", body: JSON.stringify(data) }),
+  espActualizarContrato: (id, data) => req(`/api/espacios/contratos/${id}/`, { method: "PATCH", body: JSON.stringify(data) }),
+  espBorrarContrato: (id) => req(`/api/espacios/contratos/${id}/`, { method: "DELETE" }),
+  espReservas: (params = {}) => {
+    const p = new URLSearchParams();
+    if (params.sede) p.set("sede", params.sede);
+    if (params.desde) p.set("desde", params.desde);
+    if (params.hasta) p.set("hasta", params.hasta);
+    if (params.consultorio) p.set("consultorio", params.consultorio);
+    return req(`/api/espacios/reservas/?${p.toString()}`);
+  },
+  // Devuelve { creadas: [...], saltadas: [...] }. Si TODO se cruza, la API responde 409 (lanza error).
+  espCrearReserva: (data) => req("/api/espacios/reservas/", { method: "POST", body: JSON.stringify(data) }),
+  espActualizarReserva: (id, data) => req(`/api/espacios/reservas/${id}/`, { method: "PATCH", body: JSON.stringify(data) }),
+  espBorrarReserva: (id) => req(`/api/espacios/reservas/${id}/`, { method: "DELETE" }),
+  espPagos: (params = {}) => {
+    const p = new URLSearchParams();
+    if (params.contrato) p.set("contrato", params.contrato);
+    if (params.estado) p.set("estado", params.estado);
+    return req(`/api/espacios/pagos/?${p.toString()}`);
+  },
+  espCrearPago: (data) => req("/api/espacios/pagos/", { method: "POST", body: JSON.stringify(data) }),
+  espMarcarPagoPagado: (id, medio) => req(`/api/espacios/pagos/${id}/marcar_pagado/`, { method: "POST", body: JSON.stringify({ medio_pago: medio }) }),
+  espBorrarPago: (id) => req(`/api/espacios/pagos/${id}/`, { method: "DELETE" }),
+
   // --- Edición genérica tipo hoja de cálculo (cualquier endpoint del router) ---
   hojaListar: (endpoint, qs = "") => req(`/api/${endpoint}/${qs}`),
   hojaActualizar: (endpoint, id, data) =>

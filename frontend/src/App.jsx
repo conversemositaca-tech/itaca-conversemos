@@ -6,6 +6,7 @@ import {
   TrendingUp, Download, AlertTriangle, Megaphone, LogOut,
   Paperclip, Trash2, Activity, Pill, HeartPulse, Copy, BarChart3, UserCog, KeyRound, MapPin,
   Mic, FolderOpen, Lightbulb, ExternalLink, Bell, GraduationCap,
+  Building2, DoorOpen, ChevronRight,
 } from "lucide-react";
 import { api } from "./api";
 import Login from "./Login";
@@ -580,6 +581,8 @@ export default function ClinicaApp() {
     // Finanzas: solo gerencia.
     ...(usuario?.rol === "admin" ? [{ id: "finanzas", label: "Finanzas", icon: TrendingUp }] : []),
     ...(usuario?.rol === "admin" ? [{ id: "liquidacion", label: "Liquidación", icon: Receipt }] : []),
+    // Espacios profesionales (alquiler de consultorios): solo gerencia.
+    ...(usuario?.rol === "admin" ? [{ id: "espacios", label: "Espacios", icon: Building2 }] : []),
     ...(usuario?.rol === "admin" ? [{ id: "equipo", label: "Equipo", icon: UserCog }] : []),
     ...(usuario?.rol === "admin" ? [{ id: "legal", label: "Legal", icon: FileText }] : []),
     ...(usuario?.rol === "admin" ? [{ id: "whatsapp", label: "Conexión WhatsApp", icon: MessageCircle }] : []),
@@ -1260,6 +1263,8 @@ export default function ClinicaApp() {
         {view === "finanzas" && <Finanzas showToast={showToast} esAdmin={usuario?.rol === "admin"} />}
 
         {view === "liquidacion" && <Liquidacion showToast={showToast} />}
+
+        {view === "espacios" && <EspaciosProfesionales showToast={showToast} />}
 
         {adding && <AgendarModal pacientes={pacientes} fechaInicial={agendaFecha} onClose={() => setAdding(false)} onSave={agendarCita} />}
         {agendarPara && (
@@ -4800,6 +4805,872 @@ function ConsolidadoSoto({ showToast }) {
 
 // Liquidación de honorarios: cuánto pagar a cada psicólogo según el % de lo
 // cobrado en sus sesiones, en un rango de fechas. Solo gerencia.
+// ============ ESPACIOS PROFESIONALES (alquiler de consultorios) ============
+
+const ESP_H_INI = 6, ESP_H_FIN = 22, ESP_PX_H = 46; // agenda 6:00–22:00
+const ESP_SEDES = [{ v: "lima", l: "Lima" }, { v: "piura", l: "Piura" }];
+// Estados del CRM de interesados (color pastel estilo Notion).
+const ESP_EST_INT = {
+  interesado: { l: "Interesado", bg: "#E1F0FB", fg: "#2A6FA6" },
+  visita: { l: "Visita", bg: "#FFF1DA", fg: "#9C6B2E" },
+  negociacion: { l: "Negociación", bg: "#EDE6F4", fg: "#6B4E96" },
+  activo: { l: "Activo", bg: "#E3F0E8", fg: "#2F6B4F" },
+  descartado: { l: "Descartado", bg: "#F3E3E3", fg: "#9C4646" },
+};
+const ESP_EST_CONT = {
+  activo: { l: "Activo", bg: "#E3F0E8", fg: "#2F6B4F" },
+  pausado: { l: "Pausado", bg: "#FFF1DA", fg: "#9C6B2E" },
+  finalizado: { l: "Finalizado", bg: "#EEEBE6", fg: "#8A8378" },
+};
+// Colores de la agenda: 2 tonos para distinguir quién ocupa (pedido de Gaby).
+const ESP_TIPO = {
+  externo: { l: "Externo (alquiler)", bg: "#D7F4FA", fg: "#0A7D92", bd: "#8FD9E7" },
+  conversemos: { l: "Conversemos", bg: "#E3F0E8", fg: "#2F6B4F", bd: "#A9D2BC" },
+};
+// Planes del dossier comercial (precio de lanzamiento). Auto-rellenan el contrato.
+const ESP_PLANES = [
+  { id: "", nombre: "— Personalizado —", modalidad: "por_horas", horas: 0, precio: 0 },
+  { id: "hora", nombre: "Hora individual (1 h)", modalidad: "por_horas", horas: 1, precio: 25 },
+  { id: "flex1", nombre: "Flexible 1 · 5 h/mes", modalidad: "por_horas", horas: 5, precio: 120 },
+  { id: "flex2", nombre: "Flexible 2 · 10 h/mes", modalidad: "por_horas", horas: 10, precio: 230 },
+  { id: "flex3", nombre: "Flexible 3 · 20 h/mes", modalidad: "por_horas", horas: 20, precio: 420 },
+  { id: "inicio", nombre: "Inicio · 4 h/sem", modalidad: "fijo", horas: 4, precio: 360 },
+  { id: "crecimiento", nombre: "Crecimiento · 8 h/sem", modalidad: "fijo", horas: 8, precio: 680 },
+  { id: "profesional", nombre: "Profesional · 12 h/sem", modalidad: "fijo", horas: 12, precio: 930 },
+  { id: "full", nombre: "Full · 20 h/sem", modalidad: "fijo", horas: 20, precio: 1450 },
+];
+const espHDec = (t) => { if (!t) return 0; const [h, m] = t.split(":").map(Number); return h + (m || 0) / 60; };
+const espHm = (t) => (t || "").slice(0, 5);
+// Opciones de hora 06:00–22:00 en pasos de 30 min.
+const ESP_HORAS_OP = (() => {
+  const out = [];
+  for (let h = ESP_H_INI; h <= ESP_H_FIN; h++) { out.push(`${pad2(h)}:00`); if (h < ESP_H_FIN) out.push(`${pad2(h)}:30`); }
+  return out;
+})();
+
+function EspBadge({ est }) {
+  if (!est) return null;
+  return <span style={{ background: est.bg, color: est.fg, fontSize: 11.5, fontWeight: 600, padding: "2px 9px", borderRadius: 20, whiteSpace: "nowrap" }}>{est.l}</span>;
+}
+
+function EspaciosProfesionales({ showToast }) {
+  const [tab, setTab] = useState("agenda");
+  const [consultorios, setConsultorios] = useState([]);
+  const [contratos, setContratos] = useState([]);
+
+  const recargarConsultorios = () => api.espConsultorios().then(setConsultorios).catch(() => {});
+  const recargarContratos = () => api.espContratos().then(setContratos).catch(() => {});
+  useEffect(() => { recargarConsultorios(); recargarContratos(); }, []);
+
+  const tabs = [
+    { id: "agenda", label: "Agenda de ocupación", icon: Calendar },
+    { id: "interesados", label: "Interesados", icon: Users },
+    { id: "clientes", label: "Clientes activos", icon: DoorOpen },
+    { id: "pagos", label: "Pagos", icon: Receipt },
+  ];
+
+  return (
+    <div>
+      <div className="ca-tophead">
+        <div>
+          <h1 className="ca-h1">Espacios profesionales</h1>
+          <div className="ca-sub">Alquiler de consultorios · interesados, clientes, ocupación y pagos</div>
+        </div>
+      </div>
+
+      <div className="ca-seg" style={{ marginLeft: 0, marginBottom: 16, flexWrap: "wrap" }}>
+        {tabs.map((t) => (
+          <button key={t.id} className={tab === t.id ? "on" : ""} onClick={() => setTab(t.id)}>
+            <t.icon size={14} strokeWidth={2} style={{ marginRight: 5, verticalAlign: "-2px" }} />{t.label}
+          </button>
+        ))}
+      </div>
+
+      {consultorios.length === 0 ? (
+        <div className="ca-empty">No hay consultorios registrados. Créalos en la pestaña Agenda de ocupación.</div>
+      ) : null}
+
+      {tab === "agenda" && <EspAgenda showToast={showToast} consultorios={consultorios} contratos={contratos} recargarConsultorios={recargarConsultorios} />}
+      {tab === "interesados" && <EspInteresados showToast={showToast} onContrato={() => setTab("clientes")} recargarContratos={recargarContratos} />}
+      {tab === "clientes" && <EspContratos showToast={showToast} consultorios={consultorios} contratos={contratos} recargarContratos={recargarContratos} />}
+      {tab === "pagos" && <EspPagos showToast={showToast} contratos={contratos} />}
+    </div>
+  );
+}
+
+// ---- Agenda de ocupación (día / semana / mes) ----
+function EspAgenda({ showToast, consultorios, contratos, recargarConsultorios }) {
+  const [sede, setSede] = useState("lima");
+  const [vista, setVista] = useState("dia");
+  const [fecha, setFecha] = useState(HOY_ISO);
+  const [reservas, setReservas] = useState([]);
+  const [nueva, setNueva] = useState(null);
+  const [nuevoConsul, setNuevoConsul] = useState(false);
+
+  const consSede = useMemo(() => consultorios.filter((c) => c.sede === sede && c.activo), [consultorios, sede]);
+
+  const rango = useMemo(() => {
+    if (vista === "dia") return [fecha, fecha];
+    if (vista === "semana") { const s = semanaDe(fecha); return [s[0], s[6]]; }
+    const m = mesDe(fecha); return [m[0], m[m.length - 1]];
+  }, [vista, fecha]);
+
+  function cargar() {
+    api.espReservas({ sede, desde: rango[0], hasta: rango[1] }).then(setReservas).catch((e) => showToast("Error: " + e.message));
+  }
+  useEffect(() => { cargar(); }, [sede, rango[0], rango[1]]);
+
+  const irAtras = () => setFecha(vista === "mes" ? sumarMeses(fecha, -1) : sumarDias(fecha, vista === "semana" ? -7 : -1));
+  const irAdelante = () => setFecha(vista === "mes" ? sumarMeses(fecha, 1) : sumarDias(fecha, vista === "semana" ? 7 : 1));
+  const subt = vista === "semana" ? `${labelNumMes(rango[0])} – ${labelNumMes(rango[1])}` : vista === "mes" ? labelMes(fecha) : labelLargo(fecha);
+
+  async function borrar(id) {
+    if (!window.confirm("¿Quitar esta reserva del calendario?")) return;
+    try { await api.espBorrarReserva(id); cargar(); showToast("Reserva eliminada"); }
+    catch (e) { showToast("Error: " + e.message); }
+  }
+
+  return (
+    <div>
+      <div className="ca-agnav" style={{ justifyContent: "space-between" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <button className="ca-btn ghost" onClick={irAtras}><ChevronLeft size={16} /></button>
+          <button className="ca-btn ghost" onClick={irAdelante}><ChevronRight size={16} /></button>
+          <button className="ca-btn ghost" onClick={() => setFecha(HOY_ISO)}>Hoy</button>
+          <strong style={{ fontSize: 15, marginLeft: 6 }}>{subt}</strong>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          <div className="ca-seg" style={{ marginLeft: 0 }}>
+            {ESP_SEDES.map((s) => <button key={s.v} className={sede === s.v ? "on" : ""} onClick={() => setSede(s.v)}>{s.l}</button>)}
+          </div>
+          <div className="ca-seg" style={{ marginLeft: 0 }}>
+            <button className={vista === "dia" ? "on" : ""} onClick={() => setVista("dia")}>Día</button>
+            <button className={vista === "semana" ? "on" : ""} onClick={() => setVista("semana")}>Semana</button>
+            <button className={vista === "mes" ? "on" : ""} onClick={() => setVista("mes")}>Mes</button>
+          </div>
+          <button className="ca-btn" onClick={() => setNueva({ fecha: vista === "dia" ? fecha : HOY_ISO })}><Plus size={15} /> Reservar</button>
+        </div>
+      </div>
+
+      <div style={{ display: "flex", gap: 16, alignItems: "center", margin: "10px 2px 14px", fontSize: 12.5, color: "var(--muted)", flexWrap: "wrap" }}>
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><span style={{ width: 12, height: 12, borderRadius: 3, background: ESP_TIPO.conversemos.bg, border: `1px solid ${ESP_TIPO.conversemos.bd}` }} /> Conversemos</span>
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><span style={{ width: 12, height: 12, borderRadius: 3, background: ESP_TIPO.externo.bg, border: `1px solid ${ESP_TIPO.externo.bd}` }} /> Profesional externo</span>
+        <button className="ca-link" onClick={() => setNuevoConsul(true)} style={{ marginLeft: "auto" }}>+ Consultorio</button>
+      </div>
+
+      {consSede.length === 0 ? (
+        <div className="ca-empty">No hay consultorios activos en {sede === "lima" ? "Lima" : "Piura"}. Agrega uno con “+ Consultorio”.</div>
+      ) : vista === "dia" ? (
+        <EspGridDia consultorios={consSede} reservas={reservas.filter((r) => r.consultorio_sede === sede)} onBorrar={borrar}
+          onNueva={(cid, hora) => setNueva({ fecha, consultorio: cid, hora_inicio: hora })} />
+      ) : vista === "semana" ? (
+        <EspVistaSemana dias={semanaDe(fecha)} reservas={reservas} consultorios={consSede} onDia={(d) => { setFecha(d); setVista("dia"); }} onBorrar={borrar} />
+      ) : (
+        <EspVistaMes fecha={fecha} reservas={reservas} onDia={(d) => { setFecha(d); setVista("dia"); }} />
+      )}
+
+      {nueva && (
+        <EspReservaModal base={nueva} sede={sede} consultorios={consSede} contratos={contratos}
+          onClose={() => setNueva(null)} onSaved={() => { setNueva(null); cargar(); }} showToast={showToast} />
+      )}
+      {nuevoConsul && (
+        <EspConsultorioModal sede={sede} onClose={() => setNuevoConsul(false)}
+          onSaved={() => { setNuevoConsul(false); recargarConsultorios(); }} showToast={showToast} />
+      )}
+    </div>
+  );
+}
+
+// Grilla del día: columnas = consultorios, filas = horas 6–22, bloques por reserva.
+function EspGridDia({ consultorios, reservas, onBorrar, onNueva }) {
+  const horas = [];
+  for (let h = ESP_H_INI; h <= ESP_H_FIN; h++) horas.push(h);
+  const alto = (ESP_H_FIN - ESP_H_INI) * ESP_PX_H;
+  return (
+    <div className="ca-card" style={{ padding: 0, overflow: "auto" }}>
+      <div style={{ display: "flex", minWidth: 120 + consultorios.length * 150 }}>
+        {/* Columna de horas */}
+        <div style={{ width: 56, flexShrink: 0, borderRight: "1px solid var(--line)", paddingTop: 34 }}>
+          {horas.slice(0, -1).map((h) => (
+            <div key={h} style={{ height: ESP_PX_H, fontSize: 11, color: "var(--muted)", textAlign: "right", paddingRight: 8, transform: "translateY(-7px)" }}>{pad2(h)}:00</div>
+          ))}
+        </div>
+        {/* Una columna por consultorio */}
+        {consultorios.map((c) => {
+          const rs = reservas.filter((r) => r.consultorio === c.id);
+          return (
+            <div key={c.id} style={{ flex: 1, minWidth: 150, borderRight: "1px solid var(--line)" }}>
+              <div style={{ height: 34, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12.5, fontWeight: 600, borderBottom: "1px solid var(--line)", position: "sticky", top: 0, background: "var(--surface)" }}>
+                <DoorOpen size={13} strokeWidth={2} style={{ marginRight: 5, color: "var(--muted)" }} />{c.nombre}
+              </div>
+              <div style={{ position: "relative", height: alto }}>
+                {/* Líneas de hora + click para reservar */}
+                {horas.slice(0, -1).map((h, i) => (
+                  <div key={h} onClick={() => onNueva(c.id, `${pad2(h)}:00`)}
+                    style={{ position: "absolute", top: i * ESP_PX_H, left: 0, right: 0, height: ESP_PX_H, borderBottom: "1px solid #F1EEE9", cursor: "pointer" }} />
+                ))}
+                {rs.map((r) => {
+                  const top = (espHDec(r.hora_inicio) - ESP_H_INI) * ESP_PX_H;
+                  const alt = Math.max((espHDec(r.hora_fin) - espHDec(r.hora_inicio)) * ESP_PX_H - 3, 20);
+                  const t = ESP_TIPO[r.tipo] || ESP_TIPO.externo;
+                  return (
+                    <div key={r.id} style={{ position: "absolute", top, left: 4, right: 4, height: alt, background: t.bg, border: `1px solid ${t.bd}`, borderLeft: `3px solid ${t.fg}`, borderRadius: 6, padding: "3px 6px", overflow: "hidden", fontSize: 11.5 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", gap: 4 }}>
+                        <strong style={{ color: t.fg, fontSize: 11, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{espHm(r.hora_inicio)}–{espHm(r.hora_fin)}</strong>
+                        <button onClick={() => onBorrar(r.id)} title="Quitar" style={{ background: "none", border: "none", cursor: "pointer", color: t.fg, padding: 0, lineHeight: 1 }}><X size={12} /></button>
+                      </div>
+                      <div style={{ color: "var(--ink)", fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{r.ocupante_display}</div>
+                      {r.notas ? <div style={{ color: "var(--muted)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{r.notas}</div> : null}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// Vista semana: 7 columnas (días), chips de reservas por día.
+function EspVistaSemana({ dias, reservas, consultorios, onDia, onBorrar }) {
+  const nombre = (id) => consultorios.find((c) => c.id === id)?.nombre || "";
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 8 }}>
+      {dias.map((d) => {
+        const rs = reservas.filter((r) => r.fecha === d).sort((a, b) => a.hora_inicio.localeCompare(b.hora_inicio));
+        const hoy = d === HOY_ISO;
+        return (
+          <div key={d} className="ca-card" style={{ padding: 8, minHeight: 120, ...(hoy ? { borderColor: "var(--accent)" } : {}) }}>
+            <div onClick={() => onDia(d)} style={{ cursor: "pointer", fontSize: 12, fontWeight: 600, marginBottom: 6, textAlign: "center", color: hoy ? "var(--accent)" : "var(--ink)" }}>
+              {cap(labelDiaSemana(d))} {dDeISO(d).getDate()}
+            </div>
+            {rs.length === 0 ? <div style={{ fontSize: 11, color: "var(--muted)", textAlign: "center" }}>—</div> : rs.map((r) => {
+              const t = ESP_TIPO[r.tipo] || ESP_TIPO.externo;
+              return (
+                <div key={r.id} title={`${nombre(r.consultorio)} · ${r.ocupante_display}`} style={{ background: t.bg, borderLeft: `3px solid ${t.fg}`, borderRadius: 5, padding: "3px 5px", marginBottom: 4, fontSize: 11 }}>
+                  <div style={{ fontWeight: 600, color: t.fg }}>{espHm(r.hora_inicio)}–{espHm(r.hora_fin)}</div>
+                  <div style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{nombre(r.consultorio)} · {r.ocupante_display}</div>
+                </div>
+              );
+            })}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// Vista mes: grilla con conteo de reservas por día.
+function EspVistaMes({ fecha, reservas, onDia }) {
+  const dias = mesDe(fecha);
+  const mesActual = dDeISO(fecha).getMonth();
+  const cont = {};
+  reservas.forEach((r) => { cont[r.fecha] = (cont[r.fecha] || 0) + 1; });
+  return (
+    <div className="ca-card" style={{ padding: 10 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 4, fontSize: 11, color: "var(--muted)", marginBottom: 4, textAlign: "center" }}>
+        {["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"].map((d) => <div key={d}>{d}</div>)}
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 4 }}>
+        {dias.map((d) => {
+          const fuera = dDeISO(d).getMonth() !== mesActual;
+          const n = cont[d] || 0;
+          return (
+            <div key={d} onClick={() => onDia(d)} style={{ minHeight: 62, border: "1px solid var(--line)", borderRadius: 6, padding: 5, cursor: "pointer", background: d === HOY_ISO ? "#FBF7FE" : "var(--surface)", opacity: fuera ? 0.4 : 1 }}>
+              <div style={{ fontSize: 12, fontWeight: 500 }}>{dDeISO(d).getDate()}</div>
+              {n > 0 && <div style={{ marginTop: 4, fontSize: 11, color: "#0A7D92", fontWeight: 600 }}>{n} reserva{n > 1 ? "s" : ""}</div>}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function EspReservaModal({ base, sede, consultorios, contratos, onClose, onSaved, showToast }) {
+  const [consultorio, setConsultorio] = useState(base.consultorio || consultorios[0]?.id || "");
+  const [fecha, setFecha] = useState(base.fecha || HOY_ISO);
+  const [hIni, setHIni] = useState(base.hora_inicio || "09:00");
+  const [hFin, setHFin] = useState(base.hora_fin || "10:00");
+  const [tipo, setTipo] = useState("externo");
+  const [contrato, setContrato] = useState("");
+  const [ocupante, setOcupante] = useState("");
+  const [repetir, setRepetir] = useState(0);
+  const [notas, setNotas] = useState("");
+  const [guardando, setGuardando] = useState(false);
+  const activos = contratos.filter((c) => c.estado === "activo" && c.consultorio_sede === sede);
+
+  function elegirContrato(id) {
+    setContrato(id);
+    const c = contratos.find((x) => String(x.id) === String(id));
+    if (c) { setOcupante(c.nombre_display || ""); if (c.consultorio) setConsultorio(c.consultorio); }
+  }
+
+  async function guardar() {
+    if (!consultorio) return showToast("Elige un consultorio.");
+    if (hFin <= hIni) return showToast("La hora de fin debe ser posterior al inicio.");
+    setGuardando(true);
+    try {
+      const r = await api.espCrearReserva({
+        consultorio, fecha, hora_inicio: hIni, hora_fin: hFin, tipo,
+        contrato: contrato || null, ocupante, notas, repetir_semanas: Number(repetir) || 0,
+      });
+      const n = r.creadas?.length || 0, s = r.saltadas?.length || 0;
+      showToast(s ? `${n} reserva(s) creada(s) · ${s} se cruzaban (saltadas)` : "Reserva creada ✓");
+      onSaved();
+    } catch (e) { showToast("Error: " + e.message); }
+    finally { setGuardando(false); }
+  }
+
+  return (
+    <div className="ca-modal-bg" onClick={onClose}>
+      <div className="ca-modal" style={{ maxWidth: 440 }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+          <strong style={{ fontSize: 16 }}>Reservar espacio</strong>
+          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)" }}><X size={18} /></button>
+        </div>
+
+        <div style={{ marginBottom: 13 }}>
+          <div className="ca-label">Consultorio</div>
+          <select className="ca-input" value={consultorio} onChange={(e) => setConsultorio(e.target.value)}>
+            {consultorios.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+          </select>
+        </div>
+
+        <div style={{ display: "flex", gap: 11, marginBottom: 13 }}>
+          <div style={{ flex: 1.3 }}>
+            <div className="ca-label">Fecha</div>
+            <input className="ca-input" type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} />
+          </div>
+          <div style={{ flex: 1 }}>
+            <div className="ca-label">Desde</div>
+            <select className="ca-input" value={hIni} onChange={(e) => setHIni(e.target.value)}>{ESP_HORAS_OP.map((h) => <option key={h}>{h}</option>)}</select>
+          </div>
+          <div style={{ flex: 1 }}>
+            <div className="ca-label">Hasta</div>
+            <select className="ca-input" value={hFin} onChange={(e) => setHFin(e.target.value)}>{ESP_HORAS_OP.map((h) => <option key={h}>{h}</option>)}</select>
+          </div>
+        </div>
+
+        <div style={{ marginBottom: 13 }}>
+          <div className="ca-label">¿Quién ocupa?</div>
+          <div className="ca-seg" style={{ marginLeft: 0, display: "flex" }}>
+            <button className={tipo === "externo" ? "on" : ""} onClick={() => setTipo("externo")} style={{ flex: 1 }}>Externo (alquiler)</button>
+            <button className={tipo === "conversemos" ? "on" : ""} onClick={() => setTipo("conversemos")} style={{ flex: 1 }}>Conversemos</button>
+          </div>
+        </div>
+
+        {tipo === "externo" && activos.length > 0 && (
+          <div style={{ marginBottom: 13 }}>
+            <div className="ca-label">Cliente de alquiler <span style={{ color: "var(--muted)", fontWeight: 400 }}>(opcional)</span></div>
+            <select className="ca-input" value={contrato} onChange={(e) => elegirContrato(e.target.value)}>
+              <option value="">— Sin vincular —</option>
+              {activos.map((c) => <option key={c.id} value={c.id}>{c.nombre_display}</option>)}
+            </select>
+          </div>
+        )}
+
+        <div style={{ marginBottom: 13 }}>
+          <div className="ca-label">Profesional que ocupa</div>
+          <input className="ca-input" value={ocupante} onChange={(e) => setOcupante(e.target.value)} placeholder={tipo === "conversemos" ? "Nombre del terapeuta de Conversemos" : "Nombre del profesional"} />
+        </div>
+
+        <div style={{ display: "flex", gap: 11, marginBottom: 13 }}>
+          <div style={{ flex: 1 }}>
+            <div className="ca-label">Repetir semanas <span style={{ color: "var(--muted)", fontWeight: 400 }}>(horario fijo)</span></div>
+            <input className="ca-input" type="number" min="0" max="52" value={repetir} onChange={(e) => setRepetir(e.target.value)} />
+          </div>
+          <div style={{ flex: 2 }}>
+            <div className="ca-label">Notas</div>
+            <input className="ca-input" value={notas} onChange={(e) => setNotas(e.target.value)} placeholder="Opcional" />
+          </div>
+        </div>
+        {Number(repetir) > 0 && <div style={{ fontSize: 12, color: "var(--muted)", marginTop: -6, marginBottom: 12 }}>Se creará también los próximos {repetir} {Number(repetir) === 1 ? "lunes/día" : "días"} de la misma semana. Las que se crucen se saltan.</div>}
+
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 6 }}>
+          <button className="ca-btn ghost" onClick={onClose}>Cancelar</button>
+          <button className="ca-btn" onClick={guardar} disabled={guardando}>{guardando ? "Guardando…" : "Reservar"}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function EspConsultorioModal({ sede, onClose, onSaved, showToast }) {
+  const [nombre, setNombre] = useState("");
+  const [sedeC, setSedeC] = useState(sede);
+  const [desc, setDesc] = useState("");
+  async function guardar() {
+    if (!nombre.trim()) return showToast("Ponle un nombre al consultorio.");
+    try { await api.espCrearConsultorio({ nombre: nombre.trim(), sede: sedeC, descripcion: desc }); showToast("Consultorio creado ✓"); onSaved(); }
+    catch (e) { showToast("Error: " + e.message); }
+  }
+  return (
+    <div className="ca-modal-bg" onClick={onClose}>
+      <div className="ca-modal" style={{ maxWidth: 360 }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+          <strong style={{ fontSize: 16 }}>Nuevo consultorio</strong>
+          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)" }}><X size={18} /></button>
+        </div>
+        <div style={{ marginBottom: 13 }}><div className="ca-label">Nombre</div><input className="ca-input" value={nombre} onChange={(e) => setNombre(e.target.value)} placeholder="Consultorio 4" autoFocus /></div>
+        <div style={{ marginBottom: 13 }}><div className="ca-label">Sede</div>
+          <select className="ca-input" value={sedeC} onChange={(e) => setSedeC(e.target.value)}>{ESP_SEDES.map((s) => <option key={s.v} value={s.v}>{s.l}</option>)}</select>
+        </div>
+        <div style={{ marginBottom: 13 }}><div className="ca-label">Descripción <span style={{ color: "var(--muted)", fontWeight: 400 }}>(opcional)</span></div><input className="ca-input" value={desc} onChange={(e) => setDesc(e.target.value)} /></div>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+          <button className="ca-btn ghost" onClick={onClose}>Cancelar</button>
+          <button className="ca-btn" onClick={guardar}>Crear</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---- CRM de interesados en alquilar ----
+function EspInteresados({ showToast, onContrato, recargarContratos }) {
+  const [lista, setLista] = useState([]);
+  const [fEstado, setFEstado] = useState("");
+  const [fSede, setFSede] = useState("");
+  const [edit, setEdit] = useState(null);
+  const [cargando, setCargando] = useState(true);
+
+  function cargar() {
+    setCargando(true);
+    api.espInteresados({ estado: fEstado, sede: fSede }).then(setLista).catch((e) => showToast("Error: " + e.message)).finally(() => setCargando(false));
+  }
+  useEffect(() => { cargar(); }, [fEstado, fSede]);
+
+  async function cambiarEstado(it, estado) {
+    try { await api.espActualizarInteresado(it.id, { estado }); cargar(); }
+    catch (e) { showToast("Error: " + e.message); }
+  }
+  async function borrar(it) {
+    if (!window.confirm(`¿Eliminar a ${it.nombre}?`)) return;
+    try { await api.espBorrarInteresado(it.id); cargar(); showToast("Interesado eliminado"); }
+    catch (e) { showToast("Error: " + e.message); }
+  }
+
+  return (
+    <div>
+      <div className="ca-agnav" style={{ justifyContent: "space-between", marginBottom: 12 }}>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <select className="ca-input" style={{ width: "auto" }} value={fEstado} onChange={(e) => setFEstado(e.target.value)}>
+            <option value="">Todos los estados</option>
+            {Object.entries(ESP_EST_INT).map(([k, v]) => <option key={k} value={k}>{v.l}</option>)}
+          </select>
+          <select className="ca-input" style={{ width: "auto" }} value={fSede} onChange={(e) => setFSede(e.target.value)}>
+            <option value="">Ambas sedes</option>{ESP_SEDES.map((s) => <option key={s.v} value={s.v}>{s.l}</option>)}
+          </select>
+        </div>
+        <button className="ca-btn" onClick={() => setEdit({ new: true })}><Plus size={15} /> Interesado</button>
+      </div>
+
+      {lista.length === 0 ? (
+        <div className="ca-empty">{cargando ? "Cargando…" : "Sin interesados registrados."}</div>
+      ) : (
+        <div className="ca-card" style={{ padding: 0, overflow: "auto" }}>
+          <table className="ca-table">
+            <thead><tr><th>Nombre</th><th>Profesión</th><th>Contacto</th><th>Sede</th><th>Estado</th><th>Seguimiento</th><th></th></tr></thead>
+            <tbody>
+              {lista.map((it) => (
+                <tr key={it.id}>
+                  <td>
+                    <div style={{ fontWeight: 500 }}>{it.nombre}</div>
+                    {it.observaciones ? <div className="ca-pmeta" style={{ maxWidth: 220, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} title={it.observaciones}>{it.observaciones}</div> : null}
+                  </td>
+                  <td>{it.profesion || "—"}</td>
+                  <td style={{ fontSize: 12.5 }}>{it.telefono || ""}{it.telefono && it.correo ? <br /> : ""}{it.correo || (!it.telefono ? "—" : "")}</td>
+                  <td>{it.sede_label || "—"}</td>
+                  <td>
+                    <select value={it.estado} onChange={(e) => cambiarEstado(it, e.target.value)} style={{ border: "1px solid var(--line)", borderRadius: 20, padding: "2px 8px", fontSize: 11.5, fontWeight: 600, background: (ESP_EST_INT[it.estado] || {}).bg, color: (ESP_EST_INT[it.estado] || {}).fg, cursor: "pointer" }}>
+                      {Object.entries(ESP_EST_INT).map(([k, v]) => <option key={k} value={k} style={{ background: "#fff", color: "var(--ink)" }}>{v.l}</option>)}
+                    </select>
+                  </td>
+                  <td style={{ fontSize: 12.5 }}>{it.proximo_seguimiento ? labelNumMes(it.proximo_seguimiento) : "—"}</td>
+                  <td style={{ whiteSpace: "nowrap" }}>
+                    {it.estado !== "activo" && <button className="ca-link" onClick={() => setEdit({ ...it, _contrato: true })} title="Convertir en cliente">→ Cliente</button>}
+                    <button className="ca-iconbtn" onClick={() => setEdit(it)} title="Editar" style={{ marginLeft: 6 }}><Pencil size={14} /></button>
+                    <button className="ca-iconbtn" onClick={() => borrar(it)} title="Eliminar" style={{ marginLeft: 4, color: "#9C4646" }}><Trash2 size={14} /></button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {edit && !edit._contrato && (
+        <EspInteresadoModal it={edit.new ? null : edit} onClose={() => setEdit(null)} onSaved={() => { setEdit(null); cargar(); }} showToast={showToast} />
+      )}
+      {edit && edit._contrato && (
+        <EspContratoModal interesado={edit} consultorios={[]} onClose={() => setEdit(null)}
+          onSaved={() => { setEdit(null); cargar(); recargarContratos(); onContrato(); }} showToast={showToast} soloDesdeInteresado />
+      )}
+    </div>
+  );
+}
+
+function EspInteresadoModal({ it, onClose, onSaved, showToast }) {
+  const [f, setF] = useState({
+    nombre: it?.nombre || "", telefono: it?.telefono || "", correo: it?.correo || "",
+    profesion: it?.profesion || "", sede_interes: it?.sede_interes || "", estado: it?.estado || "interesado",
+    observaciones: it?.observaciones || "", proximo_seguimiento: it?.proximo_seguimiento || "",
+  });
+  const set = (k, v) => setF((o) => ({ ...o, [k]: v }));
+  async function guardar() {
+    if (!f.nombre.trim()) return showToast("El nombre es obligatorio.");
+    const data = { ...f, proximo_seguimiento: f.proximo_seguimiento || null };
+    try {
+      if (it) await api.espActualizarInteresado(it.id, data);
+      else await api.espCrearInteresado(data);
+      showToast(it ? "Interesado actualizado ✓" : "Interesado agregado ✓"); onSaved();
+    } catch (e) { showToast("Error: " + e.message); }
+  }
+  return (
+    <div className="ca-modal-bg" onClick={onClose}>
+      <div className="ca-modal" style={{ maxWidth: 440 }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+          <strong style={{ fontSize: 16 }}>{it ? "Editar interesado" : "Nuevo interesado"}</strong>
+          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)" }}><X size={18} /></button>
+        </div>
+        <div style={{ marginBottom: 13 }}><div className="ca-label">Nombre</div><input className="ca-input" value={f.nombre} onChange={(e) => set("nombre", e.target.value)} autoFocus /></div>
+        <div style={{ display: "flex", gap: 11, marginBottom: 13 }}>
+          <div style={{ flex: 1 }}><div className="ca-label">Teléfono</div><input className="ca-input" value={f.telefono} onChange={(e) => set("telefono", e.target.value)} inputMode="tel" /></div>
+          <div style={{ flex: 1 }}><div className="ca-label">Correo</div><input className="ca-input" value={f.correo} onChange={(e) => set("correo", e.target.value)} inputMode="email" /></div>
+        </div>
+        <div style={{ display: "flex", gap: 11, marginBottom: 13 }}>
+          <div style={{ flex: 1.5 }}><div className="ca-label">Profesión / especialidad</div><input className="ca-input" value={f.profesion} onChange={(e) => set("profesion", e.target.value)} /></div>
+          <div style={{ flex: 1 }}><div className="ca-label">Sede de interés</div>
+            <select className="ca-input" value={f.sede_interes} onChange={(e) => set("sede_interes", e.target.value)}><option value="">—</option>{ESP_SEDES.map((s) => <option key={s.v} value={s.v}>{s.l}</option>)}</select>
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 11, marginBottom: 13 }}>
+          <div style={{ flex: 1 }}><div className="ca-label">Estado</div>
+            <select className="ca-input" value={f.estado} onChange={(e) => set("estado", e.target.value)}>{Object.entries(ESP_EST_INT).map(([k, v]) => <option key={k} value={k}>{v.l}</option>)}</select>
+          </div>
+          <div style={{ flex: 1 }}><div className="ca-label">Próximo seguimiento</div><input className="ca-input" type="date" value={f.proximo_seguimiento || ""} onChange={(e) => set("proximo_seguimiento", e.target.value)} /></div>
+        </div>
+        <div style={{ marginBottom: 13 }}><div className="ca-label">Observaciones</div><textarea className="ca-input" rows={3} value={f.observaciones} onChange={(e) => set("observaciones", e.target.value)} /></div>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+          <button className="ca-btn ghost" onClick={onClose}>Cancelar</button>
+          <button className="ca-btn" onClick={guardar}>{it ? "Guardar" : "Agregar"}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---- Clientes activos (contratos de alquiler) ----
+function EspContratos({ showToast, consultorios, contratos, recargarContratos }) {
+  const [lista, setLista] = useState([]);
+  const [fEstado, setFEstado] = useState("");
+  const [fSede, setFSede] = useState("");
+  const [nuevo, setNuevo] = useState(false);
+  const [cargando, setCargando] = useState(true);
+
+  function cargar() {
+    setCargando(true);
+    api.espContratos({ estado: fEstado, sede: fSede }).then(setLista).catch((e) => showToast("Error: " + e.message)).finally(() => setCargando(false));
+  }
+  useEffect(() => { cargar(); }, [fEstado, fSede]);
+
+  async function borrar(c) {
+    if (!window.confirm(`¿Eliminar el contrato de ${c.nombre_display}?`)) return;
+    try { await api.espBorrarContrato(c.id); cargar(); recargarContratos(); showToast("Contrato eliminado"); }
+    catch (e) { showToast("Error: " + e.message); }
+  }
+
+  return (
+    <div>
+      <div className="ca-agnav" style={{ justifyContent: "space-between", marginBottom: 12 }}>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <select className="ca-input" style={{ width: "auto" }} value={fEstado} onChange={(e) => setFEstado(e.target.value)}>
+            <option value="">Todos los estados</option>{Object.entries(ESP_EST_CONT).map(([k, v]) => <option key={k} value={k}>{v.l}</option>)}
+          </select>
+          <select className="ca-input" style={{ width: "auto" }} value={fSede} onChange={(e) => setFSede(e.target.value)}>
+            <option value="">Ambas sedes</option>{ESP_SEDES.map((s) => <option key={s.v} value={s.v}>{s.l}</option>)}
+          </select>
+        </div>
+        <button className="ca-btn" onClick={() => setNuevo(true)}><Plus size={15} /> Cliente</button>
+      </div>
+
+      {lista.length === 0 ? (
+        <div className="ca-empty">{cargando ? "Cargando…" : "Sin clientes activos."}</div>
+      ) : (
+        <div className="ca-card" style={{ padding: 0, overflow: "auto" }}>
+          <table className="ca-table">
+            <thead><tr><th>Cliente</th><th>Consultorio</th><th>Modalidad</th><th>Plan</th><th className="num">Horas</th><th>Horario</th><th className="num">Precio</th><th className="num">Pagado</th><th>Estado</th><th></th></tr></thead>
+            <tbody>
+              {lista.map((c) => (
+                <tr key={c.id}>
+                  <td><div style={{ fontWeight: 500 }}>{c.nombre_display}</div>{c.profesion ? <div className="ca-pmeta">{c.profesion}</div> : null}</td>
+                  <td>{c.consultorio_nombre} <span style={{ color: "var(--muted)", fontSize: 12 }}>· {c.consultorio_sede === "lima" ? "Lima" : "Piura"}</span></td>
+                  <td>{c.modalidad_label}</td>
+                  <td>{c.plan || "—"}</td>
+                  <td className="num">{Number(c.horas_contratadas)}</td>
+                  <td style={{ fontSize: 12.5, maxWidth: 160 }}>{c.horario_semanal || "—"}</td>
+                  <td className="num">{money(c.precio)}</td>
+                  <td className="num" title="Horas cubiertas por pagos">{Number(c.horas_pagadas)} h</td>
+                  <td><EspBadge est={ESP_EST_CONT[c.estado]} /></td>
+                  <td style={{ whiteSpace: "nowrap" }}><button className="ca-iconbtn" onClick={() => borrar(c)} title="Eliminar" style={{ color: "#9C4646" }}><Trash2 size={14} /></button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {nuevo && (
+        <EspContratoModal interesado={null} consultorios={consultorios} onClose={() => setNuevo(false)}
+          onSaved={() => { setNuevo(false); cargar(); recargarContratos(); }} showToast={showToast} />
+      )}
+    </div>
+  );
+}
+
+function EspContratoModal({ interesado, consultorios, onClose, onSaved, showToast, soloDesdeInteresado }) {
+  const [cons, setCons] = useState(consultorios);
+  const [f, setF] = useState({
+    consultorio: consultorios[0]?.id || "", fecha_inicio: HOY_ISO, modalidad: "por_horas",
+    plan: "", horas_contratadas: "", horario_semanal: "", precio: "", estado: "activo",
+    nombre: interesado?.nombre || "", profesion: interesado?.profesion || "", telefono: interesado?.telefono || "",
+  });
+  const set = (k, v) => setF((o) => ({ ...o, [k]: v }));
+
+  // Si venimos desde el interesado sin lista de consultorios, la cargamos.
+  useEffect(() => {
+    if (soloDesdeInteresado && cons.length === 0) {
+      api.espConsultorios().then((cs) => { setCons(cs); if (cs[0]) set("consultorio", cs[0].id); }).catch(() => {});
+    }
+  }, []);
+
+  function aplicarPlan(id) {
+    const p = ESP_PLANES.find((x) => x.id === id);
+    if (!p) return;
+    setF((o) => ({ ...o, plan: p.id ? p.nombre : "", modalidad: p.modalidad, horas_contratadas: p.horas || "", precio: p.precio || "" }));
+  }
+
+  async function guardar() {
+    if (!f.consultorio) return showToast("Elige un consultorio.");
+    const data = {
+      interesado: interesado?.id || null,
+      consultorio: f.consultorio, fecha_inicio: f.fecha_inicio, modalidad: f.modalidad,
+      plan: f.plan, horas_contratadas: f.horas_contratadas || 0, horario_semanal: f.horario_semanal,
+      precio: f.precio || 0, estado: f.estado,
+      nombre: f.nombre, profesion: f.profesion, telefono: f.telefono,
+    };
+    try { await api.espCrearContrato(data); showToast("Cliente de alquiler creado ✓"); onSaved(); }
+    catch (e) { showToast("Error: " + e.message); }
+  }
+
+  return (
+    <div className="ca-modal-bg" onClick={onClose}>
+      <div className="ca-modal" style={{ maxWidth: 460 }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+          <strong style={{ fontSize: 16 }}>{interesado ? `Cliente: ${interesado.nombre}` : "Nuevo cliente de alquiler"}</strong>
+          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)" }}><X size={18} /></button>
+        </div>
+
+        {!interesado && (
+          <div style={{ display: "flex", gap: 11, marginBottom: 13 }}>
+            <div style={{ flex: 1.5 }}><div className="ca-label">Nombre del profesional</div><input className="ca-input" value={f.nombre} onChange={(e) => set("nombre", e.target.value)} /></div>
+            <div style={{ flex: 1 }}><div className="ca-label">Teléfono</div><input className="ca-input" value={f.telefono} onChange={(e) => set("telefono", e.target.value)} inputMode="tel" /></div>
+          </div>
+        )}
+
+        <div style={{ display: "flex", gap: 11, marginBottom: 13 }}>
+          <div style={{ flex: 1.4 }}><div className="ca-label">Consultorio</div>
+            <select className="ca-input" value={f.consultorio} onChange={(e) => set("consultorio", e.target.value)}>
+              <option value="">— Elegir —</option>
+              {cons.map((c) => <option key={c.id} value={c.id}>{c.nombre} · {c.sede === "lima" ? "Lima" : "Piura"}</option>)}
+            </select>
+          </div>
+          <div style={{ flex: 1 }}><div className="ca-label">Fecha de inicio</div><input className="ca-input" type="date" value={f.fecha_inicio} onChange={(e) => set("fecha_inicio", e.target.value)} /></div>
+        </div>
+
+        <div style={{ marginBottom: 13 }}>
+          <div className="ca-label">Plan del dossier <span style={{ color: "var(--muted)", fontWeight: 400 }}>(auto-rellena horas y precio)</span></div>
+          <select className="ca-input" onChange={(e) => aplicarPlan(e.target.value)} defaultValue="">
+            {ESP_PLANES.map((p) => <option key={p.id || "custom"} value={p.id}>{p.nombre}</option>)}
+          </select>
+        </div>
+
+        <div style={{ display: "flex", gap: 11, marginBottom: 13 }}>
+          <div style={{ flex: 1 }}><div className="ca-label">Modalidad</div>
+            <select className="ca-input" value={f.modalidad} onChange={(e) => set("modalidad", e.target.value)}>
+              <option value="por_horas">Por horas (flexible)</option><option value="fijo">Horario fijo (semanal)</option>
+            </select>
+          </div>
+          <div style={{ flex: 1 }}><div className="ca-label">Horas {f.modalidad === "fijo" ? "/ semana" : "/ mes"}</div><input className="ca-input" type="number" min="0" value={f.horas_contratadas} onChange={(e) => set("horas_contratadas", e.target.value)} /></div>
+          <div style={{ flex: 1 }}><div className="ca-label">Precio (S/)</div><input className="ca-input" type="number" min="0" value={f.precio} onChange={(e) => set("precio", e.target.value)} /></div>
+        </div>
+
+        {f.modalidad === "fijo" && (
+          <div style={{ marginBottom: 13 }}><div className="ca-label">Horario semanal</div><input className="ca-input" value={f.horario_semanal} onChange={(e) => set("horario_semanal", e.target.value)} placeholder="Lun y Mié 10:00–12:00" /></div>
+        )}
+
+        <div style={{ marginBottom: 13 }}><div className="ca-label">Estado</div>
+          <select className="ca-input" value={f.estado} onChange={(e) => set("estado", e.target.value)}>{Object.entries(ESP_EST_CONT).map(([k, v]) => <option key={k} value={k}>{v.l}</option>)}</select>
+        </div>
+
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+          <button className="ca-btn ghost" onClick={onClose}>Cancelar</button>
+          <button className="ca-btn" onClick={guardar}>Guardar</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---- Pagos del alquiler ----
+function EspPagos({ showToast, contratos }) {
+  const [contrato, setContrato] = useState("");
+  const [lista, setLista] = useState([]);
+  const [nuevo, setNuevo] = useState(false);
+  const [pagando, setPagando] = useState(null);
+  const [cargando, setCargando] = useState(true);
+
+  function cargar() {
+    setCargando(true);
+    api.espPagos({ contrato }).then(setLista).catch((e) => showToast("Error: " + e.message)).finally(() => setCargando(false));
+  }
+  useEffect(() => { cargar(); }, [contrato]);
+
+  const contSel = contratos.find((c) => String(c.id) === String(contrato));
+
+  async function marcarPagado(p, medio) {
+    try { await api.espMarcarPagoPagado(p.id, medio); setPagando(null); cargar(); showToast("Pago marcado como pagado ✓"); }
+    catch (e) { showToast("Error: " + e.message); }
+  }
+  async function borrar(p) {
+    if (!window.confirm("¿Eliminar este pago?")) return;
+    try { await api.espBorrarPago(p.id); cargar(); showToast("Pago eliminado"); }
+    catch (e) { showToast("Error: " + e.message); }
+  }
+
+  return (
+    <div>
+      <div className="ca-agnav" style={{ justifyContent: "space-between", marginBottom: 12 }}>
+        <select className="ca-input" style={{ width: "auto", maxWidth: 280 }} value={contrato} onChange={(e) => setContrato(e.target.value)}>
+          <option value="">Todos los clientes</option>
+          {contratos.map((c) => <option key={c.id} value={c.id}>{c.nombre_display} · {c.consultorio_nombre}</option>)}
+        </select>
+        <button className="ca-btn" onClick={() => setNuevo(true)} disabled={contratos.length === 0}><Plus size={15} /> Pago</button>
+      </div>
+
+      {contSel && (
+        <div className="ca-glance" style={{ marginBottom: 14 }}>
+          <div className="ca-gcard" style={{ cursor: "default" }}>
+            <div className="ca-ghead"><Clock size={14} strokeWidth={2} /> Horas pagadas</div>
+            <div className="ca-gmain">{Number(contSel.horas_pagadas)} h</div>
+            <div className="ca-gsub">de {Number(contSel.horas_contratadas)} h contratadas ({contSel.modalidad_label})</div>
+          </div>
+          <div className="ca-gcard" style={{ cursor: "default" }}>
+            <div className="ca-ghead"><Receipt size={14} strokeWidth={2} /> Pagado acumulado</div>
+            <div className="ca-gmain">{money(lista.filter((p) => p.estado === "pagado").reduce((a, p) => a + Number(p.monto), 0))}</div>
+            <div className="ca-gsub">{lista.filter((p) => p.estado === "pendiente").length} pago(s) pendiente(s)</div>
+          </div>
+        </div>
+      )}
+
+      {lista.length === 0 ? (
+        <div className="ca-empty">{cargando ? "Cargando…" : "Sin pagos registrados."}</div>
+      ) : (
+        <div className="ca-card" style={{ padding: 0, overflow: "auto" }}>
+          <table className="ca-table">
+            <thead><tr><th>Cliente</th><th>Fecha</th><th className="num">Monto</th><th>Método</th><th className="num">Horas</th><th>Estado</th><th></th></tr></thead>
+            <tbody>
+              {lista.map((p) => (
+                <tr key={p.id}>
+                  <td>{p.contrato_nombre}</td>
+                  <td>{p.fecha ? labelNumMes(p.fecha) : "—"}</td>
+                  <td className="num" style={{ fontWeight: 600 }}>{money(p.monto)}</td>
+                  <td>{p.medio_label || "—"}</td>
+                  <td className="num">{Number(p.horas_cubiertas)} h</td>
+                  <td><EspBadge est={p.estado === "pagado" ? { l: "Pagado", bg: "#E3F0E8", fg: "#2F6B4F" } : { l: "Pendiente", bg: "#FFF1DA", fg: "#9C6B2E" }} /></td>
+                  <td style={{ whiteSpace: "nowrap" }}>
+                    {p.estado === "pendiente" && <button className="ca-link" onClick={() => setPagando(p)}>Marcar pagado</button>}
+                    <button className="ca-iconbtn" onClick={() => borrar(p)} title="Eliminar" style={{ marginLeft: 6, color: "#9C4646" }}><Trash2 size={14} /></button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {nuevo && <EspPagoModal contratos={contratos} contratoSel={contrato} onClose={() => setNuevo(false)} onSaved={() => { setNuevo(false); cargar(); }} showToast={showToast} />}
+      {pagando && (
+        <div className="ca-modal-bg" onClick={() => setPagando(null)}>
+          <div className="ca-modal" style={{ maxWidth: 320 }} onClick={(e) => e.stopPropagation()}>
+            <strong style={{ fontSize: 15 }}>¿Con qué medio se pagó?</strong>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 14 }}>
+              {[["efectivo", "Efectivo"], ["yape", "Yape"], ["plin", "Plin"], ["transferencia", "Transferencia"], ["tarjeta", "Tarjeta"]].map(([v, l]) => (
+                <button key={v} className="ca-btn ghost" onClick={() => marcarPagado(pagando, v)}>{l}</button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function EspPagoModal({ contratos, contratoSel, onClose, onSaved, showToast }) {
+  const [f, setF] = useState({
+    contrato: contratoSel || contratos[0]?.id || "", fecha: HOY_ISO, monto: "", medio_pago: "yape",
+    estado: "pagado", horas_cubiertas: "", notas: "",
+  });
+  const set = (k, v) => setF((o) => ({ ...o, [k]: v }));
+  async function guardar() {
+    if (!f.contrato) return showToast("Elige el cliente de alquiler.");
+    if (!f.monto || Number(f.monto) <= 0) return showToast("El monto debe ser mayor a 0.");
+    try {
+      await api.espCrearPago({ ...f, horas_cubiertas: f.horas_cubiertas || 0 });
+      showToast("Pago registrado ✓"); onSaved();
+    } catch (e) { showToast("Error: " + e.message); }
+  }
+  return (
+    <div className="ca-modal-bg" onClick={onClose}>
+      <div className="ca-modal" style={{ maxWidth: 420 }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+          <strong style={{ fontSize: 16 }}>Registrar pago de alquiler</strong>
+          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)" }}><X size={18} /></button>
+        </div>
+        <div style={{ marginBottom: 13 }}><div className="ca-label">Cliente</div>
+          <select className="ca-input" value={f.contrato} onChange={(e) => set("contrato", e.target.value)}>
+            <option value="">— Elegir —</option>
+            {contratos.map((c) => <option key={c.id} value={c.id}>{c.nombre_display} · {c.consultorio_nombre}</option>)}
+          </select>
+        </div>
+        <div style={{ display: "flex", gap: 11, marginBottom: 13 }}>
+          <div style={{ flex: 1 }}><div className="ca-label">Fecha</div><input className="ca-input" type="date" value={f.fecha} onChange={(e) => set("fecha", e.target.value)} /></div>
+          <div style={{ flex: 1 }}><div className="ca-label">Monto (S/)</div><input className="ca-input" type="number" min="0" value={f.monto} onChange={(e) => set("monto", e.target.value)} autoFocus /></div>
+        </div>
+        <div style={{ display: "flex", gap: 11, marginBottom: 13 }}>
+          <div style={{ flex: 1 }}><div className="ca-label">Horas que cubre</div><input className="ca-input" type="number" min="0" value={f.horas_cubiertas} onChange={(e) => set("horas_cubiertas", e.target.value)} placeholder="Ej: 4" /></div>
+          <div style={{ flex: 1 }}><div className="ca-label">Estado</div>
+            <select className="ca-input" value={f.estado} onChange={(e) => set("estado", e.target.value)}><option value="pagado">Pagado</option><option value="pendiente">Pendiente</option></select>
+          </div>
+        </div>
+        {f.estado === "pagado" && (
+          <div style={{ marginBottom: 13 }}><div className="ca-label">Método</div>
+            <select className="ca-input" value={f.medio_pago} onChange={(e) => set("medio_pago", e.target.value)}>
+              <option value="efectivo">Efectivo</option><option value="yape">Yape</option><option value="plin">Plin</option><option value="transferencia">Transferencia</option><option value="tarjeta">Tarjeta</option>
+            </select>
+          </div>
+        )}
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+          <button className="ca-btn ghost" onClick={onClose}>Cancelar</button>
+          <button className="ca-btn" onClick={guardar}>Registrar</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function Liquidacion({ showToast }) {
   const primerDia = HOY_ISO.slice(0, 8) + "01";
   const [desde, setDesde] = useState(primerDia);
@@ -4820,11 +5691,11 @@ function Liquidacion({ showToast }) {
       <div className="ca-tophead">
         <div>
           <h1 className="ca-h1">Liquidación de honorarios</h1>
-          <div className="ca-sub">Cuánto pagar a cada psicólogo · % de lo cobrado en sus sesiones</div>
+          <div className="ca-sub">Cuánto pagar a cada psicólogo · % del monto de referencia de sus sesiones</div>
         </div>
         <ExportBtns nombre={`liquidacion_${desde}_a_${hasta}`} titulo={`Liquidación · ${desde} a ${hasta}`} disabled={filas.length === 0}
-          headers={["Psicologo", "% honorarios", "Sesiones cobradas", "Cobrado (S/)", "A pagar (S/)"]}
-          filas={filas.map((f) => [f.nombre, f.porcentaje, f.cobros, f.cobrado, f.a_pagar])} />
+          headers={["Psicologo", "% honorarios", "Sesiones cobradas", "Cobrado (S/)", "Base referencia (S/)", "A pagar (S/)"]}
+          filas={filas.map((f) => [f.nombre, f.porcentaje, f.cobros, f.cobrado, f.base_liquidacion, f.a_pagar])} />
       </div>
 
       <div className="ca-agnav" style={{ justifyContent: "flex-end", flexWrap: "wrap", gap: 10 }}>
@@ -4862,6 +5733,7 @@ function Liquidacion({ showToast }) {
                   <th className="num">% honorarios</th>
                   <th className="num">Sesiones cobradas</th>
                   <th className="num">Cobrado</th>
+                  <th className="num">Base referencia</th>
                   <th className="num">A pagar</th>
                 </tr>
               </thead>
@@ -4871,7 +5743,8 @@ function Liquidacion({ showToast }) {
                     <td>{f.nombre}{f.medico_id && f.porcentaje === 0 ? <span style={{ marginLeft: 7, fontSize: 11.5, color: "#B0822F" }}>· sin % configurado</span> : null}</td>
                     <td className="num">{f.porcentaje}%</td>
                     <td className="num">{f.cobros}</td>
-                    <td className="num">{money(f.cobrado)}</td>
+                    <td className="num" style={{ color: "var(--muted)" }}>{money(f.cobrado)}</td>
+                    <td className="num">{money(f.base_liquidacion)}</td>
                     <td className="num" style={{ fontWeight: 600 }}>{money(f.a_pagar)}</td>
                   </tr>
                 ))}
@@ -4880,7 +5753,8 @@ function Liquidacion({ showToast }) {
                 <tr style={{ fontWeight: 600, borderTop: "2px solid var(--line)" }}>
                   <td>Total</td><td className="num"></td>
                   <td className="num">{filas.reduce((a, f) => a + f.cobros, 0)}</td>
-                  <td className="num">{money(data.total_cobrado)}</td>
+                  <td className="num" style={{ color: "var(--muted)" }}>{money(data.total_cobrado)}</td>
+                  <td className="num">{money(data.total_base)}</td>
                   <td className="num">{money(data.total_a_pagar)}</td>
                 </tr>
               </tfoot>
@@ -4888,7 +5762,7 @@ function Liquidacion({ showToast }) {
           </div>
           <div style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 12, display: "flex", gap: 7, alignItems: "flex-start", lineHeight: 1.5 }}>
             <AlertTriangle size={14} strokeWidth={2} style={{ color: "#B0822F", flexShrink: 0, marginTop: 1 }} />
-            <span>Solo cuenta cobros <strong>pagados</strong>, atribuidos al psicólogo de la cita o de la atención. El % se configura en la ficha de cada profesional.</span>
+            <span>Se paga sobre el <strong>monto de referencia</strong> del servicio (no sobre lo cobrado), así un descuento al paciente lo asume la clínica y el psicólogo cobra igual. El monto de referencia se configura en <strong>Finanzas → Precios</strong> y el % en la ficha de cada profesional. Solo cuenta cobros <strong>pagados</strong>.</span>
           </div>
         </>
       )}
@@ -5454,8 +6328,8 @@ function PreciosModal({ onClose, showToast }) {
   async function cargar() { setLista(await api.servicios()); }
   useEffect(() => { cargar().catch((e) => showToast("Error: " + e.message)); }, []);
 
-  async function guardarPrecio(s, nuevoPrecio) {
-    try { await api.actualizarServicio(s.id, { precio: nuevoPrecio }); await cargar(); showToast("Precio actualizado ✓"); }
+  async function guardarCampo(s, campo, valor) {
+    try { await api.actualizarServicio(s.id, { [campo]: valor }); await cargar(); showToast("Guardado ✓"); }
     catch (e) { showToast("Error: " + e.message); }
   }
   async function agregar() {
@@ -5472,13 +6346,19 @@ function PreciosModal({ onClose, showToast }) {
 
   return (
     <div className="ca-modal-bg" onClick={onClose}>
-      <div className="ca-modal" style={{ maxWidth: 470 }} onClick={(e) => e.stopPropagation()}>
+      <div className="ca-modal" style={{ maxWidth: 540 }} onClick={(e) => e.stopPropagation()}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
           <strong style={{ fontSize: 16 }}>Catálogo de precios</strong>
           <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)" }}><X size={18} /></button>
         </div>
         {!lista ? <div className="ca-empty">Cargando…</div> : (
           <>
+            <div style={{ display: "flex", gap: 8, padding: "0 4px 4px", fontSize: 11.5, color: "var(--muted)", fontWeight: 600 }}>
+              <div style={{ flex: 1 }}>Servicio</div>
+              <div style={{ width: 84, textAlign: "right" }}>Precio</div>
+              <div style={{ width: 84, textAlign: "right" }} title="Monto base para la liquidación del psicólogo (ignora descuentos)">Ref. liquidación</div>
+              <div style={{ width: 26 }} />
+            </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: "46vh", overflowY: "auto", marginBottom: 14 }}>
               {lista.map((s) => (
                 <div key={s.id} className="ca-adjrow">
@@ -5486,9 +6366,10 @@ function PreciosModal({ onClose, showToast }) {
                     <div style={{ fontSize: 14, fontWeight: 500 }}>{s.nombre}</div>
                     {s.especialidad && <div className="ca-pmeta">{s.especialidad}</div>}
                   </div>
-                  <span style={{ fontSize: 12.5, color: "var(--muted)" }}>S/</span>
-                  <input className="ca-input" style={{ width: 78, marginTop: 0, textAlign: "right" }} defaultValue={s.precio}
-                    onBlur={(e) => { if (e.target.value && String(e.target.value) !== String(s.precio)) guardarPrecio(s, e.target.value); }} inputMode="decimal" />
+                  <input className="ca-input" style={{ width: 84, marginTop: 0, textAlign: "right" }} defaultValue={s.precio} title="Precio de lista"
+                    onBlur={(e) => { if (e.target.value && String(e.target.value) !== String(s.precio)) guardarCampo(s, "precio", e.target.value); }} inputMode="decimal" />
+                  <input className="ca-input" style={{ width: 84, marginTop: 0, textAlign: "right" }} defaultValue={s.monto_referencia} title="Monto de referencia para la liquidación (si es 0, usa el precio)"
+                    onBlur={(e) => { if (String(e.target.value) !== String(s.monto_referencia)) guardarCampo(s, "monto_referencia", e.target.value || 0); }} inputMode="decimal" />
                   <button className="ca-iconbtn" title="Eliminar" onClick={() => eliminar(s)}><Trash2 size={14} strokeWidth={2} /></button>
                 </div>
               ))}
@@ -5499,7 +6380,7 @@ function PreciosModal({ onClose, showToast }) {
               <input className="ca-input" style={{ width: 84, marginTop: 0 }} value={precio} onChange={(e) => setPrecio(e.target.value)} placeholder="S/" inputMode="decimal" />
               <button className="ca-btn" onClick={agregar}>Añadir</button>
             </div>
-            <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 12 }}>Edita un precio y haz clic afuera para guardarlo. Solo el admin puede cambiar precios.</div>
+            <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 12 }}>Edita un valor y haz clic afuera para guardarlo. El <strong>monto de referencia</strong> es la base sobre la que se le paga al psicólogo en la Liquidación (así un descuento al paciente no le baja el pago); si lo dejas en 0, se usa el precio.</div>
           </>
         )}
       </div>

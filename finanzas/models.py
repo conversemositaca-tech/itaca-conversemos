@@ -12,6 +12,13 @@ class Servicio(ModeloTenant):
     nombre = models.CharField(max_length=160)
     especialidad = models.CharField(max_length=120, blank=True)
     precio = models.DecimalField(max_digits=8, decimal_places=2)
+    # Monto base para la liquidación de honorarios del psicólogo. Se paga sobre
+    # ESTE monto (no sobre lo cobrado), de modo que un descuento al paciente lo
+    # asume la clínica y NO reduce el pago al profesional. Si es 0, la liquidación
+    # cae al precio del servicio; y sin servicio, al monto realmente cobrado.
+    monto_referencia = models.DecimalField(
+        "monto de referencia (liquidación)", max_digits=8, decimal_places=2, default=0,
+    )
     activo = models.BooleanField(default=True)
 
     class Meta:

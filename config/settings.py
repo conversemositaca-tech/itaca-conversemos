@@ -51,6 +51,7 @@ INSTALLED_APPS = [
     "mensajes",
     "leads",
     "finanzas",
+    "espacios",
 ]
 
 MIDDLEWARE = [

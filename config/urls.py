@@ -22,6 +22,13 @@ from finanzas.api import (
     SotoResumenView,
 )
 from finanzas.liquidacion import LiquidacionView
+from espacios.api import (
+    ConsultorioViewSet,
+    ContratoAlquilerViewSet,
+    InteresadoAlquilerViewSet,
+    PagoAlquilerViewSet,
+    ReservaEspacioViewSet,
+)
 from leads.api import AnuncioViewSet, LeadViewSet
 from leads.captacion import (
     CaptacionConfigView,
@@ -69,6 +76,12 @@ router.register(r"leads", LeadViewSet, basename="lead")
 router.register(r"sugerencias", SugerenciaViewSet, basename="sugerencia")
 router.register(r"recursos", RecursoViewSet, basename="recurso")
 router.register(r"anuncios", AnuncioViewSet, basename="anuncio")
+# Espacios profesionales (alquiler de consultorios) — solo gerencia.
+router.register(r"espacios/consultorios", ConsultorioViewSet, basename="espacio-consultorio")
+router.register(r"espacios/interesados", InteresadoAlquilerViewSet, basename="espacio-interesado")
+router.register(r"espacios/contratos", ContratoAlquilerViewSet, basename="espacio-contrato")
+router.register(r"espacios/reservas", ReservaEspacioViewSet, basename="espacio-reserva")
+router.register(r"espacios/pagos", PagoAlquilerViewSet, basename="espacio-pago")
 
 urlpatterns = [
     path("admin/", admin.site.urls),

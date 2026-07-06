@@ -2,8 +2,25 @@
 
 Por un rango de fechas, agrupa los cobros PAGADOS según el psicólogo que atendió
 la sesión (vía la cita o la atención enlazada) y calcula cuánto pagarle según su
-% de honorarios (Profesional.porcentaje_liquidacion). Modelo: % de lo cobrado.
+% de honorarios (Profesional.porcentaje_liquidacion).
+
+Modelo: % del **monto de referencia** del servicio, NO de lo efectivamente
+cobrado. Así, si al paciente se le hizo un descuento, ese descuento lo asume la
+clínica de su parte y el psicólogo cobra igual. Base por cobro:
+  1) servicio.monto_referencia (si el servicio la tiene definida > 0),
+  2) si no, servicio.precio (precio de lista), y
+  3) sin servicio enlazado, el monto realmente cobrado.
 """
+
+
+def _base_liquidable(cobro):
+    """Monto sobre el que se liquida al psicólogo por este cobro."""
+    serv = cobro.servicio if cobro.servicio_id else None
+    if serv is not None:
+        if serv.monto_referencia and serv.monto_referencia > 0:
+            return serv.monto_referencia
+        return serv.precio
+    return cobro.monto
 from datetime import datetime, time
 from decimal import Decimal
 
@@ -53,7 +70,7 @@ class LiquidacionView(APIView):
         cobros = (
             Cobro.objects
             .filter(clinica=clinica, estado=Cobro.Estado.PAGADO, fecha__gte=ini, fecha__lte=fin)
-            .select_related("cita", "cita__medico", "atencion", "atencion__medico")
+            .select_related("cita", "cita__medico", "atencion", "atencion__medico", "servicio")
         )
 
         SIN = 0  # cubeta "Sin psicólogo asignado"
@@ -73,20 +90,23 @@ class LiquidacionView(APIView):
                     "nombre": str(medico) if medico else "Sin psicólogo asignado",
                     "porcentaje": float(pct),
                     "cobros": 0,
-                    "cobrado": Decimal("0"),
+                    "cobrado": Decimal("0"),      # lo realmente cobrado (informativo)
+                    "base": Decimal("0"),          # base de referencia sobre la que se paga
                 }
             g["cobros"] += 1
             g["cobrado"] += c.monto
+            g["base"] += _base_liquidable(c)
 
         filas = []
         for g in grupos.values():
-            a_pagar = (g["cobrado"] * Decimal(str(g["porcentaje"])) / Decimal("100")).quantize(Decimal("0.01"))
+            a_pagar = (g["base"] * Decimal(str(g["porcentaje"])) / Decimal("100")).quantize(Decimal("0.01"))
             filas.append({
                 "medico_id": g["medico_id"],
                 "nombre": g["nombre"],
                 "porcentaje": g["porcentaje"],
                 "cobros": g["cobros"],
                 "cobrado": float(g["cobrado"]),
+                "base_liquidacion": float(g["base"]),
                 "a_pagar": float(a_pagar),
             })
         filas.sort(key=lambda x: x["a_pagar"], reverse=True)
@@ -95,6 +115,7 @@ class LiquidacionView(APIView):
             "desde": desde.isoformat(),
             "hasta": hasta.isoformat(),
             "total_cobrado": float(sum((Decimal(str(f["cobrado"])) for f in filas), Decimal("0"))),
+            "total_base": float(sum((Decimal(str(f["base_liquidacion"])) for f in filas), Decimal("0"))),
             "total_a_pagar": float(sum((Decimal(str(f["a_pagar"])) for f in filas), Decimal("0"))),
             "filas": filas,
         })
