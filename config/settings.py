@@ -142,6 +142,12 @@ STORAGES = {
     "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
     "staticfiles": {"BACKEND": "whitenoise.storage.CompressedStaticFilesStorage"},
 }
+# El build de Vite lleva hash en el nombre (index-XXXX.js) → es inmutable: se
+# cachea 1 año para que el navegador NO vuelva a descargar el bundle en cada
+# visita (antes WhiteNoise ponía solo 60 s y la app "se demoraba en aparecer").
+# El index.html lo sirve Django (TemplateView), no WhiteNoise, así que se sigue
+# revalidando y cada deploy nuevo se ve de inmediato (apunta al nuevo hash).
+WHITENOISE_MAX_AGE = 31536000
 
 # --- Archivos subidos (adjuntos clínicos) ---
 # Se guardan en disco bajo MEDIA_ROOT, pero NO se sirven por una URL pública:
