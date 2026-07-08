@@ -15,10 +15,13 @@ from core.tenant import get_clinica_actual
 from mensajes.models import Mensaje, PlantillaMensaje
 from mensajes.services import plantilla_por_clave, registrar_y_enviar
 
-from .models import Adjunto, AplicacionEscala, Atencion, BloqueoAgenda, Cita, EdicionAtencion, Paciente, SeguimientoSesion
+from .models import (
+    Adjunto, AplicacionEscala, Atencion, BloqueoAgenda, Cita, EdicionAtencion,
+    ObjetivoTerapeutico, Paciente, SeguimientoSesion, Tarea,
+)
 from .serializers import (
     AdjuntoSerializer, AplicacionEscalaSerializer, AtencionSerializer, BloqueoAgendaSerializer,
-    CitaSerializer, PacienteSerializer,
+    CitaSerializer, ObjetivoTerapeuticoSerializer, PacienteSerializer, TareaSerializer,
 )
 
 # Tipos de archivo permitidos para adjuntos clínicos.
@@ -734,3 +737,93 @@ class AplicacionEscalaViewSet(viewsets.ModelViewSet):
     def perform_destroy(self, instance):
         self._solo_clinico()
         instance.delete()
+
+
+class _HijoPacienteViewSet(viewsets.ModelViewSet):
+    """Base para recursos colgados de un paciente (objetivos, tareas): el
+    psicólogo solo ve/gestiona los de SUS pacientes; escribir solo médico/admin."""
+
+    modelo = None
+
+    def get_queryset(self):
+        qs = self.modelo.objects.del_tenant_actual()
+        if _es_comercial(self.request.user):
+            return qs.none()
+        if _es_medico(self.request.user):
+            ficha = _ficha_de(self.request.user)
+            qs = qs.filter(paciente__profesional=ficha) if ficha else qs.none()
+        paciente = self.request.query_params.get("paciente")
+        if paciente:
+            qs = qs.filter(paciente_id=paciente)
+        return qs
+
+    def _solo_clinico(self):
+        from usuarios.models import Usuario
+        if getattr(self.request.user, "rol", None) not in (Usuario.Rol.MEDICO, Usuario.Rol.ADMIN):
+            raise PermissionDenied("Solo psicólogos y administradores pueden gestionar esto.")
+
+    def _paciente_valido(self, request):
+        return Paciente.objects.del_tenant_actual().filter(pk=request.data.get("paciente")).first()
+
+    def perform_update(self, serializer):
+        self._solo_clinico()
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        self._solo_clinico()
+        instance.delete()
+
+
+class ObjetivoTerapeuticoViewSet(_HijoPacienteViewSet):
+    """Objetivos terapéuticos del paciente (con % de avance)."""
+
+    modelo = ObjetivoTerapeutico
+    serializer_class = ObjetivoTerapeuticoSerializer
+
+    def get_queryset(self):
+        return super().get_queryset().order_by("orden", "id")
+
+    def create(self, request, *args, **kwargs):
+        self._solo_clinico()
+        paciente = self._paciente_valido(request)
+        if paciente is None:
+            return Response({"detail": "Paciente no encontrado."}, status=status.HTTP_400_BAD_REQUEST)
+        texto = str(request.data.get("texto") or "").strip()[:200]
+        if not texto:
+            return Response({"detail": "Escribe el objetivo."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            progreso = max(0, min(100, int(request.data.get("progreso") or 0)))
+        except (ValueError, TypeError):
+            progreso = 0
+        estado = request.data.get("estado") if request.data.get("estado") in dict(ObjetivoTerapeutico.Estado.choices) else ObjetivoTerapeutico.Estado.ACTIVO
+        obj = ObjetivoTerapeutico.objects.create(
+            clinica=get_clinica_actual(), paciente=paciente, texto=texto,
+            progreso=progreso, estado=estado, registrado_por=request.user,
+        )
+        return Response(ObjetivoTerapeuticoSerializer(obj).data, status=status.HTTP_201_CREATED)
+
+
+class TareaViewSet(_HijoPacienteViewSet):
+    """Tareas/actividades asignadas al paciente entre sesiones."""
+
+    modelo = Tarea
+    serializer_class = TareaSerializer
+
+    def create(self, request, *args, **kwargs):
+        self._solo_clinico()
+        paciente = self._paciente_valido(request)
+        if paciente is None:
+            return Response({"detail": "Paciente no encontrado."}, status=status.HTTP_400_BAD_REQUEST)
+        texto = str(request.data.get("texto") or "").strip()[:200]
+        if not texto:
+            return Response({"detail": "Escribe la tarea."}, status=status.HTTP_400_BAD_REQUEST)
+        estado = request.data.get("estado") if request.data.get("estado") in dict(Tarea.Estado.choices) else Tarea.Estado.PENDIENTE
+        try:
+            fecha = datetime.strptime(str(request.data.get("fecha")).strip(), "%Y-%m-%d").date()
+        except (ValueError, TypeError, AttributeError):
+            fecha = None
+        tarea = Tarea.objects.create(
+            clinica=get_clinica_actual(), paciente=paciente, texto=texto,
+            estado=estado, fecha=fecha, registrado_por=request.user,
+        )
+        return Response(TareaSerializer(tarea).data, status=status.HTTP_201_CREATED)

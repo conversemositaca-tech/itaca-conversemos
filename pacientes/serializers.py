@@ -5,7 +5,10 @@ from rest_framework import serializers
 
 from core.utils import fecha_corta
 
-from .models import Adjunto, AplicacionEscala, Atencion, BloqueoAgenda, Cita, Paciente, severidad_escala
+from .models import (
+    Adjunto, AplicacionEscala, Atencion, BloqueoAgenda, Cita, ObjetivoTerapeutico,
+    Paciente, Tarea, severidad_escala,
+)
 
 
 class AdjuntoSerializer(serializers.ModelSerializer):
@@ -286,3 +289,22 @@ class AplicacionEscalaSerializer(serializers.ModelSerializer):
 
     def get_registrado_por_nombre(self, obj):
         return str(obj.registrado_por) if obj.registrado_por_id else ""
+
+
+class ObjetivoTerapeuticoSerializer(serializers.ModelSerializer):
+    paciente = serializers.PrimaryKeyRelatedField(read_only=True)
+    estado_label = serializers.CharField(source="get_estado_display", read_only=True)
+    progreso = serializers.IntegerField(min_value=0, max_value=100, required=False)
+
+    class Meta:
+        model = ObjetivoTerapeutico
+        fields = ["id", "paciente", "texto", "progreso", "estado", "estado_label", "orden"]
+
+
+class TareaSerializer(serializers.ModelSerializer):
+    paciente = serializers.PrimaryKeyRelatedField(read_only=True)
+    estado_label = serializers.CharField(source="get_estado_display", read_only=True)
+
+    class Meta:
+        model = Tarea
+        fields = ["id", "paciente", "texto", "estado", "estado_label", "fecha"]

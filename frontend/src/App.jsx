@@ -2300,6 +2300,130 @@ function EscalaModal({ pacienteId, onClose, onSaved, showToast }) {
   );
 }
 
+function ObjetivoRow({ o, puede, onUpd, onDel }) {
+  const [val, setVal] = useState(o.progreso);
+  useEffect(() => { setVal(o.progreso); }, [o.progreso]);
+  const logrado = o.estado === "logrado";
+  const color = logrado ? "#2F6B4F" : (val >= 67 ? "#2F6B4F" : val >= 34 ? "#C9923A" : "#9C6B2E");
+  return (
+    <div style={{ padding: "10px 0", borderTop: "1px solid var(--line)" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <button onClick={() => puede && onUpd(logrado ? { estado: "activo" } : { estado: "logrado", progreso: 100 })}
+          title={logrado ? "Marcar en curso" : "Marcar logrado"}
+          style={{ background: "none", border: "none", cursor: puede ? "pointer" : "default", padding: 0, color: logrado ? "#2F6B4F" : "var(--muted)", flexShrink: 0, display: "inline-flex" }}>
+          {logrado ? <Check size={18} /> : <span style={{ display: "inline-block", width: 15, height: 15, borderRadius: "50%", border: "2px solid var(--line)" }} />}
+        </button>
+        <span style={{ flex: 1, fontSize: 14, fontWeight: 500, textDecoration: logrado ? "line-through" : "none", color: logrado ? "var(--muted)" : "var(--ink)" }}>{o.texto}</span>
+        <span style={{ fontSize: 13, fontWeight: 600, color, width: 44, textAlign: "right" }}>{val}%</span>
+        {puede && <button onClick={onDel} className="ca-iconbtn" title="Eliminar" style={{ color: "#9C4646" }}><Trash2 size={14} /></button>}
+      </div>
+      <div style={{ height: 7, borderRadius: 999, background: "var(--line)", overflow: "hidden", marginTop: 6 }}>
+        <div style={{ width: `${val}%`, height: "100%", background: color, transition: "width .15s" }} />
+      </div>
+      {puede && !logrado && (
+        <input type="range" min="0" max="100" step="5" value={val} onChange={(e) => setVal(Number(e.target.value))}
+          onMouseUp={() => val !== o.progreso && onUpd({ progreso: val })} onTouchEnd={() => val !== o.progreso && onUpd({ progreso: val })}
+          style={{ width: "100%", marginTop: 7, accentColor: color }} />
+      )}
+    </div>
+  );
+}
+
+function ObjetivosPaciente({ pacienteId, puede, showToast }) {
+  const [lista, setLista] = useState([]);
+  const [nuevo, setNuevo] = useState("");
+  const [cargando, setCargando] = useState(true);
+  function cargar() { setCargando(true); api.objetivos(pacienteId).then(setLista).catch(() => {}).finally(() => setCargando(false)); }
+  useEffect(() => { cargar(); }, [pacienteId]);
+  async function actualizar(o, data) {
+    try { const upd = await api.actualizarObjetivo(o.id, data); setLista((L) => L.map((x) => x.id === o.id ? upd : x)); }
+    catch (e) { showToast && showToast("Error: " + e.message); cargar(); }
+  }
+  async function agregar() {
+    const t = nuevo.trim(); if (!t) return;
+    try { await api.crearObjetivo({ paciente: pacienteId, texto: t }); setNuevo(""); cargar(); }
+    catch (e) { showToast && showToast("Error: " + e.message); }
+  }
+  async function borrar(o) {
+    if (!window.confirm("¿Eliminar el objetivo?")) return;
+    try { await api.borrarObjetivo(o.id); cargar(); } catch (e) { showToast && showToast("Error: " + e.message); }
+  }
+  return (
+    <>
+      <h2 className="ca-secth">Objetivos terapéuticos</h2>
+      <div className="ca-card" style={{ marginBottom: 26 }}>
+        {lista.length === 0 && <div style={{ color: "var(--muted)", fontSize: 13.5, marginBottom: puede ? 12 : 0 }}>{cargando ? "Cargando…" : "Sin objetivos definidos."}</div>}
+        {lista.map((o) => <ObjetivoRow key={o.id} o={o} puede={puede} onUpd={(d) => actualizar(o, d)} onDel={() => borrar(o)} />)}
+        {puede && (
+          <div style={{ display: "flex", gap: 8, marginTop: lista.length ? 14 : 0 }}>
+            <input className="ca-input" value={nuevo} onChange={(e) => setNuevo(e.target.value)} placeholder="Nuevo objetivo: p. ej. Regular ansiedad" onKeyDown={(e) => { if (e.key === "Enter") agregar(); }} />
+            <button className="ca-btn" onClick={agregar} disabled={!nuevo.trim()}><Plus size={15} /> Agregar</button>
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
+const TAREA_EST = {
+  pendiente: { l: "Pendiente", bg: "#EEEBE6", fg: "#8A8378" },
+  parcial: { l: "Parcial", bg: "#FFF1DA", fg: "#9C6B2E" },
+  cumplida: { l: "Cumplida", bg: "#E3F0E8", fg: "#2F6B4F" },
+};
+const TAREA_CICLO = { pendiente: "parcial", parcial: "cumplida", cumplida: "pendiente" };
+
+function TareasPaciente({ pacienteId, puede, showToast }) {
+  const [lista, setLista] = useState([]);
+  const [nuevo, setNuevo] = useState("");
+  const [fecha, setFecha] = useState("");
+  const [cargando, setCargando] = useState(true);
+  function cargar() { setCargando(true); api.tareas(pacienteId).then(setLista).catch(() => {}).finally(() => setCargando(false)); }
+  useEffect(() => { cargar(); }, [pacienteId]);
+  async function ciclar(t) {
+    if (!puede) return;
+    try { const u = await api.actualizarTarea(t.id, { estado: TAREA_CICLO[t.estado] || "pendiente" }); setLista((L) => L.map((x) => x.id === t.id ? u : x)); }
+    catch (e) { showToast && showToast("Error: " + e.message); }
+  }
+  async function agregar() {
+    const x = nuevo.trim(); if (!x) return;
+    try { await api.crearTarea({ paciente: pacienteId, texto: x, fecha: fecha || null }); setNuevo(""); setFecha(""); cargar(); }
+    catch (e) { showToast && showToast("Error: " + e.message); }
+  }
+  async function borrar(t) {
+    if (!window.confirm("¿Eliminar la tarea?")) return;
+    try { await api.borrarTarea(t.id); cargar(); } catch (e) { showToast && showToast("Error: " + e.message); }
+  }
+  return (
+    <>
+      <h2 className="ca-secth">Tareas</h2>
+      <div className="ca-card" style={{ marginBottom: 26 }}>
+        {lista.length === 0 && <div style={{ color: "var(--muted)", fontSize: 13.5, marginBottom: puede ? 12 : 0 }}>{cargando ? "Cargando…" : "Sin tareas asignadas."}</div>}
+        {lista.map((t) => {
+          const e = TAREA_EST[t.estado] || TAREA_EST.pendiente;
+          return (
+            <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 0", borderTop: "1px solid var(--line)" }}>
+              <button onClick={() => ciclar(t)} title={puede ? "Cambiar estado" : ""} style={{ background: "none", border: "none", cursor: puede ? "pointer" : "default", padding: 0, color: e.fg, flexShrink: 0, display: "inline-flex" }}>
+                {t.estado === "cumplida" ? <Check size={18} /> : t.estado === "parcial" ? <Clock size={17} /> : <span style={{ display: "inline-block", width: 15, height: 15, borderRadius: "50%", border: "2px solid var(--line)" }} />}
+              </button>
+              <span style={{ flex: 1, fontSize: 14, textDecoration: t.estado === "cumplida" ? "line-through" : "none", color: t.estado === "cumplida" ? "var(--muted)" : "var(--ink)" }}>{t.texto}</span>
+              {t.fecha && <span className="ca-pmeta">{labelNumMes(t.fecha)}</span>}
+              <span style={{ background: e.bg, color: e.fg, fontSize: 11.5, fontWeight: 600, padding: "2px 9px", borderRadius: 20 }}>{e.l}</span>
+              {puede && <button onClick={() => borrar(t)} className="ca-iconbtn" title="Eliminar" style={{ color: "#9C4646" }}><Trash2 size={14} /></button>}
+            </div>
+          );
+        })}
+        {puede && (
+          <div style={{ display: "flex", gap: 8, marginTop: lista.length ? 14 : 0, flexWrap: "wrap" }}>
+            <input className="ca-input" style={{ flex: 2, minWidth: 180 }} value={nuevo} onChange={(e) => setNuevo(e.target.value)} placeholder="Nueva tarea: p. ej. Registro de emociones diario" onKeyDown={(e) => { if (e.key === "Enter") agregar(); }} />
+            <input className="ca-input" style={{ width: 150 }} type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} title="Fecha objetivo (opcional)" />
+            <button className="ca-btn" onClick={agregar} disabled={!nuevo.trim()}><Plus size={15} /> Agregar</button>
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
 function FichaCard({ label, children, style }) {
   return (
     <div className="ca-card" style={{ margin: 0, ...style }}>
@@ -2404,6 +2528,10 @@ function Ficha({ p, onBack, onEdit, onWhatsApp, onSubirAdjunto, onEliminarAdjunt
           {p.tutor_nombre && <div className="ca-field"><Users size={15} strokeWidth={1.9} style={{ color: "var(--muted)" }} /> Tutor: {p.tutor_nombre}{p.tutor_parentesco ? ` (${p.tutor_parentesco})` : ""}{p.tutor_telefono ? ` · ${p.tutor_telefono}` : ""}</div>}
         </div>
       )}
+
+      <ObjetivosPaciente pacienteId={p.id} puede={puedeRegistrar} showToast={showToast} />
+
+      <TareasPaciente pacienteId={p.id} puede={puedeRegistrar} showToast={showToast} />
 
       <EscalasPaciente pacienteId={p.id} puede={puedeRegistrar} showToast={showToast} />
 

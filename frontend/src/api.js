@@ -196,6 +196,16 @@ export const api = {
   crearEscala: (data) => req("/api/escalas/", { method: "POST", body: JSON.stringify(data) }),
   borrarEscala: (id) => req(`/api/escalas/${id}/`, { method: "DELETE" }),
 
+  // Objetivos terapéuticos (con % de avance) y Tareas del paciente
+  objetivos: (pacienteId) => req(`/api/objetivos/${pacienteId ? `?paciente=${pacienteId}` : ""}`),
+  crearObjetivo: (data) => req("/api/objetivos/", { method: "POST", body: JSON.stringify(data) }),
+  actualizarObjetivo: (id, data) => req(`/api/objetivos/${id}/`, { method: "PATCH", body: JSON.stringify(data) }),
+  borrarObjetivo: (id) => req(`/api/objetivos/${id}/`, { method: "DELETE" }),
+  tareas: (pacienteId) => req(`/api/tareas/${pacienteId ? `?paciente=${pacienteId}` : ""}`),
+  crearTarea: (data) => req("/api/tareas/", { method: "POST", body: JSON.stringify(data) }),
+  actualizarTarea: (id, data) => req(`/api/tareas/${id}/`, { method: "PATCH", body: JSON.stringify(data) }),
+  borrarTarea: (id) => req(`/api/tareas/${id}/`, { method: "DELETE" }),
+
   // Histórico mensual de marketing por sede (Gerencia)
   metricas: () => req("/api/metricas/"),
   crearMetrica: (data) => req("/api/metricas/", { method: "POST", body: JSON.stringify(data) }),

@@ -504,3 +504,58 @@ class AplicacionEscala(ModeloTenant):
         if self.escala == self.Escala.OTRA:
             return self.escala_otra or "Otra escala"
         return self.get_escala_display()
+
+
+class ObjetivoTerapeutico(ModeloTenant):
+    """Objetivo terapéutico del proceso de un paciente, con % de avance."""
+
+    class Estado(models.TextChoices):
+        ACTIVO = "activo", "En curso"
+        LOGRADO = "logrado", "Logrado"
+        PAUSADO = "pausado", "Pausado"
+
+    paciente = models.ForeignKey(Paciente, on_delete=models.CASCADE, related_name="objetivos")
+    texto = models.CharField(max_length=200)
+    progreso = models.PositiveSmallIntegerField(default=0, help_text="Avance 0-100 %.")
+    estado = models.CharField(max_length=10, choices=Estado.choices, default=Estado.ACTIVO)
+    orden = models.PositiveIntegerField(default=0)
+    registrado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, related_name="objetivos_registrados",
+        null=True, blank=True,
+    )
+
+    class Meta:
+        verbose_name = "Objetivo terapéutico"
+        verbose_name_plural = "Objetivos terapéuticos"
+        ordering = ["orden", "id"]
+        indexes = [models.Index(fields=["clinica", "paciente"])]
+
+    def __str__(self):
+        return f"{self.texto} · {self.progreso}% · {self.paciente.nombre}"
+
+
+class Tarea(ModeloTenant):
+    """Tarea/actividad asignada a un paciente entre sesiones."""
+
+    class Estado(models.TextChoices):
+        PENDIENTE = "pendiente", "Pendiente"
+        PARCIAL = "parcial", "Parcial"
+        CUMPLIDA = "cumplida", "Cumplida"
+
+    paciente = models.ForeignKey(Paciente, on_delete=models.CASCADE, related_name="tareas")
+    texto = models.CharField(max_length=200)
+    estado = models.CharField(max_length=10, choices=Estado.choices, default=Estado.PENDIENTE)
+    fecha = models.DateField(null=True, blank=True, help_text="Fecha objetivo/entrega (opcional).")
+    registrado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, related_name="tareas_registradas",
+        null=True, blank=True,
+    )
+
+    class Meta:
+        verbose_name = "Tarea"
+        verbose_name_plural = "Tareas"
+        ordering = ["-creado_en"]
+        indexes = [models.Index(fields=["clinica", "paciente", "estado"])]
+
+    def __str__(self):
+        return f"{self.texto} · {self.get_estado_display()} · {self.paciente.nombre}"
