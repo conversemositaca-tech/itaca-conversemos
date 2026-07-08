@@ -205,6 +205,10 @@ export const api = {
   crearTarea: (data) => req("/api/tareas/", { method: "POST", body: JSON.stringify(data) }),
   actualizarTarea: (id, data) => req(`/api/tareas/${id}/`, { method: "PATCH", body: JSON.stringify(data) }),
   borrarTarea: (id) => req(`/api/tareas/${id}/`, { method: "DELETE" }),
+  // Red de profesionales del paciente (psiquiatra, nutricionista…)
+  redProfesionales: (pacienteId) => req(`/api/red-profesionales/${pacienteId ? `?paciente=${pacienteId}` : ""}`),
+  crearRedProfesional: (data) => req("/api/red-profesionales/", { method: "POST", body: JSON.stringify(data) }),
+  borrarRedProfesional: (id) => req(`/api/red-profesionales/${id}/`, { method: "DELETE" }),
 
   // Histórico mensual de marketing por sede (Gerencia)
   metricas: () => req("/api/metricas/"),

@@ -16,12 +16,13 @@ from mensajes.models import Mensaje, PlantillaMensaje
 from mensajes.services import plantilla_por_clave, registrar_y_enviar
 
 from .models import (
-    Adjunto, AplicacionEscala, Atencion, BloqueoAgenda, Cita, EdicionAtencion,
+    Adjunto, AplicacionEscala, Atencion, BloqueoAgenda, Cita, ContactoProfesional, EdicionAtencion,
     ObjetivoTerapeutico, Paciente, SeguimientoSesion, Tarea,
 )
 from .serializers import (
     AdjuntoSerializer, AplicacionEscalaSerializer, AtencionSerializer, BloqueoAgendaSerializer,
-    CitaSerializer, ObjetivoTerapeuticoSerializer, PacienteSerializer, TareaSerializer,
+    CitaSerializer, ContactoProfesionalSerializer, ObjetivoTerapeuticoSerializer, PacienteSerializer,
+    TareaSerializer,
 )
 
 # Tipos de archivo permitidos para adjuntos clínicos.
@@ -827,3 +828,30 @@ class TareaViewSet(_HijoPacienteViewSet):
             estado=estado, fecha=fecha, registrado_por=request.user,
         )
         return Response(TareaSerializer(tarea).data, status=status.HTTP_201_CREATED)
+
+
+class ContactoProfesionalViewSet(_HijoPacienteViewSet):
+    """Red de profesionales del paciente (psiquiatra, nutricionista, etc.)."""
+
+    modelo = ContactoProfesional
+    serializer_class = ContactoProfesionalSerializer
+
+    def get_queryset(self):
+        return super().get_queryset().order_by("tipo", "nombre")
+
+    def create(self, request, *args, **kwargs):
+        self._solo_clinico()
+        paciente = self._paciente_valido(request)
+        if paciente is None:
+            return Response({"detail": "Paciente no encontrado."}, status=status.HTTP_400_BAD_REQUEST)
+        nombre = str(request.data.get("nombre") or "").strip()[:160]
+        if not nombre:
+            return Response({"detail": "Escribe el nombre del profesional."}, status=status.HTTP_400_BAD_REQUEST)
+        tipo = request.data.get("tipo") if request.data.get("tipo") in dict(ContactoProfesional.Tipo.choices) else ContactoProfesional.Tipo.OTRO
+        obj = ContactoProfesional.objects.create(
+            clinica=get_clinica_actual(), paciente=paciente, tipo=tipo,
+            tipo_otro=str(request.data.get("tipo_otro") or "").strip()[:60],
+            nombre=nombre, telefono=str(request.data.get("telefono") or "").strip()[:40],
+            notas=str(request.data.get("notas") or "").strip()[:200], registrado_por=request.user,
+        )
+        return Response(ContactoProfesionalSerializer(obj).data, status=status.HTTP_201_CREATED)

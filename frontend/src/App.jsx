@@ -2300,6 +2300,106 @@ function EscalaModal({ pacienteId, onClose, onSaved, showToast }) {
   );
 }
 
+function LineaTiempoProceso({ p }) {
+  const puntos = useMemo(() => {
+    const hist = [...(p.historial || [])].reverse(); // de la más antigua a la más reciente
+    return hist.map((h, i) => ({ n: i + 1, fecha: h.fecha }));
+  }, [p.historial]);
+  const total = p.sesiones_proceso || 0;
+  if (puntos.length === 0) return null;
+  const proyectada = total > puntos.length;
+  return (
+    <>
+      <h2 className="ca-secth">Línea de tiempo del proceso</h2>
+      <div className="ca-card" style={{ marginBottom: 26, overflowX: "auto" }}>
+        <div style={{ display: "flex", alignItems: "flex-start", minWidth: "min-content", paddingTop: 2 }}>
+          {puntos.map((pt, i) => {
+            const actual = i === puntos.length - 1;
+            return (
+              <div key={i} style={{ display: "flex", alignItems: "flex-start" }}>
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", width: 88 }}>
+                  <div style={{ width: 26, height: 26, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11.5, fontWeight: 700, background: actual ? "var(--accent)" : "#E3F0E8", color: actual ? "#fff" : "#2F6B4F" }}>
+                    {actual ? pt.n : <Check size={13} strokeWidth={2.5} />}
+                  </div>
+                  <div style={{ fontSize: 11.5, fontWeight: 600, marginTop: 6, textAlign: "center" }}>{pt.n === 1 ? "Consulta" : `Sesión ${pt.n}`}</div>
+                  <div style={{ fontSize: 11, color: "var(--muted)", textAlign: "center" }}>{pt.fecha}</div>
+                </div>
+                {(i < puntos.length - 1 || proyectada) && <div style={{ height: 2, width: 30, background: "var(--line)", marginTop: 12 }} />}
+              </div>
+            );
+          })}
+          {proyectada && (
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", width: 88 }}>
+              <div style={{ width: 26, height: 26, borderRadius: "50%", border: "2px dashed var(--line)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, color: "var(--muted)" }}>{total}</div>
+              <div style={{ fontSize: 11.5, fontWeight: 600, marginTop: 6, color: "var(--muted)", textAlign: "center" }}>Sesión {total}</div>
+              <div style={{ fontSize: 11, color: "var(--muted)" }}>(estimada)</div>
+            </div>
+          )}
+        </div>
+      </div>
+    </>
+  );
+}
+
+const RED_TIPOS = [
+  { v: "psiquiatra", l: "Psiquiatra" }, { v: "nutricionista", l: "Nutricionista" },
+  { v: "neurologo", l: "Neurólogo" }, { v: "medico", l: "Médico" },
+  { v: "terapeuta", l: "Terapeuta" }, { v: "abogado", l: "Abogado" }, { v: "otro", l: "Otro" },
+];
+
+function RedProfesionalesPaciente({ pacienteId, puede, showToast }) {
+  const [lista, setLista] = useState([]);
+  const [form, setForm] = useState(null);
+  const [cargando, setCargando] = useState(true);
+  function cargar() { setCargando(true); api.redProfesionales(pacienteId).then(setLista).catch(() => {}).finally(() => setCargando(false)); }
+  useEffect(() => { cargar(); }, [pacienteId]);
+  async function agregar() {
+    if (!form.nombre.trim()) return showToast && showToast("Escribe el nombre.");
+    try { await api.crearRedProfesional({ paciente: pacienteId, ...form }); setForm(null); cargar(); }
+    catch (e) { showToast && showToast("Error: " + e.message); }
+  }
+  async function borrar(c) {
+    if (!window.confirm(`¿Quitar a ${c.nombre} de la red?`)) return;
+    try { await api.borrarRedProfesional(c.id); cargar(); } catch (e) { showToast && showToast("Error: " + e.message); }
+  }
+  return (
+    <>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <h2 className="ca-secth">Red de profesionales</h2>
+        {puede && !form && <button className="ca-mini" onClick={() => setForm({ tipo: "psiquiatra", nombre: "", telefono: "", notas: "", tipo_otro: "" })}><Plus size={13} /> Agregar</button>}
+      </div>
+      <div className="ca-card" style={{ marginBottom: 26 }}>
+        {lista.length === 0 && !form && <div style={{ color: "var(--muted)", fontSize: 13.5 }}>{cargando ? "Cargando…" : "Sin profesionales en la red del paciente (psiquiatra, nutricionista, etc.)."}</div>}
+        {lista.map((c) => (
+          <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "9px 0", borderTop: "1px solid var(--line)" }}>
+            <span style={{ fontSize: 11.5, fontWeight: 600, color: "var(--accent)", background: "var(--accent-soft)", padding: "2px 9px", borderRadius: 20, minWidth: 92, textAlign: "center", flexShrink: 0 }}>{c.tipo_display}</span>
+            <span style={{ flex: 1, minWidth: 0, fontSize: 14, fontWeight: 500 }}>{c.nombre}{c.notas ? <span className="ca-pmeta"> · {c.notas}</span> : null}</span>
+            {c.telefono && <span style={{ fontSize: 13, color: "var(--muted)", display: "inline-flex", alignItems: "center", gap: 5, flexShrink: 0 }}><Phone size={13} /> {c.telefono}</span>}
+            {puede && <button onClick={() => borrar(c)} className="ca-iconbtn" title="Quitar" style={{ color: "#9C4646" }}><Trash2 size={14} /></button>}
+          </div>
+        ))}
+        {form && (
+          <div style={{ borderTop: lista.length ? "1px solid var(--line)" : "none", paddingTop: lista.length ? 12 : 0, marginTop: lista.length ? 4 : 0 }}>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+              <select className="ca-input" style={{ width: 150 }} value={form.tipo} onChange={(e) => setForm({ ...form, tipo: e.target.value })}>
+                {RED_TIPOS.map((t) => <option key={t.v} value={t.v}>{t.l}</option>)}
+              </select>
+              <input className="ca-input" style={{ flex: 2, minWidth: 160 }} value={form.nombre} onChange={(e) => setForm({ ...form, nombre: e.target.value })} placeholder="Nombre (Dr./Dra. …)" />
+              <input className="ca-input" style={{ width: 150 }} value={form.telefono} onChange={(e) => setForm({ ...form, telefono: e.target.value })} placeholder="Teléfono" inputMode="tel" />
+            </div>
+            {form.tipo === "otro" && <input className="ca-input" style={{ marginBottom: 8 }} value={form.tipo_otro} onChange={(e) => setForm({ ...form, tipo_otro: e.target.value })} placeholder="Especialidad" />}
+            <div style={{ display: "flex", gap: 8 }}>
+              <input className="ca-input" style={{ flex: 1 }} value={form.notas} onChange={(e) => setForm({ ...form, notas: e.target.value })} placeholder="Notas (opcional)" />
+              <button className="ca-btn ghost" onClick={() => setForm(null)}>Cancelar</button>
+              <button className="ca-btn" onClick={agregar} disabled={!form.nombre.trim()}>Agregar</button>
+            </div>
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
 function ObjetivoRow({ o, puede, onUpd, onDel }) {
   const [val, setVal] = useState(o.progreso);
   useEffect(() => { setVal(o.progreso); }, [o.progreso]);
@@ -2529,6 +2629,8 @@ function Ficha({ p, onBack, onEdit, onWhatsApp, onSubirAdjunto, onEliminarAdjunt
         </div>
       )}
 
+      <LineaTiempoProceso p={p} />
+
       <ObjetivosPaciente pacienteId={p.id} puede={puedeRegistrar} showToast={showToast} />
 
       <TareasPaciente pacienteId={p.id} puede={puedeRegistrar} showToast={showToast} />
@@ -2578,6 +2680,8 @@ function Ficha({ p, onBack, onEdit, onWhatsApp, onSubirAdjunto, onEliminarAdjunt
         {p.notas_internas ? <div style={{ fontSize: 13.5, lineHeight: 1.6, whiteSpace: "pre-wrap" }}>{p.notas_internas}</div>
           : <div style={{ color: "var(--muted)", fontSize: 13.5 }}>Sin notas. Aquí van preferencias del paciente o avisos del equipo (ej: «prefiere recordatorios por WhatsApp»). Se edita en «Editar».</div>}
       </div>
+
+      <RedProfesionalesPaciente pacienteId={p.id} puede={puedeRegistrar} showToast={showToast} />
 
       {(p.cuenta || puedeCobrar) && (
         <>

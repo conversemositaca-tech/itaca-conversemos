@@ -6,8 +6,8 @@ from rest_framework import serializers
 from core.utils import fecha_corta
 
 from .models import (
-    Adjunto, AplicacionEscala, Atencion, BloqueoAgenda, Cita, ObjetivoTerapeutico,
-    Paciente, Tarea, severidad_escala,
+    Adjunto, AplicacionEscala, Atencion, BloqueoAgenda, Cita, ContactoProfesional,
+    ObjetivoTerapeutico, Paciente, Tarea, severidad_escala,
 )
 
 
@@ -308,3 +308,13 @@ class TareaSerializer(serializers.ModelSerializer):
     class Meta:
         model = Tarea
         fields = ["id", "paciente", "texto", "estado", "estado_label", "fecha"]
+
+
+class ContactoProfesionalSerializer(serializers.ModelSerializer):
+    paciente = serializers.PrimaryKeyRelatedField(read_only=True)
+    tipo_label = serializers.CharField(source="get_tipo_display", read_only=True)
+    tipo_display = serializers.CharField(read_only=True)
+
+    class Meta:
+        model = ContactoProfesional
+        fields = ["id", "paciente", "tipo", "tipo_label", "tipo_otro", "tipo_display", "nombre", "telefono", "notas"]

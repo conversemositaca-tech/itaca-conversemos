@@ -559,3 +559,43 @@ class Tarea(ModeloTenant):
 
     def __str__(self):
         return f"{self.texto} · {self.get_estado_display()} · {self.paciente.nombre}"
+
+
+class ContactoProfesional(ModeloTenant):
+    """Red de profesionales alrededor de un paciente (psiquiatra, nutricionista,
+    neurólogo, médico, abogado…) para coordinar/derivar. Con su contacto."""
+
+    class Tipo(models.TextChoices):
+        PSIQUIATRA = "psiquiatra", "Psiquiatra"
+        NUTRICIONISTA = "nutricionista", "Nutricionista"
+        NEUROLOGO = "neurologo", "Neurólogo"
+        MEDICO = "medico", "Médico"
+        TERAPEUTA = "terapeuta", "Terapeuta"
+        ABOGADO = "abogado", "Abogado"
+        OTRO = "otro", "Otro"
+
+    paciente = models.ForeignKey(Paciente, on_delete=models.CASCADE, related_name="red_profesionales")
+    tipo = models.CharField(max_length=15, choices=Tipo.choices, default=Tipo.OTRO)
+    tipo_otro = models.CharField(max_length=60, blank=True, default="", help_text="Especialidad si el tipo es 'Otro'.")
+    nombre = models.CharField(max_length=160)
+    telefono = models.CharField(max_length=40, blank=True, default="")
+    notas = models.CharField(max_length=200, blank=True, default="")
+    registrado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, related_name="contactos_profesionales",
+        null=True, blank=True,
+    )
+
+    class Meta:
+        verbose_name = "Contacto profesional"
+        verbose_name_plural = "Red de profesionales"
+        ordering = ["tipo", "nombre"]
+        indexes = [models.Index(fields=["clinica", "paciente"])]
+
+    def __str__(self):
+        return f"{self.get_tipo_display()} · {self.nombre} · {self.paciente.nombre}"
+
+    @property
+    def tipo_display(self):
+        if self.tipo == self.Tipo.OTRO and self.tipo_otro:
+            return self.tipo_otro
+        return self.get_tipo_display()
