@@ -132,6 +132,30 @@ class Paciente(ModeloTenant):
         )
 
 
+def severidad_escala(escala, puntaje):
+    """Devuelve (nivel, etiqueta) de una escala según su puntaje, con los puntos
+    de corte clínicos estándar. `nivel` ∈ normal/leve/moderado/severo (para color)."""
+    p = puntaje or 0
+    if escala == "phq9":
+        t = [(4, "normal", "Mínima"), (9, "leve", "Leve"), (14, "moderado", "Moderada"), (19, "severo", "Moderada-grave"), (99, "severo", "Grave")]
+    elif escala == "gad7":
+        t = [(4, "normal", "Mínima"), (9, "leve", "Leve"), (14, "moderado", "Moderada"), (99, "severo", "Grave")]
+    elif escala == "dass21":  # subescala de estrés (0-42)
+        t = [(14, "normal", "Normal"), (18, "leve", "Leve"), (25, "moderado", "Moderado"), (33, "severo", "Severo"), (99, "severo", "Extremadamente severo")]
+    elif escala == "isi":
+        t = [(7, "normal", "Sin insomnio"), (14, "leve", "Subumbral"), (21, "moderado", "Moderado"), (99, "severo", "Grave")]
+    elif escala == "pss10":
+        t = [(13, "normal", "Bajo"), (26, "moderado", "Moderado"), (99, "severo", "Alto")]
+    elif escala == "pcl5":
+        t = [(32, "normal", "Bajo el umbral"), (99, "severo", "Probable TEPT")]
+    else:
+        return ("", "")
+    for corte, nivel, etiqueta in t:
+        if p <= corte:
+            return (nivel, etiqueta)
+    return ("", "")
+
+
 class SeguimientoSesion(ModeloTenant):
     """Registro semanal del proceso terapéutico de un paciente.
 
@@ -436,3 +460,47 @@ class Consentimiento(ModeloTenant):
     @staticmethod
     def nuevo_token():
         return secrets.token_urlsafe(24)
+
+
+class AplicacionEscala(ModeloTenant):
+    """Aplicación de una escala/test psicométrico a un paciente (PHQ-9, GAD-7, …).
+
+    Guarda el puntaje y la fecha; la severidad se deriva del puntaje con los
+    puntos de corte estándar (severidad_escala). Permite ver la evolución
+    (serie de tiempo) de cada escala en la ficha.
+    """
+
+    class Escala(models.TextChoices):
+        PHQ9 = "phq9", "PHQ-9 · Depresión"
+        GAD7 = "gad7", "GAD-7 · Ansiedad"
+        DASS21 = "dass21", "DASS-21 · Estrés"
+        ISI = "isi", "ISI · Insomnio"
+        PSS10 = "pss10", "PSS-10 · Estrés percibido"
+        PCL5 = "pcl5", "PCL-5 · Estrés postraumático"
+        OTRA = "otra", "Otra escala"
+
+    paciente = models.ForeignKey(Paciente, on_delete=models.CASCADE, related_name="escalas")
+    escala = models.CharField(max_length=12, choices=Escala.choices)
+    escala_otra = models.CharField(max_length=80, blank=True, default="", help_text="Nombre si la escala es 'Otra'.")
+    puntaje = models.PositiveIntegerField()
+    fecha = models.DateField()
+    notas = models.CharField(max_length=200, blank=True, default="")
+    registrado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, related_name="escalas_registradas",
+        null=True, blank=True,
+    )
+
+    class Meta:
+        verbose_name = "Aplicación de escala"
+        verbose_name_plural = "Aplicaciones de escala"
+        ordering = ["fecha", "id"]
+        indexes = [models.Index(fields=["clinica", "paciente", "escala"])]
+
+    def __str__(self):
+        return f"{self.get_escala_display()} · {self.puntaje} · {self.paciente.nombre}"
+
+    @property
+    def nombre_escala(self):
+        if self.escala == self.Escala.OTRA:
+            return self.escala_otra or "Otra escala"
+        return self.get_escala_display()

@@ -5,7 +5,7 @@ from rest_framework import serializers
 
 from core.utils import fecha_corta
 
-from .models import Adjunto, Atencion, BloqueoAgenda, Cita, Paciente
+from .models import Adjunto, AplicacionEscala, Atencion, BloqueoAgenda, Cita, Paciente, severidad_escala
 
 
 class AdjuntoSerializer(serializers.ModelSerializer):
@@ -262,3 +262,27 @@ class BloqueoAgendaSerializer(serializers.ModelSerializer):
 
     def get_hora_fin(self, obj):
         return timezone.localtime(obj.fin).strftime("%H:%M")
+
+
+class AplicacionEscalaSerializer(serializers.ModelSerializer):
+    nombre_escala = serializers.CharField(read_only=True)
+    escala_label = serializers.CharField(source="get_escala_display", read_only=True)
+    severidad = serializers.SerializerMethodField()
+    nivel = serializers.SerializerMethodField()
+    registrado_por_nombre = serializers.SerializerMethodField()
+
+    class Meta:
+        model = AplicacionEscala
+        fields = [
+            "id", "paciente", "escala", "escala_label", "escala_otra", "nombre_escala",
+            "puntaje", "severidad", "nivel", "fecha", "notas", "registrado_por_nombre",
+        ]
+
+    def get_severidad(self, obj):
+        return severidad_escala(obj.escala, obj.puntaje)[1]
+
+    def get_nivel(self, obj):
+        return severidad_escala(obj.escala, obj.puntaje)[0]
+
+    def get_registrado_por_nombre(self, obj):
+        return str(obj.registrado_por) if obj.registrado_por_id else ""

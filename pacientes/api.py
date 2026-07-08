@@ -1,3 +1,4 @@
+from datetime import datetime
 from decimal import Decimal, InvalidOperation
 
 from django.db.models import Prefetch
@@ -14,9 +15,10 @@ from core.tenant import get_clinica_actual
 from mensajes.models import Mensaje, PlantillaMensaje
 from mensajes.services import plantilla_por_clave, registrar_y_enviar
 
-from .models import Adjunto, Atencion, BloqueoAgenda, Cita, EdicionAtencion, Paciente, SeguimientoSesion
+from .models import Adjunto, AplicacionEscala, Atencion, BloqueoAgenda, Cita, EdicionAtencion, Paciente, SeguimientoSesion
 from .serializers import (
-    AdjuntoSerializer, AtencionSerializer, BloqueoAgendaSerializer, CitaSerializer, PacienteSerializer,
+    AdjuntoSerializer, AplicacionEscalaSerializer, AtencionSerializer, BloqueoAgendaSerializer,
+    CitaSerializer, PacienteSerializer,
 )
 
 # Tipos de archivo permitidos para adjuntos clínicos.
@@ -671,3 +673,64 @@ class AdjuntoViewSet(viewsets.ModelViewSet):
             as_attachment=True,
             filename=adjunto.nombre or adjunto.archivo.name,
         )
+
+
+class AplicacionEscalaViewSet(viewsets.ModelViewSet):
+    """Escalas/tests psicométricos de un paciente (PHQ-9, GAD-7, DASS-21, …).
+
+    Leer: el equipo clínico (el psicólogo, solo sus pacientes). Registrar/borrar:
+    solo psicólogos y administradores. La severidad se calcula del puntaje.
+    """
+
+    serializer_class = AplicacionEscalaSerializer
+
+    def get_queryset(self):
+        qs = AplicacionEscala.objects.del_tenant_actual().select_related("paciente", "registrado_por")
+        if _es_comercial(self.request.user):
+            return qs.none()
+        if _es_medico(self.request.user):
+            ficha = _ficha_de(self.request.user)
+            qs = qs.filter(paciente__profesional=ficha) if ficha else qs.none()
+        paciente = self.request.query_params.get("paciente")
+        if paciente:
+            qs = qs.filter(paciente_id=paciente)
+        escala = self.request.query_params.get("escala")
+        if escala:
+            qs = qs.filter(escala=escala)
+        return qs.order_by("fecha", "id")
+
+    def _solo_clinico(self):
+        from usuarios.models import Usuario
+        if getattr(self.request.user, "rol", None) not in (Usuario.Rol.MEDICO, Usuario.Rol.ADMIN):
+            raise PermissionDenied("Solo psicólogos y administradores registran escalas.")
+
+    def create(self, request, *args, **kwargs):
+        self._solo_clinico()
+        d = request.data
+        paciente = Paciente.objects.del_tenant_actual().filter(pk=d.get("paciente")).first()
+        if paciente is None:
+            return Response({"detail": "Paciente no encontrado."}, status=status.HTTP_400_BAD_REQUEST)
+        escala = d.get("escala")
+        if escala not in dict(AplicacionEscala.Escala.choices):
+            return Response({"detail": "Elige una escala válida."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            puntaje = int(d.get("puntaje"))
+        except (ValueError, TypeError):
+            puntaje = -1
+        if puntaje < 0:
+            return Response({"detail": "El puntaje debe ser un número mayor o igual a 0."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            fecha = datetime.strptime(str(d.get("fecha")).strip(), "%Y-%m-%d").date()
+        except (ValueError, TypeError, AttributeError):
+            fecha = timezone.localdate()
+        obj = AplicacionEscala.objects.create(
+            clinica=get_clinica_actual(), paciente=paciente, escala=escala,
+            escala_otra=str(d.get("escala_otra") or "").strip()[:80],
+            puntaje=puntaje, fecha=fecha,
+            notas=str(d.get("notas") or "").strip()[:200], registrado_por=request.user,
+        )
+        return Response(AplicacionEscalaSerializer(obj).data, status=status.HTTP_201_CREATED)
+
+    def perform_destroy(self, instance):
+        self._solo_clinico()
+        instance.delete()

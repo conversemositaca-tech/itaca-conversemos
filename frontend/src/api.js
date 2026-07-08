@@ -191,6 +191,11 @@ export const api = {
   pacientesDeProfesional: (profId) => req(`/api/pacientes/?profesional=${profId}`),
   registrarSesion: (id, data) => req(`/api/pacientes/${id}/registrar-sesion/`, { method: "POST", body: JSON.stringify(data) }),
 
+  // Escalas / tests psicométricos del paciente (PHQ-9, GAD-7, DASS-21…)
+  escalas: (pacienteId) => req(`/api/escalas/${pacienteId ? `?paciente=${pacienteId}` : ""}`),
+  crearEscala: (data) => req("/api/escalas/", { method: "POST", body: JSON.stringify(data) }),
+  borrarEscala: (id) => req(`/api/escalas/${id}/`, { method: "DELETE" }),
+
   // Histórico mensual de marketing por sede (Gerencia)
   metricas: () => req("/api/metricas/"),
   crearMetrica: (data) => req("/api/metricas/", { method: "POST", body: JSON.stringify(data) }),

@@ -1231,7 +1231,7 @@ export default function ClinicaApp() {
             onRegistrarPago={() => setCobrando({ pacienteId: selected.id, paciente: selected.nombre, especialidad: selected.especialidad })}
             puedeCobrar={usuario?.rol === "asistente" || usuario?.rol === "admin"}
             onSubirAdjunto={(file) => subirAdjunto(selected, file)}
-            onEliminarAdjunto={eliminarAdjunto} puedeEliminar={usuario?.rol === "medico" || usuario?.rol === "admin"} />
+            onEliminarAdjunto={eliminarAdjunto} puedeEliminar={usuario?.rol === "medico" || usuario?.rol === "admin"} showToast={showToast} />
         )}
 
         {view === "gerencia" && <Gerencia showToast={showToast} />}
@@ -2159,6 +2159,147 @@ function AdjuntoRow({ a, puedeEliminar, onEliminar }) {
   );
 }
 
+const ESCALAS_DEF = [
+  { v: "phq9", l: "PHQ-9 · Depresión", max: 27 },
+  { v: "gad7", l: "GAD-7 · Ansiedad", max: 21 },
+  { v: "dass21", l: "DASS-21 · Estrés", max: 42 },
+  { v: "isi", l: "ISI · Insomnio", max: 28 },
+  { v: "pss10", l: "PSS-10 · Estrés percibido", max: 40 },
+  { v: "pcl5", l: "PCL-5 · Estrés postraumático", max: 80 },
+  { v: "otra", l: "Otra escala", max: null },
+];
+const NIVEL_COLOR = { normal: "#2F6B4F", leve: "#9C6B2E", moderado: "#C9923A", severo: "#9C4646" };
+
+function EscalasPaciente({ pacienteId, puede, showToast }) {
+  const [lista, setLista] = useState([]);
+  const [nueva, setNueva] = useState(false);
+  const [cargando, setCargando] = useState(true);
+  function cargar() { setCargando(true); api.escalas(pacienteId).then(setLista).catch(() => {}).finally(() => setCargando(false)); }
+  useEffect(() => { cargar(); }, [pacienteId]);
+
+  const grupos = useMemo(() => {
+    const m = {};
+    lista.forEach((e) => {
+      const key = e.escala === "otra" ? `otra:${e.nombre_escala}` : e.escala;
+      if (!m[key]) m[key] = [];
+      m[key].push(e);
+    });
+    Object.values(m).forEach((arr) => arr.sort((a, b) => a.fecha.localeCompare(b.fecha)));
+    return m;
+  }, [lista]);
+
+  async function borrar(e) {
+    if (!window.confirm(`¿Eliminar ${e.nombre_escala} del ${labelNumMes(e.fecha)} (${e.puntaje})?`)) return;
+    try { await api.borrarEscala(e.id); cargar(); showToast && showToast("Escala eliminada"); }
+    catch (err) { showToast && showToast("Error: " + err.message); }
+  }
+
+  const claves = Object.keys(grupos);
+  return (
+    <>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <h2 className="ca-secth">Escalas y tests</h2>
+        {puede && <button className="ca-mini" onClick={() => setNueva(true)}><Plus size={13} strokeWidth={2.2} /> Registrar escala</button>}
+      </div>
+      <div className="ca-card" style={{ marginBottom: 26 }}>
+        {claves.length === 0 ? (
+          <div style={{ color: "var(--muted)", fontSize: 13.5 }}>{cargando ? "Cargando…" : "Sin escalas registradas. Usa «Registrar escala» para llevar PHQ-9, GAD-7, DASS-21 y ver su evolución."}</div>
+        ) : (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))", gap: 16 }}>
+            {claves.map((k) => {
+              const arr = grupos[k];
+              const ult = arr[arr.length - 1];
+              const color = NIVEL_COLOR[ult.nivel] || "var(--muted)";
+              const valores = arr.map((e) => e.puntaje);
+              const previo = arr.length >= 2 ? arr[arr.length - 2].puntaje : null;
+              const delta = previo != null ? ult.puntaje - previo : null;
+              return (
+                <div key={k} style={{ border: "1px solid var(--line)", borderRadius: 10, padding: 12 }}>
+                  <div style={{ fontSize: 12.5, fontWeight: 600, marginBottom: 6 }}>{ult.nombre_escala}</div>
+                  <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+                    <span style={{ fontSize: 24, fontWeight: 700 }}>{ult.puntaje}</span>
+                    {ult.severidad && <span style={{ fontSize: 12.5, fontWeight: 600, color }}>{ult.severidad}</span>}
+                    {delta != null && delta !== 0 && <span style={{ fontSize: 11.5, color: delta < 0 ? "#2F6B4F" : "#9C4646" }}>{delta < 0 ? "▼" : "▲"} {Math.abs(delta)}</span>}
+                  </div>
+                  <div className="ca-pmeta" style={{ marginBottom: valores.length >= 2 ? 8 : 0 }}>{labelNumMes(ult.fecha)}{arr.length > 1 ? ` · ${arr.length} tomas` : ""}</div>
+                  {valores.length >= 2 && <Sparkline valores={valores} color={color} ancho={180} alto={34} />}
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
+                    {arr.slice(-8).map((e) => (
+                      <span key={e.id} title={`${labelNumMes(e.fecha)}: ${e.puntaje}${e.severidad ? ` (${e.severidad})` : ""}${puede ? " · clic para eliminar" : ""}`}
+                        onClick={() => puede && borrar(e)}
+                        style={{ fontSize: 11, background: "var(--accent-soft)", borderRadius: 6, padding: "2px 7px", cursor: puede ? "pointer" : "default" }}>
+                        {e.puntaje}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+      {nueva && <EscalaModal pacienteId={pacienteId} onClose={() => setNueva(false)} onSaved={() => { setNueva(false); cargar(); }} showToast={showToast} />}
+    </>
+  );
+}
+
+function EscalaModal({ pacienteId, onClose, onSaved, showToast }) {
+  const [escala, setEscala] = useState("phq9");
+  const [escalaOtra, setEscalaOtra] = useState("");
+  const [puntaje, setPuntaje] = useState("");
+  const [fecha, setFecha] = useState(HOY_ISO);
+  const [notas, setNotas] = useState("");
+  const def = ESCALAS_DEF.find((x) => x.v === escala);
+  async function guardar() {
+    if (puntaje === "" || Number(puntaje) < 0) return showToast && showToast("Ingresa el puntaje.");
+    if (escala === "otra" && !escalaOtra.trim()) return showToast && showToast("Ponle nombre a la escala.");
+    try {
+      await api.crearEscala({ paciente: pacienteId, escala, escala_otra: escalaOtra.trim(), puntaje: Number(puntaje), fecha, notas: notas.trim() });
+      showToast && showToast("Escala registrada ✓"); onSaved();
+    } catch (e) { showToast && showToast("Error: " + e.message); }
+  }
+  return (
+    <div className="ca-modal-bg" onClick={onClose}>
+      <div className="ca-modal" style={{ maxWidth: 400 }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+          <strong style={{ fontSize: 16 }}>Registrar escala</strong>
+          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)" }}><X size={18} /></button>
+        </div>
+        <div style={{ marginBottom: 13 }}>
+          <div className="ca-label">Escala</div>
+          <select className="ca-input" value={escala} onChange={(e) => setEscala(e.target.value)}>
+            {ESCALAS_DEF.map((x) => <option key={x.v} value={x.v}>{x.l}</option>)}
+          </select>
+        </div>
+        {escala === "otra" && (
+          <div style={{ marginBottom: 13 }}>
+            <div className="ca-label">Nombre de la escala</div>
+            <input className="ca-input" value={escalaOtra} onChange={(e) => setEscalaOtra(e.target.value)} placeholder="Ej: AAQ-II, WHO-5…" />
+          </div>
+        )}
+        <div style={{ display: "flex", gap: 11, marginBottom: 13 }}>
+          <div style={{ flex: 1 }}>
+            <div className="ca-label">Puntaje{def && def.max ? ` (0–${def.max})` : ""}</div>
+            <input className="ca-input" type="number" min="0" max={def && def.max ? def.max : undefined} value={puntaje} onChange={(e) => setPuntaje(e.target.value)} autoFocus />
+          </div>
+          <div style={{ flex: 1 }}>
+            <div className="ca-label">Fecha</div>
+            <input className="ca-input" type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} />
+          </div>
+        </div>
+        <div style={{ marginBottom: 16 }}>
+          <div className="ca-label">Notas <span style={{ color: "var(--muted)", fontWeight: 400 }}>(opcional)</span></div>
+          <input className="ca-input" value={notas} onChange={(e) => setNotas(e.target.value)} placeholder="Contexto de la aplicación…" />
+        </div>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+          <button className="ca-btn ghost" onClick={onClose}>Cancelar</button>
+          <button className="ca-btn" onClick={guardar}>Registrar</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function FichaCard({ label, children, style }) {
   return (
     <div className="ca-card" style={{ margin: 0, ...style }}>
@@ -2168,7 +2309,7 @@ function FichaCard({ label, children, style }) {
   );
 }
 
-function Ficha({ p, onBack, onEdit, onWhatsApp, onSubirAdjunto, onEliminarAdjunto, puedeEliminar, clinica, onAgendar, onRegistrarSesion, puedeRegistrar, onVenderPaquete, puedeVenderPaquete, onRegistrarPago, puedeCobrar, esMedico }) {
+function Ficha({ p, onBack, onEdit, onWhatsApp, onSubirAdjunto, onEliminarAdjunto, puedeEliminar, clinica, onAgendar, onRegistrarSesion, puedeRegistrar, onVenderPaquete, puedeVenderPaquete, onRegistrarPago, puedeCobrar, esMedico, showToast }) {
   const alertas = (p.alertas || "").split(",").map((s) => s.trim()).filter(Boolean);
   const ultimaEvo = (p.historial || [])[0];
   return (
@@ -2263,6 +2404,8 @@ function Ficha({ p, onBack, onEdit, onWhatsApp, onSubirAdjunto, onEliminarAdjunt
           {p.tutor_nombre && <div className="ca-field"><Users size={15} strokeWidth={1.9} style={{ color: "var(--muted)" }} /> Tutor: {p.tutor_nombre}{p.tutor_parentesco ? ` (${p.tutor_parentesco})` : ""}{p.tutor_telefono ? ` · ${p.tutor_telefono}` : ""}</div>}
         </div>
       )}
+
+      <EscalasPaciente pacienteId={p.id} puede={puedeRegistrar} showToast={showToast} />
 
       {p.seguimiento && p.seguimiento.length > 0 && (
         <>
