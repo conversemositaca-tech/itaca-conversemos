@@ -111,6 +111,16 @@ class Paciente(ModeloTenant):
         help_text="Notas internas del equipo (NO son historia clínica: preferencias/avisos del paciente).",
     )
 
+    # --- Brújula clínica (formulación del caso en una hoja, estilo Método Ítaca) ---
+    brujula_motivo = models.TextField(blank=True, default="")
+    brujula_hipotesis = models.TextField("hipótesis clínica", blank=True, default="")
+    brujula_objetivos = models.TextField(blank=True, default="")
+    brujula_fortalezas = models.TextField(blank=True, default="")
+    brujula_factores_protectores = models.TextField(blank=True, default="")
+    brujula_factores_riesgo = models.TextField(blank=True, default="")
+    brujula_barreras = models.TextField(blank=True, default="")
+    brujula_plan = models.TextField(blank=True, default="")
+
     class Meta:
         verbose_name = "Paciente"
         verbose_name_plural = "Pacientes"

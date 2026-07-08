@@ -107,6 +107,8 @@ class PacienteSerializer(serializers.ModelSerializer):
             "medicacion_habitual",
             "resumen_clinico", "objetivo_principal", "riesgo", "riesgo_label",
             "alertas", "notas_internas",
+            "brujula_motivo", "brujula_hipotesis", "brujula_objetivos", "brujula_fortalezas",
+            "brujula_factores_protectores", "brujula_factores_riesgo", "brujula_barreras", "brujula_plan",
             "ultima", "proxima", "historial", "adjuntos", "cuenta", "paquetes",
         ]
 

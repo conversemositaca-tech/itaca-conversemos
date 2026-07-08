@@ -6,7 +6,7 @@ import {
   TrendingUp, Download, AlertTriangle, Megaphone, LogOut,
   Paperclip, Trash2, Activity, Pill, HeartPulse, Copy, BarChart3, UserCog, KeyRound, MapPin,
   Mic, FolderOpen, Lightbulb, ExternalLink, Bell, GraduationCap,
-  Building2, DoorOpen, ChevronRight,
+  Building2, DoorOpen, ChevronRight, Compass,
 } from "lucide-react";
 import { api } from "./api";
 import Login from "./Login";
@@ -1231,7 +1231,7 @@ export default function ClinicaApp() {
             onRegistrarPago={() => setCobrando({ pacienteId: selected.id, paciente: selected.nombre, especialidad: selected.especialidad })}
             puedeCobrar={usuario?.rol === "asistente" || usuario?.rol === "admin"}
             onSubirAdjunto={(file) => subirAdjunto(selected, file)}
-            onEliminarAdjunto={eliminarAdjunto} puedeEliminar={usuario?.rol === "medico" || usuario?.rol === "admin"} showToast={showToast} />
+            onEliminarAdjunto={eliminarAdjunto} puedeEliminar={usuario?.rol === "medico" || usuario?.rol === "admin"} showToast={showToast} onRefrescar={refrescarPacientes} />
         )}
 
         {view === "gerencia" && <Gerencia showToast={showToast} />}
@@ -2300,6 +2300,109 @@ function EscalaModal({ pacienteId, onClose, onSaved, showToast }) {
   );
 }
 
+function AntesDeIniciar({ p }) {
+  const [tareas, setTareas] = useState([]);
+  useEffect(() => { api.tareas(p.id).then(setTareas).catch(() => {}); }, [p.id]);
+  const pendientes = tareas.filter((t) => t.estado !== "cumplida");
+  const ultimaEvo = (p.historial || [])[0];
+  const retomar = ultimaEvo ? [ultimaEvo.proximos_pasos, ultimaEvo.puntos_importantes].map((x) => (x || "").trim()).find(Boolean) : "";
+  const items = [];
+  items.push({ icon: Clock, l: "Última sesión", v: (p.ultima && p.ultima !== "—") ? p.ultima : "primera vez" });
+  if (p.proxima) items.push({ icon: Calendar, l: "Próxima", v: `${p.proxima.fecha} · ${p.proxima.hora}` });
+  if (retomar) items.push({ icon: FileText, l: "Para retomar", v: retomar });
+  if (pendientes.length) items.push({ icon: Check, l: "Tarea pendiente", v: pendientes[0].texto + (pendientes.length > 1 ? ` (+${pendientes.length - 1})` : "") });
+  if (p.objetivo_principal) items.push({ icon: Activity, l: "Objetivo", v: p.objetivo_principal });
+  if (items.length <= 1 && !p.proxima && !retomar) return null;
+  return (
+    <div style={{ background: "var(--accent-soft)", border: "1px solid #BEE7EF", borderRadius: 12, padding: "12px 16px", marginBottom: 18 }}>
+      <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.4, textTransform: "uppercase", color: "var(--accent)", marginBottom: 8 }}>Antes de iniciar la sesión</div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: "10px 22px" }}>
+        {items.map((it, i) => (
+          <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 7, maxWidth: 340 }}>
+            <it.icon size={14} strokeWidth={2} style={{ color: "var(--accent)", marginTop: 2, flexShrink: 0 }} />
+            <div>
+              <div style={{ fontSize: 11, color: "var(--muted)" }}>{it.l}</div>
+              <div style={{ fontSize: 13, fontWeight: 500 }}>{it.v}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+const BRUJULA_CAMPOS = [
+  { k: "brujula_motivo", l: "Motivo de consulta" },
+  { k: "brujula_hipotesis", l: "Hipótesis clínica" },
+  { k: "brujula_objetivos", l: "Objetivos" },
+  { k: "brujula_fortalezas", l: "Fortalezas" },
+  { k: "brujula_factores_protectores", l: "Factores protectores" },
+  { k: "brujula_factores_riesgo", l: "Factores de riesgo" },
+  { k: "brujula_barreras", l: "Barreras" },
+  { k: "brujula_plan", l: "Plan" },
+];
+
+function BrujulaClinica({ p, puede, onRefrescar, showToast }) {
+  const [edit, setEdit] = useState(false);
+  const [form, setForm] = useState({});
+  const [guardando, setGuardando] = useState(false);
+  const tieneAlgo = BRUJULA_CAMPOS.some((c) => (p[c.k] || "").trim());
+
+  function abrir() {
+    const f = {};
+    BRUJULA_CAMPOS.forEach((c) => { f[c.k] = p[c.k] || ""; });
+    setForm(f); setEdit(true);
+  }
+  async function guardar() {
+    setGuardando(true);
+    try {
+      await api.actualizarPaciente(p.id, form);
+      if (onRefrescar) await onRefrescar();
+      setEdit(false);
+      showToast && showToast("Brújula guardada ✓");
+    } catch (e) { showToast && showToast("Error: " + e.message); }
+    finally { setGuardando(false); }
+  }
+
+  return (
+    <>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <h2 className="ca-secth" style={{ display: "inline-flex", alignItems: "center", gap: 7 }}><Compass size={16} strokeWidth={2} style={{ color: "var(--accent)" }} /> Brújula clínica</h2>
+        {puede && !edit && <button className="ca-mini" onClick={abrir}><Pencil size={13} /> {tieneAlgo ? "Editar" : "Completar"}</button>}
+      </div>
+      <div className="ca-card" style={{ marginBottom: 26 }}>
+        {edit ? (
+          <>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 14 }}>
+              {BRUJULA_CAMPOS.map((c) => (
+                <div key={c.k}>
+                  <div className="ca-label">{c.l}</div>
+                  <textarea className="ca-input" style={{ minHeight: 60, resize: "vertical", lineHeight: 1.5 }} value={form[c.k]} onChange={(e) => setForm((o) => ({ ...o, [c.k]: e.target.value }))} />
+                </div>
+              ))}
+            </div>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 14 }}>
+              <button className="ca-btn ghost" onClick={() => setEdit(false)}>Cancelar</button>
+              <button className="ca-btn" onClick={guardar} disabled={guardando}>{guardando ? "Guardando…" : "Guardar brújula"}</button>
+            </div>
+          </>
+        ) : !tieneAlgo ? (
+          <div style={{ color: "var(--muted)", fontSize: 13.5 }}>Sin completar. La brújula reúne en una hoja el motivo, la hipótesis, objetivos, fortalezas, factores y el plan del caso — para entrar preparado a la sesión.{puede ? " Usa «Completar»." : ""}</div>
+        ) : (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 16 }}>
+            {BRUJULA_CAMPOS.filter((c) => (p[c.k] || "").trim()).map((c) => (
+              <div key={c.k}>
+                <div className="ca-antlabel" style={{ marginBottom: 3 }}>{c.l}</div>
+                <div style={{ fontSize: 13.5, lineHeight: 1.55, whiteSpace: "pre-wrap" }}>{p[c.k]}</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
 function LineaTiempoProceso({ p }) {
   const puntos = useMemo(() => {
     const hist = [...(p.historial || [])].reverse(); // de la más antigua a la más reciente
@@ -2533,7 +2636,7 @@ function FichaCard({ label, children, style }) {
   );
 }
 
-function Ficha({ p, onBack, onEdit, onWhatsApp, onSubirAdjunto, onEliminarAdjunto, puedeEliminar, clinica, onAgendar, onRegistrarSesion, puedeRegistrar, onVenderPaquete, puedeVenderPaquete, onRegistrarPago, puedeCobrar, esMedico, showToast }) {
+function Ficha({ p, onBack, onEdit, onWhatsApp, onSubirAdjunto, onEliminarAdjunto, puedeEliminar, clinica, onAgendar, onRegistrarSesion, puedeRegistrar, onVenderPaquete, puedeVenderPaquete, onRegistrarPago, puedeCobrar, esMedico, showToast, onRefrescar }) {
   const alertas = (p.alertas || "").split(",").map((s) => s.trim()).filter(Boolean);
   const ultimaEvo = (p.historial || [])[0];
   return (
@@ -2564,6 +2667,8 @@ function Ficha({ p, onBack, onEdit, onWhatsApp, onSubirAdjunto, onEliminarAdjunt
           <button className="ca-mini" onClick={onEdit}><Pencil size={13} strokeWidth={2} /> Editar</button>
         </div>
       </div>
+
+      <AntesDeIniciar p={p} />
 
       {/* Tarjetas principales (Centro de trabajo del terapeuta) */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 14, marginBottom: 16 }}>
@@ -2628,6 +2733,8 @@ function Ficha({ p, onBack, onEdit, onWhatsApp, onSubirAdjunto, onEliminarAdjunt
           {p.tutor_nombre && <div className="ca-field"><Users size={15} strokeWidth={1.9} style={{ color: "var(--muted)" }} /> Tutor: {p.tutor_nombre}{p.tutor_parentesco ? ` (${p.tutor_parentesco})` : ""}{p.tutor_telefono ? ` · ${p.tutor_telefono}` : ""}</div>}
         </div>
       )}
+
+      <BrujulaClinica p={p} puede={puedeRegistrar} onRefrescar={onRefrescar} showToast={showToast} />
 
       <LineaTiempoProceso p={p} />
 
