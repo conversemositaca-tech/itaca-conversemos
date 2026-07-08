@@ -81,9 +81,35 @@ class Paciente(ModeloTenant):
     alergias = models.TextField(blank=True, default="")
     antecedentes = models.TextField(
         blank=True, default="",
-        help_text="Enfermedades crónicas, cirugías previas, antecedentes familiares relevantes.",
+        help_text="Antecedentes PSICOLÓGICOS (histórico emocional/clínico del paciente).",
     )
+    antecedentes_medicos = models.TextField(blank=True, default="", help_text="Enfermedades, cirugías, hospitalizaciones relevantes.")
+    antecedentes_familiares = models.TextField(blank=True, default="")
+    antecedentes_otros = models.TextField(blank=True, default="", help_text="Consumo de sustancias u otros antecedentes.")
     medicacion_habitual = models.TextField(blank=True, default="")
+
+    # --- Centro de trabajo del terapeuta (rediseño "Método Ítaca") ---
+    class Riesgo(models.TextChoices):
+        SIN_EVALUAR = "sin_evaluar", "Sin evaluar"
+        BAJO = "bajo", "Bajo"
+        MODERADO = "moderado", "Moderado"
+        ALTO = "alto", "Alto"
+
+    resumen_clinico = models.TextField(
+        blank=True, default="",
+        help_text="Resumen del caso (por qué consulta, esquemas, adherencia): para no leer todas las evoluciones.",
+    )
+    objetivo_principal = models.CharField(max_length=200, blank=True, default="", help_text="Objetivo terapéutico principal del proceso.")
+    riesgo = models.CharField(max_length=12, choices=Riesgo.choices, blank=True, default="", help_text="Nivel de riesgo actual.")
+    sesiones_proceso = models.PositiveIntegerField("sesiones del proceso", default=0, help_text="Total estimado del proceso actual (para 'Sesión 8 de 12'). 0 = no fijado.")
+    alertas = models.CharField(
+        max_length=300, blank=True, default="",
+        help_text="Alertas clínicas separadas por coma (ej: 'Antecedente de ansiedad, Duelo no elaborado').",
+    )
+    notas_internas = models.TextField(
+        blank=True, default="",
+        help_text="Notas internas del equipo (NO son historia clínica: preferencias/avisos del paciente).",
+    )
 
     class Meta:
         verbose_name = "Paciente"

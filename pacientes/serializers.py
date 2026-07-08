@@ -76,6 +76,8 @@ class PacienteSerializer(serializers.ModelSerializer):
     genero_label = serializers.CharField(source="get_genero_display", read_only=True)
     sede_label = serializers.CharField(source="get_sede_display", read_only=True)
     profesional_nombre = serializers.CharField(source="profesional.nombre", read_only=True, default="")
+    codigo = serializers.SerializerMethodField()
+    riesgo_label = serializers.CharField(source="get_riesgo_display", read_only=True)
     proceso_label = serializers.SerializerMethodField()
     frecuencia_label = serializers.CharField(source="get_frecuencia_display", read_only=True)
     modalidad_label = serializers.CharField(source="get_modalidad_display", read_only=True)
@@ -94,10 +96,14 @@ class PacienteSerializer(serializers.ModelSerializer):
             "tipo_documento", "tipo_documento_label", "numero_documento", "direccion",
             "genero", "genero_label",
             "tutor_nombre", "tutor_parentesco", "tutor_telefono", "tutor_documento",
-            "sede", "sede_label", "profesional", "profesional_nombre",
-            "n_sesion", "proceso", "proceso_label", "seguimiento",
+            "sede", "sede_label", "profesional", "profesional_nombre", "codigo",
+            "n_sesion", "sesiones_proceso", "proceso", "proceso_label", "seguimiento",
             "frecuencia", "frecuencia_label", "modalidad", "modalidad_label",
-            "especialidad", "alergias", "antecedentes", "medicacion_habitual",
+            "especialidad", "alergias", "antecedentes",
+            "antecedentes_medicos", "antecedentes_familiares", "antecedentes_otros",
+            "medicacion_habitual",
+            "resumen_clinico", "objetivo_principal", "riesgo", "riesgo_label",
+            "alertas", "notas_internas",
             "ultima", "proxima", "historial", "adjuntos", "cuenta", "paquetes",
         ]
 
@@ -114,6 +120,10 @@ class PacienteSerializer(serializers.ModelSerializer):
                 if k in data:
                     data[k] = ""
         return data
+
+    def get_codigo(self, obj):
+        anio = obj.creado_en.year if obj.creado_en else timezone.now().year
+        return f"PAC-{anio}-{obj.id:04d}"
 
     def get_proceso_label(self, obj):
         return obj.proceso.capitalize() if obj.proceso else ""

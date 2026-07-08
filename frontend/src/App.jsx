@@ -170,7 +170,7 @@ const LEAD_SEM = {
 const TIPOS_HC = [
   { v: "evolucion", l: "Ficha de evolución" },
   { v: "historia", l: "Historia clínica" },
-  { v: "continuidad", l: "Ficha de continuidad" },
+  { v: "continuidad", l: "Ficha de Transición y Continuidad Terapéutica" },
   { v: "informe_continuidad", l: "Informe de continuidad" },
   { v: "informe", l: "Informe psicológico" },
   { v: "derivacion", l: "Derivación" },
@@ -2159,52 +2159,110 @@ function AdjuntoRow({ a, puedeEliminar, onEliminar }) {
   );
 }
 
+function FichaCard({ label, children, style }) {
+  return (
+    <div className="ca-card" style={{ margin: 0, ...style }}>
+      <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.4, textTransform: "uppercase", color: "var(--muted)", marginBottom: 8 }}>{label}</div>
+      {children}
+    </div>
+  );
+}
+
 function Ficha({ p, onBack, onEdit, onWhatsApp, onSubirAdjunto, onEliminarAdjunto, puedeEliminar, clinica, onAgendar, onRegistrarSesion, puedeRegistrar, onVenderPaquete, puedeVenderPaquete, onRegistrarPago, puedeCobrar, esMedico }) {
+  const alertas = (p.alertas || "").split(",").map((s) => s.trim()).filter(Boolean);
+  const ultimaEvo = (p.historial || [])[0];
   return (
     <div>
       <button className="ca-back" onClick={onBack}><ChevronLeft size={16} strokeWidth={2} /> Pacientes</button>
-      <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 22 }}>
+
+      {/* Encabezado */}
+      <div style={{ display: "flex", alignItems: "flex-start", gap: 16, marginBottom: 18, flexWrap: "wrap" }}>
         <div className="ca-avatar" style={{ width: 52, height: 52, fontSize: 18, borderRadius: 13 }}>{iniciales(p.nombre)}</div>
-        <div style={{ flex: 1 }}>
+        <div style={{ flex: 1, minWidth: 220 }}>
           <h1 className="ca-h1" style={{ fontSize: 22 }}>{p.nombre}</h1>
-          <div style={{ marginTop: 7 }}><SpecialtyTag name={p.especialidad} /></div>
-        </div>
-        {puedeRegistrar && <button className="ca-mini" onClick={onRegistrarSesion}><Activity size={13} strokeWidth={2} /> Registrar sesión</button>}
-        <button className="ca-mini" onClick={onAgendar}><Calendar size={13} strokeWidth={2} /> Agendar</button>
-        {!esMedico && <button className="ca-mini wa" onClick={onWhatsApp}><MessageCircle size={13} strokeWidth={2} /> WhatsApp</button>}
-        <button className="ca-mini" onClick={() => imprimirHistoria(p, clinica)}><FileText size={13} strokeWidth={2} /> Imprimir</button>
-        <button className="ca-mini" onClick={onEdit}><Pencil size={13} strokeWidth={2} /> Editar</button>
-      </div>
-
-      <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 26 }}>
-        {p.profesional_nombre && <div className="ca-field"><HeartPulse size={15} strokeWidth={1.9} style={{ color: "var(--accent)" }} /> {p.profesional_nombre}</div>}
-        {p.sede_label && <div className="ca-field"><MapPin size={15} strokeWidth={1.9} style={{ color: "var(--muted)" }} /> Sede {p.sede_label}</div>}
-        {(p.n_sesion > 0 || p.proceso_label) && <div className="ca-field"><Activity size={15} strokeWidth={1.9} style={{ color: "var(--muted)" }} /> {p.proceso === "consulta" ? "Consulta inicial" : `Sesión ${p.n_sesion}${p.proceso_label ? ` · ${p.proceso_label}` : ""}`}</div>}
-        {(p.frecuencia_label || p.modalidad_label) && <div className="ca-field"><Clock size={15} strokeWidth={1.9} style={{ color: "var(--muted)" }} /> {[p.frecuencia_label, p.modalidad_label].filter(Boolean).join(" · ")}</div>}
-        <div className="ca-field"><Cake size={15} strokeWidth={1.9} style={{ color: "var(--muted)" }} /> {p.edad != null ? `${p.edad} años` : "Edad no registrada"}{p.genero_label ? ` · ${p.genero_label}` : ""}</div>
-        {p.numero_documento && <div className="ca-field"><FileText size={15} strokeWidth={1.9} style={{ color: "var(--muted)" }} /> {p.tipo_documento_label} {p.numero_documento}</div>}
-        {p.tel && <div className="ca-field"><Phone size={15} strokeWidth={1.9} style={{ color: "var(--muted)" }} /> {p.tel}</div>}
-        {p.direccion && <div className="ca-field"><MapPin size={15} strokeWidth={1.9} style={{ color: "var(--muted)" }} /> {p.direccion}</div>}
-        {p.tutor_nombre && <div className="ca-field"><Users size={15} strokeWidth={1.9} style={{ color: "var(--muted)" }} /> Tutor: {p.tutor_nombre}{p.tutor_parentesco ? ` (${p.tutor_parentesco})` : ""}{p.tutor_telefono ? ` · ${p.tutor_telefono}` : ""}</div>}
-        <div className="ca-field"><Clock size={15} strokeWidth={1.9} style={{ color: "var(--muted)" }} /> Última visita: {p.ultima}</div>
-        {p.proxima && (
-          <div className="ca-field" style={{ color: "var(--accent)" }}><Calendar size={15} strokeWidth={1.9} /> Próxima: {p.proxima.fecha} · {p.proxima.hora}</div>
-        )}
-      </div>
-
-      {(() => {
-        const pesos = [...p.historial].reverse().filter((h) => h.peso != null).map((h) => Number(h.peso));
-        if (pesos.length < 2) return null;
-        return (
-          <div className="ca-card" style={{ marginBottom: 26, display: "flex", alignItems: "center", gap: 22, flexWrap: "wrap" }}>
-            <div>
-              <div className="ca-antlabel"><Activity size={14} strokeWidth={2} style={{ color: "var(--muted)" }} /> Evolución de peso</div>
-              <div style={{ fontSize: 20, fontWeight: 600, marginTop: 4 }}>{numeroLimpio(pesos[pesos.length - 1])} kg <span style={{ fontSize: 12, color: "var(--muted)", fontWeight: 400 }}>último</span></div>
-            </div>
-            <Sparkline valores={pesos} />
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4, flexWrap: "wrap" }}>
+            {p.codigo && <span className="ca-pmeta">ID: {p.codigo}</span>}
+            <SpecialtyTag name={p.especialidad} />
           </div>
-        );
-      })()}
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
+            <span className="ca-field"><Cake size={14} strokeWidth={1.9} style={{ color: "var(--muted)" }} /> {p.edad != null ? `${p.edad} años` : "Edad —"}{p.genero_label ? ` · ${p.genero_label}` : ""}</span>
+            {p.sede_label && <span className="ca-field"><MapPin size={14} strokeWidth={1.9} style={{ color: "var(--muted)" }} /> Sede {p.sede_label}</span>}
+            {p.profesional_nombre && <span className="ca-field"><HeartPulse size={14} strokeWidth={1.9} style={{ color: "var(--accent)" }} /> {p.profesional_nombre}</span>}
+            {(p.frecuencia_label || p.modalidad_label) && <span className="ca-field"><Clock size={14} strokeWidth={1.9} style={{ color: "var(--muted)" }} /> {[p.frecuencia_label, p.modalidad_label].filter(Boolean).join(" · ")}</span>}
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          {puedeRegistrar && <button className="ca-mini" onClick={onRegistrarSesion}><Activity size={13} strokeWidth={2} /> Registrar sesión</button>}
+          <button className="ca-mini" onClick={onAgendar}><Calendar size={13} strokeWidth={2} /> Agendar</button>
+          {!esMedico && <button className="ca-mini wa" onClick={onWhatsApp}><MessageCircle size={13} strokeWidth={2} /> WhatsApp</button>}
+          <button className="ca-mini" onClick={() => imprimirHistoria(p, clinica)}><FileText size={13} strokeWidth={2} /> Imprimir</button>
+          <button className="ca-mini" onClick={onEdit}><Pencil size={13} strokeWidth={2} /> Editar</button>
+        </div>
+      </div>
+
+      {/* Tarjetas principales (Centro de trabajo del terapeuta) */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 14, marginBottom: 16 }}>
+        <FichaCard label="Estado del proceso">
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 6 }}>
+            <span style={{ background: p.frecuencia === "alta" ? "#EEEBE6" : "#E3F0E8", color: p.frecuencia === "alta" ? "#8A8378" : "#2F6B4F", fontSize: 12, fontWeight: 600, padding: "2px 10px", borderRadius: 20 }}>
+              {p.frecuencia === "alta" ? "Alta" : p.frecuencia === "en_pausa" ? "En pausa" : "En proceso"}
+            </span>
+            <span style={{ fontWeight: 600 }}>{p.proceso === "consulta" ? "Consulta inicial" : `Sesión ${p.n_sesion || 0}${p.sesiones_proceso ? ` de ${p.sesiones_proceso}` : ""}`}</span>
+          </div>
+          <div className="ca-pmeta">{[p.proceso_label && p.proceso !== "consulta" ? p.proceso_label : "", p.frecuencia_label].filter(Boolean).join(" · ") || "Frecuencia —"}</div>
+          <div className="ca-pmeta" style={{ marginTop: 4 }}>Última sesión: {p.ultima}</div>
+          <div className="ca-pmeta" style={{ color: p.proxima ? "var(--accent)" : "var(--muted)" }}>Próxima: {p.proxima ? `${p.proxima.fecha} · ${p.proxima.hora}` : "sin agendar"}</div>
+        </FichaCard>
+        <FichaCard label="Objetivo terapéutico principal">
+          {p.objetivo_principal ? <div style={{ fontSize: 14.5, fontWeight: 500, lineHeight: 1.4 }}>{p.objetivo_principal}</div>
+            : <div style={{ color: "var(--muted)", fontSize: 13.5 }}>Sin definir · edítalo en «Editar».</div>}
+        </FichaCard>
+        <FichaCard label="Riesgo actual">
+          {(() => {
+            const R = { bajo: ["#E3F0E8", "#2F6B4F", "Bajo"], moderado: ["#FFF1DA", "#9C6B2E", "Moderado"], alto: ["#F7E1E1", "#9C4646", "Alto"] };
+            const r = R[p.riesgo];
+            return r ? <span style={{ background: r[0], color: r[1], fontSize: 14, fontWeight: 600, padding: "5px 14px", borderRadius: 20 }}>{r[2]}</span>
+              : <span style={{ color: "var(--muted)", fontSize: 13.5 }}>Sin evaluar</span>;
+          })()}
+        </FichaCard>
+      </div>
+
+      {/* Alertas clínicas */}
+      {alertas.length > 0 && (
+        <div className="ca-card" style={{ marginBottom: 16, display: "flex", alignItems: "center", gap: 9, flexWrap: "wrap" }}>
+          <span style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.4, color: "#9C6B2E", display: "inline-flex", alignItems: "center", gap: 5 }}><AlertTriangle size={14} strokeWidth={2} /> Alertas clínicas</span>
+          {alertas.map((a, i) => <span key={i} style={{ background: "#FFF1DA", color: "#9C6B2E", fontSize: 12.5, fontWeight: 500, padding: "3px 11px", borderRadius: 20 }}>{a}</span>)}
+        </div>
+      )}
+
+      {/* Resumen clínico + última evolución */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 16, marginBottom: 20 }}>
+        <FichaCard label="Resumen clínico">
+          {p.resumen_clinico ? <div style={{ fontSize: 13.5, lineHeight: 1.6, whiteSpace: "pre-wrap" }}>{p.resumen_clinico}</div>
+            : <div style={{ color: "var(--muted)", fontSize: 13.5 }}>Sin resumen. Escríbelo en «Editar» para ver el caso de un vistazo, sin leer todas las evoluciones.</div>}
+        </FichaCard>
+        <FichaCard label="Última evolución">
+          {!ultimaEvo ? <div style={{ color: "var(--muted)", fontSize: 13.5 }}>Aún no hay evoluciones registradas.</div> : (() => {
+            const snip = [ultimaEvo.nota, ultimaEvo.puntos_importantes, ultimaEvo.motivo, ultimaEvo.proximos_pasos, ultimaEvo.diagnostico].map((x) => (x || "").trim()).find(Boolean) || "—";
+            return (
+              <>
+                <div className="ca-pmeta" style={{ marginBottom: 6 }}>{ultimaEvo.fecha}{ultimaEvo.medico ? ` · ${ultimaEvo.medico}` : ""}</div>
+                <div style={{ fontSize: 13.5, lineHeight: 1.55, display: "-webkit-box", WebkitLineClamp: 5, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{snip}</div>
+                <button className="ca-link" onClick={() => document.getElementById("hc-historia")?.scrollIntoView({ behavior: "smooth", block: "start" })} style={{ marginTop: 8 }}>Ver evolución completa</button>
+              </>
+            );
+          })()}
+        </FichaCard>
+      </div>
+
+      {(!esMedico && (p.numero_documento || p.tel || p.direccion || p.tutor_nombre)) && (
+        <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 22 }}>
+          {p.numero_documento && <div className="ca-field"><FileText size={15} strokeWidth={1.9} style={{ color: "var(--muted)" }} /> {p.tipo_documento_label} {p.numero_documento}</div>}
+          {p.tel && <div className="ca-field"><Phone size={15} strokeWidth={1.9} style={{ color: "var(--muted)" }} /> {p.tel}</div>}
+          {p.direccion && <div className="ca-field"><MapPin size={15} strokeWidth={1.9} style={{ color: "var(--muted)" }} /> {p.direccion}</div>}
+          {p.tutor_nombre && <div className="ca-field"><Users size={15} strokeWidth={1.9} style={{ color: "var(--muted)" }} /> Tutor: {p.tutor_nombre}{p.tutor_parentesco ? ` (${p.tutor_parentesco})` : ""}{p.tutor_telefono ? ` · ${p.tutor_telefono}` : ""}</div>}
+        </div>
+      )}
 
       {p.seguimiento && p.seguimiento.length > 0 && (
         <>
@@ -2231,14 +2289,23 @@ function Ficha({ p, onBack, onEdit, onWhatsApp, onSubirAdjunto, onEliminarAdjunt
         </>
       )}
 
-      <h2 className="ca-secth">Antecedentes</h2>
+      <h2 className="ca-secth">Antecedentes relevantes</h2>
       <div className="ca-card" style={{ marginBottom: 26 }}>
         <div className="ca-anteced">
+          <AntItem icon={HeartPulse} label="Médicos" valor={p.antecedentes_medicos} />
+          <AntItem icon={Activity} label="Psicológicos" valor={p.antecedentes} />
+          <AntItem icon={Users} label="Familiares" valor={p.antecedentes_familiares} />
+          <AntItem icon={FileText} label="Otros" valor={p.antecedentes_otros} />
           <AntItem icon={AlertTriangle} label="Alergias" valor={p.alergias} alerta />
-          <AntItem icon={HeartPulse} label="Antecedentes / condiciones" valor={p.antecedentes} />
           <AntItem icon={Pill} label="Medicación habitual" valor={p.medicacion_habitual} />
         </div>
-        <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 14 }}>Edita los antecedentes desde el botón «Editar» del paciente.</div>
+        <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 14 }}>Edita los antecedentes desde «Editar».</div>
+      </div>
+
+      <h2 className="ca-secth">Notas internas <span style={{ fontSize: 12.5, fontWeight: 400, color: "var(--muted)" }}>(solo equipo · no es historia clínica)</span></h2>
+      <div className="ca-card" style={{ marginBottom: 26 }}>
+        {p.notas_internas ? <div style={{ fontSize: 13.5, lineHeight: 1.6, whiteSpace: "pre-wrap" }}>{p.notas_internas}</div>
+          : <div style={{ color: "var(--muted)", fontSize: 13.5 }}>Sin notas. Aquí van preferencias del paciente o avisos del equipo (ej: «prefiere recordatorios por WhatsApp»). Se edita en «Editar».</div>}
       </div>
 
       {(p.cuenta || puedeCobrar) && (
@@ -2304,7 +2371,7 @@ function Ficha({ p, onBack, onEdit, onWhatsApp, onSubirAdjunto, onEliminarAdjunt
         </>
       )}
 
-      <h2 className="ca-secth">Historia clínica</h2>
+      <h2 className="ca-secth" id="hc-historia">Historia clínica</h2>
       <div className="ca-card">
         {p.historial.length === 0 ? (
           <div style={{ color: "var(--muted)", fontSize: 14 }}>Aún no hay atenciones registradas. Aparecerán aquí después de la primera consulta.</div>
@@ -7443,6 +7510,15 @@ function PacienteModal({ paciente, onClose, onSave, esMedico }) {
   const [modalidadP, setModalidadP] = useState(paciente?.modalidad || "");
   const [nSesion, setNSesion] = useState(paciente?.n_sesion ?? 0);
   const [proceso, setProceso] = useState(paciente?.proceso || "");
+  const [sesionesProceso, setSesionesProceso] = useState(paciente?.sesiones_proceso ?? 0);
+  const [resumenClinico, setResumenClinico] = useState(paciente?.resumen_clinico || "");
+  const [objetivoPrincipal, setObjetivoPrincipal] = useState(paciente?.objetivo_principal || "");
+  const [riesgo, setRiesgo] = useState(paciente?.riesgo || "");
+  const [alertas, setAlertas] = useState(paciente?.alertas || "");
+  const [notasInternas, setNotasInternas] = useState(paciente?.notas_internas || "");
+  const [antMedicos, setAntMedicos] = useState(paciente?.antecedentes_medicos || "");
+  const [antFamiliares, setAntFamiliares] = useState(paciente?.antecedentes_familiares || "");
+  const [antOtros, setAntOtros] = useState(paciente?.antecedentes_otros || "");
   const [profs, setProfs] = useState([]);
   useEffect(() => { api.profesionales().then(setProfs).catch(() => {}); }, []);
   const canSave = nombre.trim().length > 0;
@@ -7519,9 +7595,13 @@ function PacienteModal({ paciente, onClose, onSave, esMedico }) {
             (arrancan en 0 y se actualizan solos con las sesiones). */}
         {!esNuevo && (
           <div style={{ display: "flex", gap: 11, marginBottom: 16 }}>
-            <div style={{ width: 120 }}>
+            <div style={{ width: 92 }}>
               <div className="ca-label">N° de sesión</div>
               <input className="ca-input" value={nSesion} onChange={(e) => setNSesion(e.target.value.replace(/[^\d]/g, ""))} inputMode="numeric" />
+            </div>
+            <div style={{ width: 92 }}>
+              <div className="ca-label">de (total)</div>
+              <input className="ca-input" value={sesionesProceso} onChange={(e) => setSesionesProceso(e.target.value.replace(/[^\d]/g, ""))} inputMode="numeric" placeholder="12" />
             </div>
             <div style={{ flex: 1 }}>
               <div className="ca-label">Proceso</div>
@@ -7531,6 +7611,29 @@ function PacienteModal({ paciente, onClose, onSave, esMedico }) {
             </div>
           </div>
         )}
+
+        <div className="ca-secth" style={{ margin: "4px 0 12px" }}>Trabajo clínico</div>
+        <div style={{ marginBottom: 13 }}>
+          <div className="ca-label">Objetivo terapéutico principal</div>
+          <input className="ca-input" value={objetivoPrincipal} onChange={(e) => setObjetivoPrincipal(e.target.value)} placeholder="Ej: Regulación emocional y dependencia emocional" />
+        </div>
+        <div style={{ display: "flex", gap: 11, marginBottom: 13 }}>
+          <div style={{ flex: 1 }}>
+            <div className="ca-label">Riesgo actual</div>
+            <select className="ca-input" value={riesgo} onChange={(e) => setRiesgo(e.target.value)}>
+              <option value="">Sin evaluar</option><option value="bajo">Bajo</option><option value="moderado">Moderado</option><option value="alto">Alto</option>
+            </select>
+          </div>
+          <div style={{ flex: 2 }}>
+            <div className="ca-label">Alertas clínicas <span style={{ color: "var(--muted)", fontWeight: 400, fontSize: 12 }}>(separadas por coma)</span></div>
+            <input className="ca-input" value={alertas} onChange={(e) => setAlertas(e.target.value)} placeholder="Antecedente de ansiedad, Duelo no elaborado…" />
+          </div>
+        </div>
+        <div style={{ marginBottom: 20 }}>
+          <div className="ca-label">Resumen clínico</div>
+          <textarea className="ca-input" style={{ minHeight: 70, resize: "vertical", lineHeight: 1.5 }} value={resumenClinico}
+            onChange={(e) => setResumenClinico(e.target.value)} placeholder="Por qué consulta, esquemas predominantes, adherencia, riesgo. Para ver el caso de un vistazo." />
+        </div>
 
         {!esMedico && <div className="ca-secth" style={{ margin: "4px 0 12px" }}>Identificación</div>}
         {!esMedico && (
@@ -7586,27 +7689,51 @@ function PacienteModal({ paciente, onClose, onSave, esMedico }) {
         </div>
         )}
 
-        <div className="ca-secth" style={{ margin: "4px 0 12px" }}>Antecedentes</div>
+        <div className="ca-secth" style={{ margin: "4px 0 12px" }}>Antecedentes relevantes</div>
         <div style={{ marginBottom: 13 }}>
-          <div className="ca-label">Alergias</div>
-          <textarea className="ca-input" style={{ minHeight: 52, resize: "vertical", lineHeight: 1.5 }} value={alergias}
-            onChange={(e) => setAlergias(e.target.value)} placeholder="Penicilina, mariscos… (vacío si no se conocen)" />
-        </div>
-        <div style={{ marginBottom: 13 }}>
-          <div className="ca-label">Antecedentes / condiciones</div>
+          <div className="ca-label">Psicológicos</div>
           <textarea className="ca-input" style={{ minHeight: 52, resize: "vertical", lineHeight: 1.5 }} value={antecedentes}
-            onChange={(e) => setAntecedentes(e.target.value)} placeholder="Enfermedades crónicas, cirugías previas, antecedentes familiares…" />
+            onChange={(e) => setAntecedentes(e.target.value)} placeholder="Historia emocional: ansiedad, duelos, procesos previos…" />
         </div>
-        <div style={{ marginBottom: 20 }}>
+        <div style={{ display: "flex", gap: 11, marginBottom: 13 }}>
+          <div style={{ flex: 1 }}>
+            <div className="ca-label">Médicos</div>
+            <textarea className="ca-input" style={{ minHeight: 52, resize: "vertical", lineHeight: 1.5 }} value={antMedicos}
+              onChange={(e) => setAntMedicos(e.target.value)} placeholder="Enfermedades, cirugías, hospitalizaciones…" />
+          </div>
+          <div style={{ flex: 1 }}>
+            <div className="ca-label">Familiares</div>
+            <textarea className="ca-input" style={{ minHeight: 52, resize: "vertical", lineHeight: 1.5 }} value={antFamiliares}
+              onChange={(e) => setAntFamiliares(e.target.value)} placeholder="Antecedentes familiares relevantes…" />
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 11, marginBottom: 13 }}>
+          <div style={{ flex: 1 }}>
+            <div className="ca-label">Otros</div>
+            <textarea className="ca-input" style={{ minHeight: 52, resize: "vertical", lineHeight: 1.5 }} value={antOtros}
+              onChange={(e) => setAntOtros(e.target.value)} placeholder="Consumo de sustancias u otros…" />
+          </div>
+          <div style={{ flex: 1 }}>
+            <div className="ca-label">Alergias</div>
+            <textarea className="ca-input" style={{ minHeight: 52, resize: "vertical", lineHeight: 1.5 }} value={alergias}
+              onChange={(e) => setAlergias(e.target.value)} placeholder="Penicilina, mariscos…" />
+          </div>
+        </div>
+        <div style={{ marginBottom: 13 }}>
           <div className="ca-label">Medicación habitual</div>
           <textarea className="ca-input" style={{ minHeight: 52, resize: "vertical", lineHeight: 1.5 }} value={medicacion}
             onChange={(e) => setMedicacion(e.target.value)} placeholder="Medicamentos que toma de forma habitual…" />
+        </div>
+        <div style={{ marginBottom: 20 }}>
+          <div className="ca-label">Notas internas <span style={{ color: "var(--muted)", fontWeight: 400, fontSize: 12 }}>(solo equipo)</span></div>
+          <textarea className="ca-input" style={{ minHeight: 52, resize: "vertical", lineHeight: 1.5 }} value={notasInternas}
+            onChange={(e) => setNotasInternas(e.target.value)} placeholder="Preferencias/avisos: p. ej. «prefiere recordatorios por WhatsApp»." />
         </div>
 
         <div style={{ display: "flex", gap: 9, justifyContent: "flex-end" }}>
           <button className="ca-btn ghost" onClick={onClose}>Cancelar</button>
           <button className="ca-btn" style={{ opacity: canSave ? 1 : 0.5, pointerEvents: canSave ? "auto" : "none" }}
-            onClick={() => onSave({ ...(paciente?.id ? { id: paciente.id } : {}), nombre: nombre.trim(), fecha_nacimiento: fechaNac || null, tel: tel.trim(), especialidad: esp, sede, profesional: profId ? Number(profId) : null, frecuencia, modalidad: modalidadP, n_sesion: Number(nSesion) || 0, proceso, tipo_documento: tipoDoc, numero_documento: numDoc.trim(), direccion: direccion.trim(), genero, alergias: alergias.trim(), antecedentes: antecedentes.trim(), medicacion_habitual: medicacion.trim(), tutor_nombre: tutorNombre.trim(), tutor_parentesco: tutorParentesco.trim(), tutor_telefono: tutorTel.trim(), tutor_documento: tutorDoc.trim() })}>
+            onClick={() => onSave({ ...(paciente?.id ? { id: paciente.id } : {}), nombre: nombre.trim(), fecha_nacimiento: fechaNac || null, tel: tel.trim(), especialidad: esp, sede, profesional: profId ? Number(profId) : null, frecuencia, modalidad: modalidadP, n_sesion: Number(nSesion) || 0, proceso, tipo_documento: tipoDoc, numero_documento: numDoc.trim(), direccion: direccion.trim(), genero, alergias: alergias.trim(), antecedentes: antecedentes.trim(), medicacion_habitual: medicacion.trim(), tutor_nombre: tutorNombre.trim(), tutor_parentesco: tutorParentesco.trim(), tutor_telefono: tutorTel.trim(), tutor_documento: tutorDoc.trim(), sesiones_proceso: Number(sesionesProceso) || 0, resumen_clinico: resumenClinico.trim(), objetivo_principal: objetivoPrincipal.trim(), riesgo, alertas: alertas.trim(), notas_internas: notasInternas.trim(), antecedentes_medicos: antMedicos.trim(), antecedentes_familiares: antFamiliares.trim(), antecedentes_otros: antOtros.trim() })}>
             Guardar
           </button>
         </div>
