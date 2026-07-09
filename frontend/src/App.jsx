@@ -487,6 +487,7 @@ export default function ClinicaApp() {
   const [cancelando, setCancelando] = useState(null);
   const [cobrando, setCobrando] = useState(null);
   const [citaDetalle, setCitaDetalle] = useState(null);
+  const [notaCita, setNotaCita] = useState(null);
   const [bloqueando, setBloqueando] = useState(null);
   const [cambiarPass, setCambiarPass] = useState(false);
   const [agendarPara, setAgendarPara] = useState(null);
@@ -607,6 +608,24 @@ export default function ClinicaApp() {
   function showToast(msg) { setToast(msg); setTimeout(() => setToast(""), 2800); }
   function go(v) { setView(v); setSelectedId(null); }
   function openFicha(id) { if (!id) return; setView("pacientes"); setSelectedId(id); }
+
+  // `HOY_ISO` se calcula UNA vez al cargar la página. Si dejan la pestaña abierta
+  // varios días (pasa siempre), la app se queda mostrando la fecha de aquel día.
+  // Al volver a la pestaña, si ya cambió el día, recargamos. Solo en ese momento:
+  // nunca mientras están escribiendo.
+  useEffect(() => {
+    const revisarFecha = () => {
+      if (document.visibilityState === "visible" && aISO(new Date()) !== HOY_ISO) {
+        window.location.reload();
+      }
+    };
+    document.addEventListener("visibilitychange", revisarFecha);
+    window.addEventListener("focus", revisarFecha);
+    return () => {
+      document.removeEventListener("visibilitychange", revisarFecha);
+      window.removeEventListener("focus", revisarFecha);
+    };
+  }, []);
 
   async function guardarAtencion(cita, datos) {
     try {
@@ -1154,6 +1173,7 @@ export default function ClinicaApp() {
             onConfirmar={confirmarCita} onSetEstado={setEstadoCita} onAbrirCita={setCitaDetalle}
             onMensaje={(c) => { const p = pacientes.find((x) => x.id === c.pacienteId); if (p) { setWaPaciente(p); setWaCita(c); } else showToast("No se encontró el paciente"); }}
             onCobrar={(c) => setCobrando({ pacienteId: c.pacienteId, paciente: c.paciente, citaId: c.id, especialidad: c.especialidad })}
+            onEditarNota={setNotaCita}
           />
         )}
 
@@ -1279,6 +1299,10 @@ export default function ClinicaApp() {
         {atender && <AtenderModal cita={atender} servicios={servicios} onClose={() => setAtender(null)} onSave={(datos) => guardarAtencion(atender, datos)} />}
         {recordar && <RecordarModal cita={recordar} clinica={nombreClinica} onClose={() => setRecordar(null)} onSend={(texto) => enviarRecordatorio(recordar, texto)} />}
         {reagendar && <ReagendarModal cita={reagendar} onClose={() => setReagendar(null)} onSave={moverCita} />}
+        {notaCita && (
+          <NotaCitaModal cita={notaCita} showToast={showToast} onClose={() => setNotaCita(null)}
+            onSaved={() => { setNotaCita(null); refrescarCitas(); }} />
+        )}
         {cobrando && <CobroModal prefill={cobrando} pacientes={pacientes} servicios={servicios} onClose={() => setCobrando(null)} onSave={guardarCobro} />}
         {citaDetalle && (
           <CitaDetalleModal cita={citaDetalle} esMedico={usuario?.rol === "medico"} esAsistente={esAsistente}
@@ -3336,7 +3360,45 @@ function BloqueoModal({ fechaInicial, onClose, onSave }) {
   );
 }
 
-function CitaRow({ c, esAsistente, esMedico, onAtender, onRecordar, onReagendar, onCancelar, onConfirmar, onCobrar, onSetEstado, onMensaje, openFicha }) {
+// Nota administrativa de una cita YA agendada ("el paciente confirmó inicio de
+// proceso", "quedó para quincena"…). Se puede escribir DESPUÉS de la sesión.
+function NotaCitaModal({ cita, onClose, onSaved, showToast }) {
+  const [notas, setNotas] = useState(cita.notas || "");
+  const [guardando, setGuardando] = useState(false);
+  async function guardar() {
+    setGuardando(true);
+    try {
+      await api.actualizarCita(cita.id, { notas: notas.trim() });
+      showToast && showToast("Nota guardada ✓");
+      onSaved();
+    } catch (e) { showToast && showToast("Error: " + e.message); }
+    finally { setGuardando(false); }
+  }
+  return (
+    <div className="ca-modal-bg" onClick={onClose}>
+      <div className="ca-modal" style={{ maxWidth: 440 }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+          <strong style={{ fontSize: 16 }}>Nota de la sesión</strong>
+          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)" }}><X size={18} /></button>
+        </div>
+        <div className="ca-pmeta" style={{ marginBottom: 14 }}>{cita.paciente} · {cita.fecha} {cita.hora}</div>
+        <div style={{ marginBottom: 14 }}>
+          <div className="ca-label">¿Qué pasó con esta cita?</div>
+          <textarea className="ca-input" style={{ minHeight: 110, resize: "vertical", lineHeight: 1.5 }} value={notas} autoFocus
+            onChange={(e) => setNotas(e.target.value)}
+            placeholder="Ej: el paciente confirmó inicio de proceso · quedó en escribir en quincena · pidió cambiar de horario…" />
+          <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 6 }}>Es una nota administrativa del seguimiento, no la historia clínica.</div>
+        </div>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+          <button className="ca-btn ghost" onClick={onClose}>Cancelar</button>
+          <button className="ca-btn" onClick={guardar} disabled={guardando}>{guardando ? "Guardando…" : "Guardar nota"}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CitaRow({ c, esAsistente, esMedico, onAtender, onRecordar, onReagendar, onCancelar, onConfirmar, onCobrar, onSetEstado, onMensaje, openFicha, onEditarNota }) {
   const activa = c.estado !== "atendida" && c.estado !== "cancelada";
   const col = STATUS[c.estado] || {};
   return (
@@ -3378,10 +3440,21 @@ function CitaRow({ c, esAsistente, esMedico, onAtender, onRecordar, onReagendar,
         ) : (
           <button className="ca-mini" onClick={() => onCobrar(c)} title="Registrar cobro"><Receipt size={13} strokeWidth={2} /> Cobrar</button>
         ))}
+        {onEditarNota && (
+          <button className="ca-mini" onClick={() => onEditarNota(c)} title={c.notas ? `Nota: ${c.notas}` : "Agregar una nota de seguimiento a esta cita"}>
+            <Pencil size={13} strokeWidth={2} /> Nota{c.notas ? " ✓" : ""}
+          </button>
+        )}
         {activa && (
           <button className="ca-mini" onClick={() => onReagendar(c)} title="Reagendar (cambiar fecha/hora)"><Calendar size={13} strokeWidth={2} /> Mover</button>
         )}
       </div>
+      {c.notas && (
+        <div style={{ flexBasis: "100%", fontSize: 12.5, color: "var(--muted)", marginTop: 4, display: "flex", gap: 6, alignItems: "flex-start" }}>
+          <Pencil size={12} strokeWidth={2} style={{ flexShrink: 0, marginTop: 2 }} />
+          <span style={{ whiteSpace: "pre-wrap" }}>{c.notas}</span>
+        </div>
+      )}
     </div>
   );
 }
@@ -3453,7 +3526,7 @@ function TerapeutasGrid({ citas, terapeutas, horarios = {}, fecha, onAbrirCita }
   );
 }
 
-function Agenda({ citas, bloqueos = [], fecha, setFecha, vista, setVista, esAsistente, esMedico, onAgendar, onBloquear, onBorrarBloqueo, onVenta, onAtender, onRecordar, onReagendar, onCancelar, onConfirmar, onCobrar, onSetEstado, onAbrirCita, onMensaje, openFicha }) {
+function Agenda({ citas, bloqueos = [], fecha, setFecha, vista, setVista, esAsistente, esMedico, onAgendar, onBloquear, onBorrarBloqueo, onVenta, onAtender, onRecordar, onReagendar, onCancelar, onConfirmar, onCobrar, onSetEstado, onAbrirCita, onMensaje, openFicha, onEditarNota }) {
   const [filtroMedico, setFiltroMedico] = useState("");
   const [filtroSede, setFiltroSede] = useState("");
   const [medicosDir, setMedicosDir] = useState([]);
@@ -3576,7 +3649,7 @@ function Agenda({ citas, bloqueos = [], fecha, setFecha, vista, setVista, esAsis
               <CitaRow key={c.id} c={c} esAsistente={esAsistente} esMedico={esMedico}
                 onAtender={onAtender} onRecordar={onRecordar} onReagendar={onReagendar}
                 onCancelar={onCancelar} onConfirmar={onConfirmar} onCobrar={onCobrar}
-                onSetEstado={onSetEstado} onMensaje={onMensaje} openFicha={openFicha} />
+                onSetEstado={onSetEstado} onMensaje={onMensaje} openFicha={openFicha} onEditarNota={onEditarNota} />
             ))
           )}
         </div>
@@ -3951,8 +4024,29 @@ function RecordarModal({ cita, clinica, onClose, onSend }) {
 function Mensajes({ mensajes, esAdmin, showToast }) {
   const [plantillas, setPlantillas] = useState(null);
   const [editando, setEditando] = useState(null); // { id, texto }
+  const [nueva, setNueva] = useState(null); // { clave, nombre, texto }
 
   useEffect(() => { api.plantillas().then(setPlantillas).catch(() => setPlantillas([])); }, []);
+
+  // Clave sugerida a partir del nombre (sin tildes ni espacios): la usa el código
+  // para buscar la plantilla (plantilla_por_clave).
+  const claveDe = (s) => (s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "")
+    .replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 30); // eslint-disable-line
+
+  async function crearPlantilla() {
+    const nombre = (nueva.nombre || "").trim();
+    const texto = (nueva.texto || "").trim();
+    const clave = (nueva.clave || "").trim() || claveDe(nombre);
+    if (!nombre || !texto) return showToast && showToast("Ponle nombre y texto a la plantilla.");
+    if (!clave) return showToast && showToast("La clave no puede quedar vacía.");
+    if ((plantillas || []).some((p) => p.clave === clave)) return showToast && showToast(`Ya existe una plantilla con la clave «${clave}».`);
+    try {
+      const creada = await api.crearPlantilla({ clave, nombre, texto });
+      setPlantillas((ps) => [...(ps || []), creada]);
+      setNueva(null);
+      showToast && showToast("Plantilla creada ✓");
+    } catch (e) { showToast && showToast("Error: " + e.message); }
+  }
 
   async function guardarPlantilla(ed) {
     try {
@@ -3974,10 +4068,42 @@ function Mensajes({ mensajes, esAdmin, showToast }) {
       <h1 className="ca-h1">Mensajes</h1>
       <div className="ca-sub">Plantillas de WhatsApp y bitácora de envíos</div>
 
-      <h2 className="ca-secth" style={{ marginTop: 22 }}>Plantillas</h2>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 22 }}>
+        <h2 className="ca-secth" style={{ margin: 0 }}>Plantillas</h2>
+        {esAdmin && !nueva && (
+          <button className="ca-mini" onClick={() => setNueva({ clave: "", nombre: "", texto: "" })}>
+            <Plus size={13} strokeWidth={2.2} /> Nueva plantilla
+          </button>
+        )}
+      </div>
       <div className="ca-pmeta" style={{ marginBottom: 10 }}>
         Variables que se reemplazan solas: <code>{"{nombre} {psicologo} {fecha} {hora} {n_sesion} {sede} {clinica}"}</code>
       </div>
+
+      {nueva && (
+        <div className="ca-card" style={{ marginBottom: 12, borderColor: "var(--accent)" }}>
+          <div style={{ display: "flex", gap: 11, marginBottom: 10, flexWrap: "wrap" }}>
+            <div style={{ flex: 2, minWidth: 180 }}>
+              <div className="ca-label">Nombre</div>
+              <input className="ca-input" value={nueva.nombre} autoFocus placeholder="Ej: Recordatorio de encuesta"
+                onChange={(e) => setNueva((n) => ({ ...n, nombre: e.target.value }))} />
+            </div>
+            <div style={{ flex: 1, minWidth: 140 }}>
+              <div className="ca-label">Clave <span style={{ color: "var(--muted)", fontWeight: 400 }}>(opcional)</span></div>
+              <input className="ca-input" value={nueva.clave} placeholder={claveDe(nueva.nombre) || "se genera sola"}
+                onChange={(e) => setNueva((n) => ({ ...n, clave: e.target.value }))} />
+            </div>
+          </div>
+          <div className="ca-label">Texto del mensaje</div>
+          <textarea className="ca-input" style={{ minHeight: 100, resize: "vertical", lineHeight: 1.5 }} value={nueva.texto}
+            onChange={(e) => setNueva((n) => ({ ...n, texto: e.target.value }))}
+            placeholder="Hola {nombre} 👋 …" />
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 10 }}>
+            <button className="ca-btn ghost" onClick={() => setNueva(null)}>Cancelar</button>
+            <button className="ca-btn" onClick={crearPlantilla}>Crear plantilla</button>
+          </div>
+        </div>
+      )}
       {!plantillas ? <div className="ca-empty">Cargando…</div> : plantillas.map((p) => (
         <div key={p.id} className="ca-card" style={{ marginBottom: 10 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6, gap: 8 }}>
@@ -4931,8 +5057,26 @@ function Recursos({ showToast, esAdmin }) {
   const [editando, setEditando] = useState(null); // objeto recurso o {tipo} nuevo
   const meta = RECURSO_TABS.find((t) => t.v === tipo);
 
+  const [busca, setBusca] = useState("");
+  const [catSel, setCatSel] = useState("");
+
   function cargar() { setLista(null); api.recursos(tipo).then(setLista).catch(() => setLista([])); }
   useEffect(() => { cargar(); }, [tipo]);
+  useEffect(() => { setBusca(""); setCatSel(""); }, [tipo]);
+
+  // Categorías presentes (para los chips) y filtrado por texto + categoría.
+  const categorias = useMemo(
+    () => [...new Set((lista || []).map((r) => (r.categoria || "").trim()).filter(Boolean))].sort(),
+    [lista]
+  );
+  const visibles = useMemo(() => {
+    const q = busca.trim().toLowerCase();
+    return (lista || []).filter((r) => {
+      if (catSel && (r.categoria || "").trim() !== catSel) return false;
+      if (!q) return true;
+      return [r.titulo, r.descripcion, r.categoria].some((x) => (x || "").toLowerCase().includes(q));
+    });
+  }, [lista, busca, catSel]);
 
   async function guardar(data) {
     try {
@@ -4964,10 +5108,29 @@ function Recursos({ showToast, esAdmin }) {
         ))}
       </div>
 
+      {lista && lista.length > 0 && (
+        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginTop: 14 }}>
+          <div style={{ position: "relative", flex: 1, minWidth: 220, maxWidth: 380 }}>
+            <Search size={15} strokeWidth={2} style={{ position: "absolute", left: 11, top: "50%", transform: "translateY(-50%)", color: "var(--muted)" }} />
+            <input className="ca-input" style={{ paddingLeft: 34 }} value={busca} onChange={(e) => setBusca(e.target.value)}
+              placeholder={`Buscar por nombre o categoría (ej. ansiedad)…`} />
+          </div>
+          {categorias.length > 0 && (
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              <button className={`ca-mini${catSel === "" ? " done" : ""}`} onClick={() => setCatSel("")}>Todas</button>
+              {categorias.map((c) => (
+                <button key={c} className={`ca-mini${catSel === c ? " done" : ""}`} onClick={() => setCatSel(catSel === c ? "" : c)}>{c}</button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {!lista ? <div className="ca-empty" style={{ marginTop: 18 }}>Cargando…</div> :
-        lista.length === 0 ? <div className="ca-empty" style={{ marginTop: 18 }}>Aún no hay {meta.l.toLowerCase()}.{esAdmin ? " Usa «Agregar» para publicar el primero." : ""}</div> : (
+        lista.length === 0 ? <div className="ca-empty" style={{ marginTop: 18 }}>Aún no hay {meta.l.toLowerCase()}.{esAdmin ? " Usa «Agregar» para publicar el primero." : ""}</div> :
+        visibles.length === 0 ? <div className="ca-empty" style={{ marginTop: 18 }}>Nada coincide con la búsqueda.</div> : (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(280px,1fr))", gap: 12, marginTop: 18 }}>
-            {lista.map((r) => (
+            {visibles.map((r) => (
               <div key={r.id} className="ca-card" style={{ opacity: r.activo ? 1 : 0.55, display: "flex", flexDirection: "column", gap: 6 }}>
                 <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
                   <meta.icon size={17} strokeWidth={2} style={{ color: "var(--accent)", flexShrink: 0, marginTop: 1 }} />

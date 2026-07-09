@@ -63,6 +63,8 @@ export const api = {
   moverCita: (id, fecha, hora) =>
     req(`/api/citas/${id}/mover/`, { method: "POST", body: JSON.stringify({ fecha, hora }) }),
   cancelarCita: (id) => req(`/api/citas/${id}/cancelar/`, { method: "POST" }),
+  // Editar una cita ya agendada (sobre todo sus notas: qué pasó después de la sesión).
+  actualizarCita: (id, data) => req(`/api/citas/${id}/`, { method: "PATCH", body: JSON.stringify(data) }),
   // Bloqueos de horario (sin paciente)
   bloqueos: () => req("/api/bloqueos/"),
   crearBloqueo: (data) => req("/api/bloqueos/", { method: "POST", body: JSON.stringify(data) }),
@@ -104,6 +106,8 @@ export const api = {
   // citaId opcional → el recordatorio se renderiza con la fecha/hora de esa cita.
   plantillas: (pacienteId, citaId) => req(`/api/plantillas/${pacienteId ? `?paciente=${pacienteId}${citaId ? `&cita=${citaId}` : ""}` : ""}`),
   actualizarPlantilla: (id, data) => req(`/api/plantillas/${id}/`, { method: "PATCH", body: JSON.stringify(data) }),
+  crearPlantilla: (data) => req("/api/plantillas/", { method: "POST", body: JSON.stringify(data) }),
+  borrarPlantilla: (id) => req(`/api/plantillas/${id}/`, { method: "DELETE" }),
 
   // Consentimiento informado (firma digital del paciente)
   consentimientos: (pacienteId) => req(`/api/consentimientos/?paciente=${pacienteId}`),

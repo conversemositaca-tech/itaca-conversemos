@@ -5,9 +5,16 @@ const C = {
   muted: "#6E6E6E", line: "#DCEBEF", accent: "#0A7D92", accentSoft: "#D7F4FA",
 };
 
+// Solo recordamos el CORREO (nunca la contraseña: guardarla en el navegador sería
+// inseguro). De la contraseña se encarga el gestor del navegador, que la ofrece
+// gracias a los `autoComplete`/`name` de los campos.
+const RECORDAR_KEY = "itaca_email_recordado";
+
 export default function Login({ onLogin }) {
-  const [email, setEmail] = useState("");
+  const guardado = typeof localStorage !== "undefined" ? localStorage.getItem(RECORDAR_KEY) : "";
+  const [email, setEmail] = useState(guardado || "");
   const [password, setPassword] = useState("");
+  const [recordar, setRecordar] = useState(!!guardado);
   const [error, setError] = useState("");
   const [cargando, setCargando] = useState(false);
 
@@ -17,6 +24,9 @@ export default function Login({ onLogin }) {
     setCargando(true);
     try {
       await onLogin(email.trim(), password);
+      // Solo tras un login correcto.
+      if (recordar) localStorage.setItem(RECORDAR_KEY, email.trim());
+      else localStorage.removeItem(RECORDAR_KEY);
     } catch (err) {
       setError(err.message || "No se pudo iniciar sesión.");
     } finally {
@@ -52,14 +62,20 @@ export default function Login({ onLogin }) {
 
         <div style={{ marginBottom: 14 }}>
           <div style={label}>Correo</div>
-          <input style={input} type="email" value={email} autoFocus autoComplete="username"
+          <input style={input} type="email" name="email" value={email} autoFocus={!guardado} autoComplete="username"
             onChange={(e) => setEmail(e.target.value)} placeholder="tucorreo@clinica.pe" />
         </div>
-        <div style={{ marginBottom: 18 }}>
+        <div style={{ marginBottom: 14 }}>
           <div style={label}>Contraseña</div>
-          <input style={input} type="password" value={password} autoComplete="current-password"
+          <input style={input} type="password" name="password" value={password} autoFocus={!!guardado} autoComplete="current-password"
             onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" />
         </div>
+
+        <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 18, cursor: "pointer", fontSize: 13, color: C.inkSoft }}>
+          <input type="checkbox" checked={recordar} onChange={(e) => setRecordar(e.target.checked)}
+            style={{ width: 15, height: 15, accentColor: C.accent, cursor: "pointer" }} />
+          Recordar mi correo en este equipo
+        </label>
 
         {error && (
           <div style={{
