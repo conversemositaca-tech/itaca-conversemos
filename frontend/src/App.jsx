@@ -3531,13 +3531,26 @@ function Agenda({ citas, bloqueos = [], fecha, setFecha, vista, setVista, esAsis
   const [filtroSede, setFiltroSede] = useState("");
   const [medicosDir, setMedicosDir] = useState([]);
   useEffect(() => { api.medicos().then(setMedicosDir).catch(() => {}); }, []);
+  // Sede "de casa" de cada psicólogo, según su ficha del directorio.
+  const sedePorNombre = useMemo(
+    () => Object.fromEntries(medicosDir.map((m) => [m.nombre, m.sede || ""])),
+    [medicosDir]
+  );
   // Lista de psicólogos activos del directorio + cualquiera presente en las citas,
   // para que aparezcan todos (no solo los que ya tienen sesiones) — filtrados por sede.
+  // OJO: al filtrar por sede manda la sede DEL PSICÓLOGO (su ficha), no la de la
+  // cita. Si no, basta una cita suelta agendada en la otra sede para que un
+  // psicólogo de Piura aparezca también en Lima.
   const medicos = useMemo(() => {
     const nombres = new Set(medicosDir.filter((m) => !filtroSede || m.sede === filtroSede).map((m) => m.nombre).filter(Boolean));
-    citas.forEach((c) => { if (c.medico && (!filtroSede || c.sede === filtroSede)) nombres.add(c.medico); });
+    citas.forEach((c) => {
+      if (!c.medico) return;
+      // Si no está en el directorio no sabemos su sede: caemos a la de la cita.
+      const sedeEfectiva = sedePorNombre[c.medico] || c.sede || "";
+      if (!filtroSede || sedeEfectiva === filtroSede) nombres.add(c.medico);
+    });
     return [...nombres].sort();
-  }, [medicosDir, citas, filtroSede]);
+  }, [medicosDir, citas, filtroSede, sedePorNombre]);
   const horariosPorNombre = useMemo(() => Object.fromEntries(medicosDir.map((m) => [m.nombre, m.horario || {}])), [medicosDir]);
   const semana = vista === "semana" ? semanaDe(fecha) : null;
   const dias = vista === "mes" ? mesDe(fecha) : null;
@@ -7949,17 +7962,29 @@ function ReporteModal({ reporte, onClose, onSave, showToast }) {
 
 function Ocupacion({ showToast }) {
   const [data, setData] = useState(null);
-  const [sel, setSel] = useState({ anio: "", mes: "", semana: "" });
+  const [sel, setSel] = useState(null); // null hasta que carga la semana en curso
+  const primera = React.useRef(true);
 
   async function cargar(params) {
     try {
       const d = await api.ocupacion(params || {});
       setData(d);
-      setSel({ anio: d.anio, mes: d.mes, semana: d.semana });
+      if (!params) setSel({ anio: d.anio, mes: d.mes, semana: d.semana });
     } catch (e) { showToast("Error: " + e.message); }
   }
   useEffect(() => { cargar(); }, []);
-  if (!data) return <div className="ca-empty">Cargando…</div>;
+  // Al cambiar semana/mes/año recarga sola: ya no hace falta apretar "Ver".
+  useEffect(() => {
+    if (!sel) return;
+    if (primera.current) { primera.current = false; return; }
+    cargar(sel);
+  }, [sel]);
+
+  if (!data || !sel) return <div className="ca-empty">Cargando…</div>;
+
+  const anioBase = dDeISO(HOY_ISO).getFullYear();
+  const anios = [...new Set([anioBase - 2, anioBase - 1, anioBase, anioBase + 1, Number(data.anio)])].sort((a, b) => a - b);
+  const set = (k) => (e) => setSel((s) => ({ ...s, [k]: Number(e.target.value) }));
 
   const badge = (estado, txt) => {
     const c = SEM[estado] || SEM.rojo;
@@ -7981,10 +8006,26 @@ function Ocupacion({ showToast }) {
       </div>
 
       <div className="ca-fchips" style={{ marginTop: 18, alignItems: "flex-end" }}>
-        <div style={{ width: 78 }}><div className="ca-label">Semana</div><input className="ca-input" value={sel.semana} onChange={(e) => setSel((s) => ({ ...s, semana: e.target.value.replace(/[^\d]/g, "") }))} inputMode="numeric" /></div>
-        <div style={{ width: 130 }}><div className="ca-label">Mes</div><select className="ca-input" value={sel.mes} onChange={(e) => setSel((s) => ({ ...s, mes: Number(e.target.value) }))}>{MESES_FULL.slice(1).map((m, i) => <option key={i + 1} value={i + 1}>{m}</option>)}</select></div>
-        <div style={{ width: 88 }}><div className="ca-label">Año</div><input className="ca-input" value={sel.anio} onChange={(e) => setSel((s) => ({ ...s, anio: e.target.value.replace(/[^\d]/g, "") }))} inputMode="numeric" /></div>
-        <button className="ca-btn" onClick={() => cargar(sel)}>Ver</button>
+        <div style={{ width: 108 }}><div className="ca-label">Semana</div>
+          <select className="ca-input" value={sel.semana} onChange={set("semana")}>
+            {[1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>Semana {n}</option>)}
+          </select>
+        </div>
+        <div style={{ width: 130 }}><div className="ca-label">Mes</div>
+          <select className="ca-input" value={sel.mes} onChange={set("mes")}>
+            {MESES_FULL.slice(1).map((m, i) => <option key={i + 1} value={i + 1}>{m}</option>)}
+          </select>
+        </div>
+        <div style={{ width: 100 }}><div className="ca-label">Año</div>
+          <select className="ca-input" value={sel.anio} onChange={set("anio")}>
+            {anios.map((a) => <option key={a} value={a}>{a}</option>)}
+          </select>
+        </div>
+        {data.desde && (
+          <div className="ca-pmeta" style={{ paddingBottom: 10 }}>
+            {labelNumMes(data.desde)} – {labelNumMes(data.hasta)}
+          </div>
+        )}
       </div>
 
       {data.sedes.length === 0 ? (
