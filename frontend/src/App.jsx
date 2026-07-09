@@ -2319,6 +2319,94 @@ function EscalaModal({ pacienteId, onClose, onSaved, showToast }) {
   );
 }
 
+const NPS_CAT = {
+  promotor: { l: "Promotor", c: "#2F6B4F" },
+  pasivo: { l: "Pasivo", c: "#9C6B2E" },
+  detractor: { l: "Detractor", c: "#9C4646" },
+};
+
+function NpsModal({ pacienteId, onClose, onSaved, showToast }) {
+  const [puntaje, setPuntaje] = useState("");
+  const [comentario, setComentario] = useState("");
+  const [fecha, setFecha] = useState(HOY_ISO);
+  async function guardar() {
+    const n = Number(puntaje);
+    if (puntaje === "" || n < 0 || n > 10) return showToast && showToast("El puntaje va de 0 a 10.");
+    try {
+      await api.crearNPS({ paciente: pacienteId, puntaje: n, comentario: comentario.trim(), fecha });
+      showToast && showToast("NPS registrado ✓"); onSaved();
+    } catch (e) { showToast && showToast("Error: " + e.message); }
+  }
+  return (
+    <div className="ca-modal-bg" onClick={onClose}>
+      <div className="ca-modal" style={{ maxWidth: 380 }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+          <strong style={{ fontSize: 16 }}>Registrar NPS</strong>
+          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)" }}><X size={18} /></button>
+        </div>
+        <div className="ca-pmeta" style={{ marginBottom: 13 }}>¿Qué tan probable es que recomiende la clínica? (0 = nada · 10 = muchísimo)</div>
+        <div style={{ display: "flex", gap: 11, marginBottom: 13 }}>
+          <div style={{ flex: 1 }}><div className="ca-label">Puntaje (0-10)</div><input className="ca-input" type="number" min="0" max="10" value={puntaje} onChange={(e) => setPuntaje(e.target.value)} autoFocus /></div>
+          <div style={{ flex: 1 }}><div className="ca-label">Fecha</div><input className="ca-input" type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} /></div>
+        </div>
+        <div style={{ marginBottom: 16 }}>
+          <div className="ca-label">Comentario <span style={{ color: "var(--muted)", fontWeight: 400 }}>(opcional)</span></div>
+          <input className="ca-input" value={comentario} onChange={(e) => setComentario(e.target.value)} />
+        </div>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+          <button className="ca-btn ghost" onClick={onClose}>Cancelar</button>
+          <button className="ca-btn" onClick={guardar}>Registrar</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function NpsPaciente({ pacienteId, puede, showToast }) {
+  const [lista, setLista] = useState([]);
+  const [modal, setModal] = useState(false);
+  const [enviando, setEnviando] = useState(false);
+  function cargar() { api.nps(pacienteId).then(setLista).catch(() => {}); }
+  useEffect(() => { cargar(); }, [pacienteId]);
+  const ult = lista[lista.length - 1];
+  const cat = ult ? (NPS_CAT[ult.categoria] || NPS_CAT.pasivo) : null;
+
+  async function pedir() {
+    setEnviando(true);
+    try {
+      const r = await api.enviarNPS(pacienteId);
+      if (r.ok) showToast && showToast("Encuesta enviada ✓ · su respuesta se registrará sola");
+      else if (r.wa_url) { window.open(r.wa_url, "_blank"); showToast && showToast("Abrimos WhatsApp para enviarla a mano 📲"); }
+      else showToast && showToast("No se pudo enviar: " + (r.detalle || "revisa el teléfono"));
+    } catch (e) { showToast && showToast("Error: " + e.message); }
+    finally { setEnviando(false); }
+  }
+
+  return (
+    <FichaCard label="NPS paciente">
+      {!ult ? (
+        <div style={{ color: "var(--muted)", fontSize: 13.5 }}>Sin respuestas aún.</div>
+      ) : (
+        <>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+            <span style={{ fontSize: 26, fontWeight: 700, color: cat.c }}>{ult.puntaje}</span>
+            <span style={{ fontSize: 12.5, fontWeight: 600, color: cat.c }}>{cat.l}</span>
+          </div>
+          <div className="ca-pmeta">Última respuesta: {labelNumMes(ult.fecha)}{lista.length > 1 ? ` · ${lista.length} respuestas` : ""}</div>
+          {lista.length >= 2 && <div style={{ marginTop: 6 }}><Sparkline valores={lista.map((x) => x.puntaje)} color={cat.c} ancho={150} alto={28} /></div>}
+        </>
+      )}
+      {puede && (
+        <div style={{ display: "flex", gap: 12, marginTop: 8, flexWrap: "wrap" }}>
+          <button className="ca-link" onClick={() => setModal(true)}>Registrar</button>
+          <button className="ca-link" onClick={pedir} disabled={enviando}>{enviando ? "Enviando…" : "Pedir por WhatsApp"}</button>
+        </div>
+      )}
+      {modal && <NpsModal pacienteId={pacienteId} onClose={() => setModal(false)} onSaved={() => { setModal(false); cargar(); }} showToast={showToast} />}
+    </FichaCard>
+  );
+}
+
 function AntesDeIniciar({ p }) {
   const [tareas, setTareas] = useState([]);
   useEffect(() => { api.tareas(p.id).then(setTareas).catch(() => {}); }, [p.id]);
@@ -2714,6 +2802,7 @@ function Ficha({ p, onBack, onEdit, onWhatsApp, onSubirAdjunto, onEliminarAdjunt
               : <span style={{ color: "var(--muted)", fontSize: 13.5 }}>Sin evaluar</span>;
           })()}
         </FichaCard>
+        <NpsPaciente pacienteId={p.id} puede={puedeRegistrar || puedeCobrar} showToast={showToast} />
       </div>
 
       {/* Alertas clínicas */}

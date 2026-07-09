@@ -47,6 +47,44 @@ def _texto_del_mensaje(msg):
     return ""
 
 
+def _capturar_nps(clinica, numero, texto):
+    """Registra la respuesta a la encuesta NPS si el paciente tenía una pendiente.
+
+    Solo acepta el mensaje si EMPIEZA con un número 0-10 (así "9 muy buena atención"
+    cuenta, pero "tengo 2 preguntas" no). Devuelve True si registró la respuesta.
+    """
+    import re
+    from datetime import timedelta
+
+    from django.utils import timezone as tz
+
+    from pacientes.models import Paciente, RespuestaNPS
+
+    m = re.match(r"^\s*(10|[0-9])\b", (texto or "").strip())
+    if not m:
+        return False
+    suf = "".join(ch for ch in (numero or "") if ch.isdigit())[-9:]
+    if len(suf) < 9:
+        return False
+    limite = tz.now() - timedelta(days=7)
+    candidatos = (
+        Paciente.objects.filter(clinica=clinica, nps_pendiente_desde__gte=limite)
+        .exclude(telefono="")
+    )
+    for p in candidatos:
+        if "".join(ch for ch in p.telefono if ch.isdigit()).endswith(suf):
+            RespuestaNPS.objects.create(
+                clinica=clinica, paciente=p, puntaje=int(m.group(1)),
+                comentario=(texto or "").strip()[:300], fecha=tz.localdate(),
+                origen=RespuestaNPS.Origen.WHATSAPP,
+            )
+            p.nps_pendiente_desde = None
+            p.save(update_fields=["nps_pendiente_desde"])
+            log.info("NPS recibido de %s: %s", p.nombre, m.group(1))
+            return True
+    return False
+
+
 def _capturar_leads(data):
     """Convierte los mensajes entrantes de WhatsApp (Meta Cloud API) en leads.
 
@@ -88,7 +126,9 @@ def _capturar_leads(data):
                     continue
                 texto = _texto_del_mensaje(msg)
                 if _es_paciente(clinica, numero):
-                    continue  # ya es paciente: no es un lead nuevo
+                    # No es un lead. Pero si le pedimos su NPS, su número es la respuesta.
+                    _capturar_nps(clinica, numero, texto)
+                    continue
                 existente = _lead_existente(clinica, numero, dias=60)
                 if existente:
                     _agregar_nota(existente, f"WhatsApp: {texto}" if texto else "Volvió a escribir por WhatsApp.")

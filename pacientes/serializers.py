@@ -7,7 +7,7 @@ from core.utils import fecha_corta
 
 from .models import (
     Adjunto, AplicacionEscala, Atencion, BloqueoAgenda, Cita, ContactoProfesional,
-    ObjetivoTerapeutico, Paciente, Tarea, severidad_escala,
+    ObjetivoTerapeutico, Paciente, RespuestaNPS, Tarea, severidad_escala,
 )
 
 
@@ -310,6 +310,16 @@ class TareaSerializer(serializers.ModelSerializer):
     class Meta:
         model = Tarea
         fields = ["id", "paciente", "texto", "estado", "estado_label", "fecha"]
+
+
+class RespuestaNPSSerializer(serializers.ModelSerializer):
+    paciente = serializers.PrimaryKeyRelatedField(read_only=True)
+    categoria = serializers.CharField(read_only=True)
+    origen_label = serializers.CharField(source="get_origen_display", read_only=True)
+
+    class Meta:
+        model = RespuestaNPS
+        fields = ["id", "paciente", "puntaje", "categoria", "comentario", "fecha", "origen", "origen_label"]
 
 
 class ContactoProfesionalSerializer(serializers.ModelSerializer):

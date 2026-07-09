@@ -205,6 +205,13 @@ export const api = {
   crearTarea: (data) => req("/api/tareas/", { method: "POST", body: JSON.stringify(data) }),
   actualizarTarea: (id, data) => req(`/api/tareas/${id}/`, { method: "PATCH", body: JSON.stringify(data) }),
   borrarTarea: (id) => req(`/api/tareas/${id}/`, { method: "DELETE" }),
+  // NPS del paciente (encuesta de satisfacción 0-10)
+  nps: (pacienteId) => req(`/api/nps/${pacienteId ? `?paciente=${pacienteId}` : ""}`),
+  crearNPS: (data) => req("/api/nps/", { method: "POST", body: JSON.stringify(data) }),
+  borrarNPS: (id) => req(`/api/nps/${id}/`, { method: "DELETE" }),
+  // Envía la encuesta por WhatsApp; su respuesta numérica se registra sola.
+  enviarNPS: (pacienteId) => req(`/api/pacientes/${pacienteId}/enviar-nps/`, { method: "POST" }),
+
   // Red de profesionales del paciente (psiquiatra, nutricionista…)
   redProfesionales: (pacienteId) => req(`/api/red-profesionales/${pacienteId ? `?paciente=${pacienteId}` : ""}`),
   crearRedProfesional: (data) => req("/api/red-profesionales/", { method: "POST", body: JSON.stringify(data) }),

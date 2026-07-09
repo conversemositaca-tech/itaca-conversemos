@@ -111,6 +111,10 @@ class Paciente(ModeloTenant):
         help_text="Notas internas del equipo (NO son historia clínica: preferencias/avisos del paciente).",
     )
 
+    # Encuesta NPS enviada y aún sin respuesta (para interpretar el "8" que llega
+    # por WhatsApp como su puntaje). Se limpia al recibir la respuesta.
+    nps_pendiente_desde = models.DateTimeField(null=True, blank=True)
+
     # --- Brújula clínica (formulación del caso en una hoja, estilo Método Ítaca) ---
     brujula_motivo = models.TextField(blank=True, default="")
     brujula_hipotesis = models.TextField("hipótesis clínica", blank=True, default="")
@@ -569,6 +573,45 @@ class Tarea(ModeloTenant):
 
     def __str__(self):
         return f"{self.texto} · {self.get_estado_display()} · {self.paciente.nombre}"
+
+
+class RespuestaNPS(ModeloTenant):
+    """Respuesta del paciente a la encuesta de satisfacción (NPS, 0-10).
+
+    Llega por WhatsApp (el paciente responde el número) o la registra el equipo.
+    Categoría estándar: 9-10 promotor, 7-8 pasivo, 0-6 detractor.
+    """
+
+    class Origen(models.TextChoices):
+        WHATSAPP = "whatsapp", "Respondió por WhatsApp"
+        MANUAL = "manual", "Registrado por el equipo"
+
+    paciente = models.ForeignKey(Paciente, on_delete=models.CASCADE, related_name="nps")
+    puntaje = models.PositiveSmallIntegerField(help_text="0 a 10.")
+    comentario = models.CharField(max_length=300, blank=True, default="")
+    fecha = models.DateField()
+    origen = models.CharField(max_length=10, choices=Origen.choices, default=Origen.MANUAL)
+    registrado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, related_name="nps_registrados",
+        null=True, blank=True,
+    )
+
+    class Meta:
+        verbose_name = "Respuesta NPS"
+        verbose_name_plural = "Respuestas NPS"
+        ordering = ["fecha", "id"]
+        indexes = [models.Index(fields=["clinica", "paciente"])]
+
+    def __str__(self):
+        return f"NPS {self.puntaje} · {self.paciente.nombre}"
+
+    @property
+    def categoria(self):
+        if self.puntaje >= 9:
+            return "promotor"
+        if self.puntaje >= 7:
+            return "pasivo"
+        return "detractor"
 
 
 class ContactoProfesional(ModeloTenant):

@@ -17,12 +17,12 @@ from mensajes.services import plantilla_por_clave, registrar_y_enviar
 
 from .models import (
     Adjunto, AplicacionEscala, Atencion, BloqueoAgenda, Cita, ContactoProfesional, EdicionAtencion,
-    ObjetivoTerapeutico, Paciente, SeguimientoSesion, Tarea,
+    ObjetivoTerapeutico, Paciente, RespuestaNPS, SeguimientoSesion, Tarea,
 )
 from .serializers import (
     AdjuntoSerializer, AplicacionEscalaSerializer, AtencionSerializer, BloqueoAgendaSerializer,
     CitaSerializer, ContactoProfesionalSerializer, ObjetivoTerapeuticoSerializer, PacienteSerializer,
-    TareaSerializer,
+    RespuestaNPSSerializer, TareaSerializer,
 )
 
 # Tipos de archivo permitidos para adjuntos clínicos.
@@ -142,6 +142,41 @@ class PacienteViewSet(viewsets.ModelViewSet):
                           "tutor_telefono", "tutor_documento"):
                 serializer.validated_data.pop(campo, None)
         serializer.save()
+
+    @action(detail=True, methods=["post"], url_path="enviar-nps")
+    def enviar_nps(self, request, pk=None):
+        """Envía al paciente la encuesta de satisfacción (NPS) por WhatsApp y deja
+        marcada la espera, para que su respuesta numérica se registre sola."""
+        from usuarios.models import Usuario
+
+        if getattr(request.user, "rol", None) not in (
+            Usuario.Rol.MEDICO, Usuario.Rol.ADMIN, Usuario.Rol.ASISTENTE
+        ):
+            return Response({"detail": "No autorizado."}, status=status.HTTP_403_FORBIDDEN)
+        paciente = self.get_object()
+        if not paciente.telefono:
+            return Response({"detail": "El paciente no tiene teléfono registrado."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        clinica = get_clinica_actual()
+        plantilla = plantilla_por_clave(clinica, "nps")
+        texto = plantilla.texto if plantilla else (
+            "Hola {nombre}, ¿qué tan probable es que recomiendes a {clinica} a un amigo o familiar? "
+            "Respóndenos solo con un número del 0 al 10. ¡Gracias!"
+        )
+        primer_nombre = (paciente.nombre or "").split()[0] if paciente.nombre else ""
+        texto = texto.replace("{nombre}", primer_nombre).replace("{clinica}", clinica.nombre)
+
+        _mensaje, resultado, wa_url = registrar_y_enviar(
+            clinica, telefono=paciente.telefono, texto=texto, tipo=Mensaje.Tipo.MANUAL,
+            paciente=paciente, usuario=request.user, plantilla=plantilla,
+        )
+        paciente.nps_pendiente_desde = timezone.now()
+        paciente.save(update_fields=["nps_pendiente_desde"])
+        return Response({
+            "ok": resultado.get("estado") == "enviado",
+            "detalle": resultado.get("detalle", ""),
+            "wa_url": wa_url,
+        })
 
     @action(detail=True, methods=["post"], url_path="registrar-sesion")
     def registrar_sesion(self, request, pk=None):
@@ -828,6 +863,45 @@ class TareaViewSet(_HijoPacienteViewSet):
             estado=estado, fecha=fecha, registrado_por=request.user,
         )
         return Response(TareaSerializer(tarea).data, status=status.HTTP_201_CREATED)
+
+
+class RespuestaNPSViewSet(_HijoPacienteViewSet):
+    """Encuesta de satisfacción del paciente (NPS 0-10). Coordinación también puede."""
+
+    modelo = RespuestaNPS
+    serializer_class = RespuestaNPSSerializer
+
+    def _solo_clinico(self):
+        from usuarios.models import Usuario
+        if getattr(self.request.user, "rol", None) not in (
+            Usuario.Rol.MEDICO, Usuario.Rol.ADMIN, Usuario.Rol.ASISTENTE
+        ):
+            raise PermissionDenied("No puedes registrar la satisfacción del paciente.")
+
+    def get_queryset(self):
+        return super().get_queryset().order_by("fecha", "id")
+
+    def create(self, request, *args, **kwargs):
+        self._solo_clinico()
+        paciente = self._paciente_valido(request)
+        if paciente is None:
+            return Response({"detail": "Paciente no encontrado."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            puntaje = int(request.data.get("puntaje"))
+        except (ValueError, TypeError):
+            puntaje = -1
+        if not 0 <= puntaje <= 10:
+            return Response({"detail": "El puntaje debe ser un número de 0 a 10."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            fecha = datetime.strptime(str(request.data.get("fecha")).strip(), "%Y-%m-%d").date()
+        except (ValueError, TypeError, AttributeError):
+            fecha = timezone.localdate()
+        obj = RespuestaNPS.objects.create(
+            clinica=get_clinica_actual(), paciente=paciente, puntaje=puntaje,
+            comentario=str(request.data.get("comentario") or "").strip()[:300],
+            fecha=fecha, origen=RespuestaNPS.Origen.MANUAL, registrado_por=request.user,
+        )
+        return Response(RespuestaNPSSerializer(obj).data, status=status.HTTP_201_CREATED)
 
 
 class ContactoProfesionalViewSet(_HijoPacienteViewSet):

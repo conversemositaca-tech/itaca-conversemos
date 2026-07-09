@@ -37,7 +37,7 @@ from leads.captacion import (
     RegenerarTokenView,
 )
 from mensajes.api import MensajeViewSet, PlantillaMensajeViewSet
-from pacientes.api import AdjuntoViewSet, AplicacionEscalaViewSet, AtencionViewSet, BloqueoAgendaViewSet, CitaViewSet, ContactoProfesionalViewSet, ObjetivoTerapeuticoViewSet, PacienteViewSet, TareaViewSet, TranscribirView
+from pacientes.api import AdjuntoViewSet, AplicacionEscalaViewSet, AtencionViewSet, BloqueoAgendaViewSet, CitaViewSet, ContactoProfesionalViewSet, ObjetivoTerapeuticoViewSet, PacienteViewSet, RespuestaNPSViewSet, TareaViewSet, TranscribirView
 from pacientes.consentimiento import (
     AceptarConsentimientoView,
     ConsentimientoPublicoView,
@@ -63,6 +63,7 @@ router.register(r"escalas", AplicacionEscalaViewSet, basename="escala")
 router.register(r"objetivos", ObjetivoTerapeuticoViewSet, basename="objetivo")
 router.register(r"tareas", TareaViewSet, basename="tarea")
 router.register(r"red-profesionales", ContactoProfesionalViewSet, basename="red-profesional")
+router.register(r"nps", RespuestaNPSViewSet, basename="nps")
 router.register(r"adjuntos", AdjuntoViewSet, basename="adjunto")
 router.register(r"servicios", ServicioViewSet, basename="servicio")
 router.register(r"cobros", CobroViewSet, basename="cobro")
