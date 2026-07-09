@@ -18,7 +18,8 @@ from rest_framework.permissions import BasePermission
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from pacientes.models import Atencion, Paciente
+from core import estructurar_nota
+from pacientes.models import Atencion, ObjetivoTerapeutico, Paciente
 from usuarios.models import Usuario
 
 
@@ -110,13 +111,93 @@ class PacientesBuscarView(_Base):
         return Response({"ok": True, "pacientes": [_paciente_payload(p) for p in pacientes]})
 
 
+def _norm_riesgo(s):
+    s = (s or "").lower()
+    if "alto" in s:
+        return "alto"
+    if "moder" in s:
+        return "moderado"
+    if "bajo" in s or "baja" in s or "sin riesgo" in s or "ningun" in s:
+        return "bajo"
+    return ""
+
+
+def _contexto_paciente(paciente):
+    """Resumen breve del proceso del paciente, para que la evolución sea coherente
+    con la historia clínica ya registrada."""
+    partes = []
+    if paciente.resumen_clinico:
+        partes.append("Resumen clínico: " + paciente.resumen_clinico)
+    if paciente.objetivo_principal:
+        partes.append("Objetivo principal: " + paciente.objetivo_principal)
+    hist = paciente.atenciones.filter(tipo=Atencion.Tipo.HISTORIA).order_by("-fecha").first()
+    if hist:
+        if hist.objetivos:
+            partes.append("Objetivos del proceso: " + hist.objetivos)
+        if hist.aspectos_historicos:
+            partes.append("Antecedentes: " + hist.aspectos_historicos)
+    evo = paciente.atenciones.filter(tipo=Atencion.Tipo.EVOLUCION).order_by("-fecha").first()
+    if evo and evo.proximos_pasos:
+        partes.append("Próximos pasos de la última sesión: " + evo.proximos_pasos)
+    return "\n".join(partes).strip()
+
+
+def _autoalimentar_perfil(paciente, est):
+    """Historia clínica → alimenta las tarjetas del perfil (resumen, objetivo, riesgo)
+    y crea los objetivos terapéuticos. Es el 'documento madre' (pedido de Emma)."""
+    cambios = []
+    if est.get("resumen_clinico"):
+        paciente.resumen_clinico = est["resumen_clinico"][:4000]
+        cambios.append("resumen_clinico")
+    lineas = [l.strip(" -•\t") for l in (est.get("objetivos") or "").splitlines() if l.strip(" -•\t")]
+    if lineas:
+        paciente.objetivo_principal = lineas[0][:200]
+        cambios.append("objetivo_principal")
+    riesgo = _norm_riesgo(est.get("riesgo"))
+    if riesgo:
+        paciente.riesgo = riesgo
+        cambios.append("riesgo")
+    if cambios:
+        paciente.save(update_fields=cambios)
+    if lineas:
+        existentes = {o.texto.strip().lower() for o in paciente.objetivos.all()}
+        for l in lineas[:8]:
+            if l.strip().lower() not in existentes:
+                ObjetivoTerapeutico.objects.create(clinica=paciente.clinica, paciente=paciente, texto=l[:200])
+                existentes.add(l.strip().lower())
+
+
+class ContextoView(_Base):
+    """Contexto clínico breve de un paciente, para que Eli lo muestre antes de
+    registrar una evolución. GET /api/integraciones/contexto/?telefono&paciente_id"""
+
+    def get(self, request):
+        psico = _psicologo_por_telefono(request.query_params.get("telefono"))
+        if psico is None:
+            return Response({"ok": False, "detail": "Número no autorizado."}, status=status.HTTP_403_FORBIDDEN)
+        paciente = Paciente.objects.filter(clinica=psico.clinica, id=request.query_params.get("paciente_id")).first()
+        if paciente is None:
+            return Response({"ok": False, "detail": "Paciente no encontrado."}, status=status.HTTP_404_NOT_FOUND)
+        return Response({
+            "ok": True,
+            "paciente": paciente.nombre,
+            "tiene_historia": paciente.atenciones.filter(tipo=Atencion.Tipo.HISTORIA).exists(),
+            "resumen": paciente.resumen_clinico or "",
+            "objetivo": paciente.objetivo_principal or "",
+            "riesgo": paciente.get_riesgo_display() if paciente.riesgo else "",
+            "contexto": _contexto_paciente(paciente),
+        })
+
+
 class NotaVozView(_Base):
     """Guarda una atención en la historia clínica desde Eli.
-    POST /api/integraciones/nota-voz/
-    body: {telefono, paciente_id, tipo, ...}
-      - Nota guiada (Eli pregunta): resumen, aspectos, objetivos, recomendaciones.
-      - Legado (una sola dictada): transcripcion.
-    Los 4 campos guiados se mapean a la ficha según el tipo."""
+    POST /api/integraciones/nota-voz/  body: {telefono, paciente_id, tipo, contenido}
+      - `contenido`: la nota cruda (dictada o escrita). El servidor la ESTRUCTURA
+        con IA según el tipo (historia|evolucion). Para evolución usa la historia
+        previa como contexto. Si es historia, ADEMÁS alimenta el perfil del paciente
+        (resumen clínico, objetivo principal, riesgo, objetivos terapéuticos).
+      - Legado: {resumen, aspectos, objetivos, recomendaciones} o {transcripcion}.
+    Devuelve un extracto de lo guardado para que Eli lo confirme."""
 
     def post(self, request):
         d = request.data if isinstance(request.data, dict) else {}
@@ -135,33 +216,66 @@ class NotaVozView(_Base):
         def g(k):
             return (d.get(k) or "").strip()
 
-        resumen, aspectos = g("resumen"), g("aspectos")
-        objetivos, recomendaciones = g("objetivos"), g("recomendaciones")
-        transcripcion = g("transcripcion")
-
         marca = "🎙️ Registrado por voz vía WhatsApp."
         campos = dict(clinica=psico.clinica, paciente=paciente, medico=psico,
                       registrado_por=psico, tipo=tipo, especialidad=psico.especialidad or "")
+        contenido = g("contenido")
+        est = None
+        extracto = {}
 
-        if resumen or aspectos or objetivos or recomendaciones:
-            # Nota guiada: cada respuesta a su campo de la ficha (según el tipo).
-            campos["nota"] = (marca + "\n\n" + resumen).strip() if resumen else marca
-            campos["indicaciones"] = recomendaciones
-            if tipo == Atencion.Tipo.EVOLUCION:
-                campos["puntos_importantes"] = aspectos
-                campos["proximos_pasos"] = objetivos
+        if contenido:
+            contexto = _contexto_paciente(paciente) if tipo == Atencion.Tipo.EVOLUCION else ""
+            est = estructurar_nota.estructurar(contenido, tipo, contexto)
+            if est and tipo == Atencion.Tipo.HISTORIA:
+                campos["nota"] = (marca + "\n\n" + (est.get("resumen_clinico") or "")).strip()
+                campos["motivo"] = est.get("motivo", "")
+                campos["aspectos_historicos"] = est.get("aspectos_historicos", "")
+                campos["objetivos"] = est.get("objetivos", "")
+                campos["diagnostico"] = est.get("diagnostico", "")
+                extracto = {"resumen": est.get("resumen_clinico", ""),
+                            "objetivos": est.get("objetivos", ""),
+                            "riesgo": _norm_riesgo(est.get("riesgo"))}
+            elif est:
+                campos["nota"] = (marca + "\n\n" + (est.get("nota") or "")).strip()
+                campos["puntos_importantes"] = est.get("puntos_importantes", "")
+                campos["proximos_pasos"] = est.get("proximos_pasos", "")
+                campos["indicaciones"] = est.get("indicaciones", "")
+                extracto = {"resumen": est.get("nota", ""),
+                            "puntos": est.get("puntos_importantes", ""),
+                            "proximos": est.get("proximos_pasos", "")}
             else:
-                campos["aspectos_historicos"] = aspectos
-                campos["objetivos"] = objetivos
-        elif transcripcion:
-            campos["nota"] = marca + "\n\n" + transcripcion
+                # Sin IA disponible: guardamos el crudo en la nota (el terapeuta edita).
+                campos["nota"] = marca + "\n\n" + contenido
+                extracto = {"resumen": contenido}
         else:
-            return Response({"ok": False, "detail": "No hay contenido para guardar."},
-                            status=status.HTTP_400_BAD_REQUEST)
+            # ── Legado: campos guiados o transcripción cruda ──
+            resumen, aspectos = g("resumen"), g("aspectos")
+            objetivos, recomendaciones = g("objetivos"), g("recomendaciones")
+            transcripcion = g("transcripcion")
+            if resumen or aspectos or objetivos or recomendaciones:
+                campos["nota"] = (marca + "\n\n" + resumen).strip() if resumen else marca
+                campos["indicaciones"] = recomendaciones
+                if tipo == Atencion.Tipo.EVOLUCION:
+                    campos["puntos_importantes"] = aspectos
+                    campos["proximos_pasos"] = objetivos
+                else:
+                    campos["aspectos_historicos"] = aspectos
+                    campos["objetivos"] = objetivos
+                extracto = {"resumen": resumen}
+            elif transcripcion:
+                campos["nota"] = marca + "\n\n" + transcripcion
+                extracto = {"resumen": transcripcion}
+            else:
+                return Response({"ok": False, "detail": "No hay contenido para guardar."},
+                                status=status.HTTP_400_BAD_REQUEST)
 
         atencion = Atencion.objects.create(**campos)
+        if tipo == Atencion.Tipo.HISTORIA and est:
+            _autoalimentar_perfil(paciente, est)
+
         return Response(
             {"ok": True, "atencion_id": atencion.id, "paciente": paciente.nombre,
-             "tipo": atencion.get_tipo_display()},
+             "tipo": atencion.get_tipo_display(), "extracto": extracto,
+             "perfil_actualizado": bool(tipo == Atencion.Tipo.HISTORIA and est)},
             status=status.HTTP_201_CREATED,
         )

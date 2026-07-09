@@ -29,16 +29,18 @@ PROMPTS = {
         "Devuelve únicamente el JSON."
     ),
     "historia": _BASE + (
-        '  "motivo": motivo de consulta.\n'
-        '  "aspectos_historicos": aspectos históricos relevantes.\n'
-        '  "objetivos": objetivos del proceso de terapia.\n'
+        '  "resumen_clinico": resumen del caso en prosa breve (por qué consulta, cómo llega, adherencia).\n'
+        '  "motivo": motivo de consulta (una frase).\n'
+        '  "aspectos_historicos": antecedentes y aspectos históricos relevantes.\n'
+        '  "objetivos": objetivos terapéuticos, UNO POR LÍNEA.\n'
         '  "diagnostico": impresión diagnóstica / problemática a tratar.\n'
+        '  "riesgo": nivel de riesgo actual; responde SOLO una palabra: "bajo", "moderado" o "alto".\n'
         "Devuelve únicamente el JSON."
     ),
 }
 CLAVES = {
     "evolucion": ("nota", "puntos_importantes", "proximos_pasos", "indicaciones"),
-    "historia": ("motivo", "aspectos_historicos", "objetivos", "diagnostico"),
+    "historia": ("resumen_clinico", "motivo", "aspectos_historicos", "objetivos", "diagnostico", "riesgo"),
 }
 
 
@@ -53,14 +55,20 @@ def disponible():
     return bool(os.getenv("OPENAI_API_KEY", "").strip())
 
 
-def estructurar(texto, tipo="evolucion"):
+def estructurar(texto, tipo="evolucion", contexto=""):
     """Estructura el texto en los campos del tipo de ficha (evolucion|historia).
-    Devuelve un dict con las claves del tipo, o None si no se pudo."""
+    `contexto` (opcional): resumen del proceso del paciente, para que la evolución
+    sea coherente con la historia ya existente. Devuelve un dict o None."""
     key = os.getenv("OPENAI_API_KEY", "").strip()
     if not key or not (texto or "").strip():
         return None
     tipo = tipo if tipo in PROMPTS else "evolucion"
     modelo = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+    mensajes = [{"role": "system", "content": PROMPTS[tipo]}]
+    if (contexto or "").strip():
+        mensajes.append({"role": "system", "content":
+            "Contexto del proceso del paciente (para dar coherencia; NO lo repitas literal):\n" + contexto.strip()[:2000]})
+    mensajes.append({"role": "user", "content": texto.strip()[:6000]})
     try:
         r = requests.post(
             "https://api.openai.com/v1/chat/completions",
@@ -69,10 +77,7 @@ def estructurar(texto, tipo="evolucion"):
                 "model": modelo,
                 "temperature": 0.2,
                 "response_format": {"type": "json_object"},
-                "messages": [
-                    {"role": "system", "content": PROMPTS[tipo]},
-                    {"role": "user", "content": texto.strip()[:6000]},
-                ],
+                "messages": mensajes,
             },
             timeout=40,
         )

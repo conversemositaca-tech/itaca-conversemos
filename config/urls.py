@@ -7,7 +7,7 @@ from rest_framework.routers import DefaultRouter
 from core.buzon import SugerenciaViewSet
 from core.recursos import RecursoViewSet
 from core.gerencia import ClinicaConfigView, GerenciaResumenView, HoyResumenView
-from core.integraciones import NotaVozView, PacientesBuscarView, PsicologoView
+from core.integraciones import ContextoView, NotaVozView, PacientesBuscarView, PsicologoView
 from core.metricas import MetricaMensualViewSet
 from core.ocupacion import OcupacionView
 from core.reportes import ReporteSemanalViewSet
@@ -116,6 +116,7 @@ urlpatterns = [
     path("api/integraciones/psicologo/", PsicologoView.as_view(), name="integ-psicologo"),
     path("api/integraciones/pacientes/", PacientesBuscarView.as_view(), name="integ-pacientes"),
     path("api/integraciones/nota-voz/", NotaVozView.as_view(), name="integ-nota-voz"),
+    path("api/integraciones/contexto/", ContextoView.as_view(), name="integ-contexto"),
     # Consentimiento informado: aceptación pública por token (sin login).
     path("api/consentimiento/<str:token>/aceptar/", AceptarConsentimientoView.as_view(), name="consentimiento-aceptar"),
     path("api/consentimiento/<str:token>/", ConsentimientoPublicoView.as_view(), name="consentimiento-publico"),
