@@ -29,6 +29,10 @@ PLANTILLAS = [
     ("consentimiento", "Consentimiento informado",
      "Hola {nombre} 👋 Antes de tu primera sesión te compartimos el consentimiento informado. "
      "Por favor léelo y confírmanos tu aceptación. ¡Gracias! 🌿"),
+    # NPS: el paciente responde con un número 0-10 y el webhook lo registra solo.
+    ("nps", "Encuesta NPS (0-10)",
+     "Hola {nombre} ✨ ¿Qué tan probable es que recomiendes {clinica} a un amigo o familiar? "
+     "Respóndenos solo con un número del *0 al 10* 🤍 Tu respuesta nos ayuda muchísimo a acompañarte mejor."),
     ("cumpleanos", "Cumpleaños",
      "¡Feliz cumpleaños, {nombre}! 🎉🎂 En {clinica} te deseamos un día lleno de bienestar y "
      "momentos felices. Gracias por confiar en nosotros para cuidar tu salud emocional. "

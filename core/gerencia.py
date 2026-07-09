@@ -103,10 +103,12 @@ class HoyResumenView(APIView):
         # "Le toca su sesión 6, 12…" o está a 1 de su total de sesiones del proceso.
         # El psicólogo ve solo SUS pacientes; admin/asistente, todos.
         rol = getattr(request.user, "rol", None)
-        pac_cont = Paciente.objects.del_tenant_actual()
+        ficha = None
         if rol == "medico":
             from usuarios.models import Profesional
             ficha = Profesional.objects.filter(usuario=request.user).first()
+        pac_cont = Paciente.objects.del_tenant_actual()
+        if rol == "medico":
             pac_cont = pac_cont.filter(profesional=ficha) if ficha else pac_cont.none()
         elif rol == "comercial":
             pac_cont = pac_cont.none()
@@ -126,6 +128,29 @@ class HoyResumenView(APIView):
         continuidad.sort(key=lambda x: (x["meta"] - x["n_sesion"], x["nombre"]))
         out["por_continuidad"] = continuidad[:30]
         out["por_continuidad_total"] = len(continuidad)
+
+        # --- NPS (satisfacción del paciente) de los últimos 90 días ---
+        # Promedio + índice NPS estándar (% promotores − % detractores).
+        from pacientes.models import RespuestaNPS
+
+        nps_qs = RespuestaNPS.objects.del_tenant_actual().filter(fecha__gte=hoy - timedelta(days=90))
+        if rol == "medico":
+            nps_qs = nps_qs.filter(paciente__profesional=ficha) if ficha else nps_qs.none()
+        elif rol == "comercial":
+            nps_qs = nps_qs.none()
+        puntajes = list(nps_qs.values_list("puntaje", flat=True))
+        if puntajes:
+            n_nps = len(puntajes)
+            promotores = sum(1 for x in puntajes if x >= 9)
+            detractores = sum(1 for x in puntajes if x <= 6)
+            out["nps"] = {
+                "promedio": round(sum(puntajes) / n_nps, 1),
+                "n": n_nps,
+                "indice": round((promotores - detractores) / n_nps * 100),
+                "dias": 90,
+            }
+        else:
+            out["nps"] = {"promedio": None, "n": 0, "indice": None, "dias": 90}
 
         if es_admin:
             cobros = Cobro.objects.del_tenant_actual().filter(fecha__gte=ini, fecha__lt=fin)

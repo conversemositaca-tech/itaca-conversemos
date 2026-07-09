@@ -2076,6 +2076,13 @@ function Hoy({ proximas, citasHoy, porConfirmar, atendidas, onOpen, onGo, onRete
           <div className="ca-gmain">{r ? `${r.sin_proxima} pacientes` : "…"}</div>
           <div className="ca-gsub">sin próxima sesión · reactivar</div>
         </button>
+        {r && r.nps && r.nps.n > 0 && (
+          <button className="ca-gcard" onClick={() => onGo("pacientes")} style={{ borderColor: "#CDE8F0", cursor: "default" }}>
+            <div className="ca-ghead" style={{ color: "var(--accent)" }}><HeartPulse size={14} strokeWidth={2} /> NPS promedio</div>
+            <div className="ca-gmain">{r.nps.promedio}</div>
+            <div className="ca-gsub">{r.nps.n} respuesta{r.nps.n !== 1 ? "s" : ""} · últimos {r.nps.dias} días · índice {r.nps.indice}</div>
+          </button>
+        )}
       </div>
 
       {cumple && cumple.length > 0 && (
