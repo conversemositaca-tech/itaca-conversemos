@@ -2018,6 +2018,25 @@ function Hoy({ proximas, citasHoy, porConfirmar, atendidas, onOpen, onGo, onRete
         </div>
       )}
 
+      {r && r.por_continuidad && r.por_continuidad.length > 0 && (
+        <div className="ca-card" style={{ marginTop: 14, borderColor: "#CDE8F0", background: "#F4FBFD" }}>
+          <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 10, display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap" }}>
+            <Activity size={15} strokeWidth={2} style={{ color: "var(--accent)" }} /> Evaluar continuidad
+            <span style={{ fontWeight: 400, color: "var(--muted)", fontSize: 12.5 }}>· {r.por_continuidad_total} paciente{r.por_continuidad_total !== 1 ? "s" : ""} por terminar proceso (sesión 6, 12…)</span>
+          </div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+            {r.por_continuidad.map((p) => (
+              <button key={p.id} className="ca-mini" onClick={() => onOpen(p.id)}>
+                {p.nombre} <span style={{ color: "var(--muted)" }}>· sesión {p.n_sesion}/{p.meta}</span>
+              </button>
+            ))}
+          </div>
+          {r.por_continuidad_total > r.por_continuidad.length && (
+            <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 8 }}>y {r.por_continuidad_total - r.por_continuidad.length} más…</div>
+          )}
+        </div>
+      )}
+
       {esAdmin && legalTotal > 0 && (
         <button onClick={() => onGo("legal")} className="ca-card" style={{ width: "100%", textAlign: "left", cursor: "pointer", marginTop: 14, borderColor: "#EAD9F2", background: "#FBF7FE", display: "flex", alignItems: "center", gap: 10 }}>
           <FileText size={16} strokeWidth={2} style={{ color: "#6B4E96" }} />

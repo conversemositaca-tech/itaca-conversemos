@@ -98,6 +98,35 @@ class HoyResumenView(APIView):
             "leads_nuevos": leads_nuevos, "leads_hoy": leads_hoy,
             "sin_proxima": sin_proxima, "es_admin": es_admin,
         }
+
+        # --- Pacientes por evaluar continuidad (por terminar su proceso) ---
+        # "Le toca su sesión 6, 12…" o está a 1 de su total de sesiones del proceso.
+        # El psicólogo ve solo SUS pacientes; admin/asistente, todos.
+        rol = getattr(request.user, "rol", None)
+        pac_cont = Paciente.objects.del_tenant_actual()
+        if rol == "medico":
+            from usuarios.models import Profesional
+            ficha = Profesional.objects.filter(usuario=request.user).first()
+            pac_cont = pac_cont.filter(profesional=ficha) if ficha else pac_cont.none()
+        elif rol == "comercial":
+            pac_cont = pac_cont.none()
+        continuidad = []
+        for r in (pac_cont.filter(n_sesion__gt=0)
+                  .exclude(frecuencia__in=["alta", "en_pausa"])
+                  .values("id", "nombre", "n_sesion", "sesiones_proceso")):
+            n = r["n_sesion"] or 0
+            total = r["sesiones_proceso"] or 0
+            if total and total - 1 <= n <= total:
+                meta = total
+            elif not total and (n + 1) % 6 == 0:  # bloque recomendado de 6
+                meta = n + 1
+            else:
+                continue
+            continuidad.append({"id": r["id"], "nombre": r["nombre"], "n_sesion": n, "meta": meta})
+        continuidad.sort(key=lambda x: (x["meta"] - x["n_sesion"], x["nombre"]))
+        out["por_continuidad"] = continuidad[:30]
+        out["por_continuidad_total"] = len(continuidad)
+
         if es_admin:
             cobros = Cobro.objects.del_tenant_actual().filter(fecha__gte=ini, fecha__lt=fin)
             out["ingresos_hoy"] = float(cobros.filter(estado=Cobro.Estado.PAGADO).aggregate(s=Sum("monto"))["s"] or 0)
