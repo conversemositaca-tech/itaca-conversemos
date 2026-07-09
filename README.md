@@ -52,3 +52,10 @@ Atajo para levantar backend + frontend juntos: `./dev.ps1`.
   referencia. ✓
 - Próximo: login y roles (médico / asistente / admin) — reemplaza la clínica de
   desarrollo temporal por autenticación real.
+
+## Correcciones por WhatsApp
+
+El equipo manda las correcciones al grupo de WhatsApp. Mia (el bot) las convierte
+en un issue de GitHub mencionando a `@claude`. Claude implementa el cambio en una
+rama y abre un Pull Request. Una persona revisa y aprueba el PR antes de que
+Railway despliegue a producción.
