@@ -28,6 +28,10 @@ class Clinica(models.Model):
     wa_access_token = models.TextField("Access Token", blank=True, default="")
     wa_waba_id = models.CharField("WABA ID", max_length=40, blank=True, default="")
     wa_verify_token = models.CharField("Verify Token", max_length=64, blank=True, default="")
+    # Meta comercial del MES (facturación). Se muestra en el inicio para que el
+    # equipo vea a diario cómo van y empuje cobros y cierres de proceso.
+    meta_min_mes = models.DecimalField("meta mínima del mes (S/)", max_digits=10, decimal_places=2, default=20000)
+    meta_ideal_mes = models.DecimalField("meta ideal del mes (S/)", max_digits=10, decimal_places=2, default=30000)
     # Textos legales que firma el paciente (consentimiento informado y políticas).
     # Si están vacíos se usa el texto por defecto del sistema. La gerencia los edita
     # desde la app: son documentos legales propios de la clínica.

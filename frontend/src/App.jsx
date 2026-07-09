@@ -1458,15 +1458,23 @@ function ConfigClinica({ showToast }) {
   const [ciudad, setCiudad] = useState("");
   const [tCons, setTCons] = useState("");
   const [tPol, setTPol] = useState("");
+  const [metaMin, setMetaMin] = useState("");
+  const [metaIdeal, setMetaIdeal] = useState("");
   const [guardandoTxt, setGuardandoTxt] = useState(false);
   function cargar(c) {
     setCfg(c); setNombre(c.nombre); setCiudad(c.ciudad || "");
     setTCons(c.texto_consentimiento || ""); setTPol(c.texto_politicas || "");
+    setMetaMin(String(c.meta_min_mes ?? "")); setMetaIdeal(String(c.meta_ideal_mes ?? ""));
   }
   useEffect(() => { api.clinicaConfig().then(cargar).catch(() => {}); }, []);
   async function guardar() {
-    try { const c = await api.actualizarClinica({ nombre, ciudad }); cargar(c); showToast("Datos de la clínica actualizados ✓"); }
-    catch (e) { showToast("Error: " + e.message); }
+    try {
+      const c = await api.actualizarClinica({
+        nombre, ciudad,
+        meta_min_mes: Number(metaMin) || 0, meta_ideal_mes: Number(metaIdeal) || 0,
+      });
+      cargar(c); showToast("Datos de la clínica actualizados ✓");
+    } catch (e) { showToast("Error: " + e.message); }
   }
   async function guardarTextos() {
     setGuardandoTxt(true);
@@ -1477,7 +1485,11 @@ function ConfigClinica({ showToast }) {
     finally { setGuardandoTxt(false); }
   }
   if (!cfg) return null;
-  const cambiado = nombre.trim() && (nombre !== cfg.nombre || ciudad !== (cfg.ciudad || ""));
+  const cambiado = nombre.trim() && (
+    nombre !== cfg.nombre || ciudad !== (cfg.ciudad || "") ||
+    Number(metaMin) !== Number(cfg.meta_min_mes ?? 0) ||
+    Number(metaIdeal) !== Number(cfg.meta_ideal_mes ?? 0)
+  );
   const txtCambiado = tCons !== (cfg.texto_consentimiento || "") || tPol !== (cfg.texto_politicas || "");
   const areaTxt = { minHeight: 200, resize: "vertical", lineHeight: 1.55, fontSize: 13, fontFamily: "inherit" };
   return (
@@ -1494,6 +1506,19 @@ function ConfigClinica({ showToast }) {
             <input className="ca-input" value={ciudad} onChange={(e) => setCiudad(e.target.value)} />
           </div>
           <button className="ca-btn" style={{ opacity: cambiado ? 1 : 0.5, pointerEvents: cambiado ? "auto" : "none" }} onClick={guardar}>Guardar</button>
+        </div>
+        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end", marginTop: 14, paddingTop: 14, borderTop: "1px solid var(--line)" }}>
+          <div style={{ flex: 1, minWidth: 150 }}>
+            <div className="ca-label">Meta mínima del mes (S/)</div>
+            <input className="ca-input" type="number" min="0" value={metaMin} onChange={(e) => setMetaMin(e.target.value)} />
+          </div>
+          <div style={{ flex: 1, minWidth: 150 }}>
+            <div className="ca-label">Meta ideal del mes (S/)</div>
+            <input className="ca-input" type="number" min="0" value={metaIdeal} onChange={(e) => setMetaIdeal(e.target.value)} />
+          </div>
+          <div className="ca-pmeta" style={{ flex: 2, minWidth: 220, paddingBottom: 10 }}>
+            Se muestran en Inicio (gerencia y coordinación) con el avance del mes y el ritmo esperado a la fecha.
+          </div>
         </div>
       </div>
 
@@ -2147,6 +2172,44 @@ function Hoy({ proximas, citasHoy, porConfirmar, atendidas, onOpen, onGo, onRete
           </button>
         )}
       </div>
+
+      {r && r.meta && r.meta.meta_ideal > 0 && (() => {
+        const m = r.meta;
+        const pos = (v) => `${Math.min(Math.max((v / m.meta_ideal) * 100, 0), 100)}%`;
+        const falta = Math.max(m.esperado_hoy - m.generado, 0);
+        return (
+          <div className="ca-card" style={{ marginTop: 14 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
+              <div style={{ fontSize: 14, fontWeight: 600, display: "flex", alignItems: "center", gap: 7 }}>
+                <TrendingUp size={15} strokeWidth={2} style={{ color: "var(--accent)" }} /> Meta comercial del mes
+              </div>
+              <div style={{ fontSize: 12.5, fontWeight: 600, color: m.en_ritmo ? "#2F6B4F" : "#B0822F" }}>
+                {m.en_ritmo ? "✓ En ritmo" : `${money(falta)} por debajo del ritmo`}
+              </div>
+            </div>
+
+            <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
+              <span style={{ fontSize: 24, fontWeight: 700 }}>{money(m.generado)}</span>
+              <span style={{ fontSize: 12.5, color: "var(--muted)" }}>generado · día {m.dia} de {m.dias_mes}</span>
+              <span style={{ marginLeft: "auto", fontSize: 13.5, fontWeight: 600, color: m.pct_min >= 100 ? "#2F6B4F" : "var(--ink)" }}>
+                {m.pct_min}% de la meta mínima
+              </span>
+            </div>
+
+            {/* La barra llega hasta la meta IDEAL. Marcas: meta mínima y el ritmo esperado a hoy. */}
+            <div style={{ position: "relative", height: 12, borderRadius: 999, background: "var(--line)", overflow: "hidden" }}>
+              <div style={{ width: pos(m.generado), height: "100%", background: m.pct_min >= 100 ? "#2F6B4F" : "var(--accent)", transition: "width .3s" }} />
+              <div title={`Meta mínima ${money(m.meta_min)}`} style={{ position: "absolute", left: pos(m.meta_min), top: 0, width: 2, height: "100%", background: "#8A8378" }} />
+              <div title={`Ritmo esperado a hoy: ${money(m.esperado_hoy)}`} style={{ position: "absolute", left: pos(m.esperado_hoy), top: 0, width: 2, height: "100%", background: "#B0822F", opacity: 0.85 }} />
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11.5, color: "var(--muted)", marginTop: 6 }}>
+              <span>Mínima {money(m.meta_min)}</span>
+              <span title="Lo que deberías llevar hoy para ir en ritmo">Ritmo hoy {money(m.esperado_hoy)}</span>
+              <span>Ideal {money(m.meta_ideal)}</span>
+            </div>
+          </div>
+        );
+      })()}
 
       {cumple && cumple.length > 0 && (
         <div className="ca-card" style={{ marginBottom: 18, borderColor: "#EAD9F2", background: "#FBF7FE" }}>

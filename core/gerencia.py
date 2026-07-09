@@ -5,7 +5,9 @@ solo para el rol admin (el gerente/dueño). Todo con scope de la clínica activa
 Los ingresos NO se calculan aquí: no hay datos de dinero todavía (van cuando se
 construya 'Finanzas reales').
 """
+from calendar import monthrange
 from datetime import datetime, time, timedelta
+from decimal import Decimal, InvalidOperation
 
 from django.db.models import Max, Sum
 from django.utils import timezone
@@ -60,6 +62,8 @@ class ClinicaConfigView(APIView):
         from pacientes.models import texto_consentimiento_default
         return {
             "nombre": c.nombre, "ciudad": c.ciudad, "zona_horaria": c.zona_horaria,
+            "meta_min_mes": float(c.meta_min_mes or 0),
+            "meta_ideal_mes": float(c.meta_ideal_mes or 0),
             "texto_consentimiento": texto_consentimiento_default(c, "consentimiento"),
             "texto_politicas": texto_consentimiento_default(c, "politicas"),
             "personalizado_consentimiento": bool((c.texto_consentimiento or "").strip()),
@@ -85,6 +89,14 @@ class ClinicaConfigView(APIView):
             c.nombre = nombre[:200]
         if "ciudad" in request.data:
             c.ciudad = (request.data.get("ciudad") or "").strip()[:120]
+        for campo in ("meta_min_mes", "meta_ideal_mes"):
+            if campo in request.data:
+                try:
+                    setattr(c, campo, Decimal(str(request.data.get(campo) or 0)))
+                    campos.append(campo)
+                except (InvalidOperation, ValueError, TypeError):
+                    return Response({"detail": f"«{campo}» debe ser un número."},
+                                    status=status.HTTP_400_BAD_REQUEST)
         # Textos legales: guardar vacío = volver al borrador por defecto.
         if "texto_consentimiento" in request.data:
             c.texto_consentimiento = (request.data.get("texto_consentimiento") or "").strip()
@@ -174,6 +186,35 @@ class HoyResumenView(APIView):
             }
         else:
             out["nps"] = {"promedio": None, "n": 0, "indice": None, "dias": 90}
+
+        # --- Meta comercial del mes (la ve gerencia y coordinación) ---
+        # Gaby: "que les salga a diario cuánto vienen generando y el % de meta,
+        # para que tengan presente cobrar y cerrar procesos".
+        if rol in ("admin", "asistente"):
+            clinica = get_clinica_actual()
+            mes_ini = hoy.replace(day=1)
+            dias_mes = monthrange(hoy.year, hoy.month)[1]
+            m_ini, m_fin = _bounds(mes_ini, hoy)
+            generado = float(
+                Cobro.objects.del_tenant_actual()
+                .filter(estado=Cobro.Estado.PAGADO, fecha__gte=m_ini, fecha__lt=m_fin)
+                .aggregate(s=Sum("monto"))["s"] or 0
+            )
+            meta_min = float(clinica.meta_min_mes or 0)
+            meta_ideal = float(clinica.meta_ideal_mes or 0)
+            # Cuánto "deberían" llevar hoy para ir en ritmo hacia la meta mínima.
+            esperado = round(meta_min * hoy.day / dias_mes) if meta_min else 0
+            out["meta"] = {
+                "generado": generado,
+                "meta_min": meta_min,
+                "meta_ideal": meta_ideal,
+                "pct_min": round(generado / meta_min * 100) if meta_min else 0,
+                "pct_ideal": round(generado / meta_ideal * 100) if meta_ideal else 0,
+                "esperado_hoy": esperado,
+                "en_ritmo": generado >= esperado,
+                "dia": hoy.day,
+                "dias_mes": dias_mes,
+            }
 
         if es_admin:
             cobros = Cobro.objects.del_tenant_actual().filter(fecha__gte=ini, fecha__lt=fin)
