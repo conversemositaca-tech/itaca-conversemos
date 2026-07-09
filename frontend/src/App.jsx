@@ -6388,17 +6388,20 @@ function Liquidacion({ showToast }) {
   }, [desde, hasta]);
 
   const filas = data?.filas || [];
+  const sinMonto = data?.sin_monto || [];
+  // Una fila por psicólogo y servicio, para el export.
+  const filasExport = filas.flatMap((f) => f.detalle.map((d) => [f.nombre, d.servicio, d.sesiones, d.monto, d.subtotal]));
 
   return (
     <div>
       <div className="ca-tophead">
         <div>
           <h1 className="ca-h1">Liquidación de honorarios</h1>
-          <div className="ca-sub">Cuánto pagar a cada psicólogo · % del monto de referencia de sus sesiones</div>
+          <div className="ca-sub">Cuánto pagar a cada psicólogo · sesiones atendidas × pago del servicio</div>
         </div>
         <ExportBtns nombre={`liquidacion_${desde}_a_${hasta}`} titulo={`Liquidación · ${desde} a ${hasta}`} disabled={filas.length === 0}
-          headers={["Psicologo", "% honorarios", "Sesiones cobradas", "Cobrado (S/)", "Base referencia (S/)", "A pagar (S/)"]}
-          filas={filas.map((f) => [f.nombre, f.porcentaje, f.cobros, f.cobrado, f.base_liquidacion, f.a_pagar])} />
+          headers={["Psicologo", "Servicio", "Sesiones atendidas", "Pago x sesion (S/)", "Subtotal (S/)"]}
+          filas={filasExport} />
       </div>
 
       <div className="ca-agnav" style={{ justifyContent: "flex-end", flexWrap: "wrap", gap: 10 }}>
@@ -6409,16 +6412,27 @@ function Liquidacion({ showToast }) {
         </div>
       </div>
 
+      {sinMonto.length > 0 && (
+        <div className="ca-card" style={{ marginBottom: 14, borderColor: "#F0DDBF", background: "#FDFAF1", display: "flex", gap: 9, alignItems: "flex-start" }}>
+          <AlertTriangle size={15} strokeWidth={2} style={{ color: "#B0822F", flexShrink: 0, marginTop: 2 }} />
+          <div style={{ fontSize: 13, lineHeight: 1.5 }}>
+            <strong>Estos servicios se atendieron pero no tienen pago configurado</strong> (se están pagando S/0):{" "}
+            {sinMonto.join(" · ")}.<br />
+            <span style={{ color: "var(--muted)" }}>Ponles el «Pago terapeuta» en <strong>Finanzas → Precios</strong>.</span>
+          </div>
+        </div>
+      )}
+
       {!data ? (
         <div className="ca-empty">{cargando ? "Cargando…" : "Sin datos."}</div>
       ) : filas.length === 0 ? (
-        <div className="ca-empty">No hay cobros pagados en este rango.</div>
+        <div className="ca-empty">No hay sesiones atendidas en este rango.</div>
       ) : (
         <>
           <div className="ca-glance" style={{ marginBottom: 16 }}>
             <div className="ca-gcard" style={{ cursor: "default" }}>
-              <div className="ca-ghead"><TrendingUp size={14} strokeWidth={2} /> Total cobrado</div>
-              <div className="ca-gmain">{money(data.total_cobrado)}</div>
+              <div className="ca-ghead"><Activity size={14} strokeWidth={2} /> Sesiones atendidas</div>
+              <div className="ca-gmain">{data.total_sesiones}</div>
               <div className="ca-gsub">en el rango seleccionado</div>
             </div>
             <div className="ca-gcard" style={{ cursor: "default", borderColor: "#EAD9F2", background: "#FBF7FE" }}>
@@ -6433,31 +6447,38 @@ function Liquidacion({ showToast }) {
               <thead>
                 <tr>
                   <th>Psicólogo</th>
-                  <th className="num">% honorarios</th>
-                  <th className="num">Sesiones cobradas</th>
-                  <th className="num">Cobrado</th>
-                  <th className="num">Base referencia</th>
-                  <th className="num">A pagar</th>
+                  <th>Servicio</th>
+                  <th className="num">Sesiones</th>
+                  <th className="num">Pago x sesión</th>
+                  <th className="num">Subtotal</th>
                 </tr>
               </thead>
               <tbody>
                 {filas.map((f) => (
-                  <tr key={f.medico_id || "sin"}>
-                    <td>{f.nombre}{f.medico_id && f.porcentaje === 0 ? <span style={{ marginLeft: 7, fontSize: 11.5, color: "#B0822F" }}>· sin % configurado</span> : null}</td>
-                    <td className="num">{f.porcentaje}%</td>
-                    <td className="num">{f.cobros}</td>
-                    <td className="num" style={{ color: "var(--muted)" }}>{money(f.cobrado)}</td>
-                    <td className="num">{money(f.base_liquidacion)}</td>
-                    <td className="num" style={{ fontWeight: 600 }}>{money(f.a_pagar)}</td>
-                  </tr>
+                  <React.Fragment key={f.medico_id || "sin"}>
+                    {f.detalle.map((d, i) => (
+                      <tr key={d.servicio}>
+                        {i === 0 && <td rowSpan={f.detalle.length} style={{ verticalAlign: "top", fontWeight: 500 }}>{f.nombre}</td>}
+                        <td>{d.servicio}{d.monto === 0 ? <span style={{ marginLeft: 7, fontSize: 11.5, color: "#B0822F" }}>· sin pago configurado</span> : null}</td>
+                        <td className="num">{d.sesiones}</td>
+                        <td className="num" style={{ color: "var(--muted)" }}>{money(d.monto)}</td>
+                        <td className="num">{money(d.subtotal)}</td>
+                      </tr>
+                    ))}
+                    <tr style={{ background: "#FBFAF8" }}>
+                      <td colSpan={2} style={{ textAlign: "right", fontSize: 12.5, color: "var(--muted)" }}>Total {f.nombre}</td>
+                      <td className="num" style={{ fontWeight: 600 }}>{f.sesiones}</td>
+                      <td className="num"></td>
+                      <td className="num" style={{ fontWeight: 700 }}>{money(f.a_pagar)}</td>
+                    </tr>
+                  </React.Fragment>
                 ))}
               </tbody>
               <tfoot>
                 <tr style={{ fontWeight: 600, borderTop: "2px solid var(--line)" }}>
-                  <td>Total</td><td className="num"></td>
-                  <td className="num">{filas.reduce((a, f) => a + f.cobros, 0)}</td>
-                  <td className="num" style={{ color: "var(--muted)" }}>{money(data.total_cobrado)}</td>
-                  <td className="num">{money(data.total_base)}</td>
+                  <td colSpan={2}>Total general</td>
+                  <td className="num">{data.total_sesiones}</td>
+                  <td className="num"></td>
                   <td className="num">{money(data.total_a_pagar)}</td>
                 </tr>
               </tfoot>
@@ -6465,7 +6486,7 @@ function Liquidacion({ showToast }) {
           </div>
           <div style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 12, display: "flex", gap: 7, alignItems: "flex-start", lineHeight: 1.5 }}>
             <AlertTriangle size={14} strokeWidth={2} style={{ color: "#B0822F", flexShrink: 0, marginTop: 1 }} />
-            <span>Se paga sobre el <strong>monto de referencia</strong> del servicio (no sobre lo cobrado), así un descuento al paciente lo asume la clínica y el psicólogo cobra igual. El monto de referencia se configura en <strong>Finanzas → Precios</strong> y el % en la ficha de cada profesional. Solo cuenta cobros <strong>pagados</strong>.</span>
+            <span>Se paga por <strong>sesión atendida</strong> (citas en estado «atendida» de la agenda) × el <strong>pago del servicio</strong>, que configuras en <strong>Finanzas → Precios</strong>. NO se usa un % de lo cobrado: los descuentos al paciente los asume la clínica y no reducen el pago al profesional.</span>
           </div>
         </>
       )}
@@ -7058,8 +7079,8 @@ function PreciosModal({ onClose, showToast }) {
           <>
             <div style={{ display: "flex", gap: 8, padding: "0 4px 4px", fontSize: 11.5, color: "var(--muted)", fontWeight: 600 }}>
               <div style={{ flex: 1 }}>Servicio</div>
-              <div style={{ width: 84, textAlign: "right" }}>Precio</div>
-              <div style={{ width: 84, textAlign: "right" }} title="Monto base para la liquidación del psicólogo (ignora descuentos)">Ref. liquidación</div>
+              <div style={{ width: 84, textAlign: "right" }} title="Lo que paga el paciente">Precio</div>
+              <div style={{ width: 84, textAlign: "right" }} title="Lo que se le paga al psicólogo por cada sesión atendida de este servicio">Pago terapeuta</div>
               <div style={{ width: 26 }} />
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: "46vh", overflowY: "auto", marginBottom: 14 }}>
@@ -7071,8 +7092,8 @@ function PreciosModal({ onClose, showToast }) {
                   </div>
                   <input className="ca-input" style={{ width: 84, marginTop: 0, textAlign: "right" }} defaultValue={s.precio} title="Precio de lista"
                     onBlur={(e) => { if (e.target.value && String(e.target.value) !== String(s.precio)) guardarCampo(s, "precio", e.target.value); }} inputMode="decimal" />
-                  <input className="ca-input" style={{ width: 84, marginTop: 0, textAlign: "right" }} defaultValue={s.monto_referencia} title="Monto de referencia para la liquidación (si es 0, usa el precio)"
-                    onBlur={(e) => { if (String(e.target.value) !== String(s.monto_referencia)) guardarCampo(s, "monto_referencia", e.target.value || 0); }} inputMode="decimal" />
+                  <input className="ca-input" style={{ width: 84, marginTop: 0, textAlign: "right" }} defaultValue={s.monto_terapeuta} title="Pago al terapeuta por cada sesión atendida de este servicio"
+                    onBlur={(e) => { if (String(e.target.value) !== String(s.monto_terapeuta)) guardarCampo(s, "monto_terapeuta", e.target.value || 0); }} inputMode="decimal" />
                   <button className="ca-iconbtn" title="Eliminar" onClick={() => eliminar(s)}><Trash2 size={14} strokeWidth={2} /></button>
                 </div>
               ))}

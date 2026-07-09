@@ -1,26 +1,15 @@
 """Liquidación de honorarios de psicólogos (módulo de Gerencia).
 
-Por un rango de fechas, agrupa los cobros PAGADOS según el psicólogo que atendió
-la sesión (vía la cita o la atención enlazada) y calcula cuánto pagarle según su
-% de honorarios (Profesional.porcentaje_liquidacion).
+Modelo de pago (decidido por gerencia): **sesiones atendidas × monto del servicio**.
 
-Modelo: % del **monto de referencia** del servicio, NO de lo efectivamente
-cobrado. Así, si al paciente se le hizo un descuento, ese descuento lo asume la
-clínica de su parte y el psicólogo cobra igual. Base por cobro:
-  1) servicio.monto_referencia (si el servicio la tiene definida > 0),
-  2) si no, servicio.precio (precio de lista), y
-  3) sin servicio enlazado, el monto realmente cobrado.
+Se cuentan las CITAS ATENDIDAS de la agenda en el rango de fechas, agrupadas por
+psicólogo y por servicio (la especialidad de la cita). Cada sesión se paga con
+`Servicio.monto_terapeuta`, que gerencia edita en Finanzas → Precios.
+
+NO se usa un % de lo cobrado: los descuentos al paciente los asume la clínica, así
+que no deben reducir el pago al profesional. Por eso la fuente es la agenda (lo que
+realmente atendió) y no la caja (lo que se cobró).
 """
-
-
-def _base_liquidable(cobro):
-    """Monto sobre el que se liquida al psicólogo por este cobro."""
-    serv = cobro.servicio if cobro.servicio_id else None
-    if serv is not None:
-        if serv.monto_referencia and serv.monto_referencia > 0:
-            return serv.monto_referencia
-        return serv.precio
-    return cobro.monto
 from datetime import datetime, time
 from decimal import Decimal
 
@@ -30,8 +19,9 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from core.tenant import get_clinica_actual
-from finanzas.models import Cobro
-from usuarios.models import Profesional, Usuario
+from finanzas.models import Servicio
+from pacientes.models import Cita
+from usuarios.models import Usuario
 
 
 def _parse_fecha(s, default):
@@ -44,7 +34,7 @@ def _parse_fecha(s, default):
 
 
 class LiquidacionView(APIView):
-    """Liquidación por % de lo cobrado, por psicólogo, en un rango de fechas.
+    """Cuánto pagar a cada psicólogo en un rango: sesiones atendidas × monto del servicio.
 
     GET /api/finanzas/liquidacion/?desde=YYYY-MM-DD&hasta=YYYY-MM-DD
     """
@@ -61,61 +51,68 @@ class LiquidacionView(APIView):
         ini = timezone.make_aware(datetime.combine(desde, time.min), tz)
         fin = timezone.make_aware(datetime.combine(hasta, time.max), tz)
 
-        # % por psicólogo (usuario de login) — sin consultas por fila.
-        pct_por_usuario = {
-            p.usuario_id: p.porcentaje_liquidacion
-            for p in Profesional.objects.filter(clinica=clinica, usuario_id__isnull=False)
-        }
+        # Catálogo: nombre del servicio (normalizado) -> monto que se paga al terapeuta.
+        montos = {}
+        for s in Servicio.objects.filter(clinica=clinica):
+            montos[(s.nombre or "").strip().lower()] = s.monto_terapeuta or Decimal("0")
 
-        cobros = (
-            Cobro.objects
-            .filter(clinica=clinica, estado=Cobro.Estado.PAGADO, fecha__gte=ini, fecha__lte=fin)
-            .select_related("cita", "cita__medico", "atencion", "atencion__medico", "servicio")
+        citas = (
+            Cita.objects
+            .filter(clinica=clinica, estado=Cita.Estado.ATENDIDA, inicio__gte=ini, inicio__lte=fin)
+            .select_related("medico")
         )
 
         SIN = 0  # cubeta "Sin psicólogo asignado"
         grupos = {}
-        for c in cobros:
-            medico = None
-            if c.cita_id and c.cita.medico_id:
-                medico = c.cita.medico
-            elif c.atencion_id and c.atencion.medico_id:
-                medico = c.atencion.medico
+        sin_monto = set()  # servicios atendidos sin pago configurado
+        for c in citas:
+            medico = c.medico if c.medico_id else None
             key = medico.id if medico else SIN
             g = grupos.get(key)
             if g is None:
-                pct = pct_por_usuario.get(medico.id, Decimal("0")) if medico else Decimal("0")
                 g = grupos[key] = {
                     "medico_id": medico.id if medico else None,
                     "nombre": str(medico) if medico else "Sin psicólogo asignado",
-                    "porcentaje": float(pct),
-                    "cobros": 0,
-                    "cobrado": Decimal("0"),      # lo realmente cobrado (informativo)
-                    "base": Decimal("0"),          # base de referencia sobre la que se paga
+                    "servicios": {},   # nombre visible -> {sesiones, monto}
+                    "sesiones": 0,
+                    "a_pagar": Decimal("0"),
                 }
-            g["cobros"] += 1
-            g["cobrado"] += c.monto
-            g["base"] += _base_liquidable(c)
+            esp = (c.especialidad or "").strip() or "Sin servicio"
+            monto = montos.get(esp.lower(), Decimal("0"))
+            if monto <= 0:
+                sin_monto.add(esp)
+
+            d = g["servicios"].setdefault(esp, {"sesiones": 0, "monto": monto})
+            d["sesiones"] += 1
+            g["sesiones"] += 1
+            g["a_pagar"] += monto
 
         filas = []
         for g in grupos.values():
-            a_pagar = (g["base"] * Decimal(str(g["porcentaje"])) / Decimal("100")).quantize(Decimal("0.01"))
+            detalle = [
+                {
+                    "servicio": nombre,
+                    "sesiones": d["sesiones"],
+                    "monto": float(d["monto"]),
+                    "subtotal": float(d["monto"] * d["sesiones"]),
+                }
+                for nombre, d in sorted(g["servicios"].items())
+            ]
             filas.append({
                 "medico_id": g["medico_id"],
                 "nombre": g["nombre"],
-                "porcentaje": g["porcentaje"],
-                "cobros": g["cobros"],
-                "cobrado": float(g["cobrado"]),
-                "base_liquidacion": float(g["base"]),
-                "a_pagar": float(a_pagar),
+                "sesiones": g["sesiones"],
+                "a_pagar": float(g["a_pagar"].quantize(Decimal("0.01"))),
+                "detalle": detalle,
             })
         filas.sort(key=lambda x: x["a_pagar"], reverse=True)
 
         return Response({
             "desde": desde.isoformat(),
             "hasta": hasta.isoformat(),
-            "total_cobrado": float(sum((Decimal(str(f["cobrado"])) for f in filas), Decimal("0"))),
-            "total_base": float(sum((Decimal(str(f["base_liquidacion"])) for f in filas), Decimal("0"))),
+            "total_sesiones": sum(f["sesiones"] for f in filas),
             "total_a_pagar": float(sum((Decimal(str(f["a_pagar"])) for f in filas), Decimal("0"))),
+            # Servicios que se atendieron pero no tienen pago configurado (se pagan S/0).
+            "sin_monto": sorted(sin_monto),
             "filas": filas,
         })

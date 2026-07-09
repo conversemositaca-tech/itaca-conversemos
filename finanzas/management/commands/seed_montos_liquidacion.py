@@ -22,7 +22,7 @@ MONTOS = [
 
 
 class Command(BaseCommand):
-    help = "Fija monto_referencia (liquidación) de servicios por coincidencia de nombre."
+    help = "Fija monto_terapeuta (liquidación) de servicios por coincidencia de nombre."
 
     def add_arguments(self, parser):
         parser.add_argument("--clinica", default="itaca")
@@ -38,11 +38,11 @@ class Command(BaseCommand):
             nombre = serv.nombre.lower()
             for needle, monto in MONTOS:
                 if needle in nombre:
-                    if serv.monto_referencia and serv.monto_referencia > 0 and not opts["forzar"]:
-                        self.stdout.write(f"= {serv.nombre}: ya tiene S/ {serv.monto_referencia} (sin cambio)")
+                    if serv.monto_terapeuta and serv.monto_terapeuta > 0 and not opts["forzar"]:
+                        self.stdout.write(f"= {serv.nombre}: ya tiene S/ {serv.monto_terapeuta} (sin cambio)")
                         break
-                    serv.monto_referencia = monto
-                    serv.save(update_fields=["monto_referencia"])
+                    serv.monto_terapeuta = monto
+                    serv.save(update_fields=["monto_terapeuta"])
                     cambios += 1
                     self.stdout.write(self.style.SUCCESS(f"+ {serv.nombre} -> S/ {monto}"))
                     break
