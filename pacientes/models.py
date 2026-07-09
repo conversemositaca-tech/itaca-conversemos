@@ -416,30 +416,97 @@ class Adjunto(ModeloTenant):
 
 
 def texto_consentimiento_default(clinica, tipo="consentimiento"):
-    """Texto por defecto del documento (snapshot al generar). El gerente puede editarlo."""
+    """Texto del documento que firma el paciente (se guarda como snapshot al generarlo).
+
+    Si la clínica cargó su propio texto (Clinica.texto_consentimiento / .texto_politicas)
+    se usa ese. Si no, el borrador por defecto de abajo — que la gerencia DEBE revisar
+    y adaptar a sus condiciones reales antes de enviarlo a un paciente.
+    """
     nombre_cl = clinica.nombre if clinica else "la clínica"
+
     if tipo == "politicas":
+        propio = (getattr(clinica, "texto_politicas", "") or "").strip() if clinica else ""
+        if propio:
+            return propio
         return (
             f"POLÍTICAS DE ATENCIÓN — {nombre_cl}\n\n"
-            "1. Puntualidad: te pedimos llegar 5 minutos antes de tu sesión.\n"
-            "2. Reprogramación: avísanos con al menos 24 horas de anticipación.\n"
-            "3. Cancelación: las cancelaciones con menos de 24 horas pueden generar cargo.\n"
-            "4. Confidencialidad: tu información está protegida por la Ley N° 29733.\n"
-            "5. Modalidad: la atención puede ser presencial o virtual, según se acuerde.\n\n"
+            "1. PUNTUALIDAD\n"
+            "Te pedimos llegar (o conectarte) 5 minutos antes de tu sesión. Si llegas tarde, la sesión "
+            "terminará a la hora prevista, para no afectar la atención de la siguiente persona.\n\n"
+            "2. DURACIÓN\n"
+            "La duración de cada sesión se acuerda previamente con tu psicólogo/a.\n\n"
+            "3. REPROGRAMACIÓN\n"
+            "Si necesitas cambiar tu cita, avísanos con al menos 24 horas de anticipación y la "
+            "reprogramamos sin costo.\n\n"
+            "4. CANCELACIÓN E INASISTENCIA\n"
+            "Las cancelaciones con menos de 24 horas de aviso, así como las inasistencias sin aviso, "
+            "pueden generar el cargo de la sesión.\n\n"
+            "5. PAGOS\n"
+            "El pago de la sesión se realiza según lo acordado con la clínica. La constancia de pago se "
+            "emite a solicitud.\n\n"
+            "6. MODALIDAD VIRTUAL\n"
+            "Para las sesiones virtuales, procura un espacio privado, sin interrupciones y con buena "
+            "conexión. Si la sesión se interrumpe por causas técnicas, intentaremos retomarla o "
+            "reprogramarla.\n\n"
+            "7. CONFIDENCIALIDAD\n"
+            "Tu información está protegida por la Ley N° 29733 de Protección de Datos Personales. Los "
+            "límites de la confidencialidad se detallan en el Consentimiento Informado.\n\n"
+            "8. COMUNICACIÓN FUERA DE SESIÓN\n"
+            "Nuestros canales (WhatsApp, correo) son para coordinación administrativa y tienen horario "
+            "de atención. No son un canal de emergencias.\n\n"
+            "9. EMERGENCIAS\n"
+            "Si te encuentras en una situación de riesgo para tu vida o la de otra persona, acude de "
+            "inmediato al servicio de emergencias más cercano.\n\n"
             "Al hacer clic en \"Acepto\" y registrar tu nombre, confirmas que leíste y aceptas estas políticas."
         )
+
+    propio = (getattr(clinica, "texto_consentimiento", "") or "").strip() if clinica else ""
+    if propio:
+        return propio
     return (
         f"CONSENTIMIENTO INFORMADO — {nombre_cl}\n\n"
-        "Acepto iniciar un proceso de atención psicológica en " + nombre_cl + ". Declaro que:\n\n"
-        "1. He sido informado/a sobre el propósito y el carácter de la atención psicológica.\n"
-        "2. Entiendo que lo que comparta es confidencial y está protegido por la Ley N° 29733 de "
-        "Protección de Datos Personales, salvo las excepciones que la ley contempla (riesgo para mi "
-        "vida o la de terceros).\n"
-        "3. Conozco las políticas de puntualidad, reprogramación y cancelación.\n"
-        "4. La atención podrá ser presencial o virtual, según se acuerde.\n"
-        "5. Puedo hacer preguntas y retirar mi consentimiento en cualquier momento.\n\n"
-        "Al hacer clic en \"Acepto\" y registrar mi nombre, doy mi consentimiento informado de forma "
-        "libre y voluntaria."
+        f"Este documento explica en qué consiste la atención psicológica que recibirás en {nombre_cl} y "
+        "qué derechos te asisten. Léelo con calma y pregunta lo que necesites antes de aceptar.\n\n"
+        "1. PROPÓSITO DE LA ATENCIÓN\n"
+        "La atención psicológica busca acompañarte en el reconocimiento y manejo de dificultades "
+        "emocionales, conductuales o relacionales. No sustituye una evaluación o tratamiento médico ni "
+        "psiquiátrico; de ser necesario, se te orientará hacia el profesional correspondiente.\n\n"
+        "2. VOLUNTARIEDAD\n"
+        "Tu participación es libre y voluntaria. Puedes hacer preguntas en cualquier momento, pedir una "
+        "segunda opinión, o retirar tu consentimiento y suspender el proceso cuando lo decidas, sin que "
+        "ello te genere perjuicio.\n\n"
+        "3. CONFIDENCIALIDAD Y SUS LÍMITES\n"
+        "Todo lo que compartas es confidencial y está protegido por la Ley N° 29733 de Protección de "
+        "Datos Personales. La confidencialidad podrá levantarse únicamente cuando:\n"
+        "   a) exista riesgo grave para tu vida o integridad, o la de terceros;\n"
+        "   b) exista una orden judicial o un mandato legal expreso;\n"
+        "   c) se trate de la protección de un menor de edad o de una persona en situación de "
+        "vulnerabilidad.\n"
+        "Tu caso puede ser revisado de forma anónima en espacios de supervisión clínica, con el fin de "
+        "asegurar la calidad de la atención.\n\n"
+        "4. REGISTRO DE LA INFORMACIÓN\n"
+        "Se llevará una historia clínica con la información relevante del proceso, conservada de forma "
+        "segura y con acceso restringido al personal autorizado. Tienes derecho a acceder a tus datos, "
+        "rectificarlos, oponerte a su tratamiento o solicitar su supresión, conforme a la Ley N° 29733.\n\n"
+        "5. MODALIDAD\n"
+        "La atención puede ser presencial o virtual, según se acuerde. En la modalidad virtual es tu "
+        "responsabilidad contar con un espacio privado y una conexión estable.\n\n"
+        "6. GRABACIONES\n"
+        "Las sesiones no se graban. Cualquier grabación con fines clínicos, formativos o de "
+        "investigación requerirá tu autorización expresa, previa y por escrito.\n\n"
+        "7. MENORES DE EDAD\n"
+        "Si el paciente es menor de edad, este consentimiento debe ser otorgado por su padre, madre o "
+        "tutor legal, resguardando la intimidad del menor en lo que corresponda.\n\n"
+        "8. HONORARIOS Y ASISTENCIA\n"
+        "Los honorarios, la puntualidad y las condiciones de reprogramación y cancelación se detallan en "
+        "las Políticas de Atención, que forman parte de este documento.\n\n"
+        "9. CANAL DE COMUNICACIÓN\n"
+        "Los mensajes fuera de sesión son solo para coordinación administrativa. No constituyen un canal "
+        "de atención de emergencias ni de intervención en crisis.\n\n"
+        "DECLARACIÓN\n"
+        "Declaro que he leído y comprendido este documento, que se resolvieron mis dudas, y que otorgo mi "
+        "consentimiento informado de forma libre y voluntaria. Al hacer clic en \"Acepto\" y registrar mi "
+        "nombre, firmo electrónicamente este consentimiento, dejando constancia de la fecha y hora."
     )
 
 

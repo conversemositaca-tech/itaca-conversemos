@@ -85,6 +85,7 @@ class ConsentimientoPublicoView(APIView):
             "aceptado": c.aceptado,
             "aceptado_en": timezone.localtime(c.aceptado_en).strftime("%d/%m/%Y %H:%M") if c.aceptado_en else "",
             "firmante_nombre": c.firmante_nombre,
+            "firmante_documento": c.firmante_documento,
         })
 
 

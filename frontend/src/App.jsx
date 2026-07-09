@@ -1432,15 +1432,30 @@ function ConfigClinica({ showToast }) {
   const [cfg, setCfg] = useState(null);
   const [nombre, setNombre] = useState("");
   const [ciudad, setCiudad] = useState("");
-  useEffect(() => {
-    api.clinicaConfig().then((c) => { setCfg(c); setNombre(c.nombre); setCiudad(c.ciudad || ""); }).catch(() => {});
-  }, []);
+  const [tCons, setTCons] = useState("");
+  const [tPol, setTPol] = useState("");
+  const [guardandoTxt, setGuardandoTxt] = useState(false);
+  function cargar(c) {
+    setCfg(c); setNombre(c.nombre); setCiudad(c.ciudad || "");
+    setTCons(c.texto_consentimiento || ""); setTPol(c.texto_politicas || "");
+  }
+  useEffect(() => { api.clinicaConfig().then(cargar).catch(() => {}); }, []);
   async function guardar() {
-    try { const c = await api.actualizarClinica({ nombre, ciudad }); setCfg(c); showToast("Datos de la clínica actualizados ✓"); }
+    try { const c = await api.actualizarClinica({ nombre, ciudad }); cargar(c); showToast("Datos de la clínica actualizados ✓"); }
     catch (e) { showToast("Error: " + e.message); }
+  }
+  async function guardarTextos() {
+    setGuardandoTxt(true);
+    try {
+      const c = await api.actualizarClinica({ texto_consentimiento: tCons, texto_politicas: tPol });
+      cargar(c); showToast("Textos legales guardados ✓");
+    } catch (e) { showToast("Error: " + e.message); }
+    finally { setGuardandoTxt(false); }
   }
   if (!cfg) return null;
   const cambiado = nombre.trim() && (nombre !== cfg.nombre || ciudad !== (cfg.ciudad || ""));
+  const txtCambiado = tCons !== (cfg.texto_consentimiento || "") || tPol !== (cfg.texto_politicas || "");
+  const areaTxt = { minHeight: 200, resize: "vertical", lineHeight: 1.55, fontSize: 13, fontFamily: "inherit" };
   return (
     <>
       <h2 className="ca-secth" style={{ marginTop: 4 }}>Datos de la clínica</h2>
@@ -1455,6 +1470,30 @@ function ConfigClinica({ showToast }) {
             <input className="ca-input" value={ciudad} onChange={(e) => setCiudad(e.target.value)} />
           </div>
           <button className="ca-btn" style={{ opacity: cambiado ? 1 : 0.5, pointerEvents: cambiado ? "auto" : "none" }} onClick={guardar}>Guardar</button>
+        </div>
+      </div>
+
+      <h2 className="ca-secth">Documentos que firma el paciente</h2>
+      <div className="ca-card" style={{ marginBottom: 26 }}>
+        <div style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 14, display: "flex", gap: 7, alignItems: "flex-start", lineHeight: 1.5 }}>
+          <AlertTriangle size={14} strokeWidth={2} style={{ color: "#B0822F", flexShrink: 0, marginTop: 1 }} />
+          <span>Este es el texto EXACTO que el paciente lee y acepta por el enlace. Si lo dejas vacío se usa el
+            borrador por defecto del sistema. <strong>Revísalo y adáptalo a las condiciones reales de la clínica</strong> (cargos
+            por cancelación, grabaciones, contacto de emergencia) antes de enviarlo a un paciente.</span>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 16 }}>
+          <div>
+            <div className="ca-label">Consentimiento informado {!cfg.personalizado_consentimiento && <span style={{ color: "var(--muted)", fontWeight: 400 }}>(borrador del sistema)</span>}</div>
+            <textarea className="ca-input" style={areaTxt} value={tCons} onChange={(e) => setTCons(e.target.value)} />
+          </div>
+          <div>
+            <div className="ca-label">Políticas de atención {!cfg.personalizado_politicas && <span style={{ color: "var(--muted)", fontWeight: 400 }}>(borrador del sistema)</span>}</div>
+            <textarea className="ca-input" style={areaTxt} value={tPol} onChange={(e) => setTPol(e.target.value)} />
+          </div>
+        </div>
+        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 12 }}>
+          <button className="ca-btn" style={{ opacity: txtCambiado ? 1 : 0.5, pointerEvents: txtCambiado ? "auto" : "none" }}
+            onClick={guardarTextos} disabled={guardandoTxt}>{guardandoTxt ? "Guardando…" : "Guardar textos"}</button>
         </div>
       </div>
     </>
@@ -8341,6 +8380,42 @@ function PacienteModal({ paciente, onClose, onSave, esMedico }) {
 
 // Página PÚBLICA del consentimiento (sin login). El paciente la abre por su enlace,
 // lee el documento y lo acepta con su nombre (sello de fecha/hora e IP en el backend).
+// Copia imprimible (o "guardar como PDF") del documento que el paciente aceptó,
+// con el sello de aceptación: quién firmó, su documento y la fecha/hora.
+function imprimirConsentimiento(doc, firma) {
+  const w = window.open("", "_blank", "width=840,height=920");
+  if (!w) return;
+  const esc = (s) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${esc(doc.tipo_label)} · ${esc(doc.paciente_nombre)}</title>
+    <style>
+      body{font-family:'Inter',system-ui,sans-serif;color:#2A2722;max-width:720px;margin:0 auto;padding:36px 28px;line-height:1.6}
+      .cab{text-align:center;margin-bottom:22px}
+      .cl{font-size:13px;color:#9B968D}
+      h1{font-size:20px;margin:6px 0}
+      .para{font-size:13px;color:#6B675F}
+      .doc{white-space:pre-wrap;font-size:13.5px;border:1px solid #ECE8E1;background:#FBFAF8;border-radius:10px;padding:18px}
+      .sello{margin-top:22px;border:1px solid #CFE3D8;background:#E9F1ED;border-radius:10px;padding:16px;font-size:13px;color:#2F6B4F}
+      .sello b{color:#245741}
+      .pie{margin-top:18px;font-size:11px;color:#9B968D;text-align:center}
+      @media print{body{padding:0}}
+    </style></head><body>
+    <div class="cab">
+      <div class="cl">${esc(doc.clinica)}</div>
+      <h1>${esc(doc.tipo_label)}</h1>
+      <div class="para">Para: <b>${esc(doc.paciente_nombre)}</b></div>
+    </div>
+    <div class="doc">${esc(doc.texto)}</div>
+    <div class="sello">
+      <div>✅ <b>Documento aceptado</b>${firma.fecha ? ` el ${esc(firma.fecha)}` : ""}.</div>
+      ${firma.nombre ? `<div>Firmado electrónicamente por <b>${esc(firma.nombre)}</b>${firma.documento ? ` · DNI ${esc(firma.documento)}` : ""}.</div>` : ""}
+    </div>
+    <div class="pie">Copia generada desde ${esc(doc.clinica)}. Conserva este documento.</div>
+    </body></html>`);
+  w.document.close();
+  w.focus();
+  setTimeout(() => w.print(), 350);
+}
+
 export function ConsentimientoPublico({ token }) {
   const [doc, setDoc] = useState(null);
   const [err, setErr] = useState("");
@@ -8376,8 +8451,18 @@ export function ConsentimientoPublico({ token }) {
       {yaFirmado ? (
         <div style={{ marginTop: 20, background: "#E9F1ED", border: "1px solid #CFE3D8", borderRadius: 12, padding: 16, textAlign: "center", color: "#2F6B4F" }}>
           ✅ Documento aceptado{(hecho?.aceptado_en || doc.aceptado_en) ? ` el ${hecho?.aceptado_en || doc.aceptado_en}` : ""}.
-          {doc.firmante_nombre ? <div style={{ fontSize: 13, marginTop: 4 }}>Firmado por {doc.firmante_nombre}.</div> : null}
-          <div style={{ fontSize: 13, marginTop: 6 }}>Ya puedes cerrar esta página. ¡Gracias! 🌿</div>
+          {(hecho?.firmante_nombre || doc.firmante_nombre || nombre) ? <div style={{ fontSize: 13, marginTop: 4 }}>Firmado por {doc.firmante_nombre || nombre}.</div> : null}
+          <button onClick={() => imprimirConsentimiento(doc, {
+            nombre: doc.firmante_nombre || nombre,
+            documento: doc.firmante_documento || documento,
+            fecha: hecho?.aceptado_en || doc.aceptado_en,
+          })}
+            style={{ marginTop: 12, padding: "11px 18px", borderRadius: 10, border: "1px solid #3E7A65", background: "#fff", color: "#2F6B4F", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>
+            ⬇︎ Descargar mi copia
+          </button>
+          <div style={{ fontSize: 12.5, marginTop: 10, color: "#6B675F" }}>
+            Guarda o imprime tu copia. Ya puedes cerrar esta página. ¡Gracias! 🌿
+          </div>
         </div>
       ) : (
         <div style={{ marginTop: 20 }}>

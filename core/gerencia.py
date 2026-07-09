@@ -49,13 +49,28 @@ def _rango_anterior(periodo, desde, hasta):
 
 
 class ClinicaConfigView(APIView):
-    """GET/PATCH de los datos de la clínica. Editar solo admin."""
+    """GET/PATCH de los datos de la clínica. Editar solo admin.
+
+    Incluye los textos legales que firma el paciente (consentimiento y políticas):
+    devuelve el texto EFECTIVO (el propio si lo cargaron, si no el borrador por
+    defecto) y `personalizado_*` indica si ya lo escribieron ellos.
+    """
+
+    def _payload(self, c):
+        from pacientes.models import texto_consentimiento_default
+        return {
+            "nombre": c.nombre, "ciudad": c.ciudad, "zona_horaria": c.zona_horaria,
+            "texto_consentimiento": texto_consentimiento_default(c, "consentimiento"),
+            "texto_politicas": texto_consentimiento_default(c, "politicas"),
+            "personalizado_consentimiento": bool((c.texto_consentimiento or "").strip()),
+            "personalizado_politicas": bool((c.texto_politicas or "").strip()),
+        }
 
     def get(self, request):
         c = get_clinica_actual()
         if c is None:
             return Response({"detail": "Sin clínica en contexto."}, status=status.HTTP_400_BAD_REQUEST)
-        return Response({"nombre": c.nombre, "ciudad": c.ciudad, "zona_horaria": c.zona_horaria})
+        return Response(self._payload(c))
 
     def patch(self, request):
         if getattr(request.user, "rol", None) != "admin":
@@ -64,13 +79,21 @@ class ClinicaConfigView(APIView):
         c = get_clinica_actual()
         if c is None:
             return Response({"detail": "Sin clínica en contexto."}, status=status.HTTP_400_BAD_REQUEST)
+        campos = ["nombre", "ciudad"]
         nombre = (request.data.get("nombre") or "").strip()
         if nombre:
             c.nombre = nombre[:200]
         if "ciudad" in request.data:
             c.ciudad = (request.data.get("ciudad") or "").strip()[:120]
-        c.save(update_fields=["nombre", "ciudad"])
-        return Response({"nombre": c.nombre, "ciudad": c.ciudad, "zona_horaria": c.zona_horaria})
+        # Textos legales: guardar vacío = volver al borrador por defecto.
+        if "texto_consentimiento" in request.data:
+            c.texto_consentimiento = (request.data.get("texto_consentimiento") or "").strip()
+            campos.append("texto_consentimiento")
+        if "texto_politicas" in request.data:
+            c.texto_politicas = (request.data.get("texto_politicas") or "").strip()
+            campos.append("texto_politicas")
+        c.save(update_fields=campos)
+        return Response(self._payload(c))
 
 
 class HoyResumenView(APIView):

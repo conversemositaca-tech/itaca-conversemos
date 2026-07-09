@@ -28,6 +28,11 @@ class Clinica(models.Model):
     wa_access_token = models.TextField("Access Token", blank=True, default="")
     wa_waba_id = models.CharField("WABA ID", max_length=40, blank=True, default="")
     wa_verify_token = models.CharField("Verify Token", max_length=64, blank=True, default="")
+    # Textos legales que firma el paciente (consentimiento informado y políticas).
+    # Si están vacíos se usa el texto por defecto del sistema. La gerencia los edita
+    # desde la app: son documentos legales propios de la clínica.
+    texto_consentimiento = models.TextField(blank=True, default="")
+    texto_politicas = models.TextField(blank=True, default="")
     # Token secreto para el ingreso automático de leads (URL pública de captación).
     # Identifica a la clínica en los endpoints sin sesión (web, campañas, WhatsApp).
     token_captacion = models.CharField(max_length=64, unique=True, null=True, blank=True)
