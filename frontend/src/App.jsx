@@ -7374,10 +7374,13 @@ function Profesionales({ showToast, esAdmin }) {
   const [lista, setLista] = useState(null);
   const [editar, setEditar] = useState(null);
   const [sede, setSede] = useState(null);
+  const [frec, setFrec] = useState(""); // "", semanal, quincenal, esporadico
   const [verPacientes, setVerPacientes] = useState(null);
 
   async function cargar() { setLista(await api.profesionales()); }
   useEffect(() => { cargar().catch((e) => showToast("Error: " + e.message)); }, []);
+
+  const nActivos = (p) => p.pacientes_stats ? (frec ? (p.pacientes_stats[frec] || 0) : p.pacientes_stats.activos) : 0;
 
   async function guardar(data, foto) {
     try {
@@ -7411,9 +7414,17 @@ function Profesionales({ showToast, esAdmin }) {
         </div>
       </div>
 
-      <div className="ca-fchips" style={{ marginTop: 18 }}>
-        <button className={`ca-fchip ${!sede ? "on" : ""}`} onClick={() => setSede(null)}>Todos</button>
-        {SEDES.map((s) => <button key={s.v} className={`ca-fchip ${sede === s.v ? "on" : ""}`} onClick={() => setSede(s.v)}>{s.l}</button>)}
+      <div className="ca-fchips" style={{ marginTop: 18, display: "flex", gap: 16, flexWrap: "wrap", alignItems: "center" }}>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          <button className={`ca-fchip ${!sede ? "on" : ""}`} onClick={() => setSede(null)}>Todas las sedes</button>
+          {SEDES.map((s) => <button key={s.v} className={`ca-fchip ${sede === s.v ? "on" : ""}`} onClick={() => setSede(s.v)}>{s.l}</button>)}
+        </div>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+          <span className="ca-pmeta">Pacientes activos:</span>
+          {[["", "Todos"], ["semanal", "Semanales"], ["quincenal", "Quincenales"], ["esporadico", "Esporádicos"]].map(([v, l]) => (
+            <button key={v || "all"} className={`ca-fchip ${frec === v ? "on" : ""}`} onClick={() => setFrec(v)}>{l}</button>
+          ))}
+        </div>
       </div>
 
       {!lista ? <div className="ca-empty">Cargando…</div> : filtradas.length === 0 ? (
@@ -7440,9 +7451,23 @@ function Profesionales({ showToast, esAdmin }) {
               {p.enfoque && <div style={{ fontSize: 13, color: "var(--ink-soft)", lineHeight: 1.5, marginBottom: 6 }}>{p.enfoque}</div>}
               {p.poblaciones && <div className="ca-pmeta" style={{ marginBottom: 6 }}><b>Atiende:</b> {p.poblaciones}</div>}
               {p.frase && <div style={{ fontSize: 12.5, fontStyle: "italic", color: "var(--muted)", marginTop: 4 }}>“{p.frase}”</div>}
+              {p.pacientes_stats && (
+                <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap", marginTop: 10, paddingTop: 10, borderTop: "1px solid var(--line)" }}>
+                  <span style={{ fontSize: 20, fontWeight: 700, color: "var(--accent)" }}>{nActivos(p)}</span>
+                  <span className="ca-pmeta">{frec ? `activos ${frec === "semanal" ? "semanales" : frec === "quincenal" ? "quincenales" : "esporádicos"}` : "pacientes activos"}</span>
+                  {!frec && (
+                    <span style={{ display: "flex", gap: 6, marginLeft: "auto", flexWrap: "wrap" }}>
+                      <Tag colors={{ bg: "#E7EEF6", fg: "#3D5C82" }}>{p.pacientes_stats.semanal} sem</Tag>
+                      <Tag colors={{ bg: "#EDE6F4", fg: "#6B4E96" }}>{p.pacientes_stats.quincenal} quinc</Tag>
+                      {p.pacientes_stats.esporadico > 0 && <Tag colors={{ bg: "#EFEDE8", fg: "#7C7870" }}>{p.pacientes_stats.esporadico} espor</Tag>}
+                      {p.pacientes_stats.sin_frecuencia > 0 && <Tag colors={{ bg: "#FBF1DD", fg: "#8A6D2E" }} >{p.pacientes_stats.sin_frecuencia} sin frec.</Tag>}
+                    </span>
+                  )}
+                </div>
+              )}
               <div style={{ display: "flex", gap: 8, marginTop: 12, alignItems: "center", flexWrap: "wrap" }}>
                 <button className="ca-mini" onClick={() => setVerPacientes(p)}>
-                  <Users size={13} strokeWidth={2} /> {p.n_pacientes} paciente{p.n_pacientes === 1 ? "" : "s"}
+                  <Users size={13} strokeWidth={2} /> {p.n_pacientes} en total
                 </button>
                 {esAdmin && <button className="ca-mini" onClick={() => setEditar(p)}><Pencil size={13} strokeWidth={2} /> Editar ficha</button>}
                 {esAdmin && <button className="ca-iconbtn" title="Eliminar" onClick={() => eliminar(p)}><Trash2 size={14} strokeWidth={2} /></button>}
