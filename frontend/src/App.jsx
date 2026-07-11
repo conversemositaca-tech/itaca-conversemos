@@ -6,7 +6,7 @@ import {
   TrendingUp, Download, AlertTriangle, Megaphone, LogOut,
   Paperclip, Trash2, Activity, Pill, HeartPulse, Copy, BarChart3, UserCog, KeyRound, MapPin,
   Mic, FolderOpen, Lightbulb, ExternalLink, Bell, GraduationCap,
-  Building2, DoorOpen, ChevronRight, Compass,
+  Building2, DoorOpen, ChevronRight, Compass, Send,
 } from "lucide-react";
 import { api } from "./api";
 import Login from "./Login";
@@ -5248,7 +5248,7 @@ const SUGERENCIA_ESTADO_COLOR = {
 // Profesionales para el rol psicólogo.
 const RECURSO_TABS = [
   { v: "herramienta", l: "Herramientas para pacientes", icon: FolderOpen, hint: "Materiales, guías y enlaces para compartir con los pacientes." },
-  { v: "tip", l: "Tips para el psicólogo", icon: Lightbulb, hint: "Buenas prácticas clínicas y de gestión para el equipo." },
+  { v: "tip", l: "Herramientas para el psicólogo", icon: Lightbulb, hint: "Guías, anamnesis y buenas prácticas para el equipo clínico." },
   { v: "recordatorio", l: "Recordatorios del equipo", icon: Bell, hint: "Avisos de gerencia (capacitación, supervisión, NPS…) que salen en el inicio del equipo.", soloAdmin: true },
 ];
 
@@ -5261,6 +5261,7 @@ function Recursos({ showToast, esAdmin }) {
 
   const [busca, setBusca] = useState("");
   const [catSel, setCatSel] = useState("");
+  const [enviarRec, setEnviarRec] = useState(null); // recurso a enviar por WhatsApp
 
   function cargar() { setLista(null); api.recursos(tipo).then(setLista).catch(() => setLista([])); }
   useEffect(() => { cargar(); }, [tipo]);
@@ -5343,6 +5344,7 @@ function Recursos({ showToast, esAdmin }) {
                 {r.descripcion && <div style={{ fontSize: 13, color: "var(--ink-soft)", whiteSpace: "pre-wrap", lineHeight: 1.5 }}>{r.descripcion}</div>}
                 <div style={{ display: "flex", gap: 8, marginTop: "auto", paddingTop: 6, flexWrap: "wrap" }}>
                   {r.link && <a className="ca-mini" href={r.link} target="_blank" rel="noreferrer"><ExternalLink size={13} strokeWidth={2} /> Abrir</a>}
+                  {tipo === "herramienta" && r.link && <button className="ca-mini" style={{ color: "#1E7E5A" }} onClick={() => setEnviarRec(r)}><Send size={13} strokeWidth={2} /> Enviar por WhatsApp</button>}
                   {esAdmin && <button className="ca-mini" onClick={() => setEditando(r)}><Pencil size={13} strokeWidth={2} /> Editar</button>}
                   {esAdmin && <button className="ca-mini" onClick={() => toggleActivo(r)}>{r.activo ? "Ocultar" : "Mostrar"}</button>}
                   {esAdmin && <button className="ca-mini danger" onClick={() => borrar(r)}><Trash2 size={13} strokeWidth={2} /></button>}
@@ -5353,6 +5355,76 @@ function Recursos({ showToast, esAdmin }) {
         )}
 
       {editando && <RecursoModal rec={editando} tabLabel={meta.l} onClose={() => setEditando(null)} onGuardar={guardar} />}
+      {enviarRec && <EnviarRecursoModal rec={enviarRec} showToast={showToast} onClose={() => setEnviarRec(null)} />}
+    </div>
+  );
+}
+
+// Coordinadoras/psicólogos: mandar el enlace de una herramienta directo al WhatsApp del paciente.
+function EnviarRecursoModal({ rec, showToast, onClose }) {
+  const [pacs, setPacs] = useState(null);
+  const [busca, setBusca] = useState("");
+  const [sel, setSel] = useState(null);
+  const [enviando, setEnviando] = useState(false);
+  useEffect(() => { api.pacientes().then((ps) => setPacs(ps || [])).catch(() => setPacs([])); }, []);
+
+  const texto = `Hola${sel ? ` ${(sel.nombre || "").split(" ")[0]}` : ""} 🌿 Te comparto *${rec.titulo}*${rec.descripcion ? `\n\n${rec.descripcion}` : ""}\n\n${rec.link}`;
+  const visibles = useMemo(() => {
+    const q = busca.trim().toLowerCase();
+    return (pacs || []).filter((p) => p.telefono && (!q || (p.nombre || "").toLowerCase().includes(q) || (p.telefono || "").includes(q))).slice(0, 40);
+  }, [pacs, busca]);
+
+  async function enviar() {
+    if (!sel) return;
+    setEnviando(true);
+    try {
+      await api.enviarMensajePaciente(sel.id, texto, "manual");
+      showToast(`Enviado a ${(sel.nombre || "").split(" ")[0]} ✓`);
+      onClose();
+    } catch (e) { showToast("Error: " + e.message); setEnviando(false); }
+  }
+
+  return (
+    <div className="ca-modal-bg" onClick={onClose}>
+      <div className="ca-modal" onClick={(e) => e.stopPropagation()}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+          <strong style={{ fontSize: 16 }}>Enviar por WhatsApp</strong>
+          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)" }}><X size={18} /></button>
+        </div>
+        <div className="ca-sub" style={{ marginBottom: 14 }}>{rec.titulo}</div>
+        {!sel ? (
+          <>
+            <div style={{ position: "relative", marginBottom: 10 }}>
+              <Search size={15} strokeWidth={2} style={{ position: "absolute", left: 11, top: "50%", transform: "translateY(-50%)", color: "var(--muted)" }} />
+              <input className="ca-input" style={{ paddingLeft: 34 }} value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar paciente por nombre o teléfono…" autoFocus />
+            </div>
+            <div style={{ maxHeight: 300, overflowY: "auto", display: "flex", flexDirection: "column", gap: 4 }}>
+              {pacs === null ? <div className="ca-empty">Cargando pacientes…</div> :
+                visibles.length === 0 ? <div className="ca-empty">{busca ? "Nadie coincide." : "No hay pacientes con teléfono."}</div> :
+                visibles.map((p) => (
+                  <button key={p.id} className="ca-row-btn" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "9px 11px", borderRadius: 9, border: "1px solid var(--line)", background: "var(--card)", cursor: "pointer", textAlign: "left" }} onClick={() => setSel(p)}>
+                    <span style={{ fontWeight: 600, fontSize: 13.5 }}>{p.nombre}</span>
+                    <span style={{ fontSize: 12, color: "var(--muted)" }}>{p.telefono}</span>
+                  </button>
+                ))}
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="ca-card" style={{ background: "var(--bg-soft, #F6F5F2)", marginBottom: 12 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6, display: "flex", justifyContent: "space-between" }}>
+                <span>Para: {sel.nombre} · {sel.telefono}</span>
+                <button className="ca-mini" onClick={() => setSel(null)}>Cambiar</button>
+              </div>
+              <div style={{ fontSize: 13, color: "var(--ink-soft)", whiteSpace: "pre-wrap", lineHeight: 1.5 }}>{texto}</div>
+            </div>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+              <button className="ca-btn ghost" onClick={onClose}>Cancelar</button>
+              <button className="ca-btn" disabled={enviando} onClick={enviar}><Send size={15} strokeWidth={2} /> {enviando ? "Enviando…" : "Enviar"}</button>
+            </div>
+          </>
+        )}
+      </div>
     </div>
   );
 }
