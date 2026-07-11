@@ -256,6 +256,7 @@ export const api = {
   eliminarServicio: (id) => req(`/api/servicios/${id}/`, { method: "DELETE" }),
   cobros: (f) => req(`/api/cobros/?${finanzasQS(f)}`),
   crearCobro: (data) => req("/api/cobros/", { method: "POST", body: JSON.stringify(data) }),
+  actualizarCobro: (id, data) => req(`/api/cobros/${id}/`, { method: "PATCH", body: JSON.stringify(data) }),
   marcarCobroPagado: (id, medio) =>
     req(`/api/cobros/${id}/marcar_pagado/`, { method: "POST", body: JSON.stringify({ medio_pago: medio }) }),
   resumenFinanzas: (f) => req(`/api/cobros/resumen/?${finanzasQS(f)}`),

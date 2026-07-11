@@ -91,6 +91,7 @@ class PacienteSerializer(serializers.ModelSerializer):
     adjuntos = serializers.SerializerMethodField()
     cuenta = serializers.SerializerMethodField()
     paquetes = serializers.SerializerMethodField()
+    citas = serializers.SerializerMethodField()
 
     class Meta:
         model = Paciente
@@ -109,7 +110,7 @@ class PacienteSerializer(serializers.ModelSerializer):
             "alertas", "notas_internas",
             "brujula_motivo", "brujula_hipotesis", "brujula_objetivos", "brujula_fortalezas",
             "brujula_factores_protectores", "brujula_factores_riesgo", "brujula_barreras", "brujula_plan",
-            "ultima", "proxima", "historial", "adjuntos", "cuenta", "paquetes",
+            "ultima", "proxima", "historial", "adjuntos", "cuenta", "paquetes", "citas",
         ]
 
     def to_representation(self, instance):
@@ -197,6 +198,27 @@ class PacienteSerializer(serializers.ModelSerializer):
         # Archivos sueltos (sin atención) desde el prefetch (ordenado por -creado_en).
         sueltos = [a for a in obj.adjuntos.all() if a.atencion_id is None]
         return AdjuntoSerializer(sueltos, many=True).data
+
+    def get_citas(self, obj):
+        # Historial de citas (agenda) del paciente, de la más reciente a la más
+        # antigua. Trabaja sobre el prefetch (citas con select_related medico).
+        EST = dict(Cita.Estado.choices)
+        citas = sorted(obj.citas.all(), key=lambda c: c.inicio, reverse=True)
+        out = []
+        for c in citas:
+            loc = timezone.localtime(c.inicio)
+            out.append({
+                "id": c.id,
+                "fecha": fecha_corta(loc),
+                "fecha_iso": loc.date().isoformat(),
+                "hora": loc.strftime("%H:%M"),
+                "estado": c.estado,
+                "estado_label": EST.get(c.estado, c.estado),
+                "especialidad": c.especialidad,
+                "medico": str(c.medico) if c.medico_id else "",
+                "notas": c.notas,
+            })
+        return out
 
 
 class CitaSerializer(serializers.ModelSerializer):

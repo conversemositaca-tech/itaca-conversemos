@@ -2871,6 +2871,32 @@ function TareasPaciente({ pacienteId, puede, showToast }) {
   );
 }
 
+function ConsentimientoPaciente({ pacienteId }) {
+  const [docs, setDocs] = useState(null);
+  useEffect(() => { api.consentimientos(pacienteId).then(setDocs).catch(() => setDocs([])); }, [pacienteId]);
+  if (!docs || docs.length === 0) return null;
+  const LBL = { consentimiento: "Consentimiento informado", politicas: "Políticas de atención" };
+  return (
+    <>
+      <h2 className="ca-secth">Consentimiento y políticas</h2>
+      <div className="ca-card" style={{ marginBottom: 26 }}>
+        {docs.map((d) => (
+          <div key={d.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderTop: "1px solid var(--line)", fontSize: 13.5 }}>
+            <span style={{ flex: 1 }}>{LBL[d.tipo] || d.tipo_label}</span>
+            {d.aceptado ? (
+              <span style={{ color: "#2F6B4F", fontWeight: 600, display: "inline-flex", alignItems: "center", gap: 5, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                <Check size={14} strokeWidth={2.5} /> Aceptado{d.aceptado_fecha ? ` · ${d.aceptado_fecha}` : ""}{d.firmante_nombre ? ` · ${d.firmante_nombre}` : ""}
+              </span>
+            ) : (
+              <span style={{ color: "#9C6B2E", fontWeight: 600 }}>Enviado · pendiente de firma</span>
+            )}
+          </div>
+        ))}
+      </div>
+    </>
+  );
+}
+
 function FichaCard({ label, children, style }) {
   return (
     <div className="ca-card" style={{ margin: 0, ...style }}>
@@ -3035,6 +3061,8 @@ function Ficha({ p, onBack, onEdit, onWhatsApp, onSubirAdjunto, onEliminarAdjunt
 
       <RedProfesionalesPaciente pacienteId={p.id} puede={puedeRegistrar} showToast={showToast} />
 
+      <ConsentimientoPaciente pacienteId={p.id} />
+
       {(p.cuenta || puedeCobrar) && (
         <>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
@@ -3053,7 +3081,17 @@ function Ficha({ p, onBack, onEdit, onWhatsApp, onSubirAdjunto, onEliminarAdjunt
             ) : p.cuenta.items.map((c) => (
               <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderTop: "1px solid var(--line)", fontSize: 13.5 }}>
                 <span style={{ color: "var(--muted)", width: 86, flexShrink: 0 }}>{c.fecha}</span>
-                <span style={{ flex: 1, minWidth: 0 }}>{c.concepto}{c.comprobante ? <span style={{ color: "var(--muted)", fontSize: 12 }}> · {c.comprobante}{c.comprobante_numero ? ` ${c.comprobante_numero}` : ""}</span> : null}</span>
+                <span style={{ flex: 1, minWidth: 0 }}>{c.concepto}{c.comprobante ? <span style={{ color: "var(--muted)", fontSize: 12 }}> · {c.comprobante}{c.comprobante_numero ? ` ${c.comprobante_numero}` : ""}</span> : null}
+                  {puedeCobrar && (
+                    <button className="ca-iconbtn" title="Editar la descripción de este pago" style={{ padding: 2, marginLeft: 6, verticalAlign: "middle" }}
+                      onClick={async () => {
+                        const nuevo = window.prompt("Descripción del pago:", c.concepto);
+                        if (nuevo == null || nuevo.trim() === (c.concepto || "")) return;
+                        try { await api.actualizarCobro(c.id, { concepto: nuevo.trim() }); onRefrescar && onRefrescar(); showToast && showToast("Descripción actualizada ✓"); }
+                        catch (e) { showToast && showToast("Error: " + e.message); }
+                      }}><Pencil size={12} strokeWidth={2} /></button>
+                  )}
+                </span>
                 <span style={{ fontVariantNumeric: "tabular-nums", fontWeight: 500 }}>{money(c.monto)}</span>
                 <Tag colors={ESTADO_COBRO_COLOR[c.estado]}>{c.estado === "pagado" ? (c.medio || "Pagado") : "Pendiente"}</Tag>
               </div>
@@ -3094,6 +3132,22 @@ function Ficha({ p, onBack, onEdit, onWhatsApp, onSubirAdjunto, onEliminarAdjunt
                 );
               })
             )}
+          </div>
+        </>
+      )}
+
+      {p.citas && p.citas.length > 0 && (
+        <>
+          <h2 className="ca-secth">Historial de citas</h2>
+          <div className="ca-card" style={{ marginBottom: 26, padding: 0, overflow: "hidden" }}>
+            {p.citas.map((c) => (
+              <div key={c.id} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "9px 14px", borderTop: "1px solid var(--line)", fontSize: 13.5 }}>
+                <span style={{ color: "var(--muted)", width: 96, flexShrink: 0 }}>{c.fecha}</span>
+                <span style={{ width: 44, flexShrink: 0, color: "var(--muted)" }}>{c.hora}</span>
+                <span style={{ flex: 1, minWidth: 0 }}>{c.especialidad || "—"}{c.medico ? <span style={{ color: "var(--muted)" }}> · {c.medico}</span> : null}{c.notas ? <div className="ca-pmeta" style={{ whiteSpace: "pre-wrap" }}>{c.notas}</div> : null}</span>
+                <Tag colors={STATUS[c.estado] || { bg: "#EEEBE6", fg: "#7C7870" }}>{c.estado_label}</Tag>
+              </div>
+            ))}
           </div>
         </>
       )}
@@ -8691,7 +8745,7 @@ function PacienteModal({ paciente, onClose, onSave, esMedico }) {
           </div>
         </div>
 
-        <div className="ca-secth" style={{ margin: "4px 0 12px" }}>Datos del padre/madre/tutor <span style={{ color: "var(--muted)", fontWeight: 400, fontSize: 12.5 }}>(menores · opcional)</span></div>
+        <div className="ca-secth" style={{ margin: "4px 0 12px" }}>Padre/madre/tutor o apoyo <span style={{ color: "var(--muted)", fontWeight: 400, fontSize: 12.5 }}>(menores, o quien paga/acompaña · opcional)</span></div>
         <div style={{ display: "flex", gap: 11, marginBottom: 13 }}>
           <div style={{ flex: 1.6 }}>
             <div className="ca-label">Nombre del tutor</div>

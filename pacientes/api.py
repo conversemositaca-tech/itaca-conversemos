@@ -113,7 +113,8 @@ class PacienteViewSet(viewsets.ModelViewSet):
             .prefetch_related(
                 Prefetch("atenciones", queryset=atenciones_qs),
                 Prefetch("adjuntos", queryset=Adjunto.objects.select_related("subido_por")),
-                "cobros", "citas", "seguimientos", "paquetes",
+                Prefetch("citas", queryset=Cita.objects.select_related("medico")),
+                "cobros", "seguimientos", "paquetes",
             )
         )
         if _es_comercial(self.request.user):
