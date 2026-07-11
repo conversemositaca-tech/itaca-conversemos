@@ -312,7 +312,9 @@ class Recurso(ModeloTenant):
     """Contenido que la gerencia publica para el equipo. Un solo modelo cubre:
 
     - `herramienta`: material/enlace (Drive, PDF, video) para compartir con pacientes.
-    - `tip`: consejo clínico o de gestión para el psicólogo.
+    - `terapeuta`: recurso clínico para que el terapeuta use durante la sesión.
+    - `manual`: manuales, protocolos, guías de intervención y material de capacitación.
+    - `tip`: contenido de bienestar y autocuidado para el equipo terapéutico.
     - `recordatorio`: aviso de gerencia (capacitación, supervisión, NPS, info) que
       aparece en el inicio del equipo.
 
@@ -321,7 +323,9 @@ class Recurso(ModeloTenant):
 
     class Tipo(models.TextChoices):
         HERRAMIENTA = "herramienta", "Herramienta para pacientes"
-        TIP = "tip", "Tip para el psicólogo"
+        TERAPEUTA = "terapeuta", "Herramienta para el terapeuta"
+        MANUAL = "manual", "Manual o guía"
+        TIP = "tip", "Autocuidado del terapeuta"
         RECORDATORIO = "recordatorio", "Recordatorio de gerencia"
 
     tipo = models.CharField(max_length=15, choices=Tipo.choices, default=Tipo.HERRAMIENTA)

@@ -5247,8 +5247,10 @@ const SUGERENCIA_ESTADO_COLOR = {
 // el equipo (incluido el psicólogo) solo los consulta. Reemplaza el acceso a
 // Profesionales para el rol psicólogo.
 const RECURSO_TABS = [
-  { v: "herramienta", l: "Herramientas para pacientes", icon: FolderOpen, hint: "Materiales, guías y enlaces para compartir con los pacientes." },
-  { v: "tip", l: "Herramientas para el psicólogo", icon: Lightbulb, hint: "Guías, anamnesis y buenas prácticas para el equipo clínico." },
+  { v: "herramienta", l: "Herramientas para el paciente", icon: FolderOpen, hint: "Materiales, guías y enlaces para compartir con los pacientes." },
+  { v: "terapeuta", l: "Herramientas para el terapeuta", icon: Stethoscope, hint: "Recursos clínicos para usar durante la sesión: escalas, dinámicas, materiales de intervención." },
+  { v: "manual", l: "Manuales y guías", icon: GraduationCap, hint: "Manuales clínicos, protocolos, guías de intervención, procedimientos internos y material de capacitación." },
+  { v: "tip", l: "Autocuidado del terapeuta", icon: HeartPulse, hint: "Contenido de bienestar y autocuidado para el equipo terapéutico." },
   { v: "recordatorio", l: "Recordatorios del equipo", icon: Bell, hint: "Avisos de gerencia (capacitación, supervisión, NPS…) que salen en el inicio del equipo.", soloAdmin: true },
 ];
 
