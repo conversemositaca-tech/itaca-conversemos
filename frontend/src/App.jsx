@@ -777,6 +777,15 @@ export default function ClinicaApp() {
     } catch (e) { showToast("Error: " + e.message); }
   }
 
+  async function eliminarCita(cita) {
+    if (!window.confirm(`¿ELIMINAR la cita de ${cita.paciente} del ${cita.fecha} ${cita.hora}?\n\nSe borra de forma permanente y queda registrado para gerencia. (Si solo quieres marcarla cancelada, usa el estado "Cancelada".)`)) return;
+    try {
+      await api.borrarCita(cita.id);
+      showToast("Cita eliminada");
+      refrescarCitas().catch(() => {});
+    } catch (e) { showToast("Error: " + e.message); }
+  }
+
   async function guardarCobro(data) {
     try {
       await api.crearCobro(data);
@@ -1178,6 +1187,7 @@ export default function ClinicaApp() {
             onMensaje={(c) => { const p = pacientes.find((x) => x.id === c.pacienteId); if (p) { setWaPaciente(p); setWaCita(c); } else showToast("No se encontró el paciente"); }}
             onCobrar={(c) => setCobrando({ pacienteId: c.pacienteId, paciente: c.paciente, citaId: c.id, especialidad: c.especialidad })}
             onEditarNota={setNotaCita}
+            onEliminarCita={(usuario?.rol === "asistente" || usuario?.rol === "admin") ? eliminarCita : undefined}
           />
         )}
 
@@ -2126,6 +2136,24 @@ function Hoy({ proximas, citasHoy, porConfirmar, atendidas, onOpen, onGo, onRete
           {r.por_continuidad_total > r.por_continuidad.length && (
             <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 8 }}>y {r.por_continuidad_total - r.por_continuidad.length} más…</div>
           )}
+        </div>
+      )}
+
+      {esAdmin && r && r.eliminaciones && r.eliminaciones.length > 0 && (
+        <div className="ca-card" style={{ marginTop: 14, borderColor: "#F0D6D6", background: "#FDF6F6" }}>
+          <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 10, display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap" }}>
+            <Trash2 size={15} strokeWidth={2} style={{ color: "#9C4646" }} /> Eliminaciones recientes
+            <span style={{ fontWeight: 400, color: "var(--muted)", fontSize: 12.5 }}>· citas y pagos borrados en los últimos 7 días</span>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+            {r.eliminaciones.map((e, i) => (
+              <div key={i} style={{ fontSize: 13, display: "flex", gap: 8, alignItems: "baseline", flexWrap: "wrap" }}>
+                <span style={{ fontSize: 11, fontWeight: 600, color: "#9C4646", background: "#F7E1E1", padding: "1px 8px", borderRadius: 20 }}>{e.tipo_label}</span>
+                <span style={{ flex: 1, minWidth: 120 }}>{e.descripcion}{e.paciente ? ` · ${e.paciente}` : ""}</span>
+                <span style={{ color: "var(--muted)", fontSize: 12 }}>{e.usuario} · {e.cuando}</span>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
@@ -3144,7 +3172,7 @@ function Ficha({ p, onBack, onEdit, onWhatsApp, onSubirAdjunto, onEliminarAdjunt
               <div key={c.id} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "9px 14px", borderTop: "1px solid var(--line)", fontSize: 13.5 }}>
                 <span style={{ color: "var(--muted)", width: 96, flexShrink: 0 }}>{c.fecha}</span>
                 <span style={{ width: 44, flexShrink: 0, color: "var(--muted)" }}>{c.hora}</span>
-                <span style={{ flex: 1, minWidth: 0 }}>{c.especialidad || "—"}{c.medico ? <span style={{ color: "var(--muted)" }}> · {c.medico}</span> : null}{c.notas ? <div className="ca-pmeta" style={{ whiteSpace: "pre-wrap" }}>{c.notas}</div> : null}</span>
+                <span style={{ flex: 1, minWidth: 0 }}>{c.especialidad || "—"}{c.medico ? <span style={{ color: "var(--muted)" }}> · {c.medico}</span> : null}{c.motivo_consulta ? <div className="ca-pmeta" style={{ whiteSpace: "pre-wrap" }}><b>Motivo:</b> {c.motivo_consulta}</div> : null}{c.notas ? <div className="ca-pmeta" style={{ whiteSpace: "pre-wrap" }}>{c.notas}</div> : null}</span>
                 <Tag colors={STATUS[c.estado] || { bg: "#EEEBE6", fg: "#7C7870" }}>{c.estado_label}</Tag>
               </div>
             ))}
@@ -3229,6 +3257,7 @@ function AgendarModal({ pacientes, fechaInicial, pacienteFijo, onClose, onSave }
   const [modalidad, setModalidad] = useState("presencial");
   const [enlace, setEnlace] = useState("");
   const [notas, setNotas] = useState("");
+  const [motivoConsulta, setMotivoConsulta] = useState("");
   const [error, setError] = useState("");
   const [enviando, setEnviando] = useState(false);
   const [nSesion, setNSesion] = useState(
@@ -3266,7 +3295,7 @@ function AgendarModal({ pacientes, fechaInicial, pacienteFijo, onClose, onSave }
     const extra = {
       especialidad: esp, fecha, hora, medicoId: medicoId || null, sede,
       modalidad, enlace: modalidad === "virtual" ? enlace.trim() : "",
-      notas: notas.trim(), n_sesion: nSesion ? Number(nSesion) : null,
+      notas: notas.trim(), motivo_consulta: motivoConsulta.trim(), n_sesion: nSesion ? Number(nSesion) : null,
     };
     setEnviando(true);
     try {
@@ -3395,8 +3424,12 @@ function AgendarModal({ pacientes, fechaInicial, pacienteFijo, onClose, onSave }
           </div>
         )}
 
+        <div style={{ marginBottom: 13 }}>
+          <div className="ca-label">Motivo indicado por el consultante <span style={{ color: "var(--muted)", fontWeight: 400 }}>(lo que contó al agendar)</span></div>
+          <textarea className="ca-input" style={{ minHeight: 52, resize: "vertical", lineHeight: 1.5 }} value={motivoConsulta} onChange={(e) => setMotivoConsulta(e.target.value)} placeholder="Ej: ansiedad, problemas de pareja… — para que el psicólogo llegue sabiendo con qué viene" />
+        </div>
         <div style={{ marginBottom: 20 }}>
-          <div className="ca-label">Notas (opcional)</div>
+          <div className="ca-label">Notas internas (opcional)</div>
           <textarea className="ca-input" style={{ minHeight: 52, resize: "vertical", lineHeight: 1.5 }} value={notas} onChange={(e) => setNotas(e.target.value)} placeholder="Indicaciones para la cita, recordatorios…" />
         </div>
 
@@ -3519,7 +3552,7 @@ function NotaCitaModal({ cita, onClose, onSaved, showToast }) {
   );
 }
 
-function CitaRow({ c, esAsistente, esMedico, onAtender, onRecordar, onReagendar, onCancelar, onConfirmar, onCobrar, onSetEstado, onMensaje, openFicha, onEditarNota }) {
+function CitaRow({ c, esAsistente, esMedico, onAtender, onRecordar, onReagendar, onCancelar, onConfirmar, onCobrar, onSetEstado, onMensaje, openFicha, onEditarNota, onEliminarCita }) {
   const activa = c.estado !== "atendida" && c.estado !== "cancelada";
   const col = STATUS[c.estado] || {};
   return (
@@ -3568,6 +3601,9 @@ function CitaRow({ c, esAsistente, esMedico, onAtender, onRecordar, onReagendar,
         )}
         {activa && (
           <button className="ca-mini" onClick={() => onReagendar(c)} title="Reagendar (cambiar fecha/hora)"><Calendar size={13} strokeWidth={2} /> Mover</button>
+        )}
+        {onEliminarCita && (
+          <button className="ca-mini" onClick={() => onEliminarCita(c)} title="Eliminar esta cita (queda registrado para gerencia)" style={{ color: "#9C4646" }}><Trash2 size={13} strokeWidth={2} /> Eliminar</button>
         )}
       </div>
       {c.notas && (
@@ -3647,7 +3683,7 @@ function TerapeutasGrid({ citas, terapeutas, horarios = {}, fecha, onAbrirCita }
   );
 }
 
-function Agenda({ citas, bloqueos = [], fecha, setFecha, vista, setVista, esAsistente, esMedico, onAgendar, onBloquear, onBorrarBloqueo, onVenta, onAtender, onRecordar, onReagendar, onCancelar, onConfirmar, onCobrar, onSetEstado, onAbrirCita, onMensaje, openFicha, onEditarNota }) {
+function Agenda({ citas, bloqueos = [], fecha, setFecha, vista, setVista, esAsistente, esMedico, onAgendar, onBloquear, onBorrarBloqueo, onVenta, onAtender, onRecordar, onReagendar, onCancelar, onConfirmar, onCobrar, onSetEstado, onAbrirCita, onMensaje, openFicha, onEditarNota, onEliminarCita }) {
   const [filtroMedico, setFiltroMedico] = useState("");
   const [filtroSede, setFiltroSede] = useState("");
   const [medicosDir, setMedicosDir] = useState([]);
@@ -3783,7 +3819,7 @@ function Agenda({ citas, bloqueos = [], fecha, setFecha, vista, setVista, esAsis
               <CitaRow key={c.id} c={c} esAsistente={esAsistente} esMedico={esMedico}
                 onAtender={onAtender} onRecordar={onRecordar} onReagendar={onReagendar}
                 onCancelar={onCancelar} onConfirmar={onConfirmar} onCobrar={onCobrar}
-                onSetEstado={onSetEstado} onMensaje={onMensaje} openFicha={openFicha} onEditarNota={onEditarNota} />
+                onSetEstado={onSetEstado} onMensaje={onMensaje} openFicha={openFicha} onEditarNota={onEditarNota} onEliminarCita={onEliminarCita} />
             ))
           )}
         </div>

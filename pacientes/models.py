@@ -239,6 +239,9 @@ class Cita(ModeloTenant):
     modalidad = models.CharField(max_length=12, choices=Modalidad.choices, default=Modalidad.PRESENCIAL)
     enlace = models.URLField("Enlace de videollamada", blank=True, default="")
     notas = models.TextField("Notas de la cita", blank=True, default="")
+    # Lo que el paciente contó al agendar (sobre todo en una consulta): el psicólogo
+    # llega sabiendo con qué viene, sin depender de lo que le pasó coordinación.
+    motivo_consulta = models.TextField("motivo indicado por el consultante", blank=True, default="")
     n_sesion = models.PositiveIntegerField(
         "N° de sesión", null=True, blank=True,
         help_text="Número de sesión que representa esta cita (si no se indica, usa el del paciente).",
@@ -719,3 +722,29 @@ class ContactoProfesional(ModeloTenant):
         if self.tipo == self.Tipo.OTRO and self.tipo_otro:
             return self.tipo_otro
         return self.get_tipo_display()
+
+
+class RegistroEliminacion(ModeloTenant):
+    """Bitácora de eliminaciones (citas, pagos): la gerencia se entera de qué se
+    borró, quién y cuándo. Es un aviso, no bloquea la eliminación."""
+
+    class Tipo(models.TextChoices):
+        CITA = "cita", "Cita"
+        PAGO = "pago", "Pago"
+
+    tipo = models.CharField(max_length=10, choices=Tipo.choices)
+    descripcion = models.CharField(max_length=300)
+    paciente_nombre = models.CharField(max_length=200, blank=True, default="")
+    usuario = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, related_name="eliminaciones",
+        null=True, blank=True,
+    )
+
+    class Meta:
+        verbose_name = "Registro de eliminación"
+        verbose_name_plural = "Registros de eliminación"
+        ordering = ["-creado_en"]
+        indexes = [models.Index(fields=["clinica", "creado_en"])]
+
+    def __str__(self):
+        return f"{self.get_tipo_display()} · {self.descripcion[:40]}"

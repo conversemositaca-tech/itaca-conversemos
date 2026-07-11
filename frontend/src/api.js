@@ -63,6 +63,8 @@ export const api = {
   moverCita: (id, fecha, hora) =>
     req(`/api/citas/${id}/mover/`, { method: "POST", body: JSON.stringify({ fecha, hora }) }),
   cancelarCita: (id) => req(`/api/citas/${id}/cancelar/`, { method: "POST" }),
+  // Eliminar (borrar) una cita — coordinación/admin. Queda registrado para gerencia.
+  borrarCita: (id) => req(`/api/citas/${id}/`, { method: "DELETE" }),
   // Editar una cita ya agendada (sobre todo sus notas: qué pasó después de la sesión).
   actualizarCita: (id, data) => req(`/api/citas/${id}/`, { method: "PATCH", body: JSON.stringify(data) }),
   // Bloqueos de horario (sin paciente)

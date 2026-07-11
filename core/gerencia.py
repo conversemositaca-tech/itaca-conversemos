@@ -220,6 +220,18 @@ class HoyResumenView(APIView):
             cobros = Cobro.objects.del_tenant_actual().filter(fecha__gte=ini, fecha__lt=fin)
             out["ingresos_hoy"] = float(cobros.filter(estado=Cobro.Estado.PAGADO).aggregate(s=Sum("monto"))["s"] or 0)
             out["pendiente_hoy"] = float(cobros.filter(estado=Cobro.Estado.PENDIENTE).aggregate(s=Sum("monto"))["s"] or 0)
+
+            # Eliminaciones recientes (citas/pagos) — la gerencia se entera.
+            from pacientes.models import RegistroEliminacion
+            elim = (RegistroEliminacion.objects.del_tenant_actual()
+                    .filter(creado_en__gte=timezone.now() - timedelta(days=7))
+                    .select_related("usuario")[:12])
+            out["eliminaciones"] = [{
+                "tipo": e.tipo, "tipo_label": e.get_tipo_display(),
+                "descripcion": e.descripcion, "paciente": e.paciente_nombre,
+                "usuario": str(e.usuario) if e.usuario_id else "",
+                "cuando": timezone.localtime(e.creado_en).strftime("%d/%m %H:%M"),
+            } for e in elim]
         return Response(out)
 
 

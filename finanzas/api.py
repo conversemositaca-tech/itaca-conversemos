@@ -165,6 +165,18 @@ class CobroViewSet(viewsets.ModelViewSet):
         _push_soto_ingreso(cobro)
         return Response(CobroSerializer(cobro).data, status=status.HTTP_201_CREATED)
 
+    def destroy(self, request, *args, **kwargs):
+        """Elimina un pago y deja constancia para gerencia."""
+        from pacientes.models import RegistroEliminacion
+        cobro = self.get_object()
+        RegistroEliminacion.objects.create(
+            clinica=get_clinica_actual(), tipo=RegistroEliminacion.Tipo.PAGO,
+            paciente_nombre=cobro.paciente.nombre if cobro.paciente_id else "",
+            descripcion=f"Pago de S/ {cobro.monto} · {cobro.concepto}"[:300],
+            usuario=request.user,
+        )
+        return super().destroy(request, *args, **kwargs)
+
     @action(detail=True, methods=["post"])
     def marcar_pagado(self, request, pk=None):
         cobro = self.get_object()

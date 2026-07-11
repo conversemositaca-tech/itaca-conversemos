@@ -17,7 +17,7 @@ from mensajes.services import plantilla_por_clave, registrar_y_enviar
 
 from .models import (
     Adjunto, AplicacionEscala, Atencion, BloqueoAgenda, Cita, ContactoProfesional, EdicionAtencion,
-    ObjetivoTerapeutico, Paciente, RespuestaNPS, SeguimientoSesion, Tarea,
+    ObjetivoTerapeutico, Paciente, RegistroEliminacion, RespuestaNPS, SeguimientoSesion, Tarea,
 )
 from .serializers import (
     AdjuntoSerializer, AplicacionEscalaSerializer, AtencionSerializer, BloqueoAgendaSerializer,
@@ -262,6 +262,23 @@ class CitaViewSet(viewsets.ModelViewSet):
             qs = qs.filter(medico=self.request.user)
         return qs.order_by("inicio")
 
+    def destroy(self, request, *args, **kwargs):
+        """Elimina una cita (coordinación/admin) y deja constancia para gerencia."""
+        from usuarios.models import Usuario
+        if getattr(request.user, "rol", None) not in (Usuario.Rol.ASISTENTE, Usuario.Rol.ADMIN):
+            return Response({"detail": "Solo coordinación o gerencia puede eliminar citas."},
+                            status=status.HTTP_403_FORBIDDEN)
+        cita = self.get_object()
+        cuando = timezone.localtime(cita.inicio).strftime("%d/%m/%Y %H:%M")
+        RegistroEliminacion.objects.create(
+            clinica=get_clinica_actual(), tipo=RegistroEliminacion.Tipo.CITA,
+            paciente_nombre=cita.paciente.nombre if cita.paciente_id else "",
+            descripcion=f"Cita del {cuando}"
+                        + (f" ({cita.especialidad})" if cita.especialidad else ""),
+            usuario=request.user,
+        )
+        return super().destroy(request, *args, **kwargs)
+
     def create(self, request, *args, **kwargs):
         """Agenda una cita. Recibe pacienteId, especialidad, hora (HH:MM) y
         fecha (YYYY-MM-DD; si no viene, es hoy). El médico queda en el primero
@@ -303,6 +320,7 @@ class CitaViewSet(viewsets.ModelViewSet):
         modalidad = request.data.get("modalidad") if request.data.get("modalidad") in dict(Cita.Modalidad.choices) else Cita.Modalidad.PRESENCIAL
         enlace = (request.data.get("enlace") or "").strip() if modalidad == Cita.Modalidad.VIRTUAL else ""
         notas = (request.data.get("notas") or "").strip()
+        motivo_consulta = (request.data.get("motivo_consulta") or "").strip()
         n_sesion = _int_o_none(request.data.get("n_sesion"))
 
         cita = Cita.objects.create(
@@ -316,6 +334,7 @@ class CitaViewSet(viewsets.ModelViewSet):
             modalidad=modalidad,
             enlace=enlace,
             notas=notas,
+            motivo_consulta=motivo_consulta,
             n_sesion=n_sesion,
         )
         gcalendar.sync_cita(cita)  # no-op si Google Calendar no está configurado

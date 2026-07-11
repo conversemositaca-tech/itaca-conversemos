@@ -217,6 +217,7 @@ class PacienteSerializer(serializers.ModelSerializer):
                 "especialidad": c.especialidad,
                 "medico": str(c.medico) if c.medico_id else "",
                 "notas": c.notas,
+                "motivo_consulta": c.motivo_consulta,
             })
         return out
 
@@ -241,7 +242,7 @@ class CitaSerializer(serializers.ModelSerializer):
         fields = [
             "id", "pacienteId", "paciente", "medico", "especialidad",
             "fecha", "hora", "inicio", "estado", "estado_label", "recordado", "cobrada",
-            "n_sesion", "sede", "sede_label", "modalidad", "modalidad_label", "enlace", "notas",
+            "n_sesion", "sede", "sede_label", "modalidad", "modalidad_label", "enlace", "notas", "motivo_consulta",
         ]
         read_only_fields = ["inicio"]
 
