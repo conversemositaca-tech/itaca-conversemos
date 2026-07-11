@@ -616,15 +616,18 @@ export default function ClinicaApp() {
   // nunca mientras están escribiendo.
   useEffect(() => {
     const revisarFecha = () => {
-      if (document.visibilityState === "visible" && aISO(new Date()) !== HOY_ISO) {
-        window.location.reload();
-      }
+      if (aISO(new Date()) !== HOY_ISO) window.location.reload();
     };
     document.addEventListener("visibilitychange", revisarFecha);
     window.addEventListener("focus", revisarFecha);
+    // Además, un chequeo cada minuto: si la pestaña queda abierta y NUNCA pierde
+    // el foco (el caso de Gaby, que veía "domingo 5" días después), igual se
+    // recarga al cambiar el día. El día solo cambia a medianoche → sin molestias.
+    const t = setInterval(revisarFecha, 60000);
     return () => {
       document.removeEventListener("visibilitychange", revisarFecha);
       window.removeEventListener("focus", revisarFecha);
+      clearInterval(t);
     };
   }, []);
 
