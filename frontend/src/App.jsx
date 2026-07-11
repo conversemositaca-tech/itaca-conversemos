@@ -145,6 +145,7 @@ const FUENTES = [
   { v: "tiktok_ads", l: "TikTok Ads" }, { v: "facebook_ads", l: "Facebook Ads" },
   { v: "bot", l: "Bot / Chatbot" }, { v: "convenio", l: "Convenio" },
   { v: "referido", l: "Referidos" }, { v: "whatsapp", l: "WhatsApp directo" },
+  { v: "instagram_directo", l: "Instagram directo" },
   { v: "otro", l: "Otro" },
 ];
 // Orígenes que son pauta/anuncio pagado (muestran «Vino de pauta» y el anuncio).
@@ -4423,11 +4424,22 @@ function Marketing({ showToast, onConvertir, esAdmin }) {
   const [filtroEstadoLead, setFiltroEstadoLead] = useState("");
   const [desdeLead, setDesdeLead] = useState("");
   const [hastaLead, setHastaLead] = useState("");
-  const leadsFiltrados = leads.filter((l) =>
-    (!filtroSedeLead || l.sede === filtroSedeLead) &&
-    (!filtroEstadoLead || l.estado === filtroEstadoLead) &&
-    (!desdeLead || (l.creado_iso || "") >= desdeLead) &&
-    (!hastaLead || (l.creado_iso || "") <= hastaLead));
+  const [buscaLead, setBuscaLead] = useState("");
+  const leadsFiltrados = leads.filter((l) => {
+    if (filtroSedeLead && l.sede !== filtroSedeLead) return false;
+    if (filtroEstadoLead && l.estado !== filtroEstadoLead) return false;
+    if (desdeLead && (l.creado_iso || "") < desdeLead) return false;
+    if (hastaLead && (l.creado_iso || "") > hastaLead) return false;
+    const q = buscaLead.trim().toLowerCase();
+    if (q) {
+      const dig = q.replace(/\D/g, "");
+      const enNombre = (l.nombre || "").toLowerCase().includes(q);
+      const enTel = dig && (l.telefono || "").replace(/\D/g, "").includes(dig);
+      const enCorreo = (l.email || "").toLowerCase().includes(q);
+      if (!enNombre && !enTel && !enCorreo) return false;
+    }
+    return true;
+  });
   const [pauta, setPauta] = useState({ sede: "lima", desde: "", hasta: "", data: null, cargando: false });
   const origen = window.location.origin;
 
@@ -4459,7 +4471,12 @@ function Marketing({ showToast, onConvertir, esAdmin }) {
       if (data.id) await api.actualizarLead(data.id, data); else await api.crearLead(data);
       await cargar(); setCreando(false); setEditandoLead(null);
       showToast(data.id ? "Lead actualizado ✓" : "Lead captado ✓");
-    } catch (err) { showToast("Error: " + err.message); }
+    } catch (err) {
+      // Número repetido: no cerramos el modal; dejamos el número en el buscador
+      // para que encuentren el lead que ya existe.
+      if (err.status === 409) { setBuscaLead((data.telefono || "").trim()); showToast(err.message); }
+      else showToast("Error: " + err.message);
+    }
   }
   async function borrarLead(lead) {
     if (!window.confirm(`¿Eliminar el lead "${lead.nombre}"? Se usa para quitar duplicados (ej. el mismo que llegó por IG y WhatsApp).`)) return;
@@ -4692,6 +4709,10 @@ function Marketing({ showToast, onConvertir, esAdmin }) {
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap", marginTop: 30 }}>
         <h2 className="ca-secth" style={{ marginTop: 0 }}>Leads ({leadsFiltrados.length})</h2>
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          <div style={{ position: "relative" }}>
+            <Search size={15} strokeWidth={2} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "var(--muted)" }} />
+            <input className="ca-input" style={{ width: 190, padding: "6px 10px 6px 32px" }} value={buscaLead} onChange={(e) => setBuscaLead(e.target.value)} placeholder="Buscar por número o nombre" />
+          </div>
           <div className="ca-seg">
             {[["", "Todas"], ["lima", "Lima"], ["piura", "Piura"]].map(([v, l]) => (
               <button key={v || "todas"} className={filtroSedeLead === v ? "on" : ""} onClick={() => setFiltroSedeLead(v)}>{l}</button>
@@ -4703,7 +4724,7 @@ function Marketing({ showToast, onConvertir, esAdmin }) {
           </select>
           <input className="ca-input" type="date" style={{ width: "auto", padding: "6px 8px" }} value={desdeLead} onChange={(e) => setDesdeLead(e.target.value)} title="Desde (fecha de llegada)" />
           <input className="ca-input" type="date" style={{ width: "auto", padding: "6px 8px" }} value={hastaLead} onChange={(e) => setHastaLead(e.target.value)} title="Hasta" />
-          {(filtroEstadoLead || desdeLead || hastaLead) && <button className="ca-fchip" onClick={() => { setFiltroEstadoLead(""); setDesdeLead(""); setHastaLead(""); }}>Limpiar</button>}
+          {(filtroEstadoLead || desdeLead || hastaLead || buscaLead) && <button className="ca-fchip" onClick={() => { setFiltroEstadoLead(""); setDesdeLead(""); setHastaLead(""); setBuscaLead(""); }}>Limpiar</button>}
         </div>
       </div>
       {leadsFiltrados.length === 0 ? (
@@ -4791,6 +4812,8 @@ function CrearLeadModal({ lead, medicos, anuncios, onClose, onSave }) {
   const [f, setF] = useState({
     nombre: lead?.nombre || "",
     telefono: lead?.telefono && lead.telefono !== "—" ? lead.telefono : "",
+    email: lead?.email || "",
+    fecha_llegada: lead?.creado_iso || HOY_ISO,
     sede: lead?.sede || "lima",
     fuente: lead?.fuente || "tiktok_ads",
     subfuente: lead?.subfuente || "",
@@ -4829,8 +4852,9 @@ function CrearLeadModal({ lead, medicos, anuncios, onClose, onSave }) {
   function guardar() {
     onSave({
       ...(lead?.id ? { id: lead.id } : {}),
-      nombre: f.nombre.trim(), telefono: f.telefono.trim(), sede: f.sede, fuente: f.fuente,
-      subfuente: (SUBFUENTES[f.fuente] || []).includes(f.subfuente) ? f.subfuente : "",
+      nombre: f.nombre.trim(), telefono: f.telefono.trim(), email: f.email.trim(),
+      fecha_llegada: f.fecha_llegada || null, sede: f.sede, fuente: f.fuente,
+      subfuente: f.fuente === "referido" ? f.subfuente.trim() : ((SUBFUENTES[f.fuente] || []).includes(f.subfuente) ? f.subfuente : ""),
       fuente_otro: ["otro", "convenio", "alianza"].includes(f.fuente) ? f.fuente_otro.trim() : "",
       es_pauta: esFuentePauta ? f.es_pauta : false,
       anuncio: esFuentePauta && f.es_pauta && f.anuncio ? Number(f.anuncio) : null, es_pareja: f.es_pareja,
@@ -4861,12 +4885,21 @@ function CrearLeadModal({ lead, medicos, anuncios, onClose, onSave }) {
           <div style={{ flex: 1 }}><div className="ca-label">Sede</div><select className="ca-input" value={f.sede} onChange={set("sede")}><option value="">—</option>{SEDES.map((s) => <option key={s.v} value={s.v}>{s.l}</option>)}</select></div>
         </div>
         <div style={{ display: "flex", gap: 11, marginBottom: 12 }}>
+          <div style={{ flex: 1.4 }}><div className="ca-label">Correo <span style={{ color: "var(--muted)", fontWeight: 400 }}>(opcional)</span></div><input className="ca-input" value={f.email} onChange={set("email")} placeholder="correo@ejemplo.com" inputMode="email" /></div>
+          <div style={{ flex: 1 }}><div className="ca-label">Llegó el</div><input className="ca-input" type="date" value={f.fecha_llegada} onChange={set("fecha_llegada")} title="Fecha en que llegó el lead (para leads antiguos o fuera de horario)" /></div>
+        </div>
+        <div style={{ display: "flex", gap: 11, marginBottom: 12 }}>
           <div style={{ flex: 1 }}><div className="ca-label">Origen</div><select className="ca-input" value={f.fuente} onChange={setFuente}>{fuentesOpciones.map((x) => <option key={x.v} value={x.v}>{x.l}</option>)}</select></div>
           <div style={{ flex: 1 }}><div className="ca-label">Etapa</div><select className="ca-input" value={f.estado} onChange={set("estado")}>{LEAD_ESTADOS.map((s) => <option key={s.v} value={s.v}>{s.l}</option>)}</select></div>
         </div>
-        {subOpciones.length > 0 && (
+        {f.fuente === "referido" ? (
           <div style={{ marginBottom: 12 }}>
-            <div className="ca-label">{f.fuente === "referido" ? "¿Quién refirió?" : "Canal / subfuente"}</div>
+            <div className="ca-label">¿Quién refirió?</div>
+            <input className="ca-input" value={f.subfuente} onChange={set("subfuente")} placeholder="Nombre de quien lo refirió" />
+          </div>
+        ) : subOpciones.length > 0 && (
+          <div style={{ marginBottom: 12 }}>
+            <div className="ca-label">Canal / subfuente</div>
             <select className="ca-input" value={f.subfuente} onChange={set("subfuente")}>
               <option value="">—</option>
               {subOpciones.map((s) => <option key={s} value={s}>{s}</option>)}
@@ -7162,6 +7195,7 @@ function CobroModal({ prefill, pacientes, servicios, onClose, onSave }) {
   const [medio, setMedio] = useState("efectivo");
   const [comprobante, setComprobante] = useState("");
   const [compNumero, setCompNumero] = useState("");
+  const [fecha, setFecha] = useState(HOY_ISO);
   const [concepto, setConcepto] = useState(prefill?.concepto || (servDefault ? servDefault.nombre : ""));
 
   const matches = useMemo(
@@ -7182,7 +7216,7 @@ function CobroModal({ prefill, pacientes, servicios, onClose, onSave }) {
       cita: prefill?.citaId || null,
       servicio: servicio || null,
       concepto: concepto.trim() || undefined,
-      monto, estado,
+      monto, estado, fecha,
       medio_pago: estado === "pagado" ? medio : "",
       comprobante_tipo: comprobante,
       comprobante_numero: compNumero.trim(),
@@ -7244,14 +7278,20 @@ function CobroModal({ prefill, pacientes, servicios, onClose, onSave }) {
           </div>
         </div>
 
-        {estado === "pagado" && (
-          <div style={{ marginBottom: 13 }}>
-            <div className="ca-label">Medio de pago</div>
-            <select className="ca-input" value={medio} onChange={(e) => setMedio(e.target.value)}>
-              {MEDIOS_PAGO.map((m) => <option key={m.v} value={m.v}>{m.l}</option>)}
-            </select>
+        <div style={{ display: "flex", gap: 11, marginBottom: 13 }}>
+          <div style={{ flex: 1 }}>
+            <div className="ca-label">Fecha del pago</div>
+            <input className="ca-input" type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} title="Fecha del pago (para cargar pagos antiguos)" />
           </div>
-        )}
+          {estado === "pagado" && (
+            <div style={{ flex: 1 }}>
+              <div className="ca-label">Medio de pago</div>
+              <select className="ca-input" value={medio} onChange={(e) => setMedio(e.target.value)}>
+                {MEDIOS_PAGO.map((m) => <option key={m.v} value={m.v}>{m.l}</option>)}
+              </select>
+            </div>
+          )}
+        </div>
 
         <div style={{ display: "flex", gap: 11, marginBottom: 13 }}>
           <div style={{ flex: 1.3 }}>
@@ -7282,14 +7322,38 @@ function CobroModal({ prefill, pacientes, servicios, onClose, onSave }) {
   );
 }
 
+const SERVICIOS_SUGERIDOS = [
+  { nombre: "Consulta psicológica", especialidad: "Consulta psicológica", precio: 75, monto_terapeuta: 20 },
+  { nombre: "Sesión individual", especialidad: "Terapia individual", precio: 100, monto_terapeuta: 38 },
+  { nombre: "Terapia de pareja", especialidad: "Terapia de pareja", precio: 130, monto_terapeuta: 0 },
+  { nombre: "Terapia familiar", especialidad: "Terapia familiar", precio: 140, monto_terapeuta: 0 },
+  { nombre: "Sesión infantil/adolescente", especialidad: "Terapia infantil/adolescente", precio: 100, monto_terapeuta: 0 },
+  { nombre: "Evaluación psicológica", especialidad: "Evaluación psicológica", precio: 150, monto_terapeuta: 0 },
+  { nombre: "Sesión brújula", especialidad: "", precio: 80, monto_terapeuta: 0 },
+];
+
 function PreciosModal({ onClose, showToast }) {
   const [lista, setLista] = useState(null);
   const [nombre, setNombre] = useState("");
   const [esp, setEsp] = useState("");
   const [precio, setPrecio] = useState("");
+  const [sembrando, setSembrando] = useState(false);
 
   async function cargar() { setLista(await api.servicios()); }
   useEffect(() => { cargar().catch((e) => showToast("Error: " + e.message)); }, []);
+
+  async function sembrarSugeridos() {
+    const existentes = new Set((lista || []).map((s) => (s.nombre || "").trim().toLowerCase()));
+    const faltan = SERVICIOS_SUGERIDOS.filter((s) => !existentes.has(s.nombre.toLowerCase()));
+    if (faltan.length === 0) { showToast("Ya están todos los servicios sugeridos."); return; }
+    setSembrando(true);
+    try {
+      for (const s of faltan) await api.crearServicio(s);
+      await cargar();
+      showToast(`${faltan.length} servicio(s) agregado(s) ✓ · ajusta precios y pago al terapeuta`);
+    } catch (e) { showToast("Error: " + e.message); }
+    finally { setSembrando(false); }
+  }
 
   async function guardarCampo(s, campo, valor) {
     try { await api.actualizarServicio(s.id, { [campo]: valor }); await cargar(); showToast("Guardado ✓"); }
@@ -7316,6 +7380,14 @@ function PreciosModal({ onClose, showToast }) {
         </div>
         {!lista ? <div className="ca-empty">Cargando…</div> : (
           <>
+            {lista.length === 0 && (
+              <div style={{ background: "var(--accent-soft)", border: "1px solid #BEE7EF", borderRadius: 10, padding: 12, marginBottom: 12, fontSize: 13, lineHeight: 1.5 }}>
+                Aún no hay servicios. Sin ellos no puedes elegir servicio al registrar un cobro ni calcular la liquidación.
+                <div style={{ marginTop: 8 }}>
+                  <button className="ca-btn" onClick={sembrarSugeridos} disabled={sembrando}>{sembrando ? "Agregando…" : "Agregar servicios sugeridos"}</button>
+                </div>
+              </div>
+            )}
             <div style={{ display: "flex", gap: 8, padding: "0 4px 4px", fontSize: 11.5, color: "var(--muted)", fontWeight: 600 }}>
               <div style={{ flex: 1 }}>Servicio</div>
               <div style={{ width: 84, textAlign: "right" }} title="Lo que paga el paciente">Precio</div>
@@ -7343,7 +7415,7 @@ function PreciosModal({ onClose, showToast }) {
               <input className="ca-input" style={{ width: 84, marginTop: 0 }} value={precio} onChange={(e) => setPrecio(e.target.value)} placeholder="S/" inputMode="decimal" />
               <button className="ca-btn" onClick={agregar}>Añadir</button>
             </div>
-            <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 12 }}>Edita un valor y haz clic afuera para guardarlo. El <strong>monto de referencia</strong> es la base sobre la que se le paga al psicólogo en la Liquidación (así un descuento al paciente no le baja el pago); si lo dejas en 0, se usa el precio.</div>
+            <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 12 }}>Edita un valor y haz clic afuera para guardarlo. <strong>Pago terapeuta</strong> es lo que se le paga al psicólogo por cada sesión atendida de ese servicio (la Liquidación es sesiones atendidas × ese monto). {lista.length > 0 && <button className="ca-link" onClick={sembrarSugeridos} disabled={sembrando}>Agregar servicios sugeridos</button>}</div>
           </>
         )}
       </div>
@@ -8473,7 +8545,9 @@ function PacienteModal({ paciente, onClose, onSave, esMedico }) {
   const canSave = nombre.trim().length > 0;
   const esNuevo = !paciente;
   // Psicólogos activos de la sede elegida (más el ya asignado, aunque esté inactivo).
-  const profsVisibles = profs.filter((pr) => (pr.activo || String(pr.id) === String(profId)) && (!sede || pr.sede === sede));
+  // Incluye a los psicólogos INACTIVOS (marcados): al migrar de AgendaPro hay que
+  // poder asignar pacientes a psicólogos que ya no están activos en el directorio.
+  const profsVisibles = profs.filter((pr) => !sede || pr.sede === sede);
 
   return (
     <div className="ca-modal-bg" onClick={onClose}>
@@ -8536,7 +8610,7 @@ function PacienteModal({ paciente, onClose, onSave, esMedico }) {
             <div className="ca-label">Psicólogo</div>
             <select className="ca-input" value={profId} onChange={(e) => setProfId(e.target.value)}>
               <option value="">Sin asignar</option>
-              {profsVisibles.map((pr) => <option key={pr.id} value={pr.id}>{pr.nombre} ({pr.sede_label})</option>)}
+              {profsVisibles.map((pr) => <option key={pr.id} value={pr.id}>{pr.nombre} ({pr.sede_label}){pr.activo ? "" : " · inactivo"}</option>)}
             </select>
           </div>
         </div>

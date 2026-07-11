@@ -36,7 +36,7 @@ class LeadSerializer(serializers.ModelSerializer):
     class Meta:
         model = Lead
         fields = [
-            "id", "nombre", "telefono", "sede", "sede_label", "fuente", "fuente_label", "subfuente", "fuente_otro",
+            "id", "nombre", "telefono", "email", "sede", "sede_label", "fuente", "fuente_label", "subfuente", "fuente_otro",
             "es_pauta", "anuncio", "anuncio_nombre", "es_pareja",
             "agendo_consulta", "fecha_consulta", "fecha_cierre",
             "seguimiento_frecuencia", "seguimiento_frecuencia_label", "recontacto_fecha", "recontacto_vencido",

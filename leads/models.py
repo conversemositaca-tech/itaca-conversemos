@@ -49,6 +49,7 @@ class Lead(ModeloTenant):
         TIKTOK = "tiktok", "TikTok"
         REFERIDO = "referido", "Referido"
         WHATSAPP = "whatsapp", "WhatsApp directo"
+        INSTAGRAM_DIRECTO = "instagram_directo", "Instagram directo"
         BOT = "bot", "Bot / Chatbot"
         WEB = "web", "Web"
         AGENDAPRO = "agendapro", "Sistema (agenda directa)"
@@ -93,6 +94,7 @@ class Lead(ModeloTenant):
 
     nombre = models.CharField(max_length=200)
     telefono = models.CharField(max_length=40, blank=True)
+    email = models.EmailField("correo", blank=True, default="")
     sede = models.CharField(max_length=10, choices=Sede.choices, blank=True, default="")
     fuente = models.CharField(max_length=20, choices=Fuente.choices, default=Fuente.INSTAGRAM)
     # Subfuente: canal concreto dentro del origen (ej. TikTok Ads → WhatsApp;

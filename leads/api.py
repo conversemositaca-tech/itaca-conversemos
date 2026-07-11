@@ -1,5 +1,6 @@
-from datetime import date, timedelta
+from datetime import date, datetime, time as dtime, timedelta
 
+from django.db.models import Q
 from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
@@ -13,6 +14,10 @@ from .reporte import generar_reporte_pauta
 from .serializers import AnuncioSerializer, LeadSerializer
 
 _FUENTE_LABEL = dict(Lead.Fuente.choices)
+
+
+def _norm_tel(t):
+    return "".join(c for c in (t or "") if c.isdigit())[-9:]
 
 
 def _parse_fecha(valor, por_defecto):
@@ -73,13 +78,54 @@ class LeadViewSet(viewsets.ModelViewSet):
         sede = (self.request.query_params.get("sede") or "").strip()
         if sede in dict(Lead.Sede.choices):
             qs = qs.filter(sede=sede)
+        # Buscador (por nombre o número), p. ej. para ver si un número ya está registrado.
+        q = (self.request.query_params.get("q") or "").strip()
+        if q:
+            digitos = "".join(c for c in q if c.isdigit())
+            filtro = Q(nombre__icontains=q) | Q(email__icontains=q)
+            if digitos:
+                filtro |= Q(telefono__icontains=digitos)
+            qs = qs.filter(filtro)
         return qs
 
+    def create(self, request, *args, **kwargs):
+        # No permitir registrar dos veces el mismo número (salvo que se fuerce).
+        tel = _norm_tel(request.data.get("telefono"))
+        if len(tel) >= 9 and not request.data.get("forzar"):
+            dup = next(
+                (l for l in Lead.objects.del_tenant_actual().exclude(telefono="").only("id", "nombre", "telefono")
+                 if _norm_tel(l.telefono) == tel),
+                None,
+            )
+            if dup is not None:
+                return Response(
+                    {"detail": f"Ese número ya está registrado como lead: {dup.nombre}. Búscalo en la lista.",
+                     "duplicado": {"id": dup.id, "nombre": dup.nombre}},
+                    status=status.HTTP_409_CONFLICT,
+                )
+        return super().create(request, *args, **kwargs)
+
+    def _aplicar_fecha_llegada(self, lead):
+        """Permite registrar la fecha REAL de llegada (leads antiguos o fuera de
+        horario) sobre `creado_en`, que es lo que usan los reportes."""
+        f = (self.request.data.get("fecha_llegada") or "").strip()
+        if not f:
+            return
+        try:
+            d = datetime.strptime(f, "%Y-%m-%d").date()
+        except (ValueError, TypeError):
+            return
+        dt = timezone.make_aware(datetime.combine(d, dtime(12, 0)), timezone.get_current_timezone())
+        lead.creado_en = dt
+        lead.save(update_fields=["creado_en"])
+
     def perform_create(self, serializer):
-        serializer.save(clinica=get_clinica_actual())
+        lead = serializer.save(clinica=get_clinica_actual())
+        self._aplicar_fecha_llegada(lead)
 
     def perform_update(self, serializer):
         lead = serializer.save()
+        self._aplicar_fecha_llegada(lead)
         # Al marcar "Inició proceso" (ganado), se convierte en paciente automáticamente.
         if lead.estado == Lead.Estado.GANADO and not lead.paciente_id:
             convertir_lead_en_paciente(lead)

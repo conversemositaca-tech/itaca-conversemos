@@ -146,13 +146,21 @@ class CobroViewSet(viewsets.ModelViewSet):
         concepto = (str(d.get("concepto") or "").strip() or (servicio.nombre if servicio else "Cobro"))[:200]
         comprobante = d.get("comprobante_tipo") if d.get("comprobante_tipo") in dict(Cobro.Comprobante.choices) else ""
 
+        # Fecha del pago editable, para cargar pagos ANTIGUOS (migración de AgendaPro).
+        # Si no viene, queda la de hoy (default del modelo).
+        campos_fecha = {}
+        fecha = _parse_fecha(d.get("fecha"))
+        if fecha:
+            campos_fecha["fecha"] = timezone.make_aware(
+                datetime.combine(fecha, time(12, 0)), timezone.get_current_timezone())
+
         cobro = Cobro.objects.create(
             clinica=clinica, paciente=paciente, servicio=servicio, cita=cita, atencion=atencion,
             concepto=concepto, monto=monto, estado=estado,
             medio_pago=medio if estado == Cobro.Estado.PAGADO else "",
             comprobante_tipo=comprobante,
             comprobante_numero=str(d.get("comprobante_numero") or "").strip()[:40],
-            registrado_por=request.user,
+            registrado_por=request.user, **campos_fecha,
         )
         _push_soto_ingreso(cobro)
         return Response(CobroSerializer(cobro).data, status=status.HTTP_201_CREATED)
