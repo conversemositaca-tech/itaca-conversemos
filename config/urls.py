@@ -38,6 +38,11 @@ from leads.captacion import (
 )
 from mensajes.api import MensajeViewSet, PlantillaMensajeViewSet
 from pacientes.api import AdjuntoViewSet, AplicacionEscalaViewSet, AtencionViewSet, BloqueoAgendaViewSet, CitaViewSet, ContactoProfesionalViewSet, ObjetivoTerapeuticoViewSet, PacienteViewSet, RespuestaNPSViewSet, TareaViewSet, TranscribirView
+from pacientes.agendamiento import (
+    AgendamientoInfoView,
+    AgendamientoReservarView,
+    AgendamientoSlotsView,
+)
 from pacientes.consentimiento import (
     AceptarConsentimientoView,
     ConsentimientoPublicoView,
@@ -121,6 +126,10 @@ urlpatterns = [
     # Consentimiento informado: aceptación pública por token (sin login).
     path("api/consentimiento/<str:token>/aceptar/", AceptarConsentimientoView.as_view(), name="consentimiento-aceptar"),
     path("api/consentimiento/<str:token>/", ConsentimientoPublicoView.as_view(), name="consentimiento-publico"),
+    # Auto-agendamiento público por token (sin login). Rutas específicas antes del comodín.
+    path("api/agendamiento/<str:token>/slots/", AgendamientoSlotsView.as_view(), name="agendamiento-slots"),
+    path("api/agendamiento/<str:token>/reservar/", AgendamientoReservarView.as_view(), name="agendamiento-reservar"),
+    path("api/agendamiento/<str:token>/", AgendamientoInfoView.as_view(), name="agendamiento-info"),
     path("api/", include(router.urls)),
     # Catch-all: cualquier otra ruta sirve la app React (index.html). En producción
     # Django entrega el SPA; en desarrollo el SPA lo sirve Vite (5173), no Django.

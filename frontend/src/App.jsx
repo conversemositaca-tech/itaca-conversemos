@@ -4709,6 +4709,22 @@ function Marketing({ showToast, onConvertir, esAdmin }) {
               El botón «Probar» ya funciona, porque la prueba sale desde esta misma pantalla.
             </div>
           </div>
+
+          <h2 className="ca-secth" style={{ marginTop: 26 }}>Página de auto-agendamiento</h2>
+          <div className="ca-card">
+            <div style={{ fontSize: 13.5, color: "var(--ink-soft)", lineHeight: 1.55, marginBottom: 14 }}>
+              Comparte este enlace en tu <strong>bio de Instagram</strong>, tu <strong>estado de WhatsApp</strong> o tu web.
+              El paciente elige psicólogo y un <strong>horario libre</strong> y reserva solo: si es <strong>nuevo</strong>,
+              entra como lead + una cita tentativa para que coordinación la confirme; si <strong>ya es paciente</strong>,
+              la cita entra directo a la agenda.
+            </div>
+            <UrlBox label="Enlace para tus pacientes" url={origen + "/agendar/" + cfg.token}
+              onCopy={() => copiar(origen + "/agendar/" + cfg.token, "agendar")} copiado={copiado === "agendar"} />
+            <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 12, lineHeight: 1.5 }}>
+              Los horarios que ve el paciente salen del <strong>horario semanal</strong> de cada psicólogo
+              (se configura en Profesionales). Un psicólogo sin horario semanal no aparece en la página.
+            </div>
+          </div>
         </>
       )}
 
@@ -9030,6 +9046,195 @@ export function ConsentimientoPublico({ token }) {
           </button>
           <div style={{ fontSize: 11.5, color: "#9B968D", marginTop: 10, textAlign: "center" }}>
             Al hacer clic en "Acepto" registramos tu aceptación con fecha y hora.
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Página PÚBLICA de auto-agendamiento (sin login): /agendar/<token>. El paciente
+// elige psicólogo y un horario libre y reserva. Nuevo → lead + cita tentativa;
+// existente (match por teléfono/DNI) → cita directa en la agenda.
+export function AgendarPublico({ token }) {
+  const [info, setInfo] = useState(null);
+  const [err, setErr] = useState("");
+  const [prof, setProf] = useState(null);
+  const [slotsData, setSlotsData] = useState(null);
+  const [slot, setSlot] = useState(null); // {inicio, hora, diaLabel}
+  const [form, setForm] = useState({ nombre: "", telefono: "", documento: "", email: "", servicio: "", modalidad: "presencial", mensaje: "" });
+  const [enviando, setEnviando] = useState(false);
+  const [hecho, setHecho] = useState(null);
+  const setF = (k) => (e) => setForm((p) => ({ ...p, [k]: e.target.value }));
+
+  useEffect(() => { api.agendaInfo(token).then(setInfo).catch((e) => setErr(e.message)); }, [token]);
+
+  useEffect(() => {
+    if (!prof) return;
+    setSlotsData(null); setSlot(null);
+    setForm((p) => ({
+      ...p,
+      servicio: p.servicio || (info?.servicios?.[0]?.nombre || ""),
+      modalidad: prof.modalidad === "virtual" ? "virtual" : "presencial",
+    }));
+    api.agendaSlots(token, prof.id, 21).then(setSlotsData).catch(() => setSlotsData({ dias: [] }));
+  }, [prof]); // eslint-disable-line
+
+  const diaLabel = (iso) => {
+    const s = new Date(iso + "T12:00:00").toLocaleDateString("es-PE", { weekday: "long", day: "numeric", month: "long" });
+    return s.charAt(0).toUpperCase() + s.slice(1);
+  };
+
+  async function reservar() {
+    if (form.nombre.trim().length < 3 || form.telefono.replace(/\D/g, "").length < 6) {
+      setErr("Escribe tu nombre y un teléfono válido."); return;
+    }
+    setEnviando(true); setErr("");
+    try {
+      const r = await api.agendaReservar(token, {
+        profesional_id: prof.id, inicio: slot.inicio,
+        nombre: form.nombre.trim(), telefono: form.telefono.trim(),
+        documento: form.documento.trim(), email: form.email.trim(),
+        servicio: form.servicio, modalidad: form.modalidad, mensaje: form.mensaje.trim(),
+      });
+      setHecho(r);
+    } catch (e) {
+      // 409 = el horario se tomó mientras llenaba el formulario: refrescar slots.
+      if (e.status === 409) { setSlot(null); api.agendaSlots(token, prof.id, 21).then(setSlotsData).catch(() => {}); }
+      setErr(e.message);
+    } finally { setEnviando(false); }
+  }
+
+  const A = "#3E7A65"; // acento verde de la marca
+  const wrap = { maxWidth: 680, margin: "0 auto", padding: "28px 18px 60px", fontFamily: "'Inter',system-ui,sans-serif", color: "#2A2722", minHeight: "100vh", background: "#fff" };
+  const inp = { width: "100%", padding: "11px 12px", borderRadius: 9, border: "1px solid #DDD8CF", fontSize: 15, marginBottom: 11, boxSizing: "border-box", fontFamily: "inherit" };
+  const card = { border: "1px solid #ECE8E1", borderRadius: 14, padding: 15, marginBottom: 11, cursor: "pointer", background: "#fff", textAlign: "left", width: "100%", display: "block" };
+
+  if (err && !info) return <div style={wrap}><h2>Enlace no disponible</h2><p style={{ color: "#9C4646" }}>{err}</p></div>;
+  if (!info) return <div style={wrap}>Cargando…</div>;
+
+  // Pantalla final (éxito)
+  if (hecho) {
+    const nuevo = hecho.tipo === "nuevo";
+    return (
+      <div style={wrap}>
+        <div style={{ textAlign: "center", marginTop: 30 }}>
+          <div style={{ fontSize: 46 }}>🌿</div>
+          <h1 style={{ fontSize: 23, margin: "10px 0 4px" }}>{nuevo ? "¡Solicitud recibida!" : "¡Cita agendada!"}</h1>
+          <div style={{ background: "#E9F1ED", border: "1px solid #CFE3D8", borderRadius: 14, padding: 18, marginTop: 16, color: "#2F6B4F", fontSize: 15, lineHeight: 1.6 }}>
+            {nuevo ? (
+              <>Reservaste con <strong>{hecho.profesional}</strong> el <strong>{hecho.inicio_label}</strong>.<br />
+                Nuestro equipo te <strong>confirmará por WhatsApp</strong> en breve. ¡Gracias por escribirnos! 💛</>
+            ) : (
+              <>Tu cita con <strong>{hecho.profesional}</strong> quedó agendada para el <strong>{hecho.inicio_label}</strong>.<br />
+                Te esperamos. Si necesitas reprogramar, escríbenos. 💛</>
+            )}
+          </div>
+          <div style={{ fontSize: 13, color: "#9B968D", marginTop: 14 }}>Ya puedes cerrar esta página.</div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={wrap}>
+      <div style={{ textAlign: "center", marginBottom: 20 }}>
+        <div style={{ fontSize: 13, color: "#9B968D" }}>{info.clinica}</div>
+        <h1 style={{ fontSize: 22, margin: "6px 0" }}>Agenda tu cita en línea</h1>
+        <div style={{ fontSize: 13.5, color: "#6B675F" }}>Elige a tu psicólogo/a y el horario que te acomode.</div>
+      </div>
+
+      {/* Migas de pan */}
+      <div style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 12.5, color: "#9B968D", marginBottom: 16, flexWrap: "wrap" }}>
+        <span onClick={() => { setProf(null); setSlot(null); }} style={{ cursor: "pointer", color: prof ? A : "#2A2722", fontWeight: prof ? 500 : 700 }}>1. Psicólogo</span>
+        <ChevronRight size={13} />
+        <span onClick={() => prof && setSlot(null)} style={{ cursor: prof ? "pointer" : "default", color: slot ? A : (prof ? "#2A2722" : "#C9C4BB"), fontWeight: (prof && !slot) ? 700 : 500 }}>2. Horario</span>
+        <ChevronRight size={13} />
+        <span style={{ color: slot ? "#2A2722" : "#C9C4BB", fontWeight: slot ? 700 : 500 }}>3. Tus datos</span>
+      </div>
+
+      {!info.hay_agenda && (
+        <div style={{ background: "#FDF6F6", border: "1px solid #F0D6D6", borderRadius: 12, padding: 16, color: "#9C4646", fontSize: 14 }}>
+          Por ahora no hay horarios disponibles en línea. Escríbenos por WhatsApp y te ayudamos a agendar. 🙏
+        </div>
+      )}
+
+      {/* Paso 1: elegir psicólogo */}
+      {info.hay_agenda && !prof && info.profesionales.map((p) => (
+        <button key={p.id} style={card} onClick={() => setProf(p)}>
+          <div style={{ display: "flex", gap: 13, alignItems: "center" }}>
+            {p.foto
+              ? <img src={p.foto} alt="" style={{ width: 54, height: 54, borderRadius: "50%", objectFit: "cover", flexShrink: 0 }} />
+              : <div style={{ width: 54, height: 54, borderRadius: "50%", background: "#EEF2EC", color: A, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 20, flexShrink: 0 }}>{(p.nombre || "?").replace(/^lic\.?\s*/i, "").trim().charAt(0)}</div>}
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontWeight: 700, fontSize: 15.5 }}>{p.nombre}</div>
+              <div style={{ fontSize: 12.5, color: "#6B675F" }}>{p.titulo}{p.sede_label ? ` · ${p.sede_label}` : ""}</div>
+              {p.enfoque ? <div style={{ fontSize: 12.5, color: "#8A857C", marginTop: 3, lineHeight: 1.45 }}>{p.enfoque.length > 120 ? p.enfoque.slice(0, 120) + "…" : p.enfoque}</div> : null}
+            </div>
+            <ChevronRight size={18} style={{ color: "#C9C4BB", flexShrink: 0 }} />
+          </div>
+        </button>
+      ))}
+
+      {/* Paso 2: elegir horario */}
+      {prof && !slot && (
+        <div>
+          <div style={{ background: "#F6F8F5", borderRadius: 12, padding: "11px 14px", marginBottom: 14, fontSize: 14 }}>
+            Reservando con <strong>{prof.nombre}</strong>
+          </div>
+          {!slotsData ? <div style={{ color: "#9B968D" }}>Buscando horarios libres…</div> :
+            slotsData.dias.length === 0 ? (
+              <div style={{ background: "#FDFAF1", border: "1px solid #F0E4C9", borderRadius: 12, padding: 16, fontSize: 14, color: "#8A6D2E" }}>
+                {prof.nombre} no tiene horarios libres en las próximas semanas. Prueba con otro/a psicólogo/a o escríbenos por WhatsApp.
+              </div>
+            ) : slotsData.dias.map((d) => (
+              <div key={d.fecha} style={{ marginBottom: 15 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: "#4B6B4E", marginBottom: 8 }}>{diaLabel(d.fecha)}</div>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  {d.slots.map((s) => (
+                    <button key={s.inicio} onClick={() => { setSlot({ ...s, diaLabel: diaLabel(d.fecha) }); setErr(""); }}
+                      style={{ padding: "9px 14px", borderRadius: 999, border: `1px solid ${A}`, background: "#fff", color: A, fontSize: 14, fontWeight: 600, cursor: "pointer" }}>
+                      {s.hora}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+        </div>
+      )}
+
+      {/* Paso 3: datos + confirmar */}
+      {prof && slot && (
+        <div>
+          <div style={{ background: "#E9F1ED", border: "1px solid #CFE3D8", borderRadius: 12, padding: "12px 14px", marginBottom: 16, fontSize: 14, color: "#2F6B4F" }}>
+            <strong>{prof.nombre}</strong> · {slot.diaLabel} a las <strong>{slot.hora}</strong>
+            <button onClick={() => setSlot(null)} style={{ marginLeft: 10, background: "none", border: "none", color: A, fontWeight: 600, cursor: "pointer", fontSize: 13 }}>cambiar</button>
+          </div>
+          <input style={inp} value={form.nombre} onChange={setF("nombre")} placeholder="Nombre y apellidos *" autoFocus />
+          <input style={inp} value={form.telefono} onChange={setF("telefono")} placeholder="Teléfono / WhatsApp *" inputMode="tel" />
+          <div style={{ display: "flex", gap: 10 }}>
+            <input style={inp} value={form.documento} onChange={setF("documento")} placeholder="DNI (opcional)" inputMode="numeric" />
+            <input style={inp} value={form.email} onChange={setF("email")} placeholder="Correo (opcional)" inputMode="email" />
+          </div>
+          {info.servicios.length > 0 && (
+            <select style={{ ...inp, appearance: "auto" }} value={form.servicio} onChange={setF("servicio")}>
+              {info.servicios.map((s) => <option key={s.nombre} value={s.nombre}>{s.nombre}{s.precio && Number(s.precio) > 0 ? ` — S/${Number(s.precio).toFixed(0)}` : ""}</option>)}
+            </select>
+          )}
+          {prof.modalidad === "ambas" && (
+            <select style={{ ...inp, appearance: "auto" }} value={form.modalidad} onChange={setF("modalidad")}>
+              <option value="presencial">Presencial</option>
+              <option value="virtual">Virtual</option>
+            </select>
+          )}
+          <textarea style={{ ...inp, minHeight: 74, resize: "vertical", lineHeight: 1.5 }} value={form.mensaje} onChange={setF("mensaje")} placeholder="¿Qué te gustaría trabajar? (opcional)" />
+          {err ? <div style={{ color: "#9C4646", fontSize: 13, marginBottom: 10 }}>{err}</div> : null}
+          <button onClick={reservar} disabled={enviando}
+            style={{ width: "100%", padding: "14px", borderRadius: 11, border: "none", background: A, color: "#fff", fontSize: 15.5, fontWeight: 700, cursor: "pointer", opacity: enviando ? 0.5 : 1 }}>
+            {enviando ? "Reservando…" : "Confirmar mi cita"}
+          </button>
+          <div style={{ fontSize: 11.5, color: "#9B968D", marginTop: 10, textAlign: "center" }}>
+            Al confirmar, guardamos tu reserva y nuestro equipo se pondrá en contacto contigo.
           </div>
         </div>
       )}

@@ -117,6 +117,11 @@ export const api = {
   consentimientoPublico: (token) => req(`/api/consentimiento/${token}/`),
   aceptarConsentimiento: (token, data) => req(`/api/consentimiento/${token}/aceptar/`, { method: "POST", body: JSON.stringify(data) }),
 
+  // Auto-agendamiento público (landing por token, sin login)
+  agendaInfo: (token) => req(`/api/agendamiento/${token}/`),
+  agendaSlots: (token, profId, dias = 14) => req(`/api/agendamiento/${token}/slots/?profesional=${profId}&dias=${dias}`),
+  agendaReservar: (token, data) => req(`/api/agendamiento/${token}/reservar/`, { method: "POST", body: JSON.stringify(data) }),
+
   // Leads / captación
   medicos: () => req("/api/medicos/"),
   // Buzón de sugerencias
