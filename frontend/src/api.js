@@ -117,6 +117,9 @@ export const api = {
   consentimientoPublico: (token) => req(`/api/consentimiento/${token}/`),
   aceptarConsentimiento: (token, data) => req(`/api/consentimiento/${token}/aceptar/`, { method: "POST", body: JSON.stringify(data) }),
 
+  // Hora del servidor (para sincronizar "hoy" sin depender del reloj del equipo)
+  hora: () => req("/api/hora/"),
+
   // Auto-agendamiento público (landing por token, sin login)
   agendaInfo: (token) => req(`/api/agendamiento/${token}/`),
   agendaSlots: (token, profId, dias = 14) => req(`/api/agendamiento/${token}/slots/?profesional=${profId}&dias=${dias}`),

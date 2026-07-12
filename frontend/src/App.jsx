@@ -243,9 +243,50 @@ const aISO = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDa
 const dDeISO = (iso) => { const [y, m, d] = iso.split("-").map(Number); return new Date(y, m - 1, d); };
 const sumarDias = (iso, n) => { const d = dDeISO(iso); d.setDate(d.getDate() + n); return aISO(d); };
 const cap = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
-const HOY_ISO = aISO(new Date());
+
+// ---- Reloj sincronizado con el SERVIDOR (no con el reloj del equipo) ----
+// "Hoy" no se toma del reloj del PC/celular (que a veces está mal de fecha o zona
+// horaria), sino del servidor, que corre en la hora de la clínica. Guardamos el
+// desfase servidor↔equipo y medimos el tiempo transcurrido con Date.now() (el
+// desfase se cancela en la resta), así la fecha es correcta aunque el equipo tenga
+// mal la hora. La fecha local se lee en UTC tras desplazar por el offset del
+// servidor → ignora también la zona horaria del equipo.
+const _CLK_KEY = "itaca_reloj";
+function _leerReloj() {
+  try { return JSON.parse(localStorage.getItem(_CLK_KEY) || "null"); } catch { return null; }
+}
+function _ahoraServidorMs() {
+  const c = _leerReloj();
+  return c ? c.serverEpoch + (Date.now() - c.deviceEpoch) : Date.now();
+}
+function hoyISO() {
+  const c = _leerReloj();
+  if (!c) return aISO(new Date()); // aún sin sincronizar → cae al reloj del equipo
+  const d = new Date(_ahoraServidorMs() + c.offsetMin * 60000);
+  return `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}-${pad2(d.getUTCDate())}`;
+}
+const _fechaCorta = (iso) => { const [y, m, d] = iso.split("-").map(Number); return `${d} ${_MESES[m - 1]} ${y}`; };
+
+let HOY_ISO = hoyISO();
 // fecha_corta del backend ("12 jun 2026"), para resaltar la atención de hoy en la ficha.
-const HOY_FECHA = (() => { const h = new Date(); return `${h.getDate()} ${_MESES[h.getMonth()]} ${h.getFullYear()}`; })();
+let HOY_FECHA = _fechaCorta(HOY_ISO);
+
+// Sincroniza el reloj con el servidor y actualiza HOY_ISO/HOY_FECHA. Devuelve true
+// si cambió el día (para que quien llame recargue). Se llama al arrancar (main.jsx)
+// y al volver a la pestaña.
+export async function sincronizarReloj() {
+  try {
+    const r = await api.hora(); // { epoch_ms, offset_min }
+    localStorage.setItem(_CLK_KEY, JSON.stringify({
+      serverEpoch: r.epoch_ms, deviceEpoch: Date.now(), offsetMin: r.offset_min,
+    }));
+    const nuevo = hoyISO();
+    const cambio = nuevo !== HOY_ISO;
+    HOY_ISO = nuevo;
+    HOY_FECHA = _fechaCorta(nuevo);
+    return cambio;
+  } catch { return false; }
+}
 
 function semanaDe(iso) {
   const d = dDeISO(iso);
@@ -610,23 +651,22 @@ export default function ClinicaApp() {
   function go(v) { setView(v); setSelectedId(null); }
   function openFicha(id) { if (!id) return; setView("pacientes"); setSelectedId(id); }
 
-  // `HOY_ISO` se calcula UNA vez al cargar la página. Si dejan la pestaña abierta
-  // varios días (pasa siempre), la app se queda mostrando la fecha de aquel día.
-  // Al volver a la pestaña, si ya cambió el día, recargamos. Solo en ese momento:
-  // nunca mientras están escribiendo.
+  // `HOY_ISO` se fija al cargar la página (con el reloj del SERVIDOR). Si dejan la
+  // pestaña abierta varios días, hay que refrescar el día:
+  //  - local (cada minuto, sin red): el reloj sincronizado avanza solo con el tiempo
+  //    transcurrido, así que a medianoche `hoyISO()` cambia y recargamos.
+  //  - al volver a la pestaña: re-sincronizamos con el servidor (por si el equipo
+  //    tenía la hora mal o la corrigieron) y recargamos si cambió el día.
+  // Solo recarga cuando cambia el día → nunca mientras están escribiendo.
   useEffect(() => {
-    const revisarFecha = () => {
-      if (aISO(new Date()) !== HOY_ISO) window.location.reload();
-    };
-    document.addEventListener("visibilitychange", revisarFecha);
-    window.addEventListener("focus", revisarFecha);
-    // Además, un chequeo cada minuto: si la pestaña queda abierta y NUNCA pierde
-    // el foco (el caso de Gaby, que veía "domingo 5" días después), igual se
-    // recarga al cambiar el día. El día solo cambia a medianoche → sin molestias.
-    const t = setInterval(revisarFecha, 60000);
+    const revisarLocal = () => { if (hoyISO() !== HOY_ISO) window.location.reload(); };
+    const reSincronizar = async () => { if (await sincronizarReloj()) window.location.reload(); };
+    document.addEventListener("visibilitychange", reSincronizar);
+    window.addEventListener("focus", reSincronizar);
+    const t = setInterval(revisarLocal, 60000);
     return () => {
-      document.removeEventListener("visibilitychange", revisarFecha);
-      window.removeEventListener("focus", revisarFecha);
+      document.removeEventListener("visibilitychange", reSincronizar);
+      window.removeEventListener("focus", reSincronizar);
       clearInterval(t);
     };
   }, []);
