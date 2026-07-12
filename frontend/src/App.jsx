@@ -1186,10 +1186,12 @@ export default function ClinicaApp() {
             </button>
           );
         })}
-        <div className="ca-sectlabel">Pronto</div>
-        <div className="ca-navitem soft">
-          <Receipt size={17} strokeWidth={1.9} />Facturación<span className="ca-soonbadge">SUNAT</span>
-        </div>
+        {usuario?.rol !== "medico" && <>
+          <div className="ca-sectlabel">Pronto</div>
+          <div className="ca-navitem soft">
+            <Receipt size={17} strokeWidth={1.9} />Facturación<span className="ca-soonbadge">SUNAT</span>
+          </div>
+        </>}
         {usuario && (
           <div className="ca-profile">
             <div className="ca-avatar" style={{ width: 30, height: 30, fontSize: 12 }}>{iniciales(usuario.nombre)}</div>
@@ -2998,10 +3000,11 @@ function Ficha({ p, onBack, onEdit, onWhatsApp, onSubirAdjunto, onEliminarAdjunt
           </div>
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          {puedeRegistrar && <button className="ca-mini" onClick={onRegistrarSesion}><Activity size={13} strokeWidth={2} /> Registrar sesión</button>}
-          <button className="ca-mini" onClick={onAgendar}><Calendar size={13} strokeWidth={2} /> Agendar</button>
+          {/* El psicólogo solo edita la ficha/historia: sin registrar sesión, agendar, WhatsApp ni imprimir. */}
+          {puedeRegistrar && !esMedico && <button className="ca-mini" onClick={onRegistrarSesion}><Activity size={13} strokeWidth={2} /> Registrar sesión</button>}
+          {!esMedico && <button className="ca-mini" onClick={onAgendar}><Calendar size={13} strokeWidth={2} /> Agendar</button>}
           {!esMedico && <button className="ca-mini wa" onClick={onWhatsApp}><MessageCircle size={13} strokeWidth={2} /> WhatsApp</button>}
-          <button className="ca-mini" onClick={() => imprimirHistoria(p, clinica)}><FileText size={13} strokeWidth={2} /> Imprimir</button>
+          {!esMedico && <button className="ca-mini" onClick={() => imprimirHistoria(p, clinica)}><FileText size={13} strokeWidth={2} /> Imprimir</button>}
           <button className="ca-mini" onClick={onEdit}><Pencil size={13} strokeWidth={2} /> Editar</button>
         </div>
       </div>
@@ -3033,7 +3036,8 @@ function Ficha({ p, onBack, onEdit, onWhatsApp, onSubirAdjunto, onEliminarAdjunt
               : <span style={{ color: "var(--muted)", fontSize: 13.5 }}>Sin evaluar</span>;
           })()}
         </FichaCard>
-        <NpsPaciente pacienteId={p.id} puede={puedeRegistrar || puedeCobrar} showToast={showToast} />
+        {/* El psicólogo VE el NPS (satisfacción de sus pacientes) pero no lo registra ni lo pide. */}
+        <NpsPaciente pacienteId={p.id} puede={!esMedico && (puedeRegistrar || puedeCobrar)} showToast={showToast} />
       </div>
 
       {/* Alertas clínicas */}
@@ -3131,7 +3135,8 @@ function Ficha({ p, onBack, onEdit, onWhatsApp, onSubirAdjunto, onEliminarAdjunt
 
       <ConsentimientoPaciente pacienteId={p.id} />
 
-      {(p.cuenta || puedeCobrar) && (
+      {/* Pagos y estado de cuenta: NO para el psicólogo. */}
+      {!esMedico && (p.cuenta || puedeCobrar) && (
         <>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
             <h2 className="ca-secth">Pagos y estado de cuenta</h2>
@@ -5429,7 +5434,8 @@ function EnviarRecursoModal({ rec, showToast, onClose }) {
   const texto = `Hola${sel ? ` ${(sel.nombre || "").split(" ")[0]}` : ""} 🌿 Te comparto *${rec.titulo}*${rec.descripcion ? `\n\n${rec.descripcion}` : ""}\n\n${rec.link}`;
   const visibles = useMemo(() => {
     const q = busca.trim().toLowerCase();
-    return (pacs || []).filter((p) => p.telefono && (!q || (p.nombre || "").toLowerCase().includes(q) || (p.telefono || "").includes(q))).slice(0, 40);
+    // OJO: el paciente serializado trae el teléfono en `tel` (no `telefono`).
+    return (pacs || []).filter((p) => p.tel && (!q || (p.nombre || "").toLowerCase().includes(q) || (p.tel || "").includes(q))).slice(0, 40);
   }, [pacs, busca]);
 
   async function enviar() {
@@ -5462,7 +5468,7 @@ function EnviarRecursoModal({ rec, showToast, onClose }) {
                 visibles.map((p) => (
                   <button key={p.id} className="ca-row-btn" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "9px 11px", borderRadius: 9, border: "1px solid var(--line)", background: "var(--card)", cursor: "pointer", textAlign: "left" }} onClick={() => setSel(p)}>
                     <span style={{ fontWeight: 600, fontSize: 13.5 }}>{p.nombre}</span>
-                    <span style={{ fontSize: 12, color: "var(--muted)" }}>{p.telefono}</span>
+                    <span style={{ fontSize: 12, color: "var(--muted)" }}>{p.tel}</span>
                   </button>
                 ))}
             </div>
@@ -5471,7 +5477,7 @@ function EnviarRecursoModal({ rec, showToast, onClose }) {
           <>
             <div className="ca-card" style={{ background: "var(--bg-soft, #F6F5F2)", marginBottom: 12 }}>
               <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6, display: "flex", justifyContent: "space-between" }}>
-                <span>Para: {sel.nombre} · {sel.telefono}</span>
+                <span>Para: {sel.nombre} · {sel.tel}</span>
                 <button className="ca-mini" onClick={() => setSel(null)}>Cambiar</button>
               </div>
               <div style={{ fontSize: 13, color: "var(--ink-soft)", whiteSpace: "pre-wrap", lineHeight: 1.5 }}>{texto}</div>
