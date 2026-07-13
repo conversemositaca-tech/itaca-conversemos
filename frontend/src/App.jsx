@@ -916,6 +916,10 @@ export default function ClinicaApp() {
         .ca-navitem.active { background:var(--hover); color:var(--ink); font-weight:500; }
         .ca-navitem.soft { color:var(--muted); cursor:default; }
         .ca-navitem.soft:hover { background:none; }
+        .ca-subnav { display:flex; flex-direction:column; gap:1px; margin:1px 0 6px 15px; padding-left:9px; border-left:1px solid var(--line); }
+        .ca-subitem { display:flex; align-items:center; gap:8px; padding:5px 8px; border-radius:6px; background:none; border:none; cursor:pointer; text-align:left; font-size:12.8px; color:var(--muted); font-family:inherit; }
+        .ca-subitem:hover { background:var(--hover); color:var(--ink); }
+        .ca-subitem::before { content:"•"; color:var(--accent); font-size:14px; line-height:1; }
         .ca-sectlabel { font-size:11px; font-weight:600; color:var(--muted); text-transform:uppercase;
           letter-spacing:.06em; padding:14px 9px 6px; }
         .ca-soonbadge { margin-left:auto; font-size:10px; background:#EFEDE8; color:var(--muted);
@@ -1184,9 +1188,21 @@ export default function ClinicaApp() {
         {nav.map((n) => {
           const Icon = n.icon;
           return (
-            <button key={n.id} className={`ca-navitem ${view === n.id ? "active" : ""}`} onClick={() => go(n.id)}>
-              <Icon size={17} strokeWidth={1.9} />{n.label}
-            </button>
+            <React.Fragment key={n.id}>
+              <button className={`ca-navitem ${view === n.id ? "active" : ""}`} onClick={() => go(n.id)}>
+                <Icon size={17} strokeWidth={1.9} />{n.label}
+              </button>
+              {n.id === "mentalidad" && view === "mentalidad" && (
+                <div className="ca-subnav">
+                  {MENT_SUBS.map((s) => (
+                    <button key={s.id} className="ca-subitem" onClick={() => {
+                      const el = document.getElementById("ment-" + s.id);
+                      if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+                    }}>{s.label}</button>
+                  ))}
+                </div>
+              )}
+            </React.Fragment>
           );
         })}
         {usuario?.rol !== "medico" && <>
@@ -2198,10 +2214,10 @@ function BloqueLista({ titulo, items }) {
 }
 
 // Tarjeta de una sección (número + título en versalitas + ícono, con "Ver más").
-function MentCard({ n, titulo, Icon, resumen, cta = "Ver más", preview, detalle }) {
+function MentCard({ id, n, titulo, Icon, resumen, cta = "Ver más", preview, detalle }) {
   const [ver, setVer] = useState(false);
   return (
-    <div className="ca-card" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+    <div className="ca-card" id={id} style={{ display: "flex", flexDirection: "column", gap: 10, scrollMarginTop: 16 }}>
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <span style={{ width: 30, height: 30, borderRadius: 999, background: "var(--accent)", color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 15, flexShrink: 0 }}>{n}</span>
@@ -2246,6 +2262,15 @@ function MentIcono({ Icon, label }) {
     </div>
   );
 }
+
+// Sub-secciones del menú lateral cuando estás en Mentalidad Ítaca (llevan a cada tarjeta).
+const MENT_SUBS = [
+  { id: "adn", label: "ADN Ítaca" },
+  { id: "noNeg", label: "No negociables" },
+  { id: "pilares", label: "Pilares Ítaca" },
+  { id: "ganadora", label: "Mentalidad ganadora" },
+  { id: "miRol", label: "Mi rol en Ítaca" },
+];
 
 // Contenido por defecto de Mentalidad Ítaca (la gerencia lo puede editar; se guarda
 // en Clinica.mentalidad). En los "cuerpo", una línea que empieza con "# " es un
@@ -2411,13 +2436,13 @@ function MentalidadItaca({ rol, esAdmin, showToast }) {
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(290px, 1fr))", gap: 14, alignItems: "start" }}>
-        <MentCard n="1" titulo="ADN Ítaca" Icon={Sparkles} resumen={c.adn.resumen}
+        <MentCard id="ment-adn" n="1" titulo="ADN Ítaca" Icon={Sparkles} resumen={c.adn.resumen}
           preview={<MentCheck items={bAdn.map((b) => b.t).filter(Boolean)} />} detalle={bloques(bAdn)} />
 
-        <MentCard n="2" titulo="No Negociables Ítaca" Icon={Shield} resumen={c.noNeg.resumen}
+        <MentCard id="ment-noNeg" n="2" titulo="No Negociables Ítaca" Icon={Shield} resumen={c.noNeg.resumen}
           preview={<MentCheck items={bNeg.map((b) => b.t).filter(Boolean)} />} detalle={bloques(bNeg)} />
 
-        <MentCard n="3" titulo="Pilares Ítaca · I + M" Icon={Landmark} resumen={c.pilares.resumen} cta="Conocer más"
+        <MentCard id="ment-pilares" n="3" titulo="Pilares Ítaca · I + M" Icon={Landmark} resumen={c.pilares.resumen} cta="Conocer más"
           preview={<div style={{ display: "flex", flexDirection: "column", gap: 11 }}>
             <PilarBadge icon={Lightbulb} titulo="Itactividad" desc={badge[0]} color="#B0822F" bg="#FBF1D6" />
             <PilarBadge texto="+1" titulo="+1 Sí importa" desc={badge[1]} color="#6E52A3" bg="#EDE7F7" />
@@ -2425,13 +2450,13 @@ function MentalidadItaca({ rol, esAdmin, showToast }) {
           </div>}
           detalle={bloques(bPil)} />
 
-        <MentCard n="4" titulo="Mentalidad Ganadora" Icon={Trophy} resumen={c.ganadora.resumen}
+        <MentCard id="ment-ganadora" n="4" titulo="Mentalidad Ganadora" Icon={Trophy} resumen={c.ganadora.resumen}
           preview={<div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "space-between" }}>
             {ic.map((label, i) => <MentIcono key={i} Icon={GAN_ICONS[i] || Sparkles} label={label} />)}
           </div>}
           detalle={bloques(bGan)} />
 
-        <MentCard n="5" titulo="Mi Rol en Ítaca" Icon={Award} resumen={c.miRol.resumen} cta="Ver mi rol y funciones"
+        <MentCard id="ment-miRol" n="5" titulo="Mi Rol en Ítaca" Icon={Award} resumen={c.miRol.resumen} cta="Ver mi rol y funciones"
           preview={<div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             <div style={{ background: "var(--bg-soft, #F6F5F2)", borderRadius: 10, padding: "11px 13px", fontSize: 13, lineHeight: 1.5 }}>
               {c.miRol.roles[rol] || "Cada puesto tiene funciones específicas, pero todos somos responsables de la experiencia que vive el paciente."}
