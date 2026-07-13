@@ -6526,7 +6526,7 @@ function EspAgenda({ showToast, consultorios, contratos, recargarConsultorios })
         <div className="ca-empty">No hay consultorios activos en {sede === "lima" ? "Lima" : "Piura"}. Agrega uno con “+ Consultorio”.</div>
       ) : vista === "dia" ? (
         <EspGridDia consultorios={consSede} reservas={reservas.filter((r) => r.consultorio_sede === sede)} onBorrar={borrar}
-          onNueva={(cid, hora) => setNueva({ fecha, consultorio: cid, hora_inicio: hora })} />
+          onNueva={(cid, hora) => setNueva({ fecha, consultorio: cid, hora_inicio: hora })} onAbrir={(r) => setNueva(r)} />
       ) : vista === "semana" ? (
         <EspVistaSemana dias={semanaDe(fecha)} reservas={reservas} consultorios={consSede} onDia={(d) => { setFecha(d); setVista("dia"); }} onBorrar={borrar} />
       ) : (
@@ -6546,7 +6546,7 @@ function EspAgenda({ showToast, consultorios, contratos, recargarConsultorios })
 }
 
 // Grilla del día: columnas = consultorios, filas = horas 6–22, bloques por reserva.
-function EspGridDia({ consultorios, reservas, onBorrar, onNueva }) {
+function EspGridDia({ consultorios, reservas, onBorrar, onNueva, onAbrir }) {
   const horas = [];
   for (let h = ESP_H_INI; h <= ESP_H_FIN; h++) horas.push(h);
   const alto = (ESP_H_FIN - ESP_H_INI) * ESP_PX_H;
@@ -6578,10 +6578,10 @@ function EspGridDia({ consultorios, reservas, onBorrar, onNueva }) {
                   const alt = Math.max((espHDec(r.hora_fin) - espHDec(r.hora_inicio)) * ESP_PX_H - 3, 20);
                   const t = ESP_TIPO[r.tipo] || ESP_TIPO.externo;
                   return (
-                    <div key={r.id} style={{ position: "absolute", top, left: 4, right: 4, height: alt, background: t.bg, border: `1px solid ${t.bd}`, borderLeft: `3px solid ${t.fg}`, borderRadius: 6, padding: "3px 6px", overflow: "hidden", fontSize: 11.5 }}>
+                    <div key={r.id} onClick={() => onAbrir && onAbrir(r)} title="Editar / duplicar" style={{ position: "absolute", top, left: 4, right: 4, height: alt, background: t.bg, border: `1px solid ${t.bd}`, borderLeft: `3px solid ${t.fg}`, borderRadius: 6, padding: "3px 6px", overflow: "hidden", fontSize: 11.5, cursor: "pointer" }}>
                       <div style={{ display: "flex", justifyContent: "space-between", gap: 4 }}>
                         <strong style={{ color: t.fg, fontSize: 11, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{espHm(r.hora_inicio)}–{espHm(r.hora_fin)}</strong>
-                        <button onClick={() => onBorrar(r.id)} title="Quitar" style={{ background: "none", border: "none", cursor: "pointer", color: t.fg, padding: 0, lineHeight: 1 }}><X size={12} /></button>
+                        <button onClick={(e) => { e.stopPropagation(); onBorrar(r.id); }} title="Quitar" style={{ background: "none", border: "none", cursor: "pointer", color: t.fg, padding: 0, lineHeight: 1 }}><X size={12} /></button>
                       </div>
                       <div style={{ color: "var(--ink)", fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{r.ocupante_display}</div>
                       {r.notas ? <div style={{ color: "var(--muted)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{r.notas}</div> : null}
@@ -6656,14 +6656,16 @@ function EspVistaMes({ fecha, reservas, onDia }) {
 function EspReservaModal({ base, sede, consultorios, contratos, onClose, onSaved, showToast }) {
   const [consultorio, setConsultorio] = useState(base.consultorio || consultorios[0]?.id || "");
   const [fecha, setFecha] = useState(base.fecha || HOY_ISO);
-  const [hIni, setHIni] = useState(base.hora_inicio || "09:00");
-  const [hFin, setHFin] = useState(base.hora_fin || "10:00");
-  const [tipo, setTipo] = useState("externo");
-  const [contrato, setContrato] = useState("");
-  const [ocupante, setOcupante] = useState("");
+  const [hIni, setHIni] = useState((base.hora_inicio || "09:00").slice(0, 5));
+  const [hFin, setHFin] = useState((base.hora_fin || "10:00").slice(0, 5));
+  const [tipo, setTipo] = useState(base.tipo || "externo");
+  const [contrato, setContrato] = useState(base.contrato || "");
+  const [ocupante, setOcupante] = useState(base.ocupante || "");
   const [repetir, setRepetir] = useState(0);
-  const [notas, setNotas] = useState("");
+  const [notas, setNotas] = useState(base.notas || "");
   const [guardando, setGuardando] = useState(false);
+  const [dup, setDup] = useState(false); // "duplicar" = crear una copia (aunque base tenga id)
+  const esEdicion = !!base.id && !dup;
   const activos = contratos.filter((c) => c.estado === "activo" && c.consultorio_sede === sede);
 
   function elegirContrato(id) {
@@ -6676,23 +6678,31 @@ function EspReservaModal({ base, sede, consultorios, contratos, onClose, onSaved
     if (!consultorio) return showToast("Elige un consultorio.");
     if (hFin <= hIni) return showToast("La hora de fin debe ser posterior al inicio.");
     setGuardando(true);
+    const payload = { consultorio, fecha, hora_inicio: hIni, hora_fin: hFin, tipo, contrato: contrato || null, ocupante, notas };
     try {
-      const r = await api.espCrearReserva({
-        consultorio, fecha, hora_inicio: hIni, hora_fin: hFin, tipo,
-        contrato: contrato || null, ocupante, notas, repetir_semanas: Number(repetir) || 0,
-      });
-      const n = r.creadas?.length || 0, s = r.saltadas?.length || 0;
-      showToast(s ? `${n} reserva(s) creada(s) · ${s} se cruzaban (saltadas)` : "Reserva creada ✓");
+      if (esEdicion) {
+        await api.espActualizarReserva(base.id, payload);
+        showToast("Reserva actualizada ✓");
+      } else {
+        const r = await api.espCrearReserva({ ...payload, repetir_semanas: Number(repetir) || 0 });
+        const n = r.creadas?.length || 0, s = r.saltadas?.length || 0;
+        showToast(s ? `${n} reserva(s) creada(s) · ${s} se cruzaban (saltadas)` : "Reserva creada ✓");
+      }
       onSaved();
     } catch (e) { showToast("Error: " + e.message); }
     finally { setGuardando(false); }
+  }
+  async function eliminar() {
+    if (!window.confirm("¿Eliminar esta reserva?")) return;
+    try { await api.espBorrarReserva(base.id); showToast("Reserva eliminada"); onSaved(); }
+    catch (e) { showToast("Error: " + e.message); }
   }
 
   return (
     <div className="ca-modal-bg" onClick={onClose}>
       <div className="ca-modal" style={{ maxWidth: 440 }} onClick={(e) => e.stopPropagation()}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
-          <strong style={{ fontSize: 16 }}>Reservar espacio</strong>
+          <strong style={{ fontSize: 16 }}>{esEdicion ? "Editar reserva" : dup ? "Duplicar reserva" : "Reservar espacio"}</strong>
           <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)" }}><X size={18} /></button>
         </div>
 
@@ -6742,20 +6752,28 @@ function EspReservaModal({ base, sede, consultorios, contratos, onClose, onSaved
         </div>
 
         <div style={{ display: "flex", gap: 11, marginBottom: 13 }}>
-          <div style={{ flex: 1 }}>
-            <div className="ca-label">Repetir semanas <span style={{ color: "var(--muted)", fontWeight: 400 }}>(horario fijo)</span></div>
-            <input className="ca-input" type="number" min="0" max="52" value={repetir} onChange={(e) => setRepetir(e.target.value)} />
-          </div>
+          {!esEdicion && (
+            <div style={{ flex: 1 }}>
+              <div className="ca-label">Repetir semanas <span style={{ color: "var(--muted)", fontWeight: 400 }}>(horario fijo)</span></div>
+              <input className="ca-input" type="number" min="0" max="52" value={repetir} onChange={(e) => setRepetir(e.target.value)} />
+            </div>
+          )}
           <div style={{ flex: 2 }}>
             <div className="ca-label">Notas</div>
             <input className="ca-input" value={notas} onChange={(e) => setNotas(e.target.value)} placeholder="Opcional" />
           </div>
         </div>
-        {Number(repetir) > 0 && <div style={{ fontSize: 12, color: "var(--muted)", marginTop: -6, marginBottom: 12 }}>Se creará también los próximos {repetir} {Number(repetir) === 1 ? "lunes/día" : "días"} de la misma semana. Las que se crucen se saltan.</div>}
+        {!esEdicion && Number(repetir) > 0 && <div style={{ fontSize: 12, color: "var(--muted)", marginTop: -6, marginBottom: 12 }}>Se creará la MISMA reserva (mismo día y hora) en las próximas {repetir} semana{Number(repetir) === 1 ? "" : "s"}. Las que se crucen con otra se saltan.</div>}
 
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 6 }}>
-          <button className="ca-btn ghost" onClick={onClose}>Cancelar</button>
-          <button className="ca-btn" onClick={guardar} disabled={guardando}>{guardando ? "Guardando…" : "Reservar"}</button>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, marginTop: 6 }}>
+          <div style={{ display: "flex", gap: 8 }}>
+            {base.id && !dup && <button className="ca-btn ghost" style={{ color: "#9C4646" }} onClick={eliminar}><Trash2 size={14} strokeWidth={2} /> Eliminar</button>}
+            {base.id && !dup && <button className="ca-btn ghost" onClick={() => setDup(true)}><Copy size={14} strokeWidth={2} /> Duplicar</button>}
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button className="ca-btn ghost" onClick={onClose}>Cancelar</button>
+            <button className="ca-btn" onClick={guardar} disabled={guardando}>{guardando ? "Guardando…" : esEdicion ? "Guardar" : "Reservar"}</button>
+          </div>
         </div>
       </div>
     </div>
