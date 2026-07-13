@@ -105,7 +105,8 @@ class MiPanelView(APIView):
             clinica=clinica, medico=user,
             estado__in=[Cita.Estado.ATENDIDA, Cita.Estado.ASISTIO],
         ).count()
-        historias_totales = Atencion.objects.filter(clinica=clinica, medico=user).count()
+        historias_totales = Atencion.objects.filter(
+            clinica=clinica, medico=user, tipo=Atencion.Tipo.HISTORIA).count()
 
         def _medalla(clave, label, emoji, valor, tiers):
             nivel = sum(1 for t in tiers if valor >= t)

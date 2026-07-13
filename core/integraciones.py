@@ -230,7 +230,7 @@ class NotaVozView(_Base):
                 return (campos_guiados.get(k) or "").strip()
             if tipo == Atencion.Tipo.HISTORIA:
                 campos["nota"] = (marca + "\n\n" + cg("resumen")).strip()
-                campos["motivo"] = cg("motivo")
+                campos["motivo"] = cg("motivo")[:300]  # Atencion.motivo es CharField(300)
                 campos["aspectos_historicos"] = cg("antecedentes")
                 campos["objetivos"] = cg("objetivos")
                 campos["indicaciones"] = cg("recomendaciones")
@@ -255,7 +255,7 @@ class NotaVozView(_Base):
             est = estructurar_nota.estructurar(contenido, tipo, contexto)
             if est and tipo == Atencion.Tipo.HISTORIA:
                 campos["nota"] = (marca + "\n\n" + (est.get("resumen_clinico") or "")).strip()
-                campos["motivo"] = est.get("motivo", "")
+                campos["motivo"] = (est.get("motivo", "") or "")[:300]  # CharField(300)
                 campos["aspectos_historicos"] = est.get("aspectos_historicos", "")
                 campos["objetivos"] = est.get("objetivos", "")
                 campos["diagnostico"] = est.get("diagnostico", "")

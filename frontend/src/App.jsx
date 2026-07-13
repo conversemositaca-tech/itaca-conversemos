@@ -790,6 +790,7 @@ export default function ClinicaApp() {
       }
       const r = await api.agendarCita({
         pacienteId, fecha: data.fecha, hora: data.hora, especialidad: data.especialidad,
+        categoria: data.categoria || "", motivo_consulta: data.motivo_consulta || "",
         medicoId: data.medicoId || null, sede: data.sede || "", modalidad: data.modalidad || "presencial",
         enlace: data.enlace || "", notas: data.notas || "", n_sesion: data.n_sesion || null,
       });
