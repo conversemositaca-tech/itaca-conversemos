@@ -27,12 +27,26 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument("--clinica", default="itaca")
         parser.add_argument("--forzar", action="store_true", help="Pisa montos ya definidos (>0).")
+        parser.add_argument("--listar", action="store_true",
+                            help="Solo lista los servicios y su pago al terapeuta actual (no escribe).")
+        parser.add_argument("--dry-run", action="store_true", help="Muestra qué cambiaría, sin escribir.")
 
     def handle(self, *args, **opts):
         clinica = Clinica.objects.filter(slug=opts["clinica"]).first()
         if clinica is None:
             self.stderr.write(self.style.ERROR(f"No existe la clínica slug={opts['clinica']!r}."))
             return
+
+        # Solo lectura: ver el catálogo real (nombres exactos) y el pago actual.
+        if opts["listar"]:
+            self.stdout.write(f"Servicios de {clinica.nombre}:")
+            for serv in Servicio.objects.filter(clinica=clinica).order_by("nombre"):
+                self.stdout.write(f"  · {serv.nombre!r}  ->  pago terapeuta S/ {serv.monto_terapeuta or 0}")
+            return
+
+        dry = opts["dry_run"]
+        if dry:
+            self.stdout.write(self.style.WARNING("DRY-RUN: no se escribe nada."))
         cambios = 0
         for serv in Servicio.objects.filter(clinica=clinica).order_by("nombre"):
             nombre = serv.nombre.lower()
@@ -41,9 +55,10 @@ class Command(BaseCommand):
                     if serv.monto_terapeuta and serv.monto_terapeuta > 0 and not opts["forzar"]:
                         self.stdout.write(f"= {serv.nombre}: ya tiene S/ {serv.monto_terapeuta} (sin cambio)")
                         break
-                    serv.monto_terapeuta = monto
-                    serv.save(update_fields=["monto_terapeuta"])
+                    if not dry:
+                        serv.monto_terapeuta = monto
+                        serv.save(update_fields=["monto_terapeuta"])
                     cambios += 1
-                    self.stdout.write(self.style.SUCCESS(f"+ {serv.nombre} -> S/ {monto}"))
+                    self.stdout.write(self.style.SUCCESS(f"{'(dry) ' if dry else '+ '}{serv.nombre} -> S/ {monto}"))
                     break
         self.stdout.write(self.style.SUCCESS(f"Listo. {cambios} servicio(s) actualizado(s)."))

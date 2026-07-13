@@ -43,9 +43,9 @@ class PlantillaMensajeViewSet(viewsets.ModelViewSet):
         return ctx
 
     def _solo_admin(self):
-        from usuarios.models import Usuario
-        if getattr(self.request.user, "rol", None) != Usuario.Rol.ADMIN:
-            raise PermissionDenied("Solo el gerente (admin) puede editar las plantillas.")
+        # Gerencia y coordinación (asistente) pueden crear/editar plantillas.
+        if getattr(self.request.user, "rol", None) not in ("admin", "asistente"):
+            raise PermissionDenied("Solo gerencia o coordinación pueden editar las plantillas.")
 
     def perform_create(self, serializer):
         self._solo_admin()

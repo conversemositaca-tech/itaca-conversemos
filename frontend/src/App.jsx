@@ -1332,7 +1332,7 @@ export default function ClinicaApp() {
 
         {view === "herramientas" && <Recursos showToast={showToast} esAdmin={usuario?.rol === "admin"} />}
 
-        {view === "mensajes" && <Mensajes mensajes={mensajes} esAdmin={usuario?.rol === "admin"} showToast={showToast} />}
+        {view === "mensajes" && <Mensajes mensajes={mensajes} puedeEditar={usuario?.rol === "admin" || usuario?.rol === "asistente"} showToast={showToast} />}
 
         {view === "marketing" && <Marketing showToast={showToast} onConvertir={refrescarPacientes} esAdmin={usuario?.rol === "admin"} />}
 
@@ -3201,6 +3201,14 @@ function Ficha({ p, onBack, onEdit, onWhatsApp, onSubirAdjunto, onEliminarAdjunt
                 </span>
                 <span style={{ fontVariantNumeric: "tabular-nums", fontWeight: 500 }}>{money(c.monto)}</span>
                 <Tag colors={ESTADO_COBRO_COLOR[c.estado]}>{c.estado === "pagado" ? (c.medio || "Pagado") : "Pendiente"}</Tag>
+                {puedeCobrar && (
+                  <button className="ca-iconbtn" title="Eliminar este pago (se avisa a gerencia)" style={{ padding: 2, color: "#9C4646" }}
+                    onClick={async () => {
+                      if (!window.confirm(`¿Eliminar el pago "${c.concepto}" de ${money(c.monto)}? Se avisa a gerencia.`)) return;
+                      try { await api.borrarCobro(c.id); onRefrescar && onRefrescar(); showToast && showToast("Pago eliminado"); }
+                      catch (e) { showToast && showToast("Error: " + e.message); }
+                    }}><Trash2 size={13} strokeWidth={2} /></button>
+                )}
               </div>
             ))}
           </div>
@@ -4270,7 +4278,7 @@ function RecordarModal({ cita, clinica, onClose, onSend }) {
   );
 }
 
-function Mensajes({ mensajes, esAdmin, showToast }) {
+function Mensajes({ mensajes, puedeEditar, showToast }) {
   const [plantillas, setPlantillas] = useState(null);
   const [editando, setEditando] = useState(null); // { id, texto }
   const [nueva, setNueva] = useState(null); // { clave, nombre, texto }
@@ -4319,7 +4327,7 @@ function Mensajes({ mensajes, esAdmin, showToast }) {
 
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 22 }}>
         <h2 className="ca-secth" style={{ margin: 0 }}>Plantillas</h2>
-        {esAdmin && !nueva && (
+        {puedeEditar && !nueva && (
           <button className="ca-mini" onClick={() => setNueva({ clave: "", nombre: "", texto: "" })}>
             <Plus size={13} strokeWidth={2.2} /> Nueva plantilla
           </button>
@@ -4362,7 +4370,7 @@ function Mensajes({ mensajes, esAdmin, showToast }) {
                 ? <Tag colors={{ bg: "#E4F3E8", fg: "#1E7D45" }}>Aprobada: {p.wa_template_nombre}</Tag>
                 : <Tag colors={{ bg: "#FBF0D4", fg: "#8A6D14" }}>Texto (solo 24h)</Tag>}
             </strong>
-            {esAdmin && editando?.id !== p.id && (
+            {puedeEditar && editando?.id !== p.id && (
               <button className="ca-mini" onClick={() => setEditando({ id: p.id, texto: p.texto, wa_template_nombre: p.wa_template_nombre || "", wa_template_idioma: p.wa_template_idioma || "es", wa_template_vars: p.wa_template_vars || "" })}><Pencil size={13} strokeWidth={2} /> Editar</button>
             )}
           </div>
@@ -5441,7 +5449,7 @@ function Recursos({ showToast, esAdmin }) {
                 {r.descripcion && <div style={{ fontSize: 13, color: "var(--ink-soft)", whiteSpace: "pre-wrap", lineHeight: 1.5 }}>{r.descripcion}</div>}
                 <div style={{ display: "flex", gap: 8, marginTop: "auto", paddingTop: 6, flexWrap: "wrap" }}>
                   {r.link && <a className="ca-mini" href={r.link} target="_blank" rel="noreferrer"><ExternalLink size={13} strokeWidth={2} /> Abrir</a>}
-                  {tipo === "herramienta" && r.link && <button className="ca-mini" style={{ color: "#1E7E5A" }} onClick={() => setEnviarRec(r)}><Send size={13} strokeWidth={2} /> Enviar por WhatsApp</button>}
+                  {(tipo === "herramienta" || tipo === "terapeuta") && r.link && <button className="ca-mini" style={{ color: "#1E7E5A" }} onClick={() => setEnviarRec(r)}><Send size={13} strokeWidth={2} /> Enviar por WhatsApp</button>}
                   {esAdmin && <button className="ca-mini" onClick={() => setEditando(r)}><Pencil size={13} strokeWidth={2} /> Editar</button>}
                   {esAdmin && <button className="ca-mini" onClick={() => toggleActivo(r)}>{r.activo ? "Ocultar" : "Mostrar"}</button>}
                   {esAdmin && <button className="ca-mini danger" onClick={() => borrar(r)}><Trash2 size={13} strokeWidth={2} /></button>}

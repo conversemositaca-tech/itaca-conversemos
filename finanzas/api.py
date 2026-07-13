@@ -166,7 +166,10 @@ class CobroViewSet(viewsets.ModelViewSet):
         return Response(CobroSerializer(cobro).data, status=status.HTTP_201_CREATED)
 
     def destroy(self, request, *args, **kwargs):
-        """Elimina un pago y deja constancia para gerencia."""
+        """Elimina un pago y deja constancia para gerencia. Solo coordinación/gerencia."""
+        if getattr(request.user, "rol", None) not in ("asistente", "admin"):
+            return Response({"detail": "No tienes permiso para eliminar pagos."},
+                            status=status.HTTP_403_FORBIDDEN)
         from pacientes.models import RegistroEliminacion
         cobro = self.get_object()
         RegistroEliminacion.objects.create(
