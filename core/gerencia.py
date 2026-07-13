@@ -71,6 +71,7 @@ class ClinicaConfigView(APIView):
             "personalizado_politicas": bool((c.texto_politicas or "").strip()),
             "mof": c.mof or "",
             "pilares": c.pilares or "",
+            "mentalidad": c.mentalidad or {},
         }
 
     def get(self, request):
@@ -125,6 +126,10 @@ class ClinicaConfigView(APIView):
             if campo in request.data:
                 setattr(c, campo, (request.data.get(campo) or "").strip())
                 campos.append(campo)
+        if "mentalidad" in request.data:
+            m = request.data.get("mentalidad")
+            c.mentalidad = m if isinstance(m, dict) else {}
+            campos.append("mentalidad")
         c.save(update_fields=campos)
         return Response(self._payload(c))
 
