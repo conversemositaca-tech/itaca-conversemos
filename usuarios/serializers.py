@@ -30,7 +30,7 @@ class ProfesionalSerializer(serializers.ModelSerializer):
             "id", "nombre", "titulo", "colegiatura", "enfoque", "poblaciones",
             "problematicas", "formacion", "trayectoria", "sede", "sede_label",
             "modalidad", "modalidad_label", "frase", "foto_url", "usuario", "activo", "orden",
-            "horas_disponibles", "horario_semanal", "n_pacientes", "pacientes_stats", "porcentaje_liquidacion",
+            "horas_disponibles", "horario_semanal", "horario_modalidad", "n_pacientes", "pacientes_stats", "porcentaje_liquidacion",
             "dni", "fecha_nacimiento", "fecha_ingreso", "contrato_vencimiento",
             "contrato_ultima_firma", "contrato_estado", "contrato_estado_label", "documentos",
         ]

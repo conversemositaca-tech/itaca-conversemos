@@ -38,14 +38,16 @@ class MiPanelView(APIView):
         # --- Horario de atención (de su ficha del directorio) ---
         horario = []
         horas_semana = 0
+        mods = (ficha.horario_modalidad or {}) if ficha else {}
         if ficha and isinstance(ficha.horario_semanal, dict):
             for dia in sorted(ficha.horario_semanal.keys(), key=lambda x: int(x) if str(x).isdigit() else 99):
                 horas = sorted(int(h) for h in ficha.horario_semanal[dia] if str(h).isdigit())
                 if horas:
                     horas_semana += len(horas)
+                    dmods = mods.get(dia, {}) if isinstance(mods, dict) else {}
                     horario.append({
                         "dia": DIAS.get(int(dia), dia),
-                        "horas": [f"{h:02d}:00" for h in horas],
+                        "slots": [{"hora": f"{h:02d}:00", "mod": (dmods or {}).get(str(h), "")} for h in horas],
                     })
         cupos = ficha.horas_disponibles if ficha else 0
         modalidad = ficha.get_modalidad_display() if ficha else ""

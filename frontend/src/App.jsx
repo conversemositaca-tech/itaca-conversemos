@@ -2383,7 +2383,10 @@ function PanelPsicologo({ panel }) {
           <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
             {panel.horario.map((h) => (
               <div key={h.dia} style={{ fontSize: 12.5, background: "var(--surface)", border: "1px solid var(--line)", borderRadius: 8, padding: "5px 9px" }}>
-                <strong>{h.dia}</strong> {h.horas.join(", ")}
+                <strong>{h.dia}</strong> {(h.slots || []).map((s, i) => {
+                  const col = { presencial: "#4F8A77", virtual: "#3D6B9E", mixto: "#8A6BB0" }[s.mod];
+                  return <span key={i}>{i ? ", " : " "}<span style={{ color: col || "inherit", fontWeight: col ? 600 : 400 }}>{s.hora}{s.mod ? ` (${s.mod[0].toUpperCase()})` : ""}</span></span>;
+                })}
               </div>
             ))}
           </div>
@@ -8160,19 +8163,34 @@ function ProfesionalModal({ prof, onClose, onSave }) {
     horas_disponibles: prof?.horas_disponibles ?? 0,
     porcentaje_liquidacion: prof?.porcentaje_liquidacion ?? 0,
     horario_semanal: prof?.horario_semanal || {},
+    horario_modalidad: prof?.horario_modalidad || {},
   });
   const [foto, setFoto] = useState(null);
   const set = (k) => (e) => setF((prev) => ({ ...prev, [k]: e.target.value }));
   const canSave = f.nombre.trim().length > 0;
   const ta = { minHeight: 70, resize: "vertical", lineHeight: 1.5 };
+  // Cada clic cicla: apagada → presencial → virtual → mixto → apagada.
+  const MOD_CICLO = { "": "presencial", presencial: "virtual", virtual: "mixto", mixto: "" };
+  const MOD_COLOR = { presencial: "#4F8A77", virtual: "#3D6B9E", mixto: "#8A6BB0" };
+  function modalidadDe(dia, hora) {
+    return ((f.horario_modalidad || {})[dia] || {})[hora] || "";
+  }
   function toggleHora(dia, hora) {
     setF((prev) => {
+      const actual = ((prev.horario_modalidad || {})[dia] || {})[hora] || "";
+      const nueva = MOD_CICLO[actual];
+      // horas (capacidad/landing): presente si la hora está en cualquier modalidad ON
       const h = { ...(prev.horario_semanal || {}) };
       const list = new Set((h[dia] || []).map(Number));
-      if (list.has(hora)) list.delete(hora); else list.add(hora);
+      if (nueva) list.add(hora); else list.delete(hora);
       const arr = [...list].sort((a, b) => a - b);
       if (arr.length) h[dia] = arr; else delete h[dia];
-      return { ...prev, horario_semanal: h };
+      // modalidad por hora
+      const m = { ...(prev.horario_modalidad || {}) };
+      const md = { ...(m[dia] || {}) };
+      if (nueva) md[hora] = nueva; else delete md[hora];
+      if (Object.keys(md).length) m[dia] = md; else delete m[dia];
+      return { ...prev, horario_semanal: h, horario_modalidad: m };
     });
   }
 
@@ -8202,7 +8220,12 @@ function ProfesionalModal({ prof, onClose, onSave }) {
         <div style={{ marginBottom: 12 }}><div className="ca-label">Trayectoria</div><textarea className="ca-input" style={ta} value={f.trayectoria} onChange={set("trayectoria")} /></div>
         <div style={{ marginBottom: 12 }}><div className="ca-label">Frase / lema</div><input className="ca-input" value={f.frase} onChange={set("frase")} /></div>
 
-        <div className="ca-secth" style={{ margin: "4px 0 8px" }}>Horario de atención <span style={{ color: "var(--muted)", fontWeight: 400, fontSize: 12 }}>(clic para marcar las horas que atiende)</span></div>
+        <div className="ca-secth" style={{ margin: "4px 0 8px" }}>Horario de atención <span style={{ color: "var(--muted)", fontWeight: 400, fontSize: 12 }}>(clic para ciclar: presencial → virtual → mixto → libre)</span></div>
+        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 8, fontSize: 12 }}>
+          {[["Presencial", "#4F8A77"], ["Virtual", "#3D6B9E"], ["Mixto", "#8A6BB0"]].map(([l, col]) => (
+            <span key={l} style={{ display: "inline-flex", alignItems: "center", gap: 5 }}><span style={{ width: 12, height: 12, borderRadius: 3, background: col, display: "inline-block" }} /> {l}</span>
+          ))}
+        </div>
         <div style={{ overflowX: "auto", marginBottom: 16 }}>
           <table style={{ borderCollapse: "collapse", fontSize: 11 }}>
             <thead><tr><th></th>{[["1", "Lun"], ["2", "Mar"], ["3", "Mié"], ["4", "Jue"], ["5", "Vie"], ["6", "Sáb"]].map(([d, l]) => <th key={d} style={{ padding: "2px 5px", color: "var(--muted)", fontWeight: 600 }}>{l}</th>)}</tr></thead>
@@ -8211,11 +8234,11 @@ function ProfesionalModal({ prof, onClose, onSave }) {
                 <tr key={h}>
                   <td style={{ color: "var(--muted)", paddingRight: 6, textAlign: "right", whiteSpace: "nowrap" }}>{h}:00</td>
                   {["1", "2", "3", "4", "5", "6"].map((d) => {
-                    const on = ((f.horario_semanal || {})[d] || []).map(Number).includes(h);
+                    const mod = modalidadDe(d, h);
                     return (
                       <td key={d} style={{ padding: 2 }}>
-                        <button type="button" title={`${["", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"][d]} ${h}:00`} onClick={() => toggleHora(d, h)}
-                          style={{ width: 36, height: 20, borderRadius: 4, cursor: "pointer", border: "1px solid var(--line)", background: on ? "#4F8A77" : "var(--bg)" }} />
+                        <button type="button" title={`${["", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"][d]} ${h}:00${mod ? ` · ${mod}` : ""}`} onClick={() => toggleHora(d, h)}
+                          style={{ width: 36, height: 20, borderRadius: 4, cursor: "pointer", border: "1px solid var(--line)", background: mod ? MOD_COLOR[mod] : "var(--bg)" }} />
                       </td>
                     );
                   })}
