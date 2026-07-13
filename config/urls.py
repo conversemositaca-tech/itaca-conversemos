@@ -11,6 +11,7 @@ from core.integraciones import ContextoView, NotaVozView, PacientesBuscarView, P
 from core.metricas import MetricaMensualViewSet
 from core.ocupacion import OcupacionView
 from core.reloj import HoraServidorView
+from core.mi_panel import MiPanelView
 from core.reportes import ReporteSemanalViewSet
 from core.whatsapp_cloud import WhatsappConfigView, WhatsappWebhookView
 from finanzas.api import (
@@ -116,6 +117,8 @@ urlpatterns = [
     path("api/ocupacion/", OcupacionView.as_view(), name="ocupacion"),
     # Hora del servidor (pública): el frontend sincroniza su "hoy" con esto.
     path("api/hora/", HoraServidorView.as_view(), name="hora-servidor"),
+    # Panel del psicólogo (su inicio: contenido institucional + sus KPIs).
+    path("api/mi-panel/", MiPanelView.as_view(), name="mi-panel"),
     # Captación de leads. Las rutas específicas van ANTES del comodín <token>.
     path("api/captacion/config/", CaptacionConfigView.as_view(), name="captacion-config"),
     path("api/captacion/regenerar/", RegenerarTokenView.as_view(), name="captacion-regenerar"),

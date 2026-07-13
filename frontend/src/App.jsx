@@ -1514,6 +1514,8 @@ function ConfigClinica({ showToast }) {
   const [ciudad, setCiudad] = useState("");
   const [tCons, setTCons] = useState("");
   const [tPol, setTPol] = useState("");
+  const [tMof, setTMof] = useState("");
+  const [tPil, setTPil] = useState("");
   const [metaMin, setMetaMin] = useState("");
   const [metaIdeal, setMetaIdeal] = useState("");
   const [metasSede, setMetasSede] = useState({ lima: { min: "", ideal: "" }, piura: { min: "", ideal: "" } });
@@ -1521,6 +1523,7 @@ function ConfigClinica({ showToast }) {
   function cargar(c) {
     setCfg(c); setNombre(c.nombre); setCiudad(c.ciudad || "");
     setTCons(c.texto_consentimiento || ""); setTPol(c.texto_politicas || "");
+    setTMof(c.mof || ""); setTPil(c.pilares || "");
     setMetaMin(String(c.meta_min_mes ?? "")); setMetaIdeal(String(c.meta_ideal_mes ?? ""));
     const ms = c.metas_sede || {};
     setMetasSede({
@@ -1556,6 +1559,13 @@ function ConfigClinica({ showToast }) {
     } catch (e) { showToast("Error: " + e.message); }
     finally { setGuardandoTxt(false); }
   }
+  async function guardarInstitucional() {
+    try {
+      const c = await api.actualizarClinica({ mof: tMof, pilares: tPil });
+      cargar(c); showToast("MOF y pilares guardados ✓");
+    } catch (e) { showToast("Error: " + e.message); }
+  }
+  const instCambiado = tMof !== (cfg?.mof || "") || tPil !== (cfg?.pilares || "");
   if (!cfg) return null;
   const cambiado = nombre.trim() && (
     nombre !== cfg.nombre || ciudad !== (cfg.ciudad || "") ||
@@ -1632,6 +1642,29 @@ function ConfigClinica({ showToast }) {
         <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 12 }}>
           <button className="ca-btn" style={{ opacity: txtCambiado ? 1 : 0.5, pointerEvents: txtCambiado ? "auto" : "none" }}
             onClick={guardarTextos} disabled={guardandoTxt}>{guardandoTxt ? "Guardando…" : "Guardar textos"}</button>
+        </div>
+      </div>
+
+      <h2 className="ca-secth">Funciones del psicólogo (MOF y pilares Itaca)</h2>
+      <div className="ca-card" style={{ marginBottom: 26 }}>
+        <div style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 14, lineHeight: 1.5 }}>
+          Esto lo ve el psicólogo SIEMPRE en su inicio. Escribe aquí su MOF (funciones) y la mentalidad/pilares de Itaca.
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 16 }}>
+          <div>
+            <div className="ca-label">Pilares / Mentalidad Itaca</div>
+            <textarea className="ca-input" style={areaTxt} value={tPil} onChange={(e) => setTPil(e.target.value)}
+              placeholder="Ej: No solo trabajamos con pacientes. Cambiamos vidas…" />
+          </div>
+          <div>
+            <div className="ca-label">MOF · Funciones del psicólogo</div>
+            <textarea className="ca-input" style={areaTxt} value={tMof} onChange={(e) => setTMof(e.target.value)}
+              placeholder="Funciones y responsabilidades del psicólogo…" />
+          </div>
+        </div>
+        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 12 }}>
+          <button className="ca-btn" style={{ opacity: instCambiado ? 1 : 0.5, pointerEvents: instCambiado ? "auto" : "none" }}
+            onClick={guardarInstitucional}>Guardar</button>
         </div>
       </div>
     </>
@@ -2142,11 +2175,86 @@ function HojaEditable({ formato, showToast, onSaved }) {
   );
 }
 
+// Inicio del psicólogo: sus indicadores, su horario y el contenido institucional
+// (MOF + pilares Itaca) siempre visible. Pedido de Emma.
+function PanelPsicologo({ panel }) {
+  const [ver, setVer] = useState(false); // desplegar MOF/pilares
+  const m = panel.metricas || {};
+  const kpis = [
+    { l: "Ocupación", v: m.ocupacion, suf: "%", sub: `${m.sesiones_semana} esta semana`, hint: "Marca tu horario para verlo" },
+    { l: "Cierre de consulta", v: m.cierre, suf: "%", sub: `${m.cierre_num}/${m.cierre_den} a proceso`, hint: "Aún sin consultas" },
+    { l: "Satisfacción", v: m.satisfaccion, suf: "%", sub: `${m.nps_respondieron} de ${m.pacientes} respondieron`, hint: "Aún sin respuestas NPS" },
+    { l: "Sesiones promedio", v: m.ltv, suf: "", sub: "por paciente (LTV)", hint: "Aún sin datos" },
+  ];
+  return (
+    <div className="ca-card" style={{ marginTop: 14, borderColor: "#DCE7F0", background: "#F6FAFD" }}>
+      <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12, display: "flex", alignItems: "center", gap: 7 }}>
+        <Activity size={15} strokeWidth={2} style={{ color: "var(--accent)" }} /> Mi tablero
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 10 }}>
+        {kpis.map((k) => (
+          <div key={k.l} style={{ background: "var(--surface)", border: "1px solid var(--line)", borderRadius: 10, padding: "10px 12px" }}>
+            <div style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>{k.l}</div>
+            <div style={{ fontSize: 22, fontWeight: 700, marginTop: 2 }}>
+              {k.v == null ? <span style={{ fontSize: 13, fontWeight: 500, color: "var(--muted)" }}>—</span> : <>{k.v}{k.suf}</>}
+            </div>
+            <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 2 }}>{k.v == null ? k.hint : k.sub}</div>
+          </div>
+        ))}
+      </div>
+
+      {panel.agendadas && panel.agendadas.length > 0 && (
+        <div style={{ marginTop: 14 }}>
+          <div style={{ fontSize: 12.5, fontWeight: 600, color: "var(--ink-soft)", marginBottom: 6 }}>Sesiones agendadas por venir</div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+            {panel.agendadas.map((a) => (
+              <div key={a.servicio} style={{ fontSize: 12.5, background: "var(--surface)", border: "1px solid var(--line)", borderRadius: 8, padding: "5px 10px" }}>
+                <strong>{a.n}</strong> {a.servicio}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {panel.horario && panel.horario.length > 0 && (
+        <div style={{ marginTop: 14 }}>
+          <div style={{ fontSize: 12.5, fontWeight: 600, color: "var(--ink-soft)", marginBottom: 6 }}>
+            Mi horario de atención {panel.modalidad ? `· ${panel.modalidad}` : ""} {panel.cupos_semana ? `· ${panel.cupos_semana} cupos/sem` : ""}
+          </div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+            {panel.horario.map((h) => (
+              <div key={h.dia} style={{ fontSize: 12.5, background: "var(--surface)", border: "1px solid var(--line)", borderRadius: 8, padding: "5px 9px" }}>
+                <strong>{h.dia}</strong> {h.horas.join(", ")}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {(panel.mof || panel.pilares) && (
+        <div style={{ marginTop: 14, paddingTop: 12, borderTop: "1px solid var(--line)" }}>
+          <button className="ca-mini" onClick={() => setVer((v) => !v)}>
+            <FileText size={13} strokeWidth={2} /> MOF y pilares Itaca {ver ? "▲" : "▼"}
+          </button>
+          {ver && (
+            <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 12 }}>
+              {panel.pilares && <div><div style={{ fontSize: 12.5, fontWeight: 700, marginBottom: 3 }}>Pilares Itaca</div><div style={{ fontSize: 13, color: "var(--ink-soft)", whiteSpace: "pre-wrap", lineHeight: 1.55 }}>{panel.pilares}</div></div>}
+              {panel.mof && <div><div style={{ fontSize: 12.5, fontWeight: 700, marginBottom: 3 }}>MOF</div><div style={{ fontSize: 13, color: "var(--ink-soft)", whiteSpace: "pre-wrap", lineHeight: 1.55 }}>{panel.mof}</div></div>}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Hoy({ proximas, citasHoy, porConfirmar, atendidas, onOpen, onGo, onRetencion, cumple, esAdmin }) {
   const [r, setR] = useState(null);
   const [legalRec, setLegalRec] = useState(null);
   const [recordatorios, setRecordatorios] = useState([]);
+  const [panel, setPanel] = useState(null); // panel del psicólogo (mi-panel)
   useEffect(() => { api.hoy().then(setR).catch(() => {}); }, []);
+  useEffect(() => { api.miPanel().then((p) => setPanel(p?.es_psicologo ? p : null)).catch(() => {}); }, []);
   useEffect(() => { api.recursos("recordatorio").then((rs) => setRecordatorios((rs || []).filter((x) => x.activo))).catch(() => {}); }, []);
   useEffect(() => {
     if (!esAdmin) return;
@@ -2173,6 +2281,8 @@ function Hoy({ proximas, citasHoy, porConfirmar, atendidas, onOpen, onGo, onRete
     <>
       <h1 className="ca-h1">{saludo}</h1>
       <div className="ca-sub">{labelLargo(HOY_ISO)} · Aquí está tu día, sin sorpresas.</div>
+
+      {panel && <PanelPsicologo panel={panel} />}
 
       {recordatorios.length > 0 && (
         <div className="ca-card" style={{ marginTop: 14, borderColor: "#F0E4C9", background: "#FDFAF1" }}>

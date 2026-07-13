@@ -119,6 +119,7 @@ export const api = {
 
   // Hora del servidor (para sincronizar "hoy" sin depender del reloj del equipo)
   hora: () => req("/api/hora/"),
+  miPanel: () => req("/api/mi-panel/"),
 
   // Auto-agendamiento público (landing por token, sin login)
   agendaInfo: (token) => req(`/api/agendamiento/${token}/`),

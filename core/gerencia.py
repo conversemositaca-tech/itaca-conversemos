@@ -69,6 +69,8 @@ class ClinicaConfigView(APIView):
             "texto_politicas": texto_consentimiento_default(c, "politicas"),
             "personalizado_consentimiento": bool((c.texto_consentimiento or "").strip()),
             "personalizado_politicas": bool((c.texto_politicas or "").strip()),
+            "mof": c.mof or "",
+            "pilares": c.pilares or "",
         }
 
     def get(self, request):
@@ -119,6 +121,10 @@ class ClinicaConfigView(APIView):
         if "texto_politicas" in request.data:
             c.texto_politicas = (request.data.get("texto_politicas") or "").strip()
             campos.append("texto_politicas")
+        for campo in ("mof", "pilares"):
+            if campo in request.data:
+                setattr(c, campo, (request.data.get(campo) or "").strip())
+                campos.append(campo)
         c.save(update_fields=campos)
         return Response(self._payload(c))
 

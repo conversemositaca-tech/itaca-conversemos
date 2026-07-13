@@ -41,6 +41,10 @@ class Clinica(models.Model):
     # desde la app: son documentos legales propios de la clínica.
     texto_consentimiento = models.TextField(blank=True, default="")
     texto_politicas = models.TextField(blank=True, default="")
+    # Contenido institucional que el psicólogo ve siempre en su inicio (pedido de Emma):
+    # MOF (manual de organización y funciones) y los pilares/valores de Itaca.
+    mof = models.TextField("MOF", blank=True, default="")
+    pilares = models.TextField("Pilares Itaca", blank=True, default="")
     # Token secreto para el ingreso automático de leads (URL pública de captación).
     # Identifica a la clínica en los endpoints sin sesión (web, campañas, WhatsApp).
     token_captacion = models.CharField(max_length=64, unique=True, null=True, blank=True)
