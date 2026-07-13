@@ -48,6 +48,9 @@ class Clinica(models.Model):
     # Contenido editable de la sección «Mentalidad Ítaca» (la gerencia lo edita desde
     # la app). Si está vacío, el frontend usa su contenido por defecto.
     mentalidad = models.JSONField("Mentalidad Ítaca", default=dict, blank=True)
+    # Configuración del sistema de progreso/medallas del psicólogo (editable por
+    # gerencia). Vacío = usa la config por defecto de core/gamificacion.py.
+    gamificacion = models.JSONField("Progreso y medallas", default=dict, blank=True)
     # Token secreto para el ingreso automático de leads (URL pública de captación).
     # Identifica a la clínica en los endpoints sin sesión (web, campañas, WhatsApp).
     token_captacion = models.CharField(max_length=64, unique=True, null=True, blank=True)

@@ -1541,6 +1541,7 @@ function ConfigClinica({ showToast }) {
   const [metaIdeal, setMetaIdeal] = useState("");
   const [metasSede, setMetasSede] = useState({ lima: { min: "", ideal: "" }, piura: { min: "", ideal: "" } });
   const [guardandoTxt, setGuardandoTxt] = useState(false);
+  const [editandoGame, setEditandoGame] = useState(false);
   function cargar(c) {
     setCfg(c); setNombre(c.nombre); setCiudad(c.ciudad || "");
     setTCons(c.texto_consentimiento || ""); setTPol(c.texto_politicas || "");
@@ -1688,7 +1689,92 @@ function ConfigClinica({ showToast }) {
             onClick={guardarInstitucional}>Guardar</button>
         </div>
       </div>
+
+      <h2 className="ca-secth">Progreso y medallas del psicólogo 🏅</h2>
+      <div className="ca-card" style={{ marginBottom: 26 }}>
+        <div className="ca-pmeta" style={{ marginBottom: 12 }}>
+          El sistema de niveles y medallas que ven los psicólogos en su inicio. Configura los nombres, íconos, cuántos puntos vale cada logro y los umbrales de cada grado.
+        </div>
+        <button className="ca-btn ghost" onClick={() => setEditandoGame(true)}><Trophy size={15} strokeWidth={2} /> Editar medallas y niveles</button>
+      </div>
+      {editandoGame && <GamificacionEditor inicial={cfg.gamificacion} showToast={showToast}
+        onClose={() => setEditandoGame(false)} onSaved={(g) => { setCfg((p) => ({ ...p, gamificacion: g })); setEditandoGame(false); }} />}
     </>
+  );
+}
+
+// Editor del sistema de progreso/medallas (solo gerencia). La métrica de cada
+// medalla es fija (calculada por el sistema); se editan nombre, ícono, umbrales y puntos.
+const GAME_METRICAS = {
+  historias: "Historias clínicas registradas", satisfaccion: "Satisfacción NPS (%)",
+  continuidad: "Pacientes que continúan", cierre: "Cierre de consulta (%)", sesiones: "Sesiones atendidas",
+};
+function GamificacionEditor({ inicial, showToast, onClose, onSaved }) {
+  const [f, setF] = useState(JSON.parse(JSON.stringify(inicial || {})));
+  const [guardando, setGuardando] = useState(false);
+  const meds = f.medallas || [];
+  const setMed = (i, k, v) => setF((p) => ({ ...p, medallas: p.medallas.map((m, j) => (j === i ? { ...m, [k]: v } : m)) }));
+  async function guardar() {
+    setGuardando(true);
+    try {
+      // Convertir "niveles" (texto "10, 25, 50") a números.
+      const g = {
+        puntos_por_nivel: Number(f.puntos_por_nivel) || 100,
+        rangos: (typeof f.rangos === "string" ? f.rangos.split("\n") : f.rangos || []).map((s) => s.trim()).filter(Boolean),
+        medallas: meds.map((m) => ({
+          ...m,
+          niveles: (typeof m.niveles === "string" ? m.niveles.split(",") : m.niveles || [])
+            .map((x) => Number(String(x).trim())).filter((n) => !isNaN(n) && n > 0),
+          puntos: Number(m.puntos) || 0,
+        })),
+      };
+      await api.actualizarClinica({ gamificacion: g });
+      showToast && showToast("Medallas guardadas ✓");
+      onSaved(g);
+    } catch (e) { showToast && showToast("Error: " + e.message); }
+    finally { setGuardando(false); }
+  }
+  const L = ({ children }) => <div className="ca-label" style={{ marginTop: 8 }}>{children}</div>;
+  return (
+    <div className="ca-modal-bg" onClick={onClose}>
+      <div className="ca-modal" style={{ maxWidth: 620, maxHeight: "88vh", overflowY: "auto" }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+          <strong style={{ fontSize: 16 }}>Medallas y niveles del psicólogo</strong>
+          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)" }}><X size={18} /></button>
+        </div>
+        <div className="ca-pmeta" style={{ marginBottom: 6 }}>Los umbrales son los puntos de cada grado (bronce, plata, oro…), separados por coma. "Puntos" = cuánto XP da cada grado alcanzado.</div>
+
+        <div style={{ display: "flex", gap: 11, marginTop: 8 }}>
+          <div style={{ flex: 1 }}><L>Puntos por nivel</L>
+            <input className="ca-input" type="number" min="10" value={f.puntos_por_nivel || 100} onChange={(e) => setF((p) => ({ ...p, puntos_por_nivel: e.target.value }))} /></div>
+          <div style={{ flex: 2 }}><L>Rangos (uno por línea)</L>
+            <textarea className="ca-input" style={{ minHeight: 74, resize: "vertical", fontSize: 12.5, fontFamily: "inherit" }}
+              value={Array.isArray(f.rangos) ? f.rangos.join("\n") : (f.rangos || "")}
+              onChange={(e) => setF((p) => ({ ...p, rangos: e.target.value }))} /></div>
+        </div>
+
+        <div className="ca-secth" style={{ marginTop: 16 }}>Medallas</div>
+        {meds.map((m, i) => (
+          <div key={m.clave || i} className="ca-card" style={{ marginBottom: 10, background: "var(--bg-soft,#F6F5F2)" }}>
+            <div style={{ fontSize: 11.5, color: "var(--muted)", marginBottom: 6 }}>Mide: <strong>{GAME_METRICAS[m.metrica] || m.metrica}</strong></div>
+            <div style={{ display: "flex", gap: 9, flexWrap: "wrap" }}>
+              <div style={{ width: 54 }}><L>Ícono</L><input className="ca-input" style={{ textAlign: "center" }} value={m.emoji || ""} onChange={(e) => setMed(i, "emoji", e.target.value)} /></div>
+              <div style={{ flex: 2, minWidth: 140 }}><L>Nombre</L><input className="ca-input" value={m.label || ""} onChange={(e) => setMed(i, "label", e.target.value)} /></div>
+              <div style={{ width: 80 }}><L>Puntos</L><input className="ca-input" type="number" min="0" value={m.puntos ?? 0} onChange={(e) => setMed(i, "puntos", e.target.value)} /></div>
+            </div>
+            <L>Umbrales de cada grado {m.sufijo === "%" ? "(en %)" : ""}</L>
+            <input className="ca-input" value={Array.isArray(m.niveles) ? m.niveles.join(", ") : (m.niveles || "")} onChange={(e) => setMed(i, "niveles", e.target.value)} placeholder="10, 25, 50, 100" />
+            <L>Descripción</L>
+            <input className="ca-input" value={m.desc || ""} onChange={(e) => setMed(i, "desc", e.target.value)} />
+          </div>
+        ))}
+
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 12 }}>
+          <button className="ca-btn ghost" onClick={onClose}>Cancelar</button>
+          <button className="ca-btn" onClick={guardar} disabled={guardando}>{guardando ? "Guardando…" : "Guardar"}</button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -2560,6 +2646,122 @@ function MentalidadEditor({ inicial, showToast, onClose, onSaved }) {
 
 // Inicio del psicólogo: sus indicadores, su horario y el contenido institucional
 // (MOF + pilares Itaca) siempre visible. Pedido de Emma.
+// Niveles de medalla (bronce → leyenda), por índice de nivel alcanzado.
+const TIER = [
+  { n: "Bloqueada", c: "#B8B8B8" },
+  { n: "Bronce", c: "#B87333" },
+  { n: "Plata", c: "#8A96A3" },
+  { n: "Oro", c: "#D4A017" },
+  { n: "Diamante", c: "#2FA5A5" },
+  { n: "Platino", c: "#7A5FA8" },
+  { n: "Leyenda", c: "#C0392B" },
+];
+const tierDe = (nivel) => TIER[Math.min(nivel, TIER.length - 1)];
+
+// Confeti de celebración (canvas, sin librerías). Respeta prefers-reduced-motion.
+function lanzarConfeti() {
+  if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  const canvas = document.createElement("canvas");
+  canvas.style.cssText = "position:fixed;inset:0;pointer-events:none;z-index:9999";
+  document.body.appendChild(canvas);
+  const ctx = canvas.getContext("2d");
+  const W = (canvas.width = window.innerWidth), H = (canvas.height = window.innerHeight);
+  const cols = ["#0E8271", "#E0A93B", "#3B6EA5", "#8B6FC0", "#2C8A5C", "#D4694A"];
+  const parts = Array.from({ length: 130 }, () => ({
+    x: W / 2 + (Math.random() - 0.5) * W * 0.35, y: H * 0.28 + (Math.random() - 0.5) * 80,
+    vx: (Math.random() - 0.5) * 11, vy: Math.random() * -9 - 3,
+    r: Math.random() * 6 + 3, c: cols[(Math.random() * cols.length) | 0],
+    rot: Math.random() * Math.PI, vr: (Math.random() - 0.5) * 0.3, a: 1,
+  }));
+  let t0 = null;
+  function frame(t) {
+    if (t0 === null) t0 = t;
+    const el = t - t0;
+    ctx.clearRect(0, 0, W, H);
+    for (const p of parts) {
+      p.vy += 0.3; p.x += p.vx; p.y += p.vy; p.rot += p.vr;
+      if (el > 1400) p.a = Math.max(0, p.a - 0.03);
+      ctx.save(); ctx.globalAlpha = p.a; ctx.translate(p.x, p.y); ctx.rotate(p.rot);
+      ctx.fillStyle = p.c; ctx.fillRect(-p.r / 2, -p.r / 2, p.r, p.r * 0.6); ctx.restore();
+    }
+    if (el < 2300) requestAnimationFrame(frame); else canvas.remove();
+  }
+  requestAnimationFrame(frame);
+}
+
+// Anillo de progreso (SVG) con el emoji al centro.
+function Anillo({ pct, color, children, size = 56 }) {
+  const r = (size - 8) / 2, C = 2 * Math.PI * r, off = C * (1 - Math.min(100, pct || 0) / 100);
+  return (
+    <div style={{ position: "relative", width: size, height: size, margin: "0 auto" }}>
+      <svg width={size} height={size} style={{ transform: "rotate(-90deg)" }}>
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--line)" strokeWidth="4" />
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={color} strokeWidth="4" strokeLinecap="round"
+          strokeDasharray={C} strokeDashoffset={off} style={{ transition: "stroke-dashoffset .7s" }} />
+      </svg>
+      <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>{children}</div>
+    </div>
+  );
+}
+
+// "Mi Progreso Ítaca": nivel + puntos + medallas por grados, con celebración.
+function MiProgreso({ pr }) {
+  useEffect(() => {
+    try {
+      const KEY = "itaca_mi_progreso";
+      const prev = JSON.parse(localStorage.getItem(KEY) || "null");
+      const snap = { nivel: pr.nivel, m: Object.fromEntries((pr.medallas || []).map((m) => [m.clave, m.nivel])) };
+      if (prev) {
+        const subioNivel = snap.nivel > (prev.nivel ?? 0);
+        const nuevaMedalla = (pr.medallas || []).some((m) => m.nivel > (prev.m?.[m.clave] ?? 0));
+        if (subioNivel || nuevaMedalla) lanzarConfeti();
+      }
+      localStorage.setItem(KEY, JSON.stringify(snap));
+    } catch { /* localStorage bloqueado: sin celebración */ }
+  }, [pr.xp, pr.nivel]);
+
+  const pctNivel = pr.es_max ? 100 : Math.round((pr.xp_en_nivel / (pr.xp_por_nivel || 100)) * 100);
+  return (
+    <div className="ca-card" style={{ marginTop: 14, borderColor: "#D8E6EF", background: "linear-gradient(135deg,#F3F9FC,#F7FBF9)" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 14 }}>
+        <div style={{ width: 56, height: 56, borderRadius: 16, background: "var(--accent)", color: "#fff", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", flexShrink: 0, boxShadow: "0 4px 12px rgba(14,130,113,.35)" }}>
+          <div style={{ fontSize: 8.5, opacity: 0.85, letterSpacing: 0.5 }}>NIVEL</div>
+          <div style={{ fontSize: 22, fontWeight: 800, lineHeight: 1 }}>{pr.nivel}</div>
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 15, fontWeight: 800 }}>{pr.rango} <span style={{ fontWeight: 600, color: "var(--muted)", fontSize: 12.5 }}>· {pr.xp} pts</span></div>
+          <div style={{ height: 9, background: "var(--line)", borderRadius: 999, overflow: "hidden", marginTop: 6 }}>
+            <div style={{ width: `${pctNivel}%`, height: "100%", background: "linear-gradient(90deg,var(--accent),#35C0AC)", transition: "width .7s" }} />
+          </div>
+          <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 4 }}>
+            {pr.es_max ? "¡Nivel máximo! 🏆" : `${(pr.xp_por_nivel || 100) - pr.xp_en_nivel} pts para el siguiente nivel`}
+          </div>
+        </div>
+      </div>
+
+      <div style={{ fontSize: 12.5, fontWeight: 600, color: "var(--ink-soft)", marginBottom: 8 }}>Mis medallas 🏅</div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(132px,1fr))", gap: 10 }}>
+        {(pr.medallas || []).map((m) => {
+          const t = tierDe(m.nivel), desbloq = m.nivel > 0;
+          const pctMed = m.siguiente != null ? Math.min(100, Math.round((m.valor / m.siguiente) * 100)) : 100;
+          return (
+            <div key={m.clave} title={m.desc} style={{ background: "var(--surface)", border: "1px solid var(--line)", borderRadius: 12, padding: "12px 10px", textAlign: "center" }}>
+              <Anillo pct={pctMed} color={desbloq ? t.c : "#C9C9C9"}>
+                <span style={{ fontSize: 22, filter: desbloq ? "none" : "grayscale(1) opacity(.5)" }}>{m.emoji}</span>
+              </Anillo>
+              <div style={{ fontSize: 12.5, fontWeight: 700, marginTop: 6 }}>{m.label}</div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: desbloq ? t.c : "var(--muted)", marginTop: 1 }}>{desbloq ? t.n : "Bloqueada"}</div>
+              <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 3 }}>
+                {m.valor}{m.sufijo}{m.siguiente != null ? ` · faltan ${Math.max(0, m.siguiente - m.valor)}${m.sufijo}` : " · ¡máx!"}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function PanelPsicologo({ panel }) {
   const [ver, setVer] = useState(false); // desplegar MOF/pilares
   const m = panel.metricas || {};
@@ -2586,35 +2788,7 @@ function PanelPsicologo({ panel }) {
         ))}
       </div>
 
-      {panel.logros && panel.logros.length > 0 && (
-        <div style={{ marginTop: 14 }}>
-          <div style={{ fontSize: 12.5, fontWeight: 600, color: "var(--ink-soft)", marginBottom: 6 }}>Mis logros 🏅</div>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
-            {panel.logros.map((lg) => {
-              const desbloqueado = lg.nivel > 0;
-              const falta = lg.siguiente != null ? lg.siguiente - lg.valor : 0;
-              return (
-                <div key={lg.clave} style={{ flex: "1 1 150px", minWidth: 150, background: "var(--surface)", border: "1px solid var(--line)", borderRadius: 10, padding: "10px 12px", opacity: desbloqueado ? 1 : 0.75 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <span style={{ fontSize: 22, filter: desbloqueado ? "none" : "grayscale(1)" }}>{lg.emoji}</span>
-                    <div>
-                      <div style={{ fontSize: 12.5, fontWeight: 700 }}>{lg.label}</div>
-                      <div style={{ fontSize: 11.5, color: "var(--muted)" }}>
-                        {lg.total_niveles > 1 ? `Nivel ${lg.nivel}/${lg.total_niveles}` : (desbloqueado ? "Conseguido" : "Por conseguir")} · {lg.valor}
-                      </div>
-                    </div>
-                  </div>
-                  {lg.siguiente != null && (
-                    <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 6 }}>
-                      {falta > 0 ? `Faltan ${falta} para la siguiente medalla` : "¡Medalla lograda!"}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
+      {panel.progreso && <MiProgreso pr={panel.progreso} />}
 
       {panel.agendadas && panel.agendadas.length > 0 && (
         <div style={{ marginTop: 14 }}>

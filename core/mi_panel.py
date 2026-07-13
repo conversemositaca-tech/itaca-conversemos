@@ -107,26 +107,21 @@ class MiPanelView(APIView):
         ).count()
         historias_totales = Atencion.objects.filter(
             clinica=clinica, medico=user, tipo=Atencion.Tipo.HISTORIA).count()
+        # Continuidad: pacientes suyos que volvieron (2ª sesión o más).
+        continuidad_total = mis_pacientes.filter(n_sesion__gte=2).count() if ficha else 0
 
-        def _medalla(clave, label, emoji, valor, tiers):
-            nivel = sum(1 for t in tiers if valor >= t)
-            return {
-                "clave": clave, "label": label, "emoji": emoji, "valor": valor,
-                "nivel": nivel, "total_niveles": len(tiers),
-                "siguiente": tiers[nivel] if nivel < len(tiers) else None,
-            }
-
-        logros = [
-            _medalla("sesiones", "Sesiones atendidas", "🩺", sesiones_totales, [10, 25, 50, 100, 250, 500]),
-            _medalla("historias", "Historias clínicas", "📋", historias_totales, [10, 50, 100, 250]),
-        ]
-        if total_resp >= 5 and (satisfaccion or 0) >= 80:
-            logros.append({"clave": "satisfaccion", "label": "Pacientes felices", "emoji": "⭐",
-                           "valor": satisfaccion, "nivel": 1, "total_niveles": 1, "siguiente": None})
+        from core import gamificacion
+        progreso = gamificacion.calcular(gamificacion.config_efectiva(clinica), {
+            "sesiones": sesiones_totales,
+            "historias": historias_totales,
+            "satisfaccion": satisfaccion or 0,
+            "continuidad": continuidad_total,
+            "cierre": cierre or 0,
+        })
 
         return Response({
             "es_psicologo": True,
-            "logros": logros,
+            "progreso": progreso,
             "mof": clinica.mof or "",
             "pilares": clinica.pilares or "",
             "horario": horario,

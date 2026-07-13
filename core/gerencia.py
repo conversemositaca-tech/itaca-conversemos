@@ -60,6 +60,7 @@ class ClinicaConfigView(APIView):
 
     def _payload(self, c):
         from pacientes.models import texto_consentimiento_default
+        from core.gamificacion import config_efectiva as _gamificacion_efectiva
         return {
             "nombre": c.nombre, "ciudad": c.ciudad, "zona_horaria": c.zona_horaria,
             "meta_min_mes": float(c.meta_min_mes or 0),
@@ -72,6 +73,7 @@ class ClinicaConfigView(APIView):
             "mof": c.mof or "",
             "pilares": c.pilares or "",
             "mentalidad": c.mentalidad or {},
+            "gamificacion": _gamificacion_efectiva(c),
         }
 
     def get(self, request):
@@ -130,6 +132,10 @@ class ClinicaConfigView(APIView):
             m = request.data.get("mentalidad")
             c.mentalidad = m if isinstance(m, dict) else {}
             campos.append("mentalidad")
+        if "gamificacion" in request.data:
+            g = request.data.get("gamificacion")
+            c.gamificacion = g if isinstance(g, dict) else {}
+            campos.append("gamificacion")
         c.save(update_fields=campos)
         return Response(self._payload(c))
 
