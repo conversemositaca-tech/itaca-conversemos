@@ -8218,16 +8218,24 @@ function ProfesionalModal({ prof, onClose, onSave }) {
   const canSave = f.nombre.trim().length > 0;
   const ta = { minHeight: 70, resize: "vertical", lineHeight: 1.5 };
   // Cada clic cicla: apagada → presencial → virtual → mixto → apagada.
-  const MOD_CICLO = { "": "presencial", presencial: "virtual", virtual: "mixto", mixto: "" };
+  // Estado de una celda: "" apagada · "activo" (hora ya marcada, sin modalidad, p.ej.
+  // horarios cargados antes) · presencial/virtual/mixto. El clic cicla:
+  // apagada/activo → presencial → virtual → mixto → apagada.
+  const MOD_CICLO = { "": "presencial", activo: "presencial", presencial: "virtual", virtual: "mixto", mixto: "" };
   const MOD_COLOR = { presencial: "#4F8A77", virtual: "#3D6B9E", mixto: "#8A6BB0" };
-  function modalidadDe(dia, hora) {
-    return ((f.horario_modalidad || {})[dia] || {})[hora] || "";
+  function estadoDe(dia, hora) {
+    const mod = ((f.horario_modalidad || {})[dia] || {})[hora];
+    if (mod) return mod;
+    // sin modalidad pero la hora ya está en el horario → "activo" (no invisible)
+    return ((f.horario_semanal || {})[dia] || []).map(Number).includes(hora) ? "activo" : "";
   }
   function toggleHora(dia, hora) {
     setF((prev) => {
-      const actual = ((prev.horario_modalidad || {})[dia] || {})[hora] || "";
+      const mod = ((prev.horario_modalidad || {})[dia] || {})[hora];
+      const activa = ((prev.horario_semanal || {})[dia] || []).map(Number).includes(hora);
+      const actual = mod || (activa ? "activo" : "");
       const nueva = MOD_CICLO[actual];
-      // horas (capacidad/landing): presente si la hora está en cualquier modalidad ON
+      // horas (capacidad/landing): presente si queda en cualquier modalidad ON
       const h = { ...(prev.horario_semanal || {}) };
       const list = new Set((h[dia] || []).map(Number));
       if (nueva) list.add(hora); else list.delete(hora);
@@ -8270,7 +8278,7 @@ function ProfesionalModal({ prof, onClose, onSave }) {
 
         <div className="ca-secth" style={{ margin: "4px 0 8px" }}>Horario de atención <span style={{ color: "var(--muted)", fontWeight: 400, fontSize: 12 }}>(clic para ciclar: presencial → virtual → mixto → libre)</span></div>
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 8, fontSize: 12 }}>
-          {[["Presencial", "#4F8A77"], ["Virtual", "#3D6B9E"], ["Mixto", "#8A6BB0"]].map(([l, col]) => (
+          {[["Presencial", "#4F8A77"], ["Virtual", "#3D6B9E"], ["Mixto", "#8A6BB0"], ["Sin especificar", "#9AA0A6"]].map(([l, col]) => (
             <span key={l} style={{ display: "inline-flex", alignItems: "center", gap: 5 }}><span style={{ width: 12, height: 12, borderRadius: 3, background: col, display: "inline-block" }} /> {l}</span>
           ))}
         </div>
@@ -8282,11 +8290,12 @@ function ProfesionalModal({ prof, onClose, onSave }) {
                 <tr key={h}>
                   <td style={{ color: "var(--muted)", paddingRight: 6, textAlign: "right", whiteSpace: "nowrap" }}>{h}:00</td>
                   {["1", "2", "3", "4", "5", "6"].map((d) => {
-                    const mod = modalidadDe(d, h);
+                    const est = estadoDe(d, h);
+                    const bg = est === "activo" ? "#9AA0A6" : (MOD_COLOR[est] || "var(--bg)");
                     return (
                       <td key={d} style={{ padding: 2 }}>
-                        <button type="button" title={`${["", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"][d]} ${h}:00${mod ? ` · ${mod}` : ""}`} onClick={() => toggleHora(d, h)}
-                          style={{ width: 36, height: 20, borderRadius: 4, cursor: "pointer", border: "1px solid var(--line)", background: mod ? MOD_COLOR[mod] : "var(--bg)" }} />
+                        <button type="button" title={`${["", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"][d]} ${h}:00${est && est !== "activo" ? ` · ${est}` : est === "activo" ? " · sin modalidad" : ""}`} onClick={() => toggleHora(d, h)}
+                          style={{ width: 36, height: 20, borderRadius: 4, cursor: "pointer", border: "1px solid var(--line)", background: bg }} />
                       </td>
                     );
                   })}
