@@ -220,10 +220,37 @@ class NotaVozView(_Base):
         campos = dict(clinica=psico.clinica, paciente=paciente, medico=psico,
                       registrado_por=psico, tipo=tipo, especialidad=psico.especialidad or "")
         contenido = g("contenido")
+        campos_guiados = d.get("campos") if isinstance(d.get("campos"), dict) else None
         est = None
         extracto = {}
 
-        if contenido:
+        if campos_guiados:
+            # Registro GUIADO desde Eli: cada campo va a su lugar (sin IA).
+            def cg(k):
+                return (campos_guiados.get(k) or "").strip()
+            if tipo == Atencion.Tipo.HISTORIA:
+                campos["nota"] = (marca + "\n\n" + cg("resumen")).strip()
+                campos["motivo"] = cg("motivo")
+                campos["aspectos_historicos"] = cg("antecedentes")
+                campos["objetivos"] = cg("objetivos")
+                campos["indicaciones"] = cg("recomendaciones")
+                # Alimenta el perfil (resumen, objetivo, riesgo) como el documento madre.
+                est = {"resumen_clinico": cg("resumen"), "objetivos": cg("objetivos"), "riesgo": cg("riesgo")}
+                extracto = {"resumen": cg("resumen"), "riesgo": _norm_riesgo(cg("riesgo"))}
+            else:
+                partes = []
+                if cg("cambios"):
+                    partes.append("Cambios desde la última sesión: " + cg("cambios"))
+                if cg("temas"):
+                    partes.append("Temas trabajados: " + cg("temas"))
+                if cg("intervenciones"):
+                    partes.append("Intervenciones del terapeuta: " + cg("intervenciones"))
+                campos["nota"] = (marca + ("\n\n" + "\n".join(partes) if partes else "")).strip()
+                campos["puntos_importantes"] = cg("avances")
+                campos["indicaciones"] = cg("tareas")
+                campos["proximos_pasos"] = cg("siguiente")
+                extracto = {"resumen": cg("cambios") or cg("temas")}
+        elif contenido:
             contexto = _contexto_paciente(paciente) if tipo == Atencion.Tipo.EVOLUCION else ""
             est = estructurar_nota.estructurar(contenido, tipo, contexto)
             if est and tipo == Atencion.Tipo.HISTORIA:
