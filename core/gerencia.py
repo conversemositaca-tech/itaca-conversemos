@@ -226,9 +226,11 @@ class HoyResumenView(APIView):
             # Meta de la sede si está configurada; si no, la meta general de la clínica.
             metas_sede = clinica.metas_sede or {}
             m_sede = metas_sede.get(sede_scope) if sede_scope else None
+            # Meta de la sede; si falta un valor (min o ideal), cae al general (evita
+            # ocultar la tarjeta o dividir entre 0 en el frontend).
             if isinstance(m_sede, dict):
-                meta_min = float(m_sede.get("min") or 0)
-                meta_ideal = float(m_sede.get("ideal") or 0)
+                meta_min = float(m_sede.get("min") or 0) or float(clinica.meta_min_mes or 0)
+                meta_ideal = float(m_sede.get("ideal") or 0) or float(clinica.meta_ideal_mes or 0)
             else:
                 meta_min = float(clinica.meta_min_mes or 0)
                 meta_ideal = float(clinica.meta_ideal_mes or 0)

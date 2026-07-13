@@ -9076,7 +9076,7 @@ function UsuarioModal({ usuario, onClose, onSave }) {
   const [nombre, setNombre] = useState(usuario?.nombre || "");
   const [email, setEmail] = useState(usuario?.email || "");
   const [rol, setRol] = useState(usuario?.rol || "medico");
-  const [sede, setSede] = useState(usuario?.sede || "piura");
+  const [sede, setSede] = useState(usuario?.sede || ""); // "" = todas / sin asignar (no forzar piura)
   const [telefono, setTelefono] = useState(usuario?.telefono || "");
   const [password, setPassword] = useState("");
   const esNuevo = !usuario;
@@ -9123,13 +9123,14 @@ function UsuarioModal({ usuario, onClose, onSave }) {
           <div style={{ flex: 1 }}>
             <div className="ca-label">Sede</div>
             <select className="ca-input" value={sede} onChange={(e) => setSede(e.target.value)}>
+              <option value="">— Todas / sin asignar —</option>
               <option value="lima">Lima</option>
               <option value="piura">Piura</option>
             </select>
           </div>
         </div>
         <div style={{ fontSize: 12, color: "var(--muted)", marginTop: -4, marginBottom: 13 }}>
-          La sede define de qué local ve la información (meta comercial, etc.).
+          La sede define de qué local ve la información (meta comercial, etc.). «Todas» = ve la clínica completa (gerencia).
         </div>
         <div style={{ marginBottom: 20 }}>
           <div className="ca-label">{esNuevo ? "Contraseña" : "Nueva contraseña (opcional)"}</div>
