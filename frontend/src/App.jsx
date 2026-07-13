@@ -7,6 +7,7 @@ import {
   Paperclip, Trash2, Activity, Pill, HeartPulse, Copy, BarChart3, UserCog, KeyRound, MapPin,
   Mic, FolderOpen, Lightbulb, ExternalLink, Bell, GraduationCap,
   Building2, DoorOpen, ChevronRight, Compass, Send,
+  Shield, Target, Heart, Leaf, Trophy, Award, Sparkles, Landmark,
 } from "lucide-react";
 import { api } from "./api";
 import Login from "./Login";
@@ -2180,23 +2181,6 @@ function HojaEditable({ formato, showToast, onSaved }) {
 
 // Cultura de Ítaca: ADN, no negociables, pilares I+M, mentalidad ganadora y mi rol.
 // La ve todo el equipo (pedido de Emma/Gaby, con su contenido).
-function MentalidadSeccion({ n, titulo, resumen, children, abierta }) {
-  const [ver, setVer] = useState(!!abierta);
-  return (
-    <div className="ca-card" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <span style={{ width: 28, height: 28, borderRadius: 999, background: "var(--accent)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 14, flexShrink: 0 }}>{n}</span>
-        <div style={{ fontWeight: 700, fontSize: 15 }}>{titulo}</div>
-      </div>
-      {resumen && <div style={{ fontSize: 13, color: "var(--ink-soft)", lineHeight: 1.5 }}>{resumen}</div>}
-      {ver && <div style={{ marginTop: 4, display: "flex", flexDirection: "column", gap: 12 }}>{children}</div>}
-      <button className="ca-mini" style={{ alignSelf: "flex-start", marginTop: 2 }} onClick={() => setVer((v) => !v)}>
-        {ver ? "Ver menos ▲" : "Ver más ▼"}
-      </button>
-    </div>
-  );
-}
-
 function BloqueLista({ titulo, items }) {
   return (
     <div>
@@ -2220,115 +2204,166 @@ const ROL_ITACA = {
   comercial: "Desde captación acercas la salud mental a más personas: cada conversación acerca o aleja a alguien de la ayuda que necesita.",
 };
 
+// Tarjeta de una sección (número + título en versalitas + ícono, con "Ver más").
+function MentCard({ n, titulo, Icon, resumen, cta = "Ver más", preview, detalle }) {
+  const [ver, setVer] = useState(false);
+  return (
+    <div className="ca-card" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <span style={{ width: 30, height: 30, borderRadius: 999, background: "var(--accent)", color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 15, flexShrink: 0 }}>{n}</span>
+          <div style={{ fontWeight: 800, fontSize: 13.5, letterSpacing: 0.4, color: "var(--accent)", textTransform: "uppercase" }}>{titulo}</div>
+        </div>
+        <span style={{ width: 40, height: 40, borderRadius: 999, background: "#E9F5F3", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><Icon size={19} strokeWidth={2} style={{ color: "var(--accent)" }} /></span>
+      </div>
+      {resumen && <div style={{ fontSize: 13, color: "var(--ink-soft)", lineHeight: 1.5 }}>{resumen}</div>}
+      {preview}
+      {ver && detalle && <div style={{ marginTop: 2, paddingTop: 12, borderTop: "1px solid var(--line)", display: "flex", flexDirection: "column", gap: 12 }}>{detalle}</div>}
+      {detalle && <button onClick={() => setVer((v) => !v)} style={{ alignSelf: "flex-start", marginTop: "auto", paddingTop: 4, background: "none", border: "none", color: "var(--accent)", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>{ver ? "Ver menos ↑" : `${cta} →`}</button>}
+    </div>
+  );
+}
+function MentCheck({ items }) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+      {items.map((it, i) => (
+        <div key={i} style={{ fontSize: 13.5, display: "flex", gap: 8, alignItems: "center" }}>
+          <Check size={16} strokeWidth={2.5} style={{ color: "var(--accent)", flexShrink: 0 }} /><span>{it}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+function PilarBadge({ icon, texto, titulo, desc, color, bg }) {
+  return (
+    <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+      <span style={{ width: 34, height: 34, borderRadius: 9, background: bg, color, display: "inline-flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 13, flexShrink: 0 }}>{icon ? React.createElement(icon, { size: 18, strokeWidth: 2.2 }) : texto}</span>
+      <div>
+        <div style={{ fontWeight: 800, fontSize: 12.5, letterSpacing: 0.3, color, textTransform: "uppercase" }}>{titulo}</div>
+        <div style={{ fontSize: 12.8, color: "var(--ink-soft)", lineHeight: 1.4 }}>{desc}</div>
+      </div>
+    </div>
+  );
+}
+function MentIcono({ Icon, label }) {
+  return (
+    <div style={{ textAlign: "center", flex: "1 1 78px", minWidth: 72 }}>
+      <span style={{ width: 40, height: 40, borderRadius: 999, background: "#E9F5F3", display: "inline-flex", alignItems: "center", justifyContent: "center", marginBottom: 5 }}><Icon size={18} strokeWidth={2} style={{ color: "var(--accent)" }} /></span>
+      <div style={{ fontSize: 11.5, color: "var(--ink-soft)", lineHeight: 1.3 }}>{label}</div>
+    </div>
+  );
+}
+
 function MentalidadItaca({ rol }) {
   return (
     <div>
       {/* Hero */}
-      <div className="ca-card" style={{ background: "linear-gradient(135deg, #E9F5F3, #F6FAFD)", borderColor: "#CDE7E2", marginBottom: 18 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
-          <Compass size={22} strokeWidth={2} style={{ color: "var(--accent)" }} />
-          <h1 className="ca-h1" style={{ margin: 0 }}>Mentalidad Ítaca</h1>
+      <div className="ca-card" style={{ background: "linear-gradient(135deg, #E7F4F1, #F6FAFD)", borderColor: "#CDE7E2", marginBottom: 18, display: "flex", alignItems: "center", gap: 20, flexWrap: "wrap" }}>
+        <div style={{ width: 76, height: 76, borderRadius: 18, background: "#DCEEEA", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, position: "relative" }}>
+          <Users size={34} strokeWidth={1.8} style={{ color: "var(--accent)" }} />
+          <Heart size={15} strokeWidth={2.5} style={{ color: "var(--accent)", fill: "#fff", position: "absolute", top: 13, right: 13 }} />
         </div>
-        <div style={{ fontSize: 14, color: "var(--ink-soft)", lineHeight: 1.6, maxWidth: 760 }}>
-          En Ítaca creemos que el conocimiento te convierte en un buen profesional, pero <strong>la cultura es lo que te convierte en un profesional extraordinario</strong>. Esta sección reúne los principios que guían cada decisión, cada interacción y cada sesión. No son reglas; son la forma en que <strong>elegimos cambiar vidas</strong>.
+        <div style={{ flex: 1, minWidth: 260 }}>
+          <h1 className="ca-h1" style={{ margin: "0 0 6px" }}>Mentalidad Ítaca</h1>
+          <div style={{ fontSize: 14, color: "var(--ink-soft)", lineHeight: 1.6 }}>
+            En Ítaca creemos que el conocimiento te convierte en un buen profesional, pero <strong style={{ color: "var(--accent)" }}>la cultura es lo que te convierte en un profesional extraordinario</strong>. Esta sección reúne los principios que guían cada decisión, cada interacción y cada sesión. No son reglas; son la forma en que <strong style={{ color: "var(--accent)" }}>elegimos cambiar vidas</strong>.
+          </div>
         </div>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 14 }}>
-        <MentalidadSeccion n="1" titulo="ADN Ítaca" resumen="Nuestro propósito, visión y lo que nos mueve cada día.">
-          <BloqueLista titulo="Nuestro propósito: cambiar vidas" items={[
-            "Cambiar vidas a través de un acompañamiento psicológico humano, ético y basado en evidencia, acercando la salud mental a cada vez más personas.",
-            "Cada paciente que llega a Ítaca deposita en nosotros una parte importante de su historia. No solo brindamos sesiones: acompañamos procesos que pueden transformar una vida.",
-          ]} />
-          <BloqueLista titulo="Nuestra visión" items={[
-            "Ser el centro psicológico referente en el Perú por la calidad de nuestra atención, la excelencia de nuestros profesionales y el impacto positivo en la vida de miles de personas.",
-          ]} />
-          <BloqueLista titulo="¿Qué significa trabajar en Ítaca?" items={[
-            "Cada conversación importa.",
-            "Cada paciente merece una experiencia extraordinaria.",
-            "La excelencia no es un objetivo; es el estándar.",
-            "Siempre buscamos mejorar.",
-            "Trabajamos como un solo equipo.",
-            "Nunca olvidamos que detrás de cada historia clínica existe una persona.",
-          ]} />
-          <BloqueLista titulo="Nuestro compromiso" items={[
-            "Cambiar vidas.", "Generar bienestar.", "Crear experiencias memorables.",
-            "Crecer como profesionales.", "Construir un equipo del que sintamos orgullo.",
-          ]} />
-        </MentalidadSeccion>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(290px, 1fr))", gap: 14, alignItems: "start" }}>
+        {/* 1 · ADN */}
+        <MentCard n="1" titulo="ADN Ítaca" Icon={Sparkles} resumen="Nuestro propósito, visión y lo que nos mueve cada día."
+          preview={<MentCheck items={["Nuestro propósito: cambiar vidas", "Nuestra visión", "¿Qué significa trabajar en Ítaca?", "Nuestro compromiso"]} />}
+          detalle={<>
+            <BloqueLista titulo="Nuestro propósito: cambiar vidas" items={[
+              "Cambiar vidas a través de un acompañamiento psicológico humano, ético y basado en evidencia, acercando la salud mental a cada vez más personas.",
+              "Cada paciente que llega a Ítaca deposita en nosotros una parte importante de su historia. No solo brindamos sesiones: acompañamos procesos que pueden transformar una vida.",
+            ]} />
+            <BloqueLista titulo="Nuestra visión" items={["Ser el centro psicológico referente en el Perú por la calidad de nuestra atención, la excelencia de nuestros profesionales y el impacto positivo en la vida de miles de personas."]} />
+            <BloqueLista titulo="¿Qué significa trabajar en Ítaca?" items={[
+              "Cada conversación importa.", "Cada paciente merece una experiencia extraordinaria.",
+              "La excelencia no es un objetivo; es el estándar.", "Siempre buscamos mejorar.",
+              "Trabajamos como un solo equipo.", "Nunca olvidamos que detrás de cada historia clínica existe una persona.",
+            ]} />
+            <BloqueLista titulo="Nuestro compromiso" items={[
+              "Cambiar vidas.", "Generar bienestar.", "Crear experiencias memorables.",
+              "Crecer como profesionales.", "Construir un equipo del que sintamos orgullo.",
+            ]} />
+          </>} />
 
-        <MentalidadSeccion n="2" titulo="Los No Negociables Ítaca" resumen="Los estándares mínimos que todos vivimos, sin excepción.">
-          <BloqueLista titulo="Excelencia profesional" items={[
-            "Mantengo mis historias clínicas completas y actualizadas dentro del tiempo establecido.",
-            "Me preparo antes de cada sesión.", "Conozco a mis pacientes antes de atenderlos.",
-            "Mantengo mi agenda organizada.",
-          ]} />
-          <BloqueLista titulo="Experiencia del paciente" items={[
-            "Cada paciente recibe un trato cálido, respetuoso y profesional.",
-            "Resuelvo dudas con claridad.",
-            "Cada paciente termina la sesión entendiendo cuál es el siguiente paso de su proceso.",
-            "Cuido cada detalle de la experiencia, desde el primer contacto hasta el cierre terapéutico.",
-          ]} />
-          <BloqueLista titulo="Trabajo en equipo" items={[
-            "Mantengo comunicación clara y respetuosa.", "Aviso oportunamente cualquier incidencia.",
-            "Cumplo los acuerdos del equipo.", "Colaboro antes de que me lo pidan.",
-          ]} />
-          <BloqueLista titulo="Responsabilidad" items={[
-            "Soy puntual.", "Cumplo los plazos establecidos.", "Asumo responsabilidad sobre mis errores.",
-            "Si detecto un problema, también propongo una solución.",
-          ]} />
-          <BloqueLista titulo="Crecimiento" items={[
-            "Busco aprender constantemente.", "Participo activamente en capacitaciones.",
-            "Estoy dispuesto a recibir feedback.", "Comparto conocimiento con mi equipo.",
-          ]} />
-          <BloqueLista titulo="Representación de la marca" items={[
-            "Represento la confianza que miles de pacientes depositan en nosotros.",
-            "Cada conversación, mensaje, llamada o sesión fortalece o debilita esa confianza.",
-          ]} />
-        </MentalidadSeccion>
+        {/* 2 · No Negociables */}
+        <MentCard n="2" titulo="No Negociables Ítaca" Icon={Shield} resumen="Los estándares mínimos que todos vivimos, sin excepción."
+          preview={<MentCheck items={["Excelencia profesional", "Experiencia del paciente", "Trabajo en equipo", "Responsabilidad", "Crecimiento", "Representación de la marca"]} />}
+          detalle={<>
+            <BloqueLista titulo="Excelencia profesional" items={[
+              "Mantengo mis historias clínicas completas y actualizadas dentro del tiempo establecido.",
+              "Me preparo antes de cada sesión.", "Conozco a mis pacientes antes de atenderlos.", "Mantengo mi agenda organizada.",
+            ]} />
+            <BloqueLista titulo="Experiencia del paciente" items={[
+              "Cada paciente recibe un trato cálido, respetuoso y profesional.", "Resuelvo dudas con claridad.",
+              "Cada paciente termina la sesión entendiendo cuál es el siguiente paso de su proceso.",
+              "Cuido cada detalle de la experiencia, desde el primer contacto hasta el cierre terapéutico.",
+            ]} />
+            <BloqueLista titulo="Trabajo en equipo" items={["Mantengo comunicación clara y respetuosa.", "Aviso oportunamente cualquier incidencia.", "Cumplo los acuerdos del equipo.", "Colaboro antes de que me lo pidan."]} />
+            <BloqueLista titulo="Responsabilidad" items={["Soy puntual.", "Cumplo los plazos establecidos.", "Asumo responsabilidad sobre mis errores.", "Si detecto un problema, también propongo una solución."]} />
+            <BloqueLista titulo="Crecimiento" items={["Busco aprender constantemente.", "Participo activamente en capacitaciones.", "Estoy dispuesto a recibir feedback.", "Comparto conocimiento con mi equipo."]} />
+            <BloqueLista titulo="Representación de la marca" items={["Represento la confianza que miles de pacientes depositan en nosotros.", "Cada conversación, mensaje, llamada o sesión fortalece o debilita esa confianza."]} />
+          </>} />
 
-        <MentalidadSeccion n="3" titulo="Los Pilares Ítaca · I + M" resumen="Los principios que sostienen nuestra cultura y guían cada decisión.">
-          <BloqueLista titulo="💡 Itactividad — damos soluciones, no problemas" items={[
-            "Actuamos con iniciativa, anticipándonos a los desafíos y buscando siempre soluciones.",
-            "No esperamos que las cosas sucedan; las hacemos suceder. No nos quejamos de los problemas, los solucionamos.",
-          ]} />
-          <BloqueLista titulo="➕1 Sí importa — enfocados en resultados y calidad" items={[
-            "Cada acción cuenta. Cada esfuerzo extra, cada detalle y cada mejora suman para una experiencia extraordinaria.",
-            "No nos conformamos; siempre damos la milla extra.",
-          ]} />
-          <BloqueLista titulo="🛡️ Muro de confianza — directos y nos cuidamos" items={[
-            "Construimos relaciones basadas en la comunicación transparente, el respeto y la confianza.",
-            "Hablamos directamente, evitamos las suposiciones y resolvemos en equipo. No suponemos nunca, preguntamos siempre.",
-          ]} />
-        </MentalidadSeccion>
+        {/* 3 · Pilares I+M */}
+        <MentCard n="3" titulo="Pilares Ítaca · I + M" Icon={Landmark} resumen="Los principios que sostienen nuestra cultura y guían cada decisión." cta="Conocer más"
+          preview={<div style={{ display: "flex", flexDirection: "column", gap: 11 }}>
+            <PilarBadge icon={Lightbulb} titulo="Itactividad" desc="Damos soluciones, no problemas." color="#B0822F" bg="#FBF1D6" />
+            <PilarBadge texto="+1" titulo="+1 Sí importa" desc="Cada acción cuenta. Cada +1 genera impacto." color="#6E52A3" bg="#EDE7F7" />
+            <PilarBadge icon={Shield} titulo="Muro de confianza" desc="Somos directos, nos cuidamos y resolvemos en equipo." color="#3D6B9E" bg="#E4EDF7" />
+          </div>}
+          detalle={<>
+            <BloqueLista titulo="💡 Itactividad — damos soluciones, no problemas" items={["Actuamos con iniciativa, anticipándonos a los desafíos y buscando siempre soluciones.", "No esperamos que las cosas sucedan; las hacemos suceder. No nos quejamos de los problemas, los solucionamos."]} />
+            <BloqueLista titulo="➕1 Sí importa — enfocados en resultados y calidad" items={["Cada acción cuenta. Cada esfuerzo extra, cada detalle y cada mejora suman para una experiencia extraordinaria.", "No nos conformamos; siempre damos la milla extra."]} />
+            <BloqueLista titulo="🛡️ Muro de confianza — directos y nos cuidamos" items={["Construimos relaciones basadas en la comunicación transparente, el respeto y la confianza.", "Hablamos directamente, evitamos las suposiciones y resolvemos en equipo. No suponemos nunca, preguntamos siempre."]} />
+          </>} />
 
-        <MentalidadSeccion n="4" titulo="Mentalidad Ganadora" resumen="No es competir con otros, es desarrollar nuestra mejor versión para generar mayor impacto.">
-          <BloqueLista titulo="Pensamos en resultados" items={["Nuestro objetivo no es acumular sesiones, es que más personas logren cambios significativos en su vida."]} />
-          <BloqueLista titulo="Guiamos con claridad" items={["No presionamos ni persuadimos: guiamos al paciente para que tome decisiones informadas sobre su proceso."]} />
-          <BloqueLista titulo="Creemos en la continuidad terapéutica" items={["Los cambios importantes requieren tiempo. Explicamos el proceso, resolvemos dudas y ayudamos al paciente a comprometerse con su bienestar."]} />
-          <BloqueLista titulo="Nos enfocamos en el impacto" items={[
-            "Personas que continúan su proceso.", "Pacientes satisfechos.",
-            "Altas terapéuticas exitosas.", "Vidas transformadas.",
-          ]} />
-          <BloqueLista titulo="Crecemos juntos" items={["Cuando mejora un colaborador, mejora el equipo; cuando mejora el equipo, mejora la experiencia del paciente; y así cumplimos nuestro propósito."]} />
-        </MentalidadSeccion>
+        {/* 4 · Mentalidad Ganadora */}
+        <MentCard n="4" titulo="Mentalidad Ganadora" Icon={Trophy} resumen="No es competir con otros, es desarrollar nuestra mejor versión para generar mayor impacto."
+          preview={<div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "space-between" }}>
+            <MentIcono Icon={Target} label="Pensamos en resultados" />
+            <MentIcono Icon={MessageCircle} label="Guiamos con claridad" />
+            <MentIcono Icon={Heart} label="Creemos en la continuidad" />
+            <MentIcono Icon={BarChart3} label="Nos enfocamos en el impacto" />
+            <MentIcono Icon={Users} label="Crecemos juntos" />
+          </div>}
+          detalle={<>
+            <BloqueLista titulo="Pensamos en resultados" items={["Nuestro objetivo no es acumular sesiones, es que más personas logren cambios significativos en su vida."]} />
+            <BloqueLista titulo="Guiamos con claridad" items={["No presionamos ni persuadimos: guiamos al paciente para que tome decisiones informadas sobre su proceso."]} />
+            <BloqueLista titulo="Creemos en la continuidad terapéutica" items={["Los cambios importantes requieren tiempo. Explicamos el proceso, resolvemos dudas y ayudamos al paciente a comprometerse con su bienestar."]} />
+            <BloqueLista titulo="Nos enfocamos en el impacto" items={["Personas que continúan su proceso.", "Pacientes satisfechos.", "Altas terapéuticas exitosas.", "Vidas transformadas."]} />
+            <BloqueLista titulo="Crecemos juntos" items={["Cuando mejora un colaborador, mejora el equipo; cuando mejora el equipo, mejora la experiencia del paciente; y así cumplimos nuestro propósito."]} />
+          </>} />
 
-        <MentalidadSeccion n="5" titulo="Mi Rol en Ítaca" resumen="Todos compartimos una misión: contribuir a cambiar vidas desde nuestro rol." abierta>
-          <div style={{ background: "var(--bg-soft, #F6F5F2)", borderRadius: 10, padding: "12px 14px", fontSize: 13.5, lineHeight: 1.55 }}>
-            {ROL_ITACA[rol] || "Cada puesto tiene funciones específicas, pero todos somos responsables de la experiencia que vive el paciente."}
-          </div>
-          <BloqueLista titulo="Lo que esperamos de ti" items={[
+        {/* 5 · Mi Rol */}
+        <MentCard n="5" titulo="Mi Rol en Ítaca" Icon={Award} resumen="Todos compartimos una misión: contribuir a cambiar vidas desde nuestro rol." cta="Ver mi rol y funciones"
+          preview={<div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <div style={{ background: "var(--bg-soft, #F6F5F2)", borderRadius: 10, padding: "11px 13px", fontSize: 13, lineHeight: 1.5 }}>
+              {ROL_ITACA[rol] || "Cada puesto tiene funciones específicas, pero todos somos responsables de la experiencia que vive el paciente."}
+            </div>
+            <MentCheck items={["Actuar con profesionalismo", "Vivir la cultura Ítaca", "Cumplir los estándares de calidad"]} />
+          </div>}
+          detalle={<BloqueLista titulo="Lo que esperamos de ti" items={[
             "Actuar con profesionalismo.", "Vivir la cultura Ítaca.", "Cumplir los estándares de calidad.",
             "Cuidar la experiencia del paciente.", "Trabajar colaborativamente.", "Buscar siempre mejorar.",
-          ]} />
-        </MentalidadSeccion>
+          ]} />} />
       </div>
 
       {/* Cierre */}
-      <div className="ca-card" style={{ marginTop: 18, borderColor: "#CDE7E2", background: "#F6FAFD" }}>
-        <div style={{ fontSize: 14, color: "var(--ink-soft)", lineHeight: 1.65, fontStyle: "italic" }}>
-          “La cultura no se demuestra en los grandes momentos, sino en las pequeñas decisiones que tomamos cada día. En Ítaca elegimos escuchar con empatía, actuar con excelencia, aprender constantemente, trabajar en equipo y recordar siempre que detrás de cada agenda, cada historia clínica y cada sesión, hay una vida que puede cambiar. Ese es nuestro compromiso. <strong>Esa es la Mentalidad Ítaca.</strong>”
+      <div className="ca-card" style={{ marginTop: 18, borderColor: "#CDE7E2", background: "linear-gradient(135deg, #EAF5F2, #F6FAFD)", display: "flex", alignItems: "center", gap: 18, flexWrap: "wrap" }}>
+        <div style={{ flex: 1, minWidth: 260, display: "flex", gap: 12 }}>
+          <span style={{ fontSize: 42, lineHeight: 0.9, color: "var(--accent)", fontFamily: "Georgia, serif", flexShrink: 0 }}>“</span>
+          <div style={{ fontSize: 14, color: "var(--ink-soft)", lineHeight: 1.65 }}>
+            La cultura no se demuestra en los grandes momentos, sino en las pequeñas decisiones que tomamos cada día. En Ítaca elegimos escuchar con empatía, actuar con excelencia, aprender constantemente, trabajar en equipo y recordar siempre que detrás de cada agenda, cada historia clínica y cada sesión, hay una vida que puede cambiar. Ese es nuestro compromiso. <strong style={{ color: "var(--accent)" }}>Esa es la Mentalidad Ítaca.</strong>
+          </div>
         </div>
+        <img src="/itaca-logo-v.png" alt="Ítaca" style={{ height: 70, opacity: 0.92, flexShrink: 0 }} onError={(e) => { e.currentTarget.style.display = "none"; }} />
       </div>
     </div>
   );
