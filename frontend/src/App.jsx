@@ -2362,6 +2362,36 @@ function PanelPsicologo({ panel }) {
         ))}
       </div>
 
+      {panel.logros && panel.logros.length > 0 && (
+        <div style={{ marginTop: 14 }}>
+          <div style={{ fontSize: 12.5, fontWeight: 600, color: "var(--ink-soft)", marginBottom: 6 }}>Mis logros 🏅</div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+            {panel.logros.map((lg) => {
+              const desbloqueado = lg.nivel > 0;
+              const falta = lg.siguiente != null ? lg.siguiente - lg.valor : 0;
+              return (
+                <div key={lg.clave} style={{ flex: "1 1 150px", minWidth: 150, background: "var(--surface)", border: "1px solid var(--line)", borderRadius: 10, padding: "10px 12px", opacity: desbloqueado ? 1 : 0.75 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ fontSize: 22, filter: desbloqueado ? "none" : "grayscale(1)" }}>{lg.emoji}</span>
+                    <div>
+                      <div style={{ fontSize: 12.5, fontWeight: 700 }}>{lg.label}</div>
+                      <div style={{ fontSize: 11.5, color: "var(--muted)" }}>
+                        {lg.total_niveles > 1 ? `Nivel ${lg.nivel}/${lg.total_niveles}` : (desbloqueado ? "Conseguido" : "Por conseguir")} · {lg.valor}
+                      </div>
+                    </div>
+                  </div>
+                  {lg.siguiente != null && (
+                    <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 6 }}>
+                      {falta > 0 ? `Faltan ${falta} para la siguiente medalla` : "¡Medalla lograda!"}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {panel.agendadas && panel.agendadas.length > 0 && (
         <div style={{ marginTop: 14 }}>
           <div style={{ fontSize: 12.5, fontWeight: 600, color: "var(--ink-soft)", marginBottom: 6 }}>Sesiones agendadas por venir</div>

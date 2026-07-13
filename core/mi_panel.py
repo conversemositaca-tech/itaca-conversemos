@@ -99,8 +99,33 @@ class MiPanelView(APIView):
         respondieron = nps.values("paciente_id").distinct().count()
         satisfaccion = _pct(promotores, total_resp)
 
+        # --- Logros / medallas (gamificación, pedido de Gaby) ---
+        from pacientes.models import Atencion
+        sesiones_totales = Cita.objects.filter(
+            clinica=clinica, medico=user,
+            estado__in=[Cita.Estado.ATENDIDA, Cita.Estado.ASISTIO],
+        ).count()
+        historias_totales = Atencion.objects.filter(clinica=clinica, medico=user).count()
+
+        def _medalla(clave, label, emoji, valor, tiers):
+            nivel = sum(1 for t in tiers if valor >= t)
+            return {
+                "clave": clave, "label": label, "emoji": emoji, "valor": valor,
+                "nivel": nivel, "total_niveles": len(tiers),
+                "siguiente": tiers[nivel] if nivel < len(tiers) else None,
+            }
+
+        logros = [
+            _medalla("sesiones", "Sesiones atendidas", "🩺", sesiones_totales, [10, 25, 50, 100, 250, 500]),
+            _medalla("historias", "Historias clínicas", "📋", historias_totales, [10, 50, 100, 250]),
+        ]
+        if total_resp >= 5 and (satisfaccion or 0) >= 80:
+            logros.append({"clave": "satisfaccion", "label": "Pacientes felices", "emoji": "⭐",
+                           "valor": satisfaccion, "nivel": 1, "total_niveles": 1, "siguiente": None})
+
         return Response({
             "es_psicologo": True,
+            "logros": logros,
             "mof": clinica.mof or "",
             "pilares": clinica.pilares or "",
             "horario": horario,
