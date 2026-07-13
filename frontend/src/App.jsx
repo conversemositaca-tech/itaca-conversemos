@@ -604,6 +604,8 @@ export default function ClinicaApp() {
 
   const nav = [
     { id: "hoy", label: "Hoy", icon: Home },
+    // Mentalidad Ítaca: cultura y funciones. La ve todo el equipo.
+    { id: "mentalidad", label: "Mentalidad Ítaca", icon: Compass },
     // El panel de Gerencia lo ve solo el dueño/admin.
     ...(usuario?.rol === "admin" ? [{ id: "gerencia", label: "Gerencia", icon: BarChart3 }] : []),
     ...(usuario?.rol === "admin" ? [{ id: "historico", label: "Histórico", icon: Activity }] : []),
@@ -1331,6 +1333,7 @@ export default function ClinicaApp() {
         {view === "profesionales" && <Profesionales showToast={showToast} esAdmin={usuario?.rol === "admin"} />}
 
         {view === "herramientas" && <Recursos showToast={showToast} esAdmin={usuario?.rol === "admin"} />}
+        {view === "mentalidad" && <MentalidadItaca rol={usuario?.rol} />}
 
         {view === "mensajes" && <Mensajes mensajes={mensajes} puedeEditar={usuario?.rol === "admin" || usuario?.rol === "asistente"} showToast={showToast} />}
 
@@ -2170,6 +2173,162 @@ function HojaEditable({ formato, showToast, onSaved }) {
       <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 8 }}>
         Edita una celda y sal con Enter o clic afuera para guardar. Borde verde = guardado, rojo = error.
         {!formato.puedeAgregar && " Los cobros se crean desde Finanzas o al Atender."}
+      </div>
+    </div>
+  );
+}
+
+// Cultura de Ítaca: ADN, no negociables, pilares I+M, mentalidad ganadora y mi rol.
+// La ve todo el equipo (pedido de Emma/Gaby, con su contenido).
+function MentalidadSeccion({ n, titulo, resumen, children, abierta }) {
+  const [ver, setVer] = useState(!!abierta);
+  return (
+    <div className="ca-card" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <span style={{ width: 28, height: 28, borderRadius: 999, background: "var(--accent)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 14, flexShrink: 0 }}>{n}</span>
+        <div style={{ fontWeight: 700, fontSize: 15 }}>{titulo}</div>
+      </div>
+      {resumen && <div style={{ fontSize: 13, color: "var(--ink-soft)", lineHeight: 1.5 }}>{resumen}</div>}
+      {ver && <div style={{ marginTop: 4, display: "flex", flexDirection: "column", gap: 12 }}>{children}</div>}
+      <button className="ca-mini" style={{ alignSelf: "flex-start", marginTop: 2 }} onClick={() => setVer((v) => !v)}>
+        {ver ? "Ver menos ▲" : "Ver más ▼"}
+      </button>
+    </div>
+  );
+}
+
+function BloqueLista({ titulo, items }) {
+  return (
+    <div>
+      {titulo && <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 5 }}>{titulo}</div>}
+      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+        {items.map((it, i) => (
+          <div key={i} style={{ fontSize: 13, color: "var(--ink-soft)", lineHeight: 1.5, display: "flex", gap: 7 }}>
+            <Check size={14} strokeWidth={2.5} style={{ color: "var(--accent)", flexShrink: 0, marginTop: 3 }} />
+            <span>{it}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+const ROL_ITACA = {
+  medico: "Como psicólogo/a, tu rol es acompañar procesos que transforman vidas: prepara cada sesión, conoce a tu paciente, mantén tus historias clínicas completas y cuida cada detalle de su experiencia.",
+  asistente: "Como coordinadora, eres la primera y última impresión del paciente: cuidas la experiencia desde el primer contacto, ordenas la agenda y sostienes la comunicación del equipo.",
+  admin: "Desde gerencia sostienes la cultura y los estándares: haces que el propósito de cambiar vidas sea posible cada día.",
+  comercial: "Desde captación acercas la salud mental a más personas: cada conversación acerca o aleja a alguien de la ayuda que necesita.",
+};
+
+function MentalidadItaca({ rol }) {
+  return (
+    <div>
+      {/* Hero */}
+      <div className="ca-card" style={{ background: "linear-gradient(135deg, #E9F5F3, #F6FAFD)", borderColor: "#CDE7E2", marginBottom: 18 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+          <Compass size={22} strokeWidth={2} style={{ color: "var(--accent)" }} />
+          <h1 className="ca-h1" style={{ margin: 0 }}>Mentalidad Ítaca</h1>
+        </div>
+        <div style={{ fontSize: 14, color: "var(--ink-soft)", lineHeight: 1.6, maxWidth: 760 }}>
+          En Ítaca creemos que el conocimiento te convierte en un buen profesional, pero <strong>la cultura es lo que te convierte en un profesional extraordinario</strong>. Esta sección reúne los principios que guían cada decisión, cada interacción y cada sesión. No son reglas; son la forma en que <strong>elegimos cambiar vidas</strong>.
+        </div>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 14 }}>
+        <MentalidadSeccion n="1" titulo="ADN Ítaca" resumen="Nuestro propósito, visión y lo que nos mueve cada día.">
+          <BloqueLista titulo="Nuestro propósito: cambiar vidas" items={[
+            "Cambiar vidas a través de un acompañamiento psicológico humano, ético y basado en evidencia, acercando la salud mental a cada vez más personas.",
+            "Cada paciente que llega a Ítaca deposita en nosotros una parte importante de su historia. No solo brindamos sesiones: acompañamos procesos que pueden transformar una vida.",
+          ]} />
+          <BloqueLista titulo="Nuestra visión" items={[
+            "Ser el centro psicológico referente en el Perú por la calidad de nuestra atención, la excelencia de nuestros profesionales y el impacto positivo en la vida de miles de personas.",
+          ]} />
+          <BloqueLista titulo="¿Qué significa trabajar en Ítaca?" items={[
+            "Cada conversación importa.",
+            "Cada paciente merece una experiencia extraordinaria.",
+            "La excelencia no es un objetivo; es el estándar.",
+            "Siempre buscamos mejorar.",
+            "Trabajamos como un solo equipo.",
+            "Nunca olvidamos que detrás de cada historia clínica existe una persona.",
+          ]} />
+          <BloqueLista titulo="Nuestro compromiso" items={[
+            "Cambiar vidas.", "Generar bienestar.", "Crear experiencias memorables.",
+            "Crecer como profesionales.", "Construir un equipo del que sintamos orgullo.",
+          ]} />
+        </MentalidadSeccion>
+
+        <MentalidadSeccion n="2" titulo="Los No Negociables Ítaca" resumen="Los estándares mínimos que todos vivimos, sin excepción.">
+          <BloqueLista titulo="Excelencia profesional" items={[
+            "Mantengo mis historias clínicas completas y actualizadas dentro del tiempo establecido.",
+            "Me preparo antes de cada sesión.", "Conozco a mis pacientes antes de atenderlos.",
+            "Mantengo mi agenda organizada.",
+          ]} />
+          <BloqueLista titulo="Experiencia del paciente" items={[
+            "Cada paciente recibe un trato cálido, respetuoso y profesional.",
+            "Resuelvo dudas con claridad.",
+            "Cada paciente termina la sesión entendiendo cuál es el siguiente paso de su proceso.",
+            "Cuido cada detalle de la experiencia, desde el primer contacto hasta el cierre terapéutico.",
+          ]} />
+          <BloqueLista titulo="Trabajo en equipo" items={[
+            "Mantengo comunicación clara y respetuosa.", "Aviso oportunamente cualquier incidencia.",
+            "Cumplo los acuerdos del equipo.", "Colaboro antes de que me lo pidan.",
+          ]} />
+          <BloqueLista titulo="Responsabilidad" items={[
+            "Soy puntual.", "Cumplo los plazos establecidos.", "Asumo responsabilidad sobre mis errores.",
+            "Si detecto un problema, también propongo una solución.",
+          ]} />
+          <BloqueLista titulo="Crecimiento" items={[
+            "Busco aprender constantemente.", "Participo activamente en capacitaciones.",
+            "Estoy dispuesto a recibir feedback.", "Comparto conocimiento con mi equipo.",
+          ]} />
+          <BloqueLista titulo="Representación de la marca" items={[
+            "Represento la confianza que miles de pacientes depositan en nosotros.",
+            "Cada conversación, mensaje, llamada o sesión fortalece o debilita esa confianza.",
+          ]} />
+        </MentalidadSeccion>
+
+        <MentalidadSeccion n="3" titulo="Los Pilares Ítaca · I + M" resumen="Los principios que sostienen nuestra cultura y guían cada decisión.">
+          <BloqueLista titulo="💡 Itactividad — damos soluciones, no problemas" items={[
+            "Actuamos con iniciativa, anticipándonos a los desafíos y buscando siempre soluciones.",
+            "No esperamos que las cosas sucedan; las hacemos suceder. No nos quejamos de los problemas, los solucionamos.",
+          ]} />
+          <BloqueLista titulo="➕1 Sí importa — enfocados en resultados y calidad" items={[
+            "Cada acción cuenta. Cada esfuerzo extra, cada detalle y cada mejora suman para una experiencia extraordinaria.",
+            "No nos conformamos; siempre damos la milla extra.",
+          ]} />
+          <BloqueLista titulo="🛡️ Muro de confianza — directos y nos cuidamos" items={[
+            "Construimos relaciones basadas en la comunicación transparente, el respeto y la confianza.",
+            "Hablamos directamente, evitamos las suposiciones y resolvemos en equipo. No suponemos nunca, preguntamos siempre.",
+          ]} />
+        </MentalidadSeccion>
+
+        <MentalidadSeccion n="4" titulo="Mentalidad Ganadora" resumen="No es competir con otros, es desarrollar nuestra mejor versión para generar mayor impacto.">
+          <BloqueLista titulo="Pensamos en resultados" items={["Nuestro objetivo no es acumular sesiones, es que más personas logren cambios significativos en su vida."]} />
+          <BloqueLista titulo="Guiamos con claridad" items={["No presionamos ni persuadimos: guiamos al paciente para que tome decisiones informadas sobre su proceso."]} />
+          <BloqueLista titulo="Creemos en la continuidad terapéutica" items={["Los cambios importantes requieren tiempo. Explicamos el proceso, resolvemos dudas y ayudamos al paciente a comprometerse con su bienestar."]} />
+          <BloqueLista titulo="Nos enfocamos en el impacto" items={[
+            "Personas que continúan su proceso.", "Pacientes satisfechos.",
+            "Altas terapéuticas exitosas.", "Vidas transformadas.",
+          ]} />
+          <BloqueLista titulo="Crecemos juntos" items={["Cuando mejora un colaborador, mejora el equipo; cuando mejora el equipo, mejora la experiencia del paciente; y así cumplimos nuestro propósito."]} />
+        </MentalidadSeccion>
+
+        <MentalidadSeccion n="5" titulo="Mi Rol en Ítaca" resumen="Todos compartimos una misión: contribuir a cambiar vidas desde nuestro rol." abierta>
+          <div style={{ background: "var(--bg-soft, #F6F5F2)", borderRadius: 10, padding: "12px 14px", fontSize: 13.5, lineHeight: 1.55 }}>
+            {ROL_ITACA[rol] || "Cada puesto tiene funciones específicas, pero todos somos responsables de la experiencia que vive el paciente."}
+          </div>
+          <BloqueLista titulo="Lo que esperamos de ti" items={[
+            "Actuar con profesionalismo.", "Vivir la cultura Ítaca.", "Cumplir los estándares de calidad.",
+            "Cuidar la experiencia del paciente.", "Trabajar colaborativamente.", "Buscar siempre mejorar.",
+          ]} />
+        </MentalidadSeccion>
+      </div>
+
+      {/* Cierre */}
+      <div className="ca-card" style={{ marginTop: 18, borderColor: "#CDE7E2", background: "#F6FAFD" }}>
+        <div style={{ fontSize: 14, color: "var(--ink-soft)", lineHeight: 1.65, fontStyle: "italic" }}>
+          “La cultura no se demuestra en los grandes momentos, sino en las pequeñas decisiones que tomamos cada día. En Ítaca elegimos escuchar con empatía, actuar con excelencia, aprender constantemente, trabajar en equipo y recordar siempre que detrás de cada agenda, cada historia clínica y cada sesión, hay una vida que puede cambiar. Ese es nuestro compromiso. <strong>Esa es la Mentalidad Ítaca.</strong>”
+        </div>
       </div>
     </div>
   );
