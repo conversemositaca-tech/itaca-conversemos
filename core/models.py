@@ -32,6 +32,10 @@ class Clinica(models.Model):
     # equipo vea a diario cómo van y empuje cobros y cierres de proceso.
     meta_min_mes = models.DecimalField("meta mínima del mes (S/)", max_digits=10, decimal_places=2, default=20000)
     meta_ideal_mes = models.DecimalField("meta ideal del mes (S/)", max_digits=10, decimal_places=2, default=30000)
+    # Metas por sede (para que cada coordinadora vea la meta de SU sede, no la total).
+    # Estructura: {"lima": {"min": 12000, "ideal": 18000}, "piura": {...}}. Si una sede
+    # no está, cae a la meta general de arriba.
+    metas_sede = models.JSONField("metas por sede", default=dict, blank=True)
     # Textos legales que firma el paciente (consentimiento informado y políticas).
     # Si están vacíos se usa el texto por defecto del sistema. La gerencia los edita
     # desde la app: son documentos legales propios de la clínica.

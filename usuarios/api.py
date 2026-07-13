@@ -32,6 +32,8 @@ def datos_usuario(user):
         "rol": user.rol,
         "rol_label": user.get_rol_display(),
         "especialidad": user.especialidad,
+        "sede": user.sede,
+        "sede_label": user.get_sede_display() if user.sede else "",
         "clinica": (
             {"nombre": clinica.nombre, "ciudad": clinica.ciudad} if clinica else None
         ),
@@ -126,9 +128,10 @@ class UsuarioViewSet(viewsets.ModelViewSet):
         if len(password) < 6:
             return Response({"detail": "La contraseña debe tener al menos 6 caracteres."}, status=status.HTTP_400_BAD_REQUEST)
         rol = d.get("rol") if d.get("rol") in dict(Usuario.Rol.choices) else Usuario.Rol.ASISTENTE
+        sede = d.get("sede") if d.get("sede") in dict(Usuario.Sede.choices) else ""
         user = Usuario.objects.create_user(
             email=email, password=password, clinica=get_clinica_actual(),
-            nombre=(d.get("nombre") or "").strip(), rol=rol,
+            nombre=(d.get("nombre") or "").strip(), rol=rol, sede=sede,
             telefono=(d.get("telefono") or "").strip(),
             especialidad=(d.get("especialidad") or "").strip(), is_active=True,
         )

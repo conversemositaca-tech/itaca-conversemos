@@ -1516,22 +1516,38 @@ function ConfigClinica({ showToast }) {
   const [tPol, setTPol] = useState("");
   const [metaMin, setMetaMin] = useState("");
   const [metaIdeal, setMetaIdeal] = useState("");
+  const [metasSede, setMetasSede] = useState({ lima: { min: "", ideal: "" }, piura: { min: "", ideal: "" } });
   const [guardandoTxt, setGuardandoTxt] = useState(false);
   function cargar(c) {
     setCfg(c); setNombre(c.nombre); setCiudad(c.ciudad || "");
     setTCons(c.texto_consentimiento || ""); setTPol(c.texto_politicas || "");
     setMetaMin(String(c.meta_min_mes ?? "")); setMetaIdeal(String(c.meta_ideal_mes ?? ""));
+    const ms = c.metas_sede || {};
+    setMetasSede({
+      lima: { min: String(ms.lima?.min ?? ""), ideal: String(ms.lima?.ideal ?? "") },
+      piura: { min: String(ms.piura?.min ?? ""), ideal: String(ms.piura?.ideal ?? "") },
+    });
   }
   useEffect(() => { api.clinicaConfig().then(cargar).catch(() => {}); }, []);
+  function metasSedePayload() {
+    const out = {};
+    for (const s of ["lima", "piura"]) {
+      const min = Number(metasSede[s].min) || 0, ideal = Number(metasSede[s].ideal) || 0;
+      if (min || ideal) out[s] = { min, ideal };
+    }
+    return out;
+  }
   async function guardar() {
     try {
       const c = await api.actualizarClinica({
         nombre, ciudad,
         meta_min_mes: Number(metaMin) || 0, meta_ideal_mes: Number(metaIdeal) || 0,
+        metas_sede: metasSedePayload(),
       });
       cargar(c); showToast("Datos de la clínica actualizados ✓");
     } catch (e) { showToast("Error: " + e.message); }
   }
+  const setMS = (sede, k) => (e) => setMetasSede((p) => ({ ...p, [sede]: { ...p[sede], [k]: e.target.value } }));
   async function guardarTextos() {
     setGuardandoTxt(true);
     try {
@@ -1544,7 +1560,8 @@ function ConfigClinica({ showToast }) {
   const cambiado = nombre.trim() && (
     nombre !== cfg.nombre || ciudad !== (cfg.ciudad || "") ||
     Number(metaMin) !== Number(cfg.meta_min_mes ?? 0) ||
-    Number(metaIdeal) !== Number(cfg.meta_ideal_mes ?? 0)
+    Number(metaIdeal) !== Number(cfg.meta_ideal_mes ?? 0) ||
+    JSON.stringify(metasSedePayload()) !== JSON.stringify(cfg.metas_sede || {})
   );
   const txtCambiado = tCons !== (cfg.texto_consentimiento || "") || tPol !== (cfg.texto_politicas || "");
   const areaTxt = { minHeight: 200, resize: "vertical", lineHeight: 1.55, fontSize: 13, fontFamily: "inherit" };
@@ -1573,8 +1590,24 @@ function ConfigClinica({ showToast }) {
             <input className="ca-input" type="number" min="0" value={metaIdeal} onChange={(e) => setMetaIdeal(e.target.value)} />
           </div>
           <div className="ca-pmeta" style={{ flex: 2, minWidth: 220, paddingBottom: 10 }}>
-            Se muestran en Inicio (gerencia y coordinación) con el avance del mes y el ritmo esperado a la fecha.
+            La gerencia ve el total de la clínica. Cada coordinadora ve la meta de SU sede (abajo); si una sede no tiene meta, usa la general.
           </div>
+        </div>
+        <div style={{ marginTop: 14, paddingTop: 14, borderTop: "1px solid var(--line)" }}>
+          <div className="ca-label" style={{ marginBottom: 8 }}>Metas por sede (opcional)</div>
+          {["lima", "piura"].map((s) => (
+            <div key={s} style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end", marginBottom: 10 }}>
+              <div style={{ width: 70, fontWeight: 600, fontSize: 13.5, paddingBottom: 10, textTransform: "capitalize" }}>{s}</div>
+              <div style={{ flex: 1, minWidth: 130 }}>
+                <div className="ca-label">Mínima (S/)</div>
+                <input className="ca-input" type="number" min="0" value={metasSede[s].min} onChange={setMS(s, "min")} placeholder="usa la general" />
+              </div>
+              <div style={{ flex: 1, minWidth: 130 }}>
+                <div className="ca-label">Ideal (S/)</div>
+                <input className="ca-input" type="number" min="0" value={metasSede[s].ideal} onChange={setMS(s, "ideal")} placeholder="usa la general" />
+              </div>
+            </div>
+          ))}
         </div>
       </div>
 
@@ -2256,6 +2289,7 @@ function Hoy({ proximas, citasHoy, porConfirmar, atendidas, onOpen, onGo, onRete
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
               <div style={{ fontSize: 14, fontWeight: 600, display: "flex", alignItems: "center", gap: 7 }}>
                 <TrendingUp size={15} strokeWidth={2} style={{ color: "var(--accent)" }} /> Meta comercial del mes
+                {m.sede && <span style={{ marginLeft: 8, fontSize: 11.5, fontWeight: 600, padding: "1px 9px", borderRadius: 999, background: "#EEF2EC", color: "#4B6B4E", textTransform: "capitalize" }}>{m.sede}</span>}
               </div>
               <div style={{ fontSize: 12.5, fontWeight: 600, color: m.en_ritmo ? "#2F6B4F" : "#B0822F" }}>
                 {m.en_ritmo ? "✓ En ritmo" : `${money(falta)} por debajo del ritmo`}
@@ -8669,7 +8703,7 @@ function UsuarioModal({ usuario, onClose, onSave }) {
   const [nombre, setNombre] = useState(usuario?.nombre || "");
   const [email, setEmail] = useState(usuario?.email || "");
   const [rol, setRol] = useState(usuario?.rol || "medico");
-  const [esp, setEsp] = useState(usuario?.especialidad || "");
+  const [sede, setSede] = useState(usuario?.sede || "piura");
   const [telefono, setTelefono] = useState(usuario?.telefono || "");
   const [password, setPassword] = useState("");
   const esNuevo = !usuario;
@@ -8678,8 +8712,7 @@ function UsuarioModal({ usuario, onClose, onSave }) {
   function guardar() {
     const data = {
       ...(usuario?.id ? { id: usuario.id } : {}),
-      nombre: nombre.trim(), rol, telefono: telefono.trim(),
-      especialidad: rol === "medico" ? esp.trim() : "",
+      nombre: nombre.trim(), rol, telefono: telefono.trim(), sede,
     };
     if (esNuevo) { data.email = email.trim(); data.password = password; }
     else if (password) data.password = password;
@@ -8714,14 +8747,16 @@ function UsuarioModal({ usuario, onClose, onSave }) {
               {ROLES.map((r) => <option key={r.v} value={r.v}>{r.l}</option>)}
             </select>
           </div>
-          {rol === "medico" && (
-            <div style={{ flex: 1.2 }}>
-              <div className="ca-label">Especialidad</div>
-              <select className="ca-input" value={esp || Object.keys(SPECIALTY)[0]} onChange={(e) => setEsp(e.target.value)}>
-                {Object.keys(SPECIALTY).map((s) => <option key={s}>{s}</option>)}
-              </select>
-            </div>
-          )}
+          <div style={{ flex: 1 }}>
+            <div className="ca-label">Sede</div>
+            <select className="ca-input" value={sede} onChange={(e) => setSede(e.target.value)}>
+              <option value="lima">Lima</option>
+              <option value="piura">Piura</option>
+            </select>
+          </div>
+        </div>
+        <div style={{ fontSize: 12, color: "var(--muted)", marginTop: -4, marginBottom: 13 }}>
+          La sede define de qué local ve la información (meta comercial, etc.).
         </div>
         <div style={{ marginBottom: 20 }}>
           <div className="ca-label">{esNuevo ? "Contraseña" : "Nueva contraseña (opcional)"}</div>

@@ -46,6 +46,10 @@ class Usuario(AbstractUser):
         ASISTENTE = "asistente", "Asistente"
         COMERCIAL = "comercial", "Comercial"
 
+    class Sede(models.TextChoices):
+        LIMA = "lima", "Lima"
+        PIURA = "piura", "Piura"
+
     # Quitamos username: el login es por email.
     username = None
     email = models.EmailField("correo electrónico", unique=True)
@@ -61,6 +65,9 @@ class Usuario(AbstractUser):
     nombre = models.CharField(max_length=200, blank=True)
     telefono = models.CharField(max_length=40, blank=True, default="")
     rol = models.CharField(max_length=20, choices=Rol.choices, default=Rol.ASISTENTE)
+    # Sede del usuario: define de qué local ve la información (meta comercial, etc.).
+    # Vacío = ve todas las sedes (gerencia / sin asignar).
+    sede = models.CharField(max_length=10, choices=Sede.choices, blank=True, default="")
     especialidad = models.CharField(
         max_length=120, blank=True, help_text="Solo aplica a usuarios con rol Médico."
     )

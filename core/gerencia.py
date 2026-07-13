@@ -64,6 +64,7 @@ class ClinicaConfigView(APIView):
             "nombre": c.nombre, "ciudad": c.ciudad, "zona_horaria": c.zona_horaria,
             "meta_min_mes": float(c.meta_min_mes or 0),
             "meta_ideal_mes": float(c.meta_ideal_mes or 0),
+            "metas_sede": c.metas_sede or {},
             "texto_consentimiento": texto_consentimiento_default(c, "consentimiento"),
             "texto_politicas": texto_consentimiento_default(c, "politicas"),
             "personalizado_consentimiento": bool((c.texto_consentimiento or "").strip()),
@@ -97,6 +98,20 @@ class ClinicaConfigView(APIView):
                 except (InvalidOperation, ValueError, TypeError):
                     return Response({"detail": f"«{campo}» debe ser un número."},
                                     status=status.HTTP_400_BAD_REQUEST)
+        # Metas por sede: {"lima": {"min": .., "ideal": ..}, "piura": {...}}.
+        if "metas_sede" in request.data:
+            ms = request.data.get("metas_sede") or {}
+            limpio = {}
+            if isinstance(ms, dict):
+                for sede, v in ms.items():
+                    if sede in ("lima", "piura") and isinstance(v, dict):
+                        try:
+                            limpio[sede] = {"min": float(v.get("min") or 0), "ideal": float(v.get("ideal") or 0)}
+                        except (ValueError, TypeError):
+                            return Response({"detail": "Las metas por sede deben ser números."},
+                                            status=status.HTTP_400_BAD_REQUEST)
+            c.metas_sede = limpio
+            campos.append("metas_sede")
         # Textos legales: guardar vacío = volver al borrador por defecto.
         if "texto_consentimiento" in request.data:
             c.texto_consentimiento = (request.data.get("texto_consentimiento") or "").strip()
@@ -195,13 +210,22 @@ class HoyResumenView(APIView):
             mes_ini = hoy.replace(day=1)
             dias_mes = monthrange(hoy.year, hoy.month)[1]
             m_ini, m_fin = _bounds(mes_ini, hoy)
-            generado = float(
-                Cobro.objects.del_tenant_actual()
-                .filter(estado=Cobro.Estado.PAGADO, fecha__gte=m_ini, fecha__lt=m_fin)
-                .aggregate(s=Sum("monto"))["s"] or 0
-            )
-            meta_min = float(clinica.meta_min_mes or 0)
-            meta_ideal = float(clinica.meta_ideal_mes or 0)
+            # La coordinadora ve SU sede; la gerencia ve el total de la clínica.
+            sede_scope = getattr(request.user, "sede", "") if rol == "asistente" else ""
+            cobros_mes = (Cobro.objects.del_tenant_actual()
+                          .filter(estado=Cobro.Estado.PAGADO, fecha__gte=m_ini, fecha__lt=m_fin))
+            if sede_scope:
+                cobros_mes = cobros_mes.filter(paciente__sede=sede_scope)
+            generado = float(cobros_mes.aggregate(s=Sum("monto"))["s"] or 0)
+            # Meta de la sede si está configurada; si no, la meta general de la clínica.
+            metas_sede = clinica.metas_sede or {}
+            m_sede = metas_sede.get(sede_scope) if sede_scope else None
+            if isinstance(m_sede, dict):
+                meta_min = float(m_sede.get("min") or 0)
+                meta_ideal = float(m_sede.get("ideal") or 0)
+            else:
+                meta_min = float(clinica.meta_min_mes or 0)
+                meta_ideal = float(clinica.meta_ideal_mes or 0)
             # Cuánto "deberían" llevar hoy para ir en ritmo hacia la meta mínima.
             esperado = round(meta_min * hoy.day / dias_mes) if meta_min else 0
             out["meta"] = {
@@ -214,6 +238,7 @@ class HoyResumenView(APIView):
                 "en_ritmo": generado >= esperado,
                 "dia": hoy.day,
                 "dias_mes": dias_mes,
+                "sede": sede_scope,  # "" = todas (gerencia); "lima"/"piura" = coordinadora
             }
 
         if es_admin:
