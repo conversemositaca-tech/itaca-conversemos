@@ -220,6 +220,13 @@ class Cita(ModeloTenant):
         PRESENCIAL = "presencial", "Presencial"
         VIRTUAL = "virtual", "Virtual"
 
+    class Categoria(models.TextChoices):
+        GENERAL = "general", "General"
+        ADULTOS = "adultos", "Adultos"
+        INFANTOJUVENIL = "infantojuvenil", "Infantojuvenil"
+        PAREJAS = "parejas", "Parejas"
+        CONSTANCIAS = "constancias", "Constancias e informes"
+
     paciente = models.ForeignKey(Paciente, on_delete=models.PROTECT, related_name="citas")
     medico = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -230,7 +237,10 @@ class Cita(ModeloTenant):
         limit_choices_to={"rol": "medico"},
     )
     inicio = models.DateTimeField()
-    especialidad = models.CharField(max_length=120, blank=True)
+    # Categoría (agrupador clínico) y servicio (nombre EXACTO del catálogo de Precios,
+    # para que la liquidación calce por nombre). Se eligen por separado al agendar.
+    categoria = models.CharField(max_length=20, choices=Categoria.choices, blank=True, default="")
+    especialidad = models.CharField("servicio", max_length=120, blank=True)
     estado = models.CharField(max_length=20, choices=Estado.choices, default=Estado.AGENDADA)
     recordatorio_enviado = models.BooleanField(default=False)
 

@@ -236,11 +236,12 @@ class CitaSerializer(serializers.ModelSerializer):
     n_sesion = serializers.SerializerMethodField()
     modalidad_label = serializers.CharField(source="get_modalidad_display", read_only=True)
     sede_label = serializers.CharField(source="get_sede_display", read_only=True)
+    categoria_label = serializers.CharField(source="get_categoria_display", read_only=True)
 
     class Meta:
         model = Cita
         fields = [
-            "id", "pacienteId", "paciente", "medico", "especialidad",
+            "id", "pacienteId", "paciente", "medico", "especialidad", "categoria", "categoria_label",
             "fecha", "hora", "inicio", "estado", "estado_label", "recordado", "cobrada",
             "n_sesion", "sede", "sede_label", "modalidad", "modalidad_label", "enlace", "notas", "motivo_consulta",
         ]

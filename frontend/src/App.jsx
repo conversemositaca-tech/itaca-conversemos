@@ -3447,7 +3447,9 @@ function AgendarModal({ pacientes, fechaInicial, pacienteFijo, onClose, onSave }
   const [nuevoTel, setNuevoTel] = useState("");
   const [fecha, setFecha] = useState(fechaInicial || HOY_ISO);
   const [hora, setHora] = useState("");
-  const [esp, setEsp] = useState(pacienteFijo?.especialidad || "Terapia individual");
+  const [esp, setEsp] = useState(pacienteFijo?.especialidad || "");
+  const [categoria, setCategoria] = useState("");
+  const [servicios, setServicios] = useState([]);
   const [medicos, setMedicos] = useState([]);
   const [medicoId, setMedicoId] = useState("");
   const [sede, setSede] = useState(pacienteFijo?.sede || "");
@@ -3462,9 +3464,17 @@ function AgendarModal({ pacientes, fechaInicial, pacienteFijo, onClose, onSave }
   );
 
   useEffect(() => { api.medicos().then(setMedicos).catch(() => {}); }, []);
+  useEffect(() => { api.servicios().then((s) => setServicios((s || []).filter((x) => x.activo !== false))).catch(() => {}); }, []);
 
   // Solo psicólogos de la sede elegida (si hay sede); si no, todos los activos.
   const medicosVisibles = medicos.filter((m) => !sede || !m.sede || m.sede === sede);
+  // Servicios del catálogo (Precios). Si la categoría elegida coincide con la
+  // "especialidad" de algún servicio, se filtra por ella; si no, se muestran todos.
+  const serviciosCat = useMemo(() => {
+    if (!categoria) return servicios;
+    const f = servicios.filter((s) => (s.especialidad || "").toLowerCase() === categoria.toLowerCase());
+    return f.length ? f : servicios;
+  }, [servicios, categoria]);
 
   const matches = useMemo(
     () => (busca.trim() ? pacientes.filter((p) => p.nombre.toLowerCase().includes(busca.toLowerCase())).slice(0, 4) : []),
@@ -3472,7 +3482,7 @@ function AgendarModal({ pacientes, fechaInicial, pacienteFijo, onClose, onSave }
   );
 
   function elegir(p) {
-    setSel(p); setNuevo(false); setEsp(p.especialidad || "Terapia individual");
+    setSel(p); setNuevo(false); setEsp(p.especialidad || "");
     if (p.sede) setSede(p.sede);
     if (p.n_sesion != null) setNSesion(String(p.n_sesion + 1));
     setBusca("");
@@ -3490,7 +3500,7 @@ function AgendarModal({ pacientes, fechaInicial, pacienteFijo, onClose, onSave }
     if (!hora.trim()) { setError("Falta la hora."); return; }
     setError("");
     const extra = {
-      especialidad: esp, fecha, hora, medicoId: medicoId || null, sede,
+      especialidad: esp, categoria, fecha, hora, medicoId: medicoId || null, sede,
       modalidad, enlace: modalidad === "virtual" ? enlace.trim() : "",
       notas: notas.trim(), motivo_consulta: motivoConsulta.trim(), n_sesion: nSesion ? Number(nSesion) : null,
     };
@@ -3564,11 +3574,25 @@ function AgendarModal({ pacientes, fechaInicial, pacienteFijo, onClose, onSave }
             <input className="ca-input" type="time" value={hora} onChange={(e) => setHora(e.target.value)} placeholder="14:30" />
           </div>
         </div>
-        <div style={{ marginBottom: 13 }}>
-          <div className="ca-label">Especialidad</div>
-          <select className="ca-input" value={esp} onChange={(e) => setEsp(e.target.value)}>
-            {Object.keys(SPECIALTY).map((s) => <option key={s}>{s}</option>)}
-          </select>
+        <div style={{ display: "flex", gap: 11, marginBottom: 13 }}>
+          <div style={{ flex: 1 }}>
+            <div className="ca-label">Categoría</div>
+            <select className="ca-input" value={categoria} onChange={(e) => setCategoria(e.target.value)}>
+              <option value="">— Elegir —</option>
+              <option value="general">General</option>
+              <option value="adultos">Adultos</option>
+              <option value="infantojuvenil">Infantojuvenil</option>
+              <option value="parejas">Parejas</option>
+              <option value="constancias">Constancias e informes</option>
+            </select>
+          </div>
+          <div style={{ flex: 1.3 }}>
+            <div className="ca-label">Servicio <span style={{ color: "var(--muted)", fontWeight: 400 }}>(de Precios)</span></div>
+            <select className="ca-input" value={esp} onChange={(e) => setEsp(e.target.value)}>
+              <option value="">— Elegir —</option>
+              {serviciosCat.map((s) => <option key={s.id} value={s.nombre}>{s.nombre}</option>)}
+            </select>
+          </div>
         </div>
 
         <div style={{ display: "flex", gap: 11, marginBottom: 13 }}>
@@ -3890,21 +3914,13 @@ function Agenda({ citas, bloqueos = [], fecha, setFecha, vista, setVista, esAsis
     () => Object.fromEntries(medicosDir.map((m) => [m.nombre, m.sede || ""])),
     [medicosDir]
   );
-  // Lista de psicólogos activos del directorio + cualquiera presente en las citas,
-  // para que aparezcan todos (no solo los que ya tienen sesiones) — filtrados por sede.
-  // OJO: al filtrar por sede manda la sede DEL PSICÓLOGO (su ficha), no la de la
-  // cita. Si no, basta una cita suelta agendada en la otra sede para que un
-  // psicólogo de Piura aparezca también en Lima.
-  const medicos = useMemo(() => {
-    const nombres = new Set(medicosDir.filter((m) => !filtroSede || m.sede === filtroSede).map((m) => m.nombre).filter(Boolean));
-    citas.forEach((c) => {
-      if (!c.medico) return;
-      // Si no está en el directorio no sabemos su sede: caemos a la de la cita.
-      const sedeEfectiva = sedePorNombre[c.medico] || c.sede || "";
-      if (!filtroSede || sedeEfectiva === filtroSede) nombres.add(c.medico);
-    });
-    return [...nombres].sort();
-  }, [medicosDir, citas, filtroSede, sedePorNombre]);
+  // Lista de psicólogos = SOLO los del directorio ACTIVO (api.medicos ya excluye
+  // inactivos), filtrados por su sede. Antes se agregaban también los presentes en
+  // las citas, y eso colaba psicólogos DESACTIVADOS que aún tenían citas (ej. Mirai).
+  const medicos = useMemo(
+    () => medicosDir.filter((m) => !filtroSede || m.sede === filtroSede).map((m) => m.nombre).filter(Boolean).sort(),
+    [medicosDir, filtroSede]
+  );
   const horariosPorNombre = useMemo(() => Object.fromEntries(medicosDir.map((m) => [m.nombre, m.horario || {}])), [medicosDir]);
   const semana = vista === "semana" ? semanaDe(fecha) : null;
   const dias = vista === "mes" ? mesDe(fecha) : null;

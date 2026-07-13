@@ -286,6 +286,7 @@ class CitaViewSet(viewsets.ModelViewSet):
         clinica = get_clinica_actual()
         paciente_id = request.data.get("pacienteId")
         especialidad = (request.data.get("especialidad") or "").strip()
+        categoria = request.data.get("categoria") if request.data.get("categoria") in dict(Cita.Categoria.choices) else ""
 
         paciente = Paciente.objects.del_tenant_actual().filter(pk=paciente_id).first()
         if paciente is None:
@@ -329,6 +330,7 @@ class CitaViewSet(viewsets.ModelViewSet):
             medico=medico,
             inicio=inicio,
             especialidad=especialidad or paciente.especialidad_habitual,
+            categoria=categoria,
             estado=Cita.Estado.AGENDADA,
             sede=sede,
             modalidad=modalidad,
