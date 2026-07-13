@@ -56,9 +56,11 @@ class LiquidacionView(APIView):
         for s in Servicio.objects.filter(clinica=clinica):
             montos[(s.nombre or "").strip().lower()] = s.monto_terapeuta or Decimal("0")
 
+        # Sesiones realizadas = atendidas (con nota) o marcadas "asistió" (el paciente vino).
+        REALIZADAS = [Cita.Estado.ATENDIDA, Cita.Estado.ASISTIO]
         citas = (
             Cita.objects
-            .filter(clinica=clinica, estado=Cita.Estado.ATENDIDA, inicio__gte=ini, inicio__lte=fin)
+            .filter(clinica=clinica, estado__in=REALIZADAS, inicio__gte=ini, inicio__lte=fin)
             .select_related("medico")
         )
 

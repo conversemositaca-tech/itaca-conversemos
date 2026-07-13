@@ -50,9 +50,11 @@ def ocupacion_por_sede(clinica, anio, mes, semana):
     ini = timezone.make_aware(datetime.combine(d_ini, time.min), tz)
     fin = timezone.make_aware(datetime.combine(d_fin, time.max), tz)
 
+    # Sesiones realizadas = atendidas (con nota) o marcadas "asistió" (el paciente vino).
     citas = (
         Cita.objects
-        .filter(clinica=clinica, estado=Cita.Estado.ATENDIDA, inicio__gte=ini, inicio__lte=fin)
+        .filter(clinica=clinica, estado__in=[Cita.Estado.ATENDIDA, Cita.Estado.ASISTIO],
+                inicio__gte=ini, inicio__lte=fin)
         .select_related("paciente", "medico")
     )
 
