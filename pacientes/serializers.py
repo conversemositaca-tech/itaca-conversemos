@@ -249,7 +249,8 @@ class CitaSerializer(serializers.ModelSerializer):
         read_only_fields = ["inicio"]
 
     def get_cobrada(self, obj):
-        return obj.cobros.exclude(estado="anulado").exists()
+        # Usa los cobros ya prefetcheados (evita 1 query por cita = N+1 en la agenda).
+        return any(c.estado != "anulado" for c in obj.cobros.all())
 
     def get_n_sesion(self, obj):
         # El N° de la cita si se indicó; si no, el del paciente.
