@@ -268,15 +268,40 @@ class HoyResumenView(APIView):
             # Eliminaciones recientes (citas/pagos) — la gerencia se entera.
             from pacientes.models import RegistroEliminacion
             elim = (RegistroEliminacion.objects.del_tenant_actual()
-                    .filter(creado_en__gte=timezone.now() - timedelta(days=7))
+                    .filter(revisado=False,
+                            creado_en__gte=timezone.now() - timedelta(days=7))
                     .select_related("usuario")[:12])
             out["eliminaciones"] = [{
+                "id": e.id,
                 "tipo": e.tipo, "tipo_label": e.get_tipo_display(),
                 "descripcion": e.descripcion, "paciente": e.paciente_nombre,
                 "usuario": str(e.usuario) if e.usuario_id else "",
                 "cuando": timezone.localtime(e.creado_en).strftime("%d/%m %H:%M"),
             } for e in elim]
         return Response(out)
+
+
+class EliminacionRevisarView(APIView):
+    """POST /api/eliminaciones/<pk>/revisar/ — la gerencia marca una alerta de
+    eliminación (cita/pago borrado) como revisada y conforme: deja de salir en el
+    inicio. El registro se conserva para trazabilidad; solo se oculta el aviso."""
+
+    def post(self, request, pk):
+        if get_clinica_actual() is None:
+            return Response({"detail": "Sin clínica en contexto."}, status=status.HTTP_400_BAD_REQUEST)
+        if getattr(request.user, "rol", None) != "admin":
+            return Response({"detail": "Solo gerencia/coordinación puede revisar eliminaciones."},
+                            status=status.HTTP_403_FORBIDDEN)
+        from pacientes.models import RegistroEliminacion
+        reg = RegistroEliminacion.objects.del_tenant_actual().filter(pk=pk).first()
+        if reg is None:
+            return Response({"detail": "No encontrado."}, status=status.HTTP_404_NOT_FOUND)
+        if not reg.revisado:
+            reg.revisado = True
+            reg.revisado_en = timezone.now()
+            reg.revisado_por = request.user
+            reg.save(update_fields=["revisado", "revisado_en", "revisado_por"])
+        return Response({"ok": True, "id": reg.id})
 
 
 class GerenciaResumenView(APIView):

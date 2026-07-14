@@ -749,6 +749,14 @@ class RegistroEliminacion(ModeloTenant):
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, related_name="eliminaciones",
         null=True, blank=True,
     )
+    # Gerencia marca la alerta como revisada (botón "OK, conforme") y desaparece
+    # del inicio. Queda el registro para trazabilidad; solo se oculta del aviso.
+    revisado = models.BooleanField(default=False)
+    revisado_en = models.DateTimeField(null=True, blank=True)
+    revisado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, related_name="eliminaciones_revisadas",
+        null=True, blank=True,
+    )
 
     class Meta:
         verbose_name = "Registro de eliminación"

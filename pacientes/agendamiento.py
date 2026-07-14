@@ -15,6 +15,7 @@ from datetime import datetime, time, timedelta
 
 from django.db import transaction
 from django.db.models import Q
+from django.http import FileResponse, Http404
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.permissions import AllowAny
@@ -31,6 +32,16 @@ from usuarios.models import Profesional, Usuario
 
 def _solo_digitos(s):
     return "".join(ch for ch in (s or "") if ch.isdigit())
+
+
+# Categoría elegida en la rama "necesito ayuda" -> categoría clínica de la Cita.
+_CAT_MAP = {
+    "adultos": Cita.Categoria.ADULTOS,
+    "ninos": Cita.Categoria.INFANTOJUVENIL,
+    "niños": Cita.Categoria.INFANTOJUVENIL,
+    "adolescentes": Cita.Categoria.INFANTOJUVENIL,
+    "parejas": Cita.Categoria.PAREJAS,
+}
 
 
 def _clinica_por_token(token):
@@ -159,11 +170,42 @@ class AgendamientoInfoView(_PublicBase):
                 "sede": p.sede,
                 "sede_label": p.get_sede_display(),
                 "modalidad": p.modalidad,
-                "enfoque": (p.enfoque or "")[:400],
+                "modalidad_label": p.get_modalidad_display(),
+                "enfoque": (p.enfoque or "")[:600],
                 "poblaciones": p.poblaciones,
-                "foto": p.foto.url if p.foto else "",
+                "problematicas": (p.problematicas or "")[:800],
+                "formacion": (p.formacion or "")[:800],
+                "trayectoria": (p.trayectoria or "")[:800],
+                "frase": p.frase,
+                # La foto se sirve por un endpoint público propio (Django no publica /media).
+                "foto": (request.build_absolute_uri(f"/api/agendamiento/{token}/foto/{p.id}/")
+                         if p.foto else ""),
             } for p in profs],
         })
+
+
+class AgendamientoFotoView(APIView):
+    """GET /api/agendamiento/<token>/foto/<pk>/ → foto pública del psicólogo.
+
+    Django no publica /media (los adjuntos clínicos son privados · Ley 29733), pero
+    la foto de perfil del psicólogo SÍ es pública para la página de reservas. Se
+    sirve solo por este endpoint, acotado por el token de la clínica. Sin throttle:
+    se cargan varias imágenes por vista.
+    """
+    authentication_classes = []
+    permission_classes = [AllowAny]
+
+    def get(self, request, token, pk):
+        clinica = _clinica_por_token(token)
+        if clinica is None:
+            raise Http404
+        prof = Profesional.objects.filter(clinica=clinica, id=pk, activo=True).first()
+        if prof is None or not prof.foto:
+            raise Http404
+        try:
+            return FileResponse(prof.foto.open("rb"))
+        except (FileNotFoundError, ValueError, OSError):
+            raise Http404
 
 
 class AgendamientoSlotsView(_PublicBase):
@@ -220,6 +262,10 @@ class AgendamientoReservarView(_PublicBase):
                      if str(d.get("modalidad") or "").strip().lower().startswith("virt")
                      else Cita.Modalidad.PRESENCIAL)
         mensaje = str(d.get("mensaje") or "").strip()[:1000]
+        categoria = _CAT_MAP.get(str(d.get("categoria") or "").strip().lower(), "")
+        # El paciente pidió que el equipo le ayude a elegir el psicólogo ideal.
+        ayuda = bool(d.get("ayuda"))
+        nota_ayuda = " El consultante pidió ayuda para elegir psicólogo/a — verificar idoneidad." if ayuda else ""
         usuario = prof.usuario
 
         with transaction.atomic():
@@ -234,8 +280,8 @@ class AgendamientoReservarView(_PublicBase):
                 # Paciente existente → cita directa en la agenda.
                 Cita.objects.create(
                     clinica=clinica, paciente=paciente, medico=usuario, inicio=inicio,
-                    especialidad=servicio, estado=Cita.Estado.AGENDADA, sede=prof.sede,
-                    modalidad=modalidad, motivo_consulta=mensaje, notas="Reserva online.")
+                    especialidad=servicio, categoria=categoria, estado=Cita.Estado.AGENDADA, sede=prof.sede,
+                    modalidad=modalidad, motivo_consulta=mensaje, notas="Reserva online." + nota_ayuda)
                 return Response({
                     "ok": True, "tipo": "existente", "estado": "agendada",
                     "profesional": prof.nombre,
@@ -257,9 +303,9 @@ class AgendamientoReservarView(_PublicBase):
             lead.save(update_fields=["paciente"])
             Cita.objects.create(
                 clinica=clinica, paciente=paciente, medico=usuario, inicio=inicio,
-                especialidad=servicio, estado=Cita.Estado.PENDIENTE, sede=prof.sede,
+                especialidad=servicio, categoria=categoria, estado=Cita.Estado.PENDIENTE, sede=prof.sede,
                 modalidad=modalidad, motivo_consulta=mensaje,
-                notas=f"Reserva online — paciente nuevo, confirmar. Lead #{lead.id}.")
+                notas=f"Reserva online — paciente nuevo, confirmar. Lead #{lead.id}.{nota_ayuda}")
             return Response({
                 "ok": True, "tipo": "nuevo", "estado": "pendiente",
                 "profesional": prof.nombre,

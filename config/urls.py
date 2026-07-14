@@ -6,7 +6,7 @@ from rest_framework.routers import DefaultRouter
 
 from core.buzon import SugerenciaViewSet
 from core.recursos import RecursoViewSet
-from core.gerencia import ClinicaConfigView, GerenciaResumenView, HoyResumenView
+from core.gerencia import ClinicaConfigView, EliminacionRevisarView, GerenciaResumenView, HoyResumenView
 from core.integraciones import ContextoView, NotaVozView, PacientesBuscarView, PsicologoView
 from core.metricas import MetricaMensualViewSet
 from core.ocupacion import OcupacionView
@@ -41,6 +41,7 @@ from leads.captacion import (
 from mensajes.api import MensajeViewSet, PlantillaMensajeViewSet
 from pacientes.api import AdjuntoViewSet, AplicacionEscalaViewSet, AtencionViewSet, BloqueoAgendaViewSet, CitaViewSet, ContactoProfesionalViewSet, ObjetivoTerapeuticoViewSet, PacienteViewSet, RespuestaNPSViewSet, TareaViewSet, TranscribirView
 from pacientes.agendamiento import (
+    AgendamientoFotoView,
     AgendamientoInfoView,
     AgendamientoReservarView,
     AgendamientoSlotsView,
@@ -104,6 +105,7 @@ urlpatterns = [
     path("api/medicos/", MedicosView.as_view(), name="medicos"),
     path("api/transcribir/", TranscribirView.as_view(), name="transcribir"),
     path("api/hoy/", HoyResumenView.as_view(), name="hoy-resumen"),
+    path("api/eliminaciones/<int:pk>/revisar/", EliminacionRevisarView.as_view(), name="eliminacion-revisar"),
     path("api/clinica/", ClinicaConfigView.as_view(), name="clinica-config"),
     path("api/gerencia/resumen/", GerenciaResumenView.as_view(), name="gerencia-resumen"),
     path("api/finanzas/caja/", CajaView.as_view(), name="finanzas-caja"),
@@ -133,6 +135,7 @@ urlpatterns = [
     path("api/consentimiento/<str:token>/aceptar/", AceptarConsentimientoView.as_view(), name="consentimiento-aceptar"),
     path("api/consentimiento/<str:token>/", ConsentimientoPublicoView.as_view(), name="consentimiento-publico"),
     # Auto-agendamiento público por token (sin login). Rutas específicas antes del comodín.
+    path("api/agendamiento/<str:token>/foto/<int:pk>/", AgendamientoFotoView.as_view(), name="agendamiento-foto"),
     path("api/agendamiento/<str:token>/slots/", AgendamientoSlotsView.as_view(), name="agendamiento-slots"),
     path("api/agendamiento/<str:token>/reservar/", AgendamientoReservarView.as_view(), name="agendamiento-reservar"),
     path("api/agendamiento/<str:token>/", AgendamientoInfoView.as_view(), name="agendamiento-info"),

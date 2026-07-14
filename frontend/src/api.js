@@ -166,6 +166,7 @@ export const api = {
 
   // Inicio (datos reales del día) + panel de gerencia (solo admin)
   hoy: () => req("/api/hoy/"),
+  marcarEliminacionRevisada: (id) => req(`/api/eliminaciones/${id}/revisar/`, { method: "POST" }),
   gerenciaResumen: (periodo, sede) => req(`/api/gerencia/resumen/?periodo=${periodo || "mes"}${sede ? `&sede=${sede}` : ""}`),
 
   // Datos de la clínica (editar solo admin)

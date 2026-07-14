@@ -1235,7 +1235,7 @@ export default function ClinicaApp() {
       <main className="ca-main ca-pos">
         {view === "hoy" && (
           <Hoy proximas={proximas} citasHoy={citasHoy.length} porConfirmar={porConfirmar} atendidas={atendidas} onOpen={openFicha} onGo={go}
-            onRetencion={() => { setSoloSinProxima(true); go("pacientes"); }} cumple={cumpleHoy} esAdmin={usuario?.rol === "admin"} />
+            onRetencion={() => { setSoloSinProxima(true); go("pacientes"); }} cumple={cumpleHoy} esAdmin={usuario?.rol === "admin"} esMedico={usuario?.rol === "medico"} />
         )}
 
         {view === "agenda" && (
@@ -1264,9 +1264,11 @@ export default function ClinicaApp() {
                 {usuario?.rol !== "medico" && <ExportBtns nombre="pacientes" titulo="Pacientes" disabled={filtered.length === 0}
                   headers={["Nombre", "Documento", "Numero", "Edad", "Genero", "Telefono", "Direccion", "Especialidad", "Ultima visita", "Proxima sesion", "Pendiente S/"]}
                   filas={filtered.map((p) => [p.nombre, p.tipo_documento_label || "", p.numero_documento || "", p.edad ?? "", p.genero_label || "", p.tel, p.direccion || "", p.especialidad, p.ultima, p.proxima ? `${p.proxima.fecha} ${p.proxima.hora}` : "", p.cuenta?.pendiente || 0])} />}
-                <button className="ca-btn" onClick={() => setEditingPaciente({ new: true })}>
-                  <UserPlus size={16} strokeWidth={2.1} /> Nuevo paciente
-                </button>
+                {usuario?.rol !== "medico" && (
+                  <button className="ca-btn" onClick={() => setEditingPaciente({ new: true })}>
+                    <UserPlus size={16} strokeWidth={2.1} /> Nuevo paciente
+                  </button>
+                )}
               </div>
             </div>
             <div className="ca-search" style={{ marginTop: 22 }}>
@@ -1350,7 +1352,7 @@ export default function ClinicaApp() {
 
         {view === "profesionales" && <Profesionales showToast={showToast} esAdmin={usuario?.rol === "admin"} />}
 
-        {view === "herramientas" && <Recursos showToast={showToast} esAdmin={usuario?.rol === "admin"} />}
+        {view === "herramientas" && <Recursos showToast={showToast} esAdmin={usuario?.rol === "admin"} esMedico={usuario?.rol === "medico"} />}
         {view === "mentalidad" && <MentalidadItaca rol={usuario?.rol} esAdmin={usuario?.rol === "admin"} showToast={showToast} />}
 
         {view === "mensajes" && <Mensajes mensajes={mensajes} puedeEditar={usuario?.rol === "admin" || usuario?.rol === "asistente"} showToast={showToast} />}
@@ -2838,7 +2840,7 @@ function PanelPsicologo({ panel }) {
   );
 }
 
-function Hoy({ proximas, citasHoy, porConfirmar, atendidas, onOpen, onGo, onRetencion, cumple, esAdmin }) {
+function Hoy({ proximas, citasHoy, porConfirmar, atendidas, onOpen, onGo, onRetencion, cumple, esAdmin, esMedico }) {
   const [r, setR] = useState(null);
   const [legalRec, setLegalRec] = useState(null);
   const [recordatorios, setRecordatorios] = useState([]);
@@ -2865,6 +2867,11 @@ function Hoy({ proximas, citasHoy, porConfirmar, atendidas, onOpen, onGo, onRete
     }).catch(() => {});
   }, [esAdmin]);
   const legalTotal = legalRec ? legalRec.cumple + legalRec.aniv + legalRec.vence : 0;
+  const revisarElim = (id) => {
+    api.marcarEliminacionRevisada(id)
+      .then(() => setR((prev) => (prev ? { ...prev, eliminaciones: (prev.eliminaciones || []).filter((e) => e.id !== id) } : prev)))
+      .catch(() => {});
+  };
   const _hh = new Date().getHours();
   const saludo = _hh < 12 ? "Buenos días 🌞" : _hh < 19 ? "Buenas tardes ☀️" : "Buenas noches 🌙";
   return (
@@ -2922,10 +2929,15 @@ function Hoy({ proximas, citasHoy, porConfirmar, atendidas, onOpen, onGo, onRete
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
             {r.eliminaciones.map((e, i) => (
-              <div key={i} style={{ fontSize: 13, display: "flex", gap: 8, alignItems: "baseline", flexWrap: "wrap" }}>
+              <div key={e.id ?? i} style={{ fontSize: 13, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                 <span style={{ fontSize: 11, fontWeight: 600, color: "#9C4646", background: "#F7E1E1", padding: "1px 8px", borderRadius: 20 }}>{e.tipo_label}</span>
                 <span style={{ flex: 1, minWidth: 120 }}>{e.descripcion}{e.paciente ? ` · ${e.paciente}` : ""}</span>
                 <span style={{ color: "var(--muted)", fontSize: 12 }}>{e.usuario} · {e.cuando}</span>
+                {e.id != null && (
+                  <button className="ca-mini" style={{ color: "#2F6B4F", borderColor: "#BFE0CC" }} onClick={() => revisarElim(e.id)} title="Marcar como revisado y conforme">
+                    <Check size={13} strokeWidth={2.2} /> OK
+                  </button>
+                )}
               </div>
             ))}
           </div>
@@ -2948,11 +2960,13 @@ function Hoy({ proximas, citasHoy, porConfirmar, atendidas, onOpen, onGo, onRete
           <div className="ca-gmain">{citasHoy} sesiones hoy</div>
           <div className="ca-gsub">{atendidas} atendidas · {citasHoy - atendidas} por venir</div>
         </button>
-        <button className="ca-gcard" onClick={() => onGo("marketing")}>
-          <div className="ca-ghead"><Megaphone size={14} strokeWidth={2} /> Captación</div>
-          <div className="ca-gmain">{r ? `${r.leads_nuevos} leads` : "…"}</div>
-          <div className="ca-gsub">{r ? `nuevos sin contactar · ${r.leads_hoy} hoy` : "cargando…"}</div>
-        </button>
+        {!esMedico && (
+          <button className="ca-gcard" onClick={() => onGo("marketing")}>
+            <div className="ca-ghead"><Megaphone size={14} strokeWidth={2} /> Captación</div>
+            <div className="ca-gmain">{r ? `${r.leads_nuevos} leads` : "…"}</div>
+            <div className="ca-gsub">{r ? `nuevos sin contactar · ${r.leads_hoy} hoy` : "cargando…"}</div>
+          </button>
+        )}
         {esAdmin ? (
           <button className="ca-gcard" onClick={() => onGo("finanzas")}>
             <div className="ca-ghead"><TrendingUp size={14} strokeWidth={2} /> Ingresos hoy</div>
@@ -2966,11 +2980,13 @@ function Hoy({ proximas, citasHoy, porConfirmar, atendidas, onOpen, onGo, onRete
             <div className="ca-gsub">pendientes de confirmar hoy</div>
           </button>
         )}
-        <button className="ca-gcard" onClick={onRetencion} style={{ borderColor: "#F0DDBF" }}>
-          <div className="ca-ghead" style={{ color: "#B0822F" }}><AlertTriangle size={14} strokeWidth={2} /> Retención</div>
-          <div className="ca-gmain">{r ? `${r.sin_proxima} pacientes` : "…"}</div>
-          <div className="ca-gsub">sin próxima sesión · reactivar</div>
-        </button>
+        {!esMedico && (
+          <button className="ca-gcard" onClick={onRetencion} style={{ borderColor: "#F0DDBF" }}>
+            <div className="ca-ghead" style={{ color: "#B0822F" }}><AlertTriangle size={14} strokeWidth={2} /> Retención</div>
+            <div className="ca-gmain">{r ? `${r.sin_proxima} pacientes` : "…"}</div>
+            <div className="ca-gsub">sin próxima sesión · reactivar</div>
+          </button>
+        )}
         {r && r.nps && r.nps.n > 0 && (
           <button className="ca-gcard" onClick={() => onGo("pacientes")} style={{ borderColor: "#CDE8F0", cursor: "default" }}>
             <div className="ca-ghead" style={{ color: "var(--accent)" }}><HeartPulse size={14} strokeWidth={2} /> NPS promedio</div>
@@ -2980,7 +2996,7 @@ function Hoy({ proximas, citasHoy, porConfirmar, atendidas, onOpen, onGo, onRete
         )}
       </div>
 
-      {r && r.meta && r.meta.meta_ideal > 0 && (() => {
+      {!esMedico && r && r.meta && r.meta.meta_ideal > 0 && (() => {
         const m = r.meta;
         const pos = (v) => `${Math.min(Math.max((v / m.meta_ideal) * 100, 0), 100)}%`;
         const falta = Math.max(m.esperado_hoy - m.generado, 0);
@@ -6073,7 +6089,7 @@ const RECURSO_TABS = [
   { v: "recordatorio", l: "Recordatorios del equipo", icon: Bell, hint: "Avisos de gerencia (capacitación, supervisión, NPS…) que salen en el inicio del equipo.", soloAdmin: true },
 ];
 
-function Recursos({ showToast, esAdmin }) {
+function Recursos({ showToast, esAdmin, esMedico }) {
   const tabs = RECURSO_TABS.filter((t) => !t.soloAdmin || esAdmin);
   const [tipo, setTipo] = useState("herramienta");
   const [lista, setLista] = useState(null);
@@ -6165,7 +6181,7 @@ function Recursos({ showToast, esAdmin }) {
                 {r.descripcion && <div style={{ fontSize: 13, color: "var(--ink-soft)", whiteSpace: "pre-wrap", lineHeight: 1.5 }}>{r.descripcion}</div>}
                 <div style={{ display: "flex", gap: 8, marginTop: "auto", paddingTop: 6, flexWrap: "wrap" }}>
                   {r.link && <a className="ca-mini" href={r.link} target="_blank" rel="noreferrer"><ExternalLink size={13} strokeWidth={2} /> Abrir</a>}
-                  {(tipo === "herramienta" || tipo === "terapeuta") && r.link && <button className="ca-mini" style={{ color: "#1E7E5A" }} onClick={() => setEnviarRec(r)}><Send size={13} strokeWidth={2} /> Enviar por WhatsApp</button>}
+                  {!esMedico && (tipo === "herramienta" || tipo === "terapeuta") && r.link && <button className="ca-mini" style={{ color: "#1E7E5A" }} onClick={() => setEnviarRec(r)}><Send size={13} strokeWidth={2} /> Enviar por WhatsApp</button>}
                   {esAdmin && <button className="ca-mini" onClick={() => setEditando(r)}><Pencil size={13} strokeWidth={2} /> Editar</button>}
                   {esAdmin && <button className="ca-mini" onClick={() => toggleActivo(r)}>{r.activo ? "Ocultar" : "Mostrar"}</button>}
                   {esAdmin && <button className="ca-mini danger" onClick={() => borrar(r)}><Trash2 size={13} strokeWidth={2} /></button>}
@@ -8131,7 +8147,10 @@ function VenderPaqueteModal({ paciente, servicios, onClose, onSave }) {
           <strong style={{ fontSize: 16 }}>Vender paquete</strong>
           <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)" }}><X size={18} /></button>
         </div>
-        <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 16 }}>Para {paciente.nombre} · se cobra ahora y las sesiones se descuentan al atender.</div>
+        <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 10 }}>Para {paciente.nombre} · se cobra ahora y las sesiones se descuentan al atender.</div>
+        <div style={{ fontSize: 12, color: "#4B6B4E", background: "#EEF2EC", borderRadius: 8, padding: "8px 10px", marginBottom: 16, lineHeight: 1.45 }}>
+          Al psicólogo se le paga <strong>por cada sesión que atienda</strong> (según el precio del servicio en Finanzas → Precios), no por el paquete completo. El pago total de este paquete es ingreso de la clínica.
+        </div>
 
         <div style={{ marginBottom: 12 }}>
           <div className="ca-label">Servicio (opcional, sugiere precio)</div>
@@ -9909,12 +9928,29 @@ export function ConsentimientoPublico({ token }) {
 // Página PÚBLICA de auto-agendamiento (sin login): /agendar/<token>. El paciente
 // elige psicólogo y un horario libre y reserva. Nuevo → lead + cita tentativa;
 // existente (match por teléfono/DNI) → cita directa en la agenda.
+// Sedes de Ítaca Conversemos (dirección + teléfono para el mensaje de pre-reserva).
+const AGENDA_SEDES = {
+  lima: { label: "Lima", direccion: "Av. Arequipa 4130, Of. 205 — Miraflores, Lima", telefono: "+51 980 453 832" },
+  piura: { label: "Piura", direccion: "Av. Bolognesi 582, Of. 201 — Piura", telefono: "+51 983 292 173" },
+};
+// Categorías para la rama "necesito ayuda" → se cruzan con Profesional.poblaciones.
+const AGENDA_CATS = [
+  { v: "adultos", emoji: "🧑", label: "Atención a adultos", match: ["adult"] },
+  { v: "ninos", emoji: "🧒", label: "Atención a niños", match: ["niñ", "nin", "infant"] },
+  { v: "adolescentes", emoji: "🧑‍🎓", label: "Atención a adolescentes", match: ["adolescen"] },
+  { v: "parejas", emoji: "💞", label: "Atención a parejas", match: ["pareja"] },
+];
+
 export function AgendarPublico({ token }) {
   const [info, setInfo] = useState(null);
   const [err, setErr] = useState("");
+  const [sede, setSede] = useState(null);          // "lima" | "piura"
+  const [via, setVia] = useState(null);            // "elegir" | "ayuda"
+  const [categoria, setCategoria] = useState(null);// solo rama "ayuda"
   const [prof, setProf] = useState(null);
+  const [perfil, setPerfil] = useState(null);      // psicólogo en el modal "Ver perfil"
   const [slotsData, setSlotsData] = useState(null);
-  const [slot, setSlot] = useState(null); // {inicio, hora, diaLabel}
+  const [slot, setSlot] = useState(null);          // {inicio, hora, diaLabel}
   const [form, setForm] = useState({ nombre: "", telefono: "", documento: "", email: "", servicio: "", modalidad: "presencial", mensaje: "" });
   const [enviando, setEnviando] = useState(false);
   const [hecho, setHecho] = useState(null);
@@ -9949,8 +9985,9 @@ export function AgendarPublico({ token }) {
         nombre: form.nombre.trim(), telefono: form.telefono.trim(),
         documento: form.documento.trim(), email: form.email.trim(),
         servicio: form.servicio, modalidad: form.modalidad, mensaje: form.mensaje.trim(),
+        categoria: via === "ayuda" ? categoria : "", ayuda: via === "ayuda",
       });
-      setHecho(r);
+      setHecho({ ...r, sede });
     } catch (e) {
       // 409 = el horario se tomó mientras llenaba el formulario: refrescar slots.
       if (e.status === 409) { setSlot(null); api.agendaSlots(token, prof.id, 21).then(setSlotsData).catch(() => {}); }
@@ -9958,53 +9995,158 @@ export function AgendarPublico({ token }) {
     } finally { setEnviando(false); }
   }
 
-  const A = "#3E7A65"; // acento verde de la marca
-  const wrap = { maxWidth: 680, margin: "0 auto", padding: "28px 18px 60px", fontFamily: "'Inter',system-ui,sans-serif", color: "#2A2722", minHeight: "100vh", background: "#fff" };
-  const inp = { width: "100%", padding: "11px 12px", borderRadius: 9, border: "1px solid #DDD8CF", fontSize: 15, marginBottom: 11, boxSizing: "border-box", fontFamily: "inherit" };
-  const card = { border: "1px solid #ECE8E1", borderRadius: 14, padding: 15, marginBottom: 11, cursor: "pointer", background: "#fff", textAlign: "left", width: "100%", display: "block" };
+  // --- Paleta y estilos (marca Conversemos, tono teal) ---
+  const A = "#127C8A", AD = "#0C5E69";
+  const wrap = { maxWidth: 620, margin: "0 auto", padding: "22px 16px 64px", fontFamily: "'Inter',system-ui,sans-serif", color: "#22303A", minHeight: "100vh", background: "#F7FAFB" };
+  const inp = { width: "100%", padding: "11px 12px", borderRadius: 9, border: "1px solid #D6DFE1", fontSize: 15, marginBottom: 11, boxSizing: "border-box", fontFamily: "inherit", background: "#fff" };
+  const cardClick = { border: "1px solid #E1E8EA", borderRadius: 14, padding: 15, marginBottom: 11, cursor: "pointer", background: "#fff", textAlign: "left", width: "100%", display: "block", boxShadow: "0 1px 2px rgba(12,94,105,.04)" };
+  const cardStatic = { border: "1px solid #E1E8EA", borderRadius: 14, padding: 15, marginBottom: 11, background: "#fff", boxShadow: "0 1px 2px rgba(12,94,105,.04)" };
+  const btnPrimary = { padding: "10px 16px", borderRadius: 9, border: "none", background: A, color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer" };
+  const btnGhost = { padding: "10px 16px", borderRadius: 9, border: `1px solid ${A}`, background: "#fff", color: A, fontSize: 14, fontWeight: 600, cursor: "pointer" };
+  const avatar = (p, size = 54) => (p.foto
+    ? <img src={p.foto} alt="" style={{ width: size, height: size, borderRadius: "50%", objectFit: "cover", flexShrink: 0 }} />
+    : <div style={{ width: size, height: size, borderRadius: "50%", background: "#E3F1F2", color: A, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: size * 0.37, flexShrink: 0 }}>{(p.nombre || "?").replace(/^lic\.?\s*/i, "").trim().charAt(0)}</div>);
 
   if (err && !info) return <div style={wrap}><h2>Enlace no disponible</h2><p style={{ color: "#9C4646" }}>{err}</p></div>;
   if (!info) return <div style={wrap}>Cargando…</div>;
 
-  // Pantalla final (éxito)
+  // Pantalla final: mensaje de PRE-RESERVA (con medios de pago/políticas y contactos).
   if (hecho) {
-    const nuevo = hecho.tipo === "nuevo";
+    const s = AGENDA_SEDES[hecho.sede] || null;
     return (
       <div style={wrap}>
-        <div style={{ textAlign: "center", marginTop: 30 }}>
-          <div style={{ fontSize: 46 }}>🌿</div>
-          <h1 style={{ fontSize: 23, margin: "10px 0 4px" }}>{nuevo ? "¡Solicitud recibida!" : "¡Cita agendada!"}</h1>
-          <div style={{ background: "#E9F1ED", border: "1px solid #CFE3D8", borderRadius: 14, padding: 18, marginTop: 16, color: "#2F6B4F", fontSize: 15, lineHeight: 1.6 }}>
-            {nuevo ? (
-              <>Reservaste con <strong>{hecho.profesional}</strong> el <strong>{hecho.inicio_label}</strong>.<br />
-                Nuestro equipo te <strong>confirmará por WhatsApp</strong> en breve. ¡Gracias por escribirnos! 💛</>
-            ) : (
-              <>Tu cita con <strong>{hecho.profesional}</strong> quedó agendada para el <strong>{hecho.inicio_label}</strong>.<br />
-                Te esperamos. Si necesitas reprogramar, escríbenos. 💛</>
-            )}
+        <div style={{ ...cardStatic, padding: 22, marginTop: 8 }}>
+          <div style={{ textAlign: "center" }}>
+            <div style={{ fontSize: 44 }}>🩵</div>
+            <h1 style={{ fontSize: 21, margin: "8px 0 2px", color: AD }}>¡Gracias por agendar!</h1>
+            <div style={{ fontSize: 13.5, color: "#5B6B72" }}>a través de nuestra página web</div>
           </div>
-          <div style={{ fontSize: 13, color: "#9B968D", marginTop: 14 }}>Ya puedes cerrar esta página.</div>
+          <div style={{ fontSize: 14.5, lineHeight: 1.6, color: "#33434B", marginTop: 16 }}>
+            <p style={{ margin: "0 0 12px" }}>
+              Reservaste con <strong>{hecho.profesional}</strong> para el <strong>{hecho.inicio_label}</strong>.
+            </p>
+            <p style={{ margin: "0 0 12px" }}>
+              Queremos comentarte que esta es una <strong>pre-reserva ✨</strong>. En breve nos comunicaremos al número que registraste para confirmar tus datos, el horario, sede, modalidad y psicólogo/a seleccionado/a, para asegurarnos de que recibas la atención que buscas.
+            </p>
+            <p style={{ margin: "0 0 6px", fontWeight: 600 }}>Una vez confirmados los datos, te enviaremos:</p>
+            <div style={{ margin: "0 0 12px", lineHeight: 1.8 }}>
+              ✅ Los medios de pago.<br />✅ Nuestras políticas de atención.<br />✅ La confirmación oficial de tu cita.
+            </div>
+            <div style={{ background: "#FFF7EC", border: "1px solid #F1E2C4", borderRadius: 10, padding: "10px 12px", fontSize: 13.5, color: "#8A6D2E" }}>
+              Recuerda que <strong>solo con el pago realizado</strong> la cita queda confirmada y programada para su desarrollo.
+            </div>
+          </div>
+          <div style={{ marginTop: 16, borderTop: "1px solid #EBF0F1", paddingTop: 14, fontSize: 13.5, color: "#33434B" }}>
+            <div style={{ fontWeight: 600, marginBottom: 8 }}>¿Dudas o consultas? Escríbenos:</div>
+            {(s ? [hecho.sede] : ["piura", "lima"]).map((k) => {
+              const se = AGENDA_SEDES[k];
+              return (
+                <div key={k} style={{ marginBottom: 8, lineHeight: 1.5 }}>
+                  📍 <strong>{se.label}:</strong> {se.direccion}<br />
+                  <span style={{ marginLeft: 20 }}>📞 {se.telefono}</span>
+                </div>
+              );
+            })}
+          </div>
+          <div style={{ textAlign: "center", fontSize: 13.5, color: AD, marginTop: 12, fontWeight: 600 }}>
+            Nos sentimos honrados de acompañarte en este primer paso hacia tu bienestar. 🩵
+          </div>
         </div>
       </div>
     );
   }
 
+  // --- Derivados de estado ---
+  const profsSede = info.profesionales.filter((p) => p.sede === sede);
+  const catDef = AGENDA_CATS.find((c) => c.v === categoria);
+  const matchCat = (p) => {
+    if (!catDef) return true;
+    const pob = (p.poblaciones || "").toLowerCase();
+    if (!pob) return true; // sin público declarado: se muestra igual y el coordinador verifica
+    return catDef.match.some((m) => pob.includes(m));
+  };
+  const profsAyuda = profsSede.filter(matchCat);
+  const profsMostrar = via === "ayuda" ? (profsAyuda.length ? profsAyuda : profsSede) : profsSede;
+
+  const showSede = !sede;
+  const showVia = sede && !via;
+  const showCat = sede && via === "ayuda" && !categoria;
+  const needProf = sede && via && (via === "elegir" || categoria) && !prof;
+  const showSlots = prof && !slot;
+  const showDatos = prof && slot;
+  const stepIdx = !sede ? 0 : !via ? 1 : (showCat || needProf) ? 2 : !slot ? 3 : 4;
+  const PASOS = ["Sede", "Con quién", "Profesional", "Horario", "Tus datos"];
+
+  const volver = () => {
+    setErr("");
+    if (slot) return setSlot(null);
+    if (prof) return setProf(null);
+    if (via === "ayuda" && categoria) return setCategoria(null);
+    if (via) return setVia(null);
+    if (sede) return setSede(null);
+  };
+
+  const ProfCard = (p) => (
+    <div key={p.id} style={cardStatic}>
+      <div style={{ display: "flex", gap: 13, alignItems: "center" }}>
+        {avatar(p)}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontWeight: 700, fontSize: 15.5 }}>{p.nombre}</div>
+          <div style={{ fontSize: 12.5, color: "#5B6B72" }}>{p.titulo}{p.sede_label ? ` · ${p.sede_label}` : ""}{p.modalidad_label ? ` · ${p.modalidad_label}` : ""}</div>
+          {p.enfoque ? <div style={{ fontSize: 12.5, color: "#7B8A90", marginTop: 3, lineHeight: 1.45 }}>{p.enfoque.length > 110 ? p.enfoque.slice(0, 110) + "…" : p.enfoque}</div> : null}
+        </div>
+      </div>
+      <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+        <button style={btnGhost} onClick={() => setPerfil(p)}>Ver perfil</button>
+        <button style={{ ...btnPrimary, flex: 1 }} onClick={() => setProf(p)}>Elegir</button>
+      </div>
+    </div>
+  );
+
   return (
     <div style={wrap}>
-      <div style={{ textAlign: "center", marginBottom: 20 }}>
-        <div style={{ fontSize: 13, color: "#9B968D" }}>{info.clinica}</div>
-        <h1 style={{ fontSize: 22, margin: "6px 0" }}>Agenda tu cita en línea</h1>
-        <div style={{ fontSize: 13.5, color: "#6B675F" }}>Elige a tu psicólogo/a y el horario que te acomode.</div>
+      {/* Portada / logo de marca */}
+      {showSede ? (
+        <div style={{ borderRadius: 18, overflow: "hidden", marginBottom: 18, boxShadow: "0 8px 26px rgba(12,94,105,.16)" }}>
+          <div style={{ background: `linear-gradient(135deg, ${AD} 0%, ${A} 58%, #18A6B4 100%)`, padding: "32px 22px 28px", color: "#fff", textAlign: "center" }}>
+            <div style={{ fontSize: 12, letterSpacing: 3, textTransform: "uppercase", opacity: 0.85, fontWeight: 600 }}>{info.clinica}</div>
+            <div style={{ fontSize: 25, fontWeight: 800, lineHeight: 1.18, marginTop: 10 }}>Todos necesitamos de un<br />sincero <span style={{ borderBottom: "3px solid rgba(255,255,255,.55)", paddingBottom: 1 }}>conversemos</span></div>
+            <div style={{ fontSize: 13.5, opacity: 0.92, marginTop: 10 }}>Agenda tu cita en línea</div>
+          </div>
+        </div>
+      ) : (
+        <div style={{ textAlign: "center", marginBottom: 14 }}>
+          <div style={{ fontSize: 12, letterSpacing: 2.5, textTransform: "uppercase", color: A, fontWeight: 700 }}>{info.clinica}</div>
+          <div style={{ fontSize: 13, color: "#7B8A90", marginTop: 2 }}>Agenda tu cita en línea</div>
+        </div>
+      )}
+
+      {/* Bienvenida (solo en la portada) */}
+      {showSede && (
+        <div style={{ ...cardStatic, padding: 18, fontSize: 14, lineHeight: 1.6, color: "#33434B" }}>
+          <p style={{ margin: "0 0 10px" }}><strong>Gracias por estar aquí y confiar en nosotros para acompañarte.</strong></p>
+          <p style={{ margin: "0 0 10px" }}>En {info.clinica} creemos que <em>todos, en algún momento, necesitamos un espacio seguro para conversar</em>, comprender lo que sentimos y encontrar nuevas herramientas para seguir adelante.</p>
+          <p style={{ margin: "0 0 10px" }}>Nuestro propósito es <em>cambiar vidas</em> a través de un acompañamiento psicológico humano, profesional y libre de juicios.</p>
+          <p style={{ margin: 0 }}>Nos alegra que estés aquí. Comencemos juntos este camino.</p>
+        </div>
+      )}
+
+      {/* Barra de progreso */}
+      <div style={{ margin: "4px 0 18px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10.5, marginBottom: 6 }}>
+          {PASOS.map((l, i) => (
+            <span key={l} style={{ color: i <= stepIdx ? A : "#B4C1C4", fontWeight: i === stepIdx ? 700 : 500 }}>{l}</span>
+          ))}
+        </div>
+        <div style={{ height: 6, background: "#E1E8EA", borderRadius: 999, overflow: "hidden" }}>
+          <div style={{ width: `${(stepIdx / (PASOS.length - 1)) * 100}%`, height: "100%", background: A, transition: "width .3s" }} />
+        </div>
       </div>
 
-      {/* Migas de pan */}
-      <div style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 12.5, color: "#9B968D", marginBottom: 16, flexWrap: "wrap" }}>
-        <span onClick={() => { setProf(null); setSlot(null); }} style={{ cursor: "pointer", color: prof ? A : "#2A2722", fontWeight: prof ? 500 : 700 }}>1. Psicólogo</span>
-        <ChevronRight size={13} />
-        <span onClick={() => prof && setSlot(null)} style={{ cursor: prof ? "pointer" : "default", color: slot ? A : (prof ? "#2A2722" : "#C9C4BB"), fontWeight: (prof && !slot) ? 700 : 500 }}>2. Horario</span>
-        <ChevronRight size={13} />
-        <span style={{ color: slot ? "#2A2722" : "#C9C4BB", fontWeight: slot ? 700 : 500 }}>3. Tus datos</span>
-      </div>
+      {/* Volver */}
+      {sede && (
+        <button onClick={volver} style={{ background: "none", border: "none", color: A, fontWeight: 600, cursor: "pointer", fontSize: 13.5, padding: "2px 0", marginBottom: 12 }}>← Volver</button>
+      )}
 
       {!info.hay_agenda && (
         <div style={{ background: "#FDF6F6", border: "1px solid #F0D6D6", borderRadius: 12, padding: 16, color: "#9C4646", fontSize: 14 }}>
@@ -10012,37 +10154,100 @@ export function AgendarPublico({ token }) {
         </div>
       )}
 
-      {/* Paso 1: elegir psicólogo */}
-      {info.hay_agenda && !prof && info.profesionales.map((p) => (
-        <button key={p.id} style={card} onClick={() => setProf(p)}>
-          <div style={{ display: "flex", gap: 13, alignItems: "center" }}>
-            {p.foto
-              ? <img src={p.foto} alt="" style={{ width: 54, height: 54, borderRadius: "50%", objectFit: "cover", flexShrink: 0 }} />
-              : <div style={{ width: 54, height: 54, borderRadius: "50%", background: "#EEF2EC", color: A, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 20, flexShrink: 0 }}>{(p.nombre || "?").replace(/^lic\.?\s*/i, "").trim().charAt(0)}</div>}
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontWeight: 700, fontSize: 15.5 }}>{p.nombre}</div>
-              <div style={{ fontSize: 12.5, color: "#6B675F" }}>{p.titulo}{p.sede_label ? ` · ${p.sede_label}` : ""}</div>
-              {p.enfoque ? <div style={{ fontSize: 12.5, color: "#8A857C", marginTop: 3, lineHeight: 1.45 }}>{p.enfoque.length > 120 ? p.enfoque.slice(0, 120) + "…" : p.enfoque}</div> : null}
-            </div>
-            <ChevronRight size={18} style={{ color: "#C9C4BB", flexShrink: 0 }} />
-          </div>
-        </button>
-      ))}
-
-      {/* Paso 2: elegir horario */}
-      {prof && !slot && (
+      {/* Paso 1: elegir sede */}
+      {info.hay_agenda && showSede && (
         <div>
-          <div style={{ background: "#F6F8F5", borderRadius: 12, padding: "11px 14px", marginBottom: 14, fontSize: 14 }}>
-            Reservando con <strong>{prof.nombre}</strong>
+          <h2 style={{ fontSize: 17, margin: "0 0 4px", color: AD }}>📍 ¿Dónde te gustaría atenderte?</h2>
+          <div style={{ fontSize: 13, color: "#7B8A90", marginBottom: 14 }}>Para atención virtual, elige igualmente la sede más cercana a ti.</div>
+          {["lima", "piura"].map((k) => {
+            const se = AGENDA_SEDES[k];
+            return (
+              <button key={k} style={cardClick} onClick={() => setSede(k)}>
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  <div style={{ fontSize: 26 }}>📍</div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: 700, fontSize: 16 }}>{se.label}</div>
+                    <div style={{ fontSize: 12.5, color: "#7B8A90" }}>{se.direccion}</div>
+                  </div>
+                  <ChevronRight size={18} style={{ color: "#B4C1C4" }} />
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Paso 2: ¿ya sabes con quién? */}
+      {showVia && (
+        <div>
+          <h2 style={{ fontSize: 17, margin: "0 0 12px", color: AD }}>👩‍⚕️ ¿Ya sabes con quién deseas atenderte?</h2>
+          {[
+            { v: "elegir", emoji: "🔎", label: "Quiero elegir un profesional", desc: "Verás los psicólogos disponibles y escoges tú." },
+            { v: "ayuda", emoji: "🤝", label: "Necesito ayuda para encontrar al indicado", desc: "Nos cuentas a quién va dirigido y te ayudamos a elegir." },
+          ].map((o) => (
+            <button key={o.v} style={cardClick} onClick={() => setVia(o.v)}>
+              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <div style={{ fontSize: 24 }}>{o.emoji}</div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 700, fontSize: 15 }}>{o.label}</div>
+                  <div style={{ fontSize: 12.5, color: "#7B8A90" }}>{o.desc}</div>
+                </div>
+                <ChevronRight size={18} style={{ color: "#B4C1C4" }} />
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Rama "necesito ayuda": elegir categoría */}
+      {showCat && (
+        <div>
+          <h2 style={{ fontSize: 17, margin: "0 0 4px", color: AD }}>Escoge una categoría</h2>
+          <div style={{ fontSize: 13, color: "#7B8A90", marginBottom: 14 }}>Te mostraremos los horarios de los psicólogos disponibles y un coordinador te contactará para confirmar que sea el ideal para ti.</div>
+          {AGENDA_CATS.map((c) => (
+            <button key={c.v} style={cardClick} onClick={() => setCategoria(c.v)}>
+              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <div style={{ fontSize: 24 }}>{c.emoji}</div>
+                <div style={{ flex: 1, fontWeight: 700, fontSize: 15 }}>{c.label}</div>
+                <ChevronRight size={18} style={{ color: "#B4C1C4" }} />
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Paso 3: elegir profesional */}
+      {needProf && (
+        <div>
+          <h2 style={{ fontSize: 17, margin: "0 0 4px", color: AD }}>Selecciona a tu profesional</h2>
+          {via === "ayuda" && (
+            <div style={{ background: "#EAF5F6", border: "1px solid #CFE6E9", borderRadius: 10, padding: "10px 12px", fontSize: 13, color: "#0C5E69", marginBottom: 14 }}>
+              Según lo que elegiste, estos son los psicólogos con horarios disponibles. Un coordinador se comunicará contigo para ayudarte a verificar que sea el ideal.
+            </div>
+          )}
+          {profsMostrar.length === 0 ? (
+            <div style={{ background: "#FDFAF1", border: "1px solid #F0E4C9", borderRadius: 12, padding: 16, fontSize: 14, color: "#8A6D2E" }}>
+              No hay psicólogos con horario en línea en {AGENDA_SEDES[sede]?.label} por ahora. Escríbenos por WhatsApp y te ayudamos a agendar. 🙏
+            </div>
+          ) : profsMostrar.map((p) => ProfCard(p))}
+        </div>
+      )}
+
+      {/* Paso 4: elegir horario */}
+      {showSlots && (
+        <div>
+          <div style={{ display: "flex", alignItems: "center", gap: 11, background: "#EAF5F6", borderRadius: 12, padding: "10px 14px", marginBottom: 14 }}>
+            {avatar(prof, 38)}
+            <div style={{ fontSize: 14 }}>Reservando con <strong>{prof.nombre}</strong></div>
           </div>
-          {!slotsData ? <div style={{ color: "#9B968D" }}>Buscando horarios libres…</div> :
+          {!slotsData ? <div style={{ color: "#7B8A90" }}>Buscando horarios libres…</div> :
             slotsData.dias.length === 0 ? (
               <div style={{ background: "#FDFAF1", border: "1px solid #F0E4C9", borderRadius: 12, padding: 16, fontSize: 14, color: "#8A6D2E" }}>
-                {prof.nombre} no tiene horarios libres en las próximas semanas. Prueba con otro/a psicólogo/a o escríbenos por WhatsApp.
+                {prof.nombre} no tiene horarios libres en las próximas semanas. Vuelve y prueba con otro/a psicólogo/a o escríbenos por WhatsApp.
               </div>
             ) : slotsData.dias.map((d) => (
               <div key={d.fecha} style={{ marginBottom: 15 }}>
-                <div style={{ fontSize: 13, fontWeight: 700, color: "#4B6B4E", marginBottom: 8 }}>{diaLabel(d.fecha)}</div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: AD, marginBottom: 8 }}>{diaLabel(d.fecha)}</div>
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                   {d.slots.map((s) => (
                     <button key={s.inicio} onClick={() => { setSlot({ ...s, diaLabel: diaLabel(d.fecha) }); setErr(""); }}
@@ -10056,10 +10261,10 @@ export function AgendarPublico({ token }) {
         </div>
       )}
 
-      {/* Paso 3: datos + confirmar */}
-      {prof && slot && (
+      {/* Paso 5: datos + confirmar */}
+      {showDatos && (
         <div>
-          <div style={{ background: "#E9F1ED", border: "1px solid #CFE3D8", borderRadius: 12, padding: "12px 14px", marginBottom: 16, fontSize: 14, color: "#2F6B4F" }}>
+          <div style={{ background: "#E7F3F1", border: "1px solid #CBE6E1", borderRadius: 12, padding: "12px 14px", marginBottom: 16, fontSize: 14, color: "#0C5E69" }}>
             <strong>{prof.nombre}</strong> · {slot.diaLabel} a las <strong>{slot.hora}</strong>
             <button onClick={() => setSlot(null)} style={{ marginLeft: 10, background: "none", border: "none", color: A, fontWeight: 600, cursor: "pointer", fontSize: 13 }}>cambiar</button>
           </div>
@@ -10084,10 +10289,42 @@ export function AgendarPublico({ token }) {
           {err ? <div style={{ color: "#9C4646", fontSize: 13, marginBottom: 10 }}>{err}</div> : null}
           <button onClick={reservar} disabled={enviando}
             style={{ width: "100%", padding: "14px", borderRadius: 11, border: "none", background: A, color: "#fff", fontSize: 15.5, fontWeight: 700, cursor: "pointer", opacity: enviando ? 0.5 : 1 }}>
-            {enviando ? "Reservando…" : "Confirmar mi cita"}
+            {enviando ? "Reservando…" : "Confirmar mi pre-reserva"}
           </button>
-          <div style={{ fontSize: 11.5, color: "#9B968D", marginTop: 10, textAlign: "center" }}>
-            Al confirmar, guardamos tu reserva y nuestro equipo se pondrá en contacto contigo.
+          <div style={{ fontSize: 11.5, color: "#7B8A90", marginTop: 10, textAlign: "center" }}>
+            Es una pre-reserva: nuestro equipo te contactará para confirmar y enviarte los medios de pago.
+          </div>
+        </div>
+      )}
+
+      {/* Modal "Ver perfil" */}
+      {perfil && (
+        <div onClick={() => setPerfil(null)} style={{ position: "fixed", inset: 0, background: "rgba(18,28,32,.5)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16, zIndex: 60 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 16, maxWidth: 460, width: "100%", maxHeight: "90vh", overflow: "auto", padding: 22, fontFamily: "inherit" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 13 }}>
+              {avatar(perfil, 58)}
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 800, fontSize: 17 }}>{perfil.nombre}</div>
+                <div style={{ fontSize: 12.5, color: "#5B6B72" }}>{perfil.titulo}{perfil.sede_label ? ` · ${perfil.sede_label}` : ""}{perfil.modalidad_label ? ` · ${perfil.modalidad_label}` : ""}</div>
+              </div>
+              <button onClick={() => setPerfil(null)} style={{ background: "none", border: "none", cursor: "pointer", color: "#8A959A" }}><X size={20} /></button>
+            </div>
+            {perfil.frase ? <div style={{ fontStyle: "italic", color: AD, fontSize: 14, lineHeight: 1.5, margin: "14px 0 6px", borderLeft: `3px solid ${A}`, paddingLeft: 12 }}>“{perfil.frase}”</div> : null}
+            <div style={{ marginTop: 14 }}>
+              {[
+                { l: "Especialidades y enfoque", v: [perfil.enfoque, perfil.problematicas].filter(Boolean).join("\n\n") },
+                { l: "Formación y experiencia", v: [perfil.formacion, perfil.trayectoria].filter(Boolean).join("\n\n") },
+                { l: "Público que atiende", v: perfil.poblaciones },
+              ].filter((sc) => sc.v && sc.v.trim()).map((sc) => (
+                <div key={sc.l} style={{ marginBottom: 14 }}>
+                  <div style={{ fontSize: 11.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, color: A, marginBottom: 4 }}>{sc.l}</div>
+                  <div style={{ fontSize: 13.5, color: "#3D474D", lineHeight: 1.55, whiteSpace: "pre-wrap" }}>{sc.v}</div>
+                </div>
+              ))}
+            </div>
+            <button style={{ ...btnPrimary, width: "100%", padding: "13px", fontSize: 15 }} onClick={() => { setProf(perfil); setPerfil(null); }}>
+              Elegir a {perfil.nombre.replace(/^lic\.?\s*/i, "").trim().split(" ")[0]}
+            </button>
           </div>
         </div>
       )}
