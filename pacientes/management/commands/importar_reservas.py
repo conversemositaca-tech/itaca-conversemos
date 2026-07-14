@@ -294,8 +294,8 @@ class Command(BaseCommand):
                 f"Prestadores sin match en el directorio ({len(prestadores_sin_match)}): "
                 f"{sorted(prestadores_sin_match.values())}"))
             if escribir:
-                self.stdout.write(f"  → se crearon {len(extra_profes_creados)} psicólogos INACTIVOS para no perder el vínculo.")
+                self.stdout.write(f"  -> se crearon {len(extra_profes_creados)} psicólogos INACTIVOS para no perder el vínculo.")
         if opt["dry_run"]:
             self.stdout.write(self.style.SUCCESS("\nDRY-RUN: no se escribió nada (rollback)."))
         else:
-            self.stdout.write(self.style.SUCCESS("\n✓ Importación completada."))
+            self.stdout.write(self.style.SUCCESS("\nImportación completada."))
