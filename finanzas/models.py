@@ -78,6 +78,9 @@ class Cobro(ModeloTenant):
     )
     # ¿Ya se envió a la hoja de Soto (BD_Ingresos)? Evita filas duplicadas.
     soto_sincronizado = models.BooleanField(default=False)
+    # Referencia del sistema externo (p. ej. ID de pago de AgendaPro). Sirve para
+    # no duplicar al re-importar un histórico. Vacío en los cobros propios.
+    ref_externa = models.CharField(max_length=40, blank=True, default="", db_index=True)
 
     class Meta:
         verbose_name = "Cobro"
