@@ -4177,7 +4177,7 @@ function AgendarModal({ pacientes, fechaInicial, pacienteFijo, onClose, onSave }
           </div>
           <div style={{ flex: 1 }}>
             <div className="ca-label">Hora</div>
-            <input className="ca-input" type="time" value={hora} onChange={(e) => setHora(e.target.value)} placeholder="14:30" />
+            <input className="ca-input" type="time" step={900} value={hora} onChange={(e) => setHora(e.target.value)} placeholder="14:30" />
           </div>
         </div>
         <div style={{ display: "flex", gap: 11, marginBottom: 13 }}>
@@ -4770,7 +4770,7 @@ function ReagendarModal({ cita, onClose, onSave }) {
           </div>
           <div style={{ flex: 1 }}>
             <div className="ca-label">Nueva hora</div>
-            <input className="ca-input" type="time" value={hora} onChange={(e) => setHora(e.target.value)} />
+            <input className="ca-input" type="time" step={900} value={hora} onChange={(e) => setHora(e.target.value)} />
           </div>
         </div>
         <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 16 }}>La sesión volverá a «Por confirmar» para que puedas avisar de nuevo al paciente.</div>
@@ -5655,6 +5655,14 @@ function Marketing({ showToast, onConvertir, esAdmin }) {
           {(filtroEstadoLead || desdeLead || hastaLead || buscaLead) && <button className="ca-fchip" onClick={() => { setFiltroEstadoLead(""); setDesdeLead(""); setHastaLead(""); setBuscaLead(""); }}>Limpiar</button>}
         </div>
       </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 13, flexWrap: "wrap", fontSize: 11.5, color: "var(--muted)", margin: "2px 0 12px 2px" }}>
+        <span style={{ fontWeight: 600, color: "var(--ink-soft)" }}>Punto de color = días sin contactar:</span>
+        {["verde", "amarillo", "naranja", "rojo"].map((k) => (
+          <span key={k} style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+            <span style={{ width: 9, height: 9, borderRadius: 999, background: LEAD_SEM[k].c, display: "inline-block" }} />{LEAD_SEM[k].l}
+          </span>
+        ))}
+      </div>
       {leadsFiltrados.length === 0 ? (
         <div className="ca-empty">No hay leads con ese filtro.</div>
       ) : (
@@ -5673,7 +5681,7 @@ function Marketing({ showToast, onConvertir, esAdmin }) {
                   <span style={{ marginLeft: 8, fontSize: 10.5, background: "#F7E5E5", color: "#B4564E", padding: "1px 7px", borderRadius: 999, fontWeight: 600, verticalAlign: "middle" }}>SIN AGENDAR</span>
                 )}
                 {lead.agendo_consulta === true && lead.fecha_consulta && (
-                  <span style={{ marginLeft: 8, fontSize: 10.5, background: "#E9F1ED", color: "#3E7A65", padding: "1px 7px", borderRadius: 999, fontWeight: 600, verticalAlign: "middle" }}>📅 {lead.fecha_consulta}</span>
+                  <span style={{ marginLeft: 8, fontSize: 10.5, background: "#E9F1ED", color: "#3E7A65", padding: "1px 7px", borderRadius: 999, fontWeight: 600, verticalAlign: "middle" }}>📅 {lead.fecha_consulta}{lead.hora_consulta ? ` · ${String(lead.hora_consulta).slice(0, 5)}` : ""}</span>
                 )}
                 {lead.estado === "seguimiento" && lead.seguimiento_frecuencia_label && (
                   <span style={{ marginLeft: 8, fontSize: 10.5, background: "#E1F2E8", color: "#2E7D52", padding: "1px 7px", borderRadius: 999, fontWeight: 600, verticalAlign: "middle" }}>🔁 Seguimiento {lead.seguimiento_frecuencia_label.toLowerCase()}</span>
@@ -5752,6 +5760,7 @@ function CrearLeadModal({ lead, medicos, anuncios, onClose, onSave }) {
     estado: lead?.estado || "nuevo",
     agendo_consulta: lead?.agendo_consulta ?? null,
     fecha_consulta: lead?.fecha_consulta || "",
+    hora_consulta: lead?.hora_consulta || "",
     fecha_cierre: lead?.fecha_cierre || "",
     seguimiento_frecuencia: lead?.seguimiento_frecuencia || "",
     recontacto_fecha: lead?.recontacto_fecha || "",
@@ -5789,7 +5798,8 @@ function CrearLeadModal({ lead, medicos, anuncios, onClose, onSave }) {
       estado: f.estado, agendo_consulta: f.agendo_consulta,
       seguimiento_frecuencia: f.estado === "seguimiento" ? f.seguimiento_frecuencia : "",
       recontacto_fecha: f.estado === "recontacto" ? (f.recontacto_fecha || null) : null,
-      fecha_consulta: f.agendo_consulta === false ? null : (f.fecha_consulta || null), fecha_cierre: f.fecha_cierre || null,
+      fecha_consulta: f.agendo_consulta === false ? null : (f.fecha_consulta || null),
+      hora_consulta: f.agendo_consulta === false ? null : (f.hora_consulta || null), fecha_cierre: f.fecha_cierre || null,
       campania: f.campania.trim(), especialidad: f.especialidad, medico: f.medico ? Number(f.medico) : null,
       tipo_servicio: f.tipo_servicio, motivo_consulta: f.motivo_consulta.trim(),
       resumen_conversacion: f.resumen_conversacion.trim(), objeciones: f.objeciones.trim(),
@@ -5893,7 +5903,10 @@ function CrearLeadModal({ lead, medicos, anuncios, onClose, onSave }) {
         </div>
         <div style={{ display: "flex", gap: 11, marginBottom: 12 }}>
           {f.agendo_consulta === true && (
-            <div style={{ flex: 1 }}><div className="ca-label">Fecha de la consulta</div><input className="ca-input" type="date" value={f.fecha_consulta || ""} onChange={set("fecha_consulta")} /></div>
+            <div style={{ flex: 1.4 }}><div className="ca-label">Fecha de la consulta</div><input className="ca-input" type="date" value={f.fecha_consulta || ""} onChange={set("fecha_consulta")} /></div>
+          )}
+          {f.agendo_consulta === true && (
+            <div style={{ flex: 1 }}><div className="ca-label">Hora</div><input className="ca-input" type="time" step={900} value={f.hora_consulta || ""} onChange={set("hora_consulta")} /></div>
           )}
           {f.agendo_consulta === false && (
             <div style={{ flex: 1, alignSelf: "center", fontSize: 12.5, color: "#B4564E" }}>⚠ Quedará marcado «sin agendar» para hacerle seguimiento.</div>
@@ -5926,7 +5939,7 @@ function CrearLeadModal({ lead, medicos, anuncios, onClose, onSave }) {
 const MEDIOS_PAGO = [
   { v: "efectivo", l: "Efectivo" }, { v: "yape", l: "Yape" }, { v: "plin", l: "Plin" },
   { v: "tarjeta", l: "Tarjeta" }, { v: "transferencia", l: "Transferencia" },
-  { v: "mercado_pago", l: "Mercado Pago" },
+  { v: "mercado_pago", l: "Mercado Pago" }, { v: "otro", l: "Otro" },
 ];
 const COMPROBANTES = [
   { v: "", l: "Sin comprobante" }, { v: "boleta", l: "Boleta" }, { v: "factura", l: "Factura" },
@@ -8217,6 +8230,7 @@ function CobroModal({ prefill, pacientes, servicios, onClose, onSave }) {
   const [monto, setMonto] = useState(servDefault ? String(servDefault.precio) : "");
   const [estado, setEstado] = useState("pagado");
   const [medio, setMedio] = useState("efectivo");
+  const [medioOtro, setMedioOtro] = useState("");
   const [comprobante, setComprobante] = useState("");
   const [compNumero, setCompNumero] = useState("");
   const [fecha, setFecha] = useState(HOY_ISO);
@@ -8235,11 +8249,14 @@ function CobroModal({ prefill, pacientes, servicios, onClose, onSave }) {
 
   const canSave = sel && monto && Number(monto) > 0;
   function guardar() {
+    // "Otro" medio (giftcard, asumido por mkt/hub, etc.): el detalle se anota en el concepto.
+    const detalleOtro = (estado === "pagado" && medio === "otro" && medioOtro.trim()) ? medioOtro.trim() : "";
+    const conceptoFinal = detalleOtro ? `${concepto.trim() || "Cobro"} · ${detalleOtro}` : (concepto.trim() || undefined);
     onSave({
       paciente: sel.id,
       cita: prefill?.citaId || null,
       servicio: servicio || null,
-      concepto: concepto.trim() || undefined,
+      concepto: conceptoFinal,
       monto, estado, fecha,
       medio_pago: estado === "pagado" ? medio : "",
       comprobante_tipo: comprobante,
@@ -8316,6 +8333,12 @@ function CobroModal({ prefill, pacientes, servicios, onClose, onSave }) {
             </div>
           )}
         </div>
+        {estado === "pagado" && medio === "otro" && (
+          <div style={{ marginBottom: 13 }}>
+            <div className="ca-label">¿Cuál? <span style={{ color: "var(--muted)", fontWeight: 400, fontSize: 12 }}>(giftcard, asumido por mkt/hub…)</span></div>
+            <input className="ca-input" value={medioOtro} onChange={(e) => setMedioOtro(e.target.value)} placeholder="Ej. giftcard / cortesía Hub" autoFocus />
+          </div>
+        )}
 
         <div style={{ display: "flex", gap: 11, marginBottom: 13 }}>
           <div style={{ flex: 1.3 }}>
@@ -9568,6 +9591,7 @@ function PacienteModal({ paciente, onClose, onSave, esMedico }) {
   const [nombre, setNombre] = useState(paciente?.nombre || "");
   const [fechaNac, setFechaNac] = useState(paciente?.fecha_nacimiento || "");
   const [tel, setTel] = useState(paciente?.tel && paciente.tel !== "—" ? paciente.tel : "");
+  const [email, setEmail] = useState(paciente?.email || "");
   const [esp, setEsp] = useState(paciente?.especialidad || "Terapia individual");
   const [tipoDoc, setTipoDoc] = useState(paciente?.tipo_documento || "dni");
   const [numDoc, setNumDoc] = useState(paciente?.numero_documento || "");
@@ -9627,6 +9651,12 @@ function PacienteModal({ paciente, onClose, onSave, esMedico }) {
             </div>
           )}
         </div>
+        {!esMedico && (
+          <div style={{ marginBottom: 13 }}>
+            <div className="ca-label">Correo electrónico</div>
+            <input className="ca-input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="correo@ejemplo.com" inputMode="email" />
+          </div>
+        )}
         <div style={{ display: "flex", gap: 11, marginBottom: 16 }}>
           <div style={{ flex: 1 }}>
             <div className="ca-label">Frecuencia</div>
@@ -9811,7 +9841,7 @@ function PacienteModal({ paciente, onClose, onSave, esMedico }) {
         <div style={{ display: "flex", gap: 9, justifyContent: "flex-end" }}>
           <button className="ca-btn ghost" onClick={onClose}>Cancelar</button>
           <button className="ca-btn" style={{ opacity: canSave ? 1 : 0.5, pointerEvents: canSave ? "auto" : "none" }}
-            onClick={() => onSave({ ...(paciente?.id ? { id: paciente.id } : {}), nombre: nombre.trim(), fecha_nacimiento: fechaNac || null, tel: tel.trim(), especialidad: esp, sede, profesional: profId ? Number(profId) : null, frecuencia, modalidad: modalidadP, n_sesion: Number(nSesion) || 0, proceso, tipo_documento: tipoDoc, numero_documento: numDoc.trim(), direccion: direccion.trim(), genero, alergias: alergias.trim(), antecedentes: antecedentes.trim(), medicacion_habitual: medicacion.trim(), tutor_nombre: tutorNombre.trim(), tutor_parentesco: tutorParentesco.trim(), tutor_telefono: tutorTel.trim(), tutor_documento: tutorDoc.trim(), sesiones_proceso: Number(sesionesProceso) || 0, resumen_clinico: resumenClinico.trim(), objetivo_principal: objetivoPrincipal.trim(), riesgo, alertas: alertas.trim(), notas_internas: notasInternas.trim(), antecedentes_medicos: antMedicos.trim(), antecedentes_familiares: antFamiliares.trim(), antecedentes_otros: antOtros.trim() })}>
+            onClick={() => onSave({ ...(paciente?.id ? { id: paciente.id } : {}), nombre: nombre.trim(), fecha_nacimiento: fechaNac || null, tel: tel.trim(), email: email.trim(), especialidad: esp, sede, profesional: profId ? Number(profId) : null, frecuencia, modalidad: modalidadP, n_sesion: Number(nSesion) || 0, proceso, tipo_documento: tipoDoc, numero_documento: numDoc.trim(), direccion: direccion.trim(), genero, alergias: alergias.trim(), antecedentes: antecedentes.trim(), medicacion_habitual: medicacion.trim(), tutor_nombre: tutorNombre.trim(), tutor_parentesco: tutorParentesco.trim(), tutor_telefono: tutorTel.trim(), tutor_documento: tutorDoc.trim(), sesiones_proceso: Number(sesionesProceso) || 0, resumen_clinico: resumenClinico.trim(), objetivo_principal: objetivoPrincipal.trim(), riesgo, alertas: alertas.trim(), notas_internas: notasInternas.trim(), antecedentes_medicos: antMedicos.trim(), antecedentes_familiares: antFamiliares.trim(), antecedentes_otros: antOtros.trim() })}>
             Guardar
           </button>
         </div>

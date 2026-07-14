@@ -111,6 +111,7 @@ class Lead(ModeloTenant):
     )
     es_pareja = models.BooleanField("¿Consulta de pareja?", default=False)
     fecha_consulta = models.DateField("fecha de la consulta", null=True, blank=True)
+    hora_consulta = models.TimeField("hora de la consulta", null=True, blank=True)
     fecha_cierre = models.DateField("fecha en que inició proceso", null=True, blank=True)
     # Seguimiento (estado "seguimiento") y recontacto (estado "recontacto").
     seguimiento_frecuencia = models.CharField(max_length=12, choices=Frecuencia.choices, blank=True, default="")
