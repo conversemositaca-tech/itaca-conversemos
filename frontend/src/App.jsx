@@ -8440,6 +8440,7 @@ function PreciosModal({ onClose, showToast }) {
               <div style={{ flex: 1 }}>Servicio</div>
               <div style={{ width: 84, textAlign: "right" }} title="Lo que paga el paciente">Precio</div>
               <div style={{ width: 84, textAlign: "right" }} title="Lo que se le paga al psicólogo por cada sesión atendida de este servicio">Pago terapeuta</div>
+              <div style={{ width: 44, textAlign: "center" }} title="¿Se ofrece en la página pública de reservas? (desmarca informes, reprogramación, etc.)">Web</div>
               <div style={{ width: 26 }} />
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: "46vh", overflowY: "auto", marginBottom: 14 }}>
@@ -8453,6 +8454,9 @@ function PreciosModal({ onClose, showToast }) {
                     onBlur={(e) => { if (e.target.value && String(e.target.value) !== String(s.precio)) guardarCampo(s, "precio", e.target.value); }} inputMode="decimal" />
                   <input className="ca-input" style={{ width: 84, marginTop: 0, textAlign: "right" }} defaultValue={s.monto_terapeuta} title="Pago al terapeuta por cada sesión atendida de este servicio"
                     onBlur={(e) => { if (String(e.target.value) !== String(s.monto_terapeuta)) guardarCampo(s, "monto_terapeuta", e.target.value || 0); }} inputMode="decimal" />
+                  <label style={{ width: 44, display: "flex", justifyContent: "center", alignItems: "center", cursor: "pointer" }} title="¿Se ofrece en la web pública de reservas?">
+                    <input type="checkbox" checked={s.reservable_web !== false} onChange={(e) => guardarCampo(s, "reservable_web", e.target.checked)} />
+                  </label>
                   <button className="ca-iconbtn" title="Eliminar" onClick={() => eliminar(s)}><Trash2 size={14} strokeWidth={2} /></button>
                 </div>
               ))}
@@ -9972,6 +9976,26 @@ const AGENDA_CATS = [
   { v: "parejas", emoji: "💞", label: "Atención a parejas", match: ["pareja"] },
 ];
 
+// Categoría implícita de un servicio (por su nombre) y si el psicólogo la atiende
+// (según su campo `poblaciones`). Evita ofrecer en la web servicios que ese
+// profesional no da (ej. lenguaje, pareja). Lenient: si falta info, se muestra.
+function _servCategoria(nombre) {
+  const n = (nombre || "").toLowerCase();
+  if (n.includes("pareja")) return "pareja";
+  if (n.includes("lenguaje")) return "lenguaje";
+  if (n.includes("infantojuvenil") || n.includes("niñ") || n.includes("nin") || n.includes("adolescent") || n.includes("infantil")) return "infantojuvenil";
+  if (n.includes("adulto")) return "adulto";
+  return "";
+}
+function _profSirveServicio(prof, nombreServicio) {
+  const cat = _servCategoria(nombreServicio);
+  if (!cat) return true; // servicio general (consulta inicial, brújula…) -> siempre
+  const pob = (prof?.poblaciones || "").toLowerCase();
+  if (!pob) return true; // sin público declarado -> no filtramos
+  const kw = { pareja: ["pareja"], lenguaje: ["lenguaje"], infantojuvenil: ["niñ", "nin", "adolescent", "infant"], adulto: ["adulto"] }[cat] || [];
+  return kw.some((k) => pob.includes(k));
+}
+
 export function AgendarPublico({ token }) {
   const [info, setInfo] = useState(null);
   const [err, setErr] = useState("");
@@ -9994,7 +10018,7 @@ export function AgendarPublico({ token }) {
     setSlotsData(null); setSlot(null);
     setForm((p) => ({
       ...p,
-      servicio: p.servicio || (info?.servicios?.[0]?.nombre || ""),
+      servicio: (((info?.servicios || []).filter((s) => _profSirveServicio(prof, s.nombre))[0] || (info?.servicios || [])[0] || {}).nombre) || "",
       modalidad: prof.modalidad === "virtual" ? "virtual" : "presencial",
     }));
     api.agendaSlots(token, prof.id, 21).then(setSlotsData).catch(() => setSlotsData({ dias: [] }));
@@ -10305,11 +10329,17 @@ export function AgendarPublico({ token }) {
             <input style={inp} value={form.documento} onChange={setF("documento")} placeholder="DNI (opcional)" inputMode="numeric" />
             <input style={inp} value={form.email} onChange={setF("email")} placeholder="Correo (opcional)" inputMode="email" />
           </div>
-          {info.servicios.length > 0 && (
-            <select style={{ ...inp, appearance: "auto" }} value={form.servicio} onChange={setF("servicio")}>
-              {info.servicios.map((s) => <option key={s.nombre} value={s.nombre}>{s.nombre}{s.precio && Number(s.precio) > 0 ? ` — S/${Number(s.precio).toFixed(0)}` : ""}</option>)}
-            </select>
-          )}
+          {(() => {
+            const servs = (info.servicios || []).filter((s) => _profSirveServicio(prof, s.nombre));
+            const lista = servs.length ? servs : (info.servicios || []);
+            if (!lista.length) return null;
+            const val = lista.some((s) => s.nombre === form.servicio) ? form.servicio : (lista[0]?.nombre || "");
+            return (
+              <select style={{ ...inp, appearance: "auto" }} value={val} onChange={setF("servicio")}>
+                {lista.map((s) => <option key={s.nombre} value={s.nombre}>{s.nombre}{s.precio && Number(s.precio) > 0 ? ` — S/${Number(s.precio).toFixed(0)}` : ""}</option>)}
+              </select>
+            );
+          })()}
           {prof.modalidad === "ambas" && (
             <select style={{ ...inp, appearance: "auto" }} value={form.modalidad} onChange={setF("modalidad")}>
               <option value="presencial">Presencial</option>

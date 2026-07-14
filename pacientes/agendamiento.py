@@ -157,7 +157,7 @@ class AgendamientoInfoView(_PublicBase):
         profs = _profesionales_agendables(clinica)
         servicios = [
             {"nombre": s.nombre, "especialidad": s.especialidad, "precio": str(s.precio)}
-            for s in Servicio.objects.filter(clinica=clinica, activo=True).order_by("nombre")
+            for s in Servicio.objects.filter(clinica=clinica, activo=True, reservable_web=True).order_by("nombre")
         ]
         return Response({
             "clinica": clinica.nombre,

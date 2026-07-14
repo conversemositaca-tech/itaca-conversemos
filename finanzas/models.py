@@ -20,6 +20,9 @@ class Servicio(ModeloTenant):
         "pago al terapeuta por sesión", max_digits=8, decimal_places=2, default=0,
     )
     activo = models.BooleanField(default=True)
+    # ¿Se ofrece en la página pública de auto-agendamiento? Sirve para NO mostrar
+    # servicios internos (informes, reprogramación, constancias) al paciente.
+    reservable_web = models.BooleanField("reservable por web", default=True)
 
     class Meta:
         verbose_name = "Servicio"
