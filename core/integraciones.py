@@ -18,8 +18,10 @@ from rest_framework.permissions import BasePermission
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from django.utils import timezone
+
 from core import estructurar_nota
-from pacientes.models import Atencion, ObjetivoTerapeutico, Paciente
+from pacientes.models import Atencion, Cita, ObjetivoTerapeutico, Paciente
 from usuarios.models import Usuario
 
 
@@ -187,6 +189,71 @@ class ContextoView(_Base):
             "riesgo": paciente.get_riesgo_display() if paciente.riesgo else "",
             "contexto": _contexto_paciente(paciente),
         })
+
+
+def _responder_consulta(psico, pregunta):
+    """Responde en texto (formato WhatsApp) una pregunta del psicólogo sobre SUS
+    datos reales: pacientes activos, agenda de hoy, pacientes sin próxima cita.
+    Todo acotado a su clínica y a los pacientes/citas que le corresponden."""
+    t = (pregunta or "").lower()
+    mis_pac = Paciente.objects.filter(clinica=psico.clinica, profesional__usuario=psico)
+
+    # 1) Agenda de hoy
+    if any(k in t for k in ["hoy", "agenda", "sesiones de hoy", "citas de hoy", "citas hoy"]):
+        hoy = timezone.localdate()
+        citas = (Cita.objects.filter(clinica=psico.clinica, medico=psico, inicio__date=hoy)
+                 .exclude(estado=Cita.Estado.CANCELADA).select_related("paciente").order_by("inicio"))
+        n = citas.count()
+        if not n:
+            return "Hoy no tienes sesiones agendadas. 🌿"
+        cuerpo = "\n".join(f"• {timezone.localtime(c.inicio):%H:%M} — {c.paciente.nombre}" for c in citas[:25])
+        return f"Hoy tienes *{n}* sesión(es):\n{cuerpo}"
+
+    # 2) Pacientes sin próxima cita (para reactivar)
+    if any(k in t for k in ["sin proxima", "sin próxima", "reactivar", "retencion", "retención", "sin cita", "no tienen cita"]):
+        con_futura = set(
+            Cita.objects.filter(clinica=psico.clinica, medico=psico, inicio__gte=timezone.now())
+            .exclude(estado=Cita.Estado.CANCELADA).values_list("paciente_id", flat=True))
+        sin = mis_pac.exclude(frecuencia=Paciente.Frecuencia.ALTA).exclude(id__in=con_futura).order_by("nombre")
+        n = sin.count()
+        if not n:
+            return "Todos tus pacientes activos tienen próxima cita agendada. 👏"
+        nombres = list(sin.values_list("nombre", flat=True)[:15])
+        cuerpo = "\n".join(f"• {x}" for x in nombres)
+        extra = f"\n… y {n - 15} más." if n > 15 else ""
+        return f"*{n}* paciente(s) sin próxima cita (conviene reagendar):\n{cuerpo}{extra}"
+
+    # 3) Pacientes activos (por defecto para preguntas de "pacientes"/"cartera")
+    if any(k in t for k in ["activ", "paciente", "cartera", "cuantos", "cuántos", "tengo"]):
+        activos = mis_pac.exclude(frecuencia=Paciente.Frecuencia.ALTA).order_by("nombre")
+        n = activos.count()
+        if not n:
+            return "No tienes pacientes activos asignados por ahora."
+        nombres = list(activos.values_list("nombre", flat=True)[:15])
+        cuerpo = "\n".join(f"• {x}" for x in nombres)
+        extra = f"\n… y {n - 15} más." if n > 15 else ""
+        return f"Tienes *{n}* paciente(s) activo(s):\n{cuerpo}{extra}"
+
+    # Fallback: qué puede responder
+    return ("Puedo darte datos rápidos de tu consulta. Pregúntame, por ejemplo:\n"
+            "• ¿Qué pacientes tengo activos?\n"
+            "• ¿Qué sesiones tengo hoy?\n"
+            "• ¿Qué pacientes están sin próxima cita?\n\n"
+            "O envíame la nota (texto o voz) para *registrar una sesión*.")
+
+
+class ConsultaView(_Base):
+    """Responde preguntas rápidas del psicólogo con sus datos reales.
+    POST /api/integraciones/consulta/  body: {telefono, pregunta}"""
+
+    def post(self, request):
+        d = request.data if isinstance(request.data, dict) else {}
+        psico = _psicologo_por_telefono(d.get("telefono"))
+        if psico is None:
+            return Response({"ok": False, "detail": "Número no autorizado."},
+                            status=status.HTTP_403_FORBIDDEN)
+        pregunta = (d.get("pregunta") or "").strip()
+        return Response({"ok": True, "respuesta": _responder_consulta(psico, pregunta)})
 
 
 class NotaVozView(_Base):
