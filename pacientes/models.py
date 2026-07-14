@@ -243,6 +243,9 @@ class Cita(ModeloTenant):
     especialidad = models.CharField("servicio", max_length=120, blank=True)
     estado = models.CharField(max_length=20, choices=Estado.choices, default=Estado.AGENDADA)
     recordatorio_enviado = models.BooleanField(default=False)
+    # La reservó el propio paciente por la web pública (no coordinación). Sirve para
+    # priorizar el contacto/confirmación de pago (marca "web" en la agenda).
+    agendado_web = models.BooleanField(default=False)
 
     # --- Datos de la sesión (estilo AgendaPro) ---
     sede = models.CharField(max_length=10, choices=Paciente.Sede.choices, blank=True, default="")

@@ -4387,6 +4387,7 @@ function CitaRow({ c, esAsistente, esMedico, onAtender, onRecordar, onReagendar,
       <div className="ca-time"><Clock size={13} strokeWidth={2} style={{ color: "var(--muted)" }} />{c.hora}</div>
       <div style={{ flex: 1, minWidth: 150 }}>
         <button className="ca-pnamebtn" onClick={() => openFicha(c.pacienteId)}>{c.paciente}</button>
+        {c.agendado_web && <span title="La reservó el paciente desde la web — priorizar contacto para confirmar y cobrar" style={{ marginLeft: 6, fontSize: 10.5, background: "#E3F1F2", color: "#0C5E69", padding: "1px 7px", borderRadius: 999, fontWeight: 700, verticalAlign: "middle" }}>🌐 Web</span>}
         <div className="ca-pmeta">
           {c.medico}{c.n_sesion ? ` · Sesión N° ${c.n_sesion}` : ""}{c.sede_label ? ` · ${c.sede_label}` : ""} · {c.modalidad === "virtual" ? "Virtual" : "Presencial"}
           {c.modalidad === "virtual" && c.enlace && (<> · <a href={c.enlace} target="_blank" rel="noreferrer" style={{ color: "var(--accent)", fontWeight: 600 }}>Unirse</a></>)}
@@ -10047,7 +10048,7 @@ export function AgendarPublico({ token }) {
       <div style={wrap}>
         <div style={{ ...cardStatic, padding: 22, marginTop: 8 }}>
           <div style={{ textAlign: "center" }}>
-            <div style={{ fontSize: 44 }}>🩵</div>
+            <div style={{ fontSize: 44 }}>💙</div>
             <h1 style={{ fontSize: 21, margin: "8px 0 2px", color: AD }}>¡Gracias por agendar!</h1>
             <div style={{ fontSize: 13.5, color: "#5B6B72" }}>a través de nuestra página web</div>
           </div>
@@ -10079,7 +10080,7 @@ export function AgendarPublico({ token }) {
             })}
           </div>
           <div style={{ textAlign: "center", fontSize: 13.5, color: AD, marginTop: 12, fontWeight: 600 }}>
-            Nos sentimos honrados de acompañarte en este primer paso hacia tu bienestar. 🩵
+            Nos sentimos honrados de acompañarte en este primer paso hacia tu bienestar. 💙
           </div>
         </div>
       </div>

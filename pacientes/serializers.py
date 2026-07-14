@@ -244,6 +244,7 @@ class CitaSerializer(serializers.ModelSerializer):
             "id", "pacienteId", "paciente", "medico", "especialidad", "categoria", "categoria_label",
             "fecha", "hora", "inicio", "estado", "estado_label", "recordado", "cobrada",
             "n_sesion", "sede", "sede_label", "modalidad", "modalidad_label", "enlace", "notas", "motivo_consulta",
+            "agendado_web",
         ]
         read_only_fields = ["inicio"]
 

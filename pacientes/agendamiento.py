@@ -281,7 +281,8 @@ class AgendamientoReservarView(_PublicBase):
                 Cita.objects.create(
                     clinica=clinica, paciente=paciente, medico=usuario, inicio=inicio,
                     especialidad=servicio, categoria=categoria, estado=Cita.Estado.AGENDADA, sede=prof.sede,
-                    modalidad=modalidad, motivo_consulta=mensaje, notas="Reserva online." + nota_ayuda)
+                    modalidad=modalidad, motivo_consulta=mensaje, agendado_web=True,
+                    notas="Reserva online." + nota_ayuda)
                 return Response({
                     "ok": True, "tipo": "existente", "estado": "agendada",
                     "profesional": prof.nombre,
@@ -304,7 +305,7 @@ class AgendamientoReservarView(_PublicBase):
             Cita.objects.create(
                 clinica=clinica, paciente=paciente, medico=usuario, inicio=inicio,
                 especialidad=servicio, categoria=categoria, estado=Cita.Estado.PENDIENTE, sede=prof.sede,
-                modalidad=modalidad, motivo_consulta=mensaje,
+                modalidad=modalidad, motivo_consulta=mensaje, agendado_web=True,
                 notas=f"Reserva online — paciente nuevo, confirmar. Lead #{lead.id}.{nota_ayuda}")
             return Response({
                 "ok": True, "tipo": "nuevo", "estado": "pendiente",

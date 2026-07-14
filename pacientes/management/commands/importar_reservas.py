@@ -36,7 +36,7 @@ COLS = {
     "nombre": "Nombre", "apellido": "Apellido", "email": "E-mail", "telefono": "Teléfono",
     "doc": "DNI o RUC", "servicio": "Servicio", "nsesion": "Nº de sesión",
     "prestador": "Prestador", "estado": "Estado", "estado_pago": "Estado de pago",
-    "comentario": "Comentario interno",
+    "comentario": "Comentario interno", "origen": "Origen",
 }
 
 ESTADO_MAP = {
@@ -219,6 +219,7 @@ class Command(BaseCommand):
                 nses_raw = solo_dig(cell(fila, "nsesion"))
                 n_sesion = int(nses_raw) if nses_raw else None
                 comentario = str(cell(fila, "comentario") or "").strip()
+                agendado_web = norm(cell(fila, "origen")) == "online"
 
                 prof = resolver_prof(cell(fila, "prestador"), escribir)
 
@@ -271,7 +272,7 @@ class Command(BaseCommand):
                         medico=(prof.usuario if prof and prof.usuario_id else None),
                         inicio=inicio, especialidad=servicio[:120], categoria=categoria,
                         estado=estado, sede=sede, modalidad=Cita.Modalidad.PRESENCIAL,
-                        n_sesion=n_sesion,
+                        n_sesion=n_sesion, agendado_web=agendado_web,
                         notas=("Importado de AgendaPro." + (f" {comentario}" if comentario else ""))[:2000],
                     )
                     citas_existentes.add((pac.id, inicio))
