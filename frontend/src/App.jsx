@@ -745,23 +745,36 @@ export default function ClinicaApp() {
     const payload = {
       nombre: data.nombre,
       fecha_nacimiento: data.fecha_nacimiento || null,
-      tel: data.tel || "",
       especialidad: data.especialidad || "",
       sede: data.sede || "",
       profesional: data.profesional ?? null,
       frecuencia: data.frecuencia || "",
       modalidad: data.modalidad || "",
-      tipo_documento: data.tipo_documento || "dni",
-      numero_documento: data.numero_documento || "",
-      direccion: data.direccion || "",
-      genero: data.genero || "",
-      tutor_nombre: data.tutor_nombre || "",
-      tutor_parentesco: data.tutor_parentesco || "",
-      tutor_telefono: data.tutor_telefono || "",
-      tutor_documento: data.tutor_documento || "",
       alergias: data.alergias || "",
       antecedentes: data.antecedentes || "",
       medicacion_habitual: data.medicacion_habitual || "",
+      antecedentes_medicos: data.antecedentes_medicos || "",
+      antecedentes_familiares: data.antecedentes_familiares || "",
+      antecedentes_otros: data.antecedentes_otros || "",
+      // Trabajo clínico (lo edita también el psicólogo): antes se perdía al guardar.
+      resumen_clinico: data.resumen_clinico || "",
+      objetivo_principal: data.objetivo_principal || "",
+      riesgo: data.riesgo || "",
+      alertas: data.alertas || "",
+      notas_internas: data.notas_internas || "",
+      ...(data.sesiones_proceso !== undefined ? { sesiones_proceso: data.sesiones_proceso } : {}),
+      // Contacto/identidad: solo se envían si el modal los incluyó. El médico NO
+      // los ve, así que no los manda y así NO se sobrescriben al editar.
+      ...(data.tel !== undefined ? { tel: data.tel } : {}),
+      ...(data.email !== undefined ? { email: data.email } : {}),
+      ...(data.tipo_documento !== undefined ? { tipo_documento: data.tipo_documento } : {}),
+      ...(data.numero_documento !== undefined ? { numero_documento: data.numero_documento } : {}),
+      ...(data.direccion !== undefined ? { direccion: data.direccion } : {}),
+      ...(data.genero !== undefined ? { genero: data.genero } : {}),
+      ...(data.tutor_nombre !== undefined ? { tutor_nombre: data.tutor_nombre } : {}),
+      ...(data.tutor_parentesco !== undefined ? { tutor_parentesco: data.tutor_parentesco } : {}),
+      ...(data.tutor_telefono !== undefined ? { tutor_telefono: data.tutor_telefono } : {}),
+      ...(data.tutor_documento !== undefined ? { tutor_documento: data.tutor_documento } : {}),
       ...(data.n_sesion !== undefined ? { n_sesion: data.n_sesion } : {}),
       ...(data.proceso !== undefined ? { proceso: data.proceso } : {}),
     };
@@ -9846,7 +9859,7 @@ function PacienteModal({ paciente, onClose, onSave, esMedico }) {
         <div style={{ display: "flex", gap: 9, justifyContent: "flex-end" }}>
           <button className="ca-btn ghost" onClick={onClose}>Cancelar</button>
           <button className="ca-btn" style={{ opacity: canSave ? 1 : 0.5, pointerEvents: canSave ? "auto" : "none" }}
-            onClick={() => onSave({ ...(paciente?.id ? { id: paciente.id } : {}), nombre: nombre.trim(), fecha_nacimiento: fechaNac || null, tel: tel.trim(), email: email.trim(), especialidad: esp, sede, profesional: profId ? Number(profId) : null, frecuencia, modalidad: modalidadP, n_sesion: Number(nSesion) || 0, proceso, tipo_documento: tipoDoc, numero_documento: numDoc.trim(), direccion: direccion.trim(), genero, alergias: alergias.trim(), antecedentes: antecedentes.trim(), medicacion_habitual: medicacion.trim(), tutor_nombre: tutorNombre.trim(), tutor_parentesco: tutorParentesco.trim(), tutor_telefono: tutorTel.trim(), tutor_documento: tutorDoc.trim(), sesiones_proceso: Number(sesionesProceso) || 0, resumen_clinico: resumenClinico.trim(), objetivo_principal: objetivoPrincipal.trim(), riesgo, alertas: alertas.trim(), notas_internas: notasInternas.trim(), antecedentes_medicos: antMedicos.trim(), antecedentes_familiares: antFamiliares.trim(), antecedentes_otros: antOtros.trim() })}>
+            onClick={() => onSave({ ...(paciente?.id ? { id: paciente.id } : {}), nombre: nombre.trim(), fecha_nacimiento: fechaNac || null, especialidad: esp, sede, profesional: profId ? Number(profId) : null, frecuencia, modalidad: modalidadP, n_sesion: Number(nSesion) || 0, proceso, alergias: alergias.trim(), antecedentes: antecedentes.trim(), medicacion_habitual: medicacion.trim(), sesiones_proceso: Number(sesionesProceso) || 0, resumen_clinico: resumenClinico.trim(), objetivo_principal: objetivoPrincipal.trim(), riesgo, alertas: alertas.trim(), notas_internas: notasInternas.trim(), antecedentes_medicos: antMedicos.trim(), antecedentes_familiares: antFamiliares.trim(), antecedentes_otros: antOtros.trim(), ...(!esMedico ? { tel: tel.trim(), email: email.trim(), tipo_documento: tipoDoc, numero_documento: numDoc.trim(), direccion: direccion.trim(), genero, tutor_nombre: tutorNombre.trim(), tutor_parentesco: tutorParentesco.trim(), tutor_telefono: tutorTel.trim(), tutor_documento: tutorDoc.trim() } : {}) })}>
             Guardar
           </button>
         </div>
