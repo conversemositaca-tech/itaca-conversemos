@@ -1388,7 +1388,7 @@ export default function ClinicaApp() {
           <VenderPaqueteModal paciente={vendiendoPaquete} servicios={servicios}
             onClose={() => setVendiendoPaquete(null)} onSave={venderPaquete} />
         )}
-        {atender && <AtenderModal cita={atender} servicios={servicios} onClose={() => setAtender(null)} onSave={(datos) => guardarAtencion(atender, datos)} />}
+        {atender && <AtenderModal cita={atender} servicios={servicios} esMedico={usuario?.rol === "medico"} onClose={() => setAtender(null)} onSave={(datos) => guardarAtencion(atender, datos)} />}
         {recordar && <RecordarModal cita={recordar} clinica={nombreClinica} onClose={() => setRecordar(null)} onSend={(texto) => enviarRecordatorio(recordar, texto)} />}
         {reagendar && <ReagendarModal cita={reagendar} onClose={() => setReagendar(null)} onSave={moverCita} />}
         {notaCita && (
@@ -4440,7 +4440,7 @@ function CitaRow({ c, esAsistente, esMedico, onAtender, onRecordar, onReagendar,
             <Pencil size={13} strokeWidth={2} /> Nota{c.notas ? " ✓" : ""}
           </button>
         )}
-        {activa && (
+        {activa && !esMedico && (
           <button className="ca-mini" onClick={() => onReagendar(c)} title="Reagendar (cambiar fecha/hora)"><Calendar size={13} strokeWidth={2} /> Mover</button>
         )}
         {onEliminarCita && (
@@ -4753,7 +4753,7 @@ function CitaDetalleModal({ cita, esMedico, esAsistente, onClose, onSetEstado, o
           {!esMedico && <button className="ca-mini wa" onClick={() => { onClose(); onMensaje(cita); }}><MessageCircle size={13} strokeWidth={2} /> Mensaje</button>}
           {activa && !esAsistente && <button className="ca-mini" onClick={() => { onClose(); onAtender(cita); }}><Stethoscope size={13} strokeWidth={2} /> {esMedico ? "Registrar sesión" : "Atender"}</button>}
           {!esMedico && <button className="ca-mini" onClick={() => { onClose(); onCobrar(cita); }}><Receipt size={13} strokeWidth={2} /> Cobrar</button>}
-          {activa && <button className="ca-mini" onClick={() => { onClose(); onReagendar(cita); }}><Calendar size={13} strokeWidth={2} /> Mover</button>}
+          {activa && !esMedico && <button className="ca-mini" onClick={() => { onClose(); onReagendar(cita); }}><Calendar size={13} strokeWidth={2} /> Mover</button>}
           {activa && <button className="ca-mini" style={{ color: "#B4564E" }} onClick={() => { onClose(); onCancelar(cita); }}><X size={13} strokeWidth={2} /> Cancelar</button>}
         </div>
       </div>
@@ -4812,7 +4812,7 @@ function ConfirmModal({ titulo, mensaje, confirmLabel, peligro, onConfirm, onClo
   );
 }
 
-function AtenderModal({ cita, servicios, onClose, onSave }) {
+function AtenderModal({ cita, servicios, onClose, onSave, esMedico }) {
   const [tipo, setTipo] = useState("evolucion");
   // Un campo por cada campo del modelo Atencion; la ficha activa decide cuáles se muestran.
   const [campos, setCampos] = useState(() =>
@@ -4948,7 +4948,9 @@ function AtenderModal({ cita, servicios, onClose, onSave }) {
           </select>
         </div>
 
-        {/* Guía de notas: Decisión del Paciente (DP). Estandariza el registro. */}
+        {/* Guía de notas: Decisión del Paciente (DP). Es de coordinación (va en las
+            notas de la cita), no de la ficha clínica: no se muestra al psicólogo. */}
+        {!esMedico && (
         <div style={{ marginBottom: 14 }}>
           <div className="ca-label" style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <FileText size={13} strokeWidth={2} style={{ color: "var(--accent)" }} /> Decisión del paciente (DP) — insertar en la nota
@@ -4962,6 +4964,7 @@ function AtenderModal({ cita, servicios, onClose, onSave }) {
             ))}
           </select>
         </div>
+        )}
 
         {fichaCampos.map((c, i) => (
           <div key={c.k} style={{ marginBottom: 13 }}>
