@@ -201,6 +201,7 @@ class Command(BaseCommand):
             nonlocal n_citas_nuevas, n_citas_saltadas, n_filas_malas
             cache_doc = dict(pac_por_doc)
             cache_tel = dict(pac_por_tel)
+            citas_bulk = []
             for fila in filas:
                 inicio = parse_dt(cell(fila, "fecha"))
                 nombre = (str(cell(fila, "nombre") or "").strip() + " " + str(cell(fila, "apellido") or "").strip()).strip()
@@ -231,20 +232,7 @@ class Command(BaseCommand):
                     pac = cache_tel[tel9]
                 if pac is not None:
                     reusados_pac.add(pac.id if getattr(pac, "id", None) else nombre)
-                    if escribir:
-                        campos = []
-                        if not pac.email and email:
-                            pac.email = email[:254]; campos.append("email")
-                        if not pac.telefono and tel:
-                            pac.telefono = tel[:40]; campos.append("telefono")
-                        if not pac.profesional_id and prof is not None:
-                            pac.profesional = prof; campos.append("profesional")
-                        if not pac.numero_documento and doc:
-                            pac.numero_documento = doc
-                            pac.tipo_documento = "ruc" if len(doc) == 11 else "dni"
-                            campos += ["numero_documento", "tipo_documento"]
-                        if campos:
-                            pac.save(update_fields=campos)
+                    # add-only: NO se modifican los pacientes que ya existen en el sistema.
                 else:
                     clave = doc or ("tel:" + tel9) or ("nom:" + norm(nombre))
                     nuevos_pac[clave] = nombre
@@ -266,17 +254,21 @@ class Command(BaseCommand):
                     n_citas_saltadas += 1
                     continue
                 n_citas_nuevas += 1
+                if pac_id is not None:
+                    citas_existentes.add((pac_id, inicio))
                 if escribir and pac is not None:
-                    Cita.objects.create(
+                    citas_bulk.append(Cita(
                         clinica=clinica, paciente=pac,
                         medico=(prof.usuario if prof and prof.usuario_id else None),
                         inicio=inicio, especialidad=servicio[:120], categoria=categoria,
                         estado=estado, sede=sede, modalidad=Cita.Modalidad.PRESENCIAL,
                         n_sesion=n_sesion, agendado_web=agendado_web,
                         notas=("Importado de AgendaPro." + (f" {comentario}" if comentario else ""))[:2000],
-                    )
-                    citas_existentes.add((pac.id, inicio))
+                    ))
 
+            # Inserción de citas en lote (rápido y robusto sobre conexión remota).
+            if escribir and citas_bulk:
+                Cita.objects.bulk_create(citas_bulk, batch_size=500)
             if opt["dry_run"]:
                 transaction.set_rollback(True)
 
