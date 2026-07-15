@@ -5753,7 +5753,7 @@ function Marketing({ showToast, onConvertir, esAdmin }) {
                 )}
               </div>
               <div className="ca-pmeta">
-                {lead.sede_label ? `${lead.sede_label} · ` : ""}{lead.fuente_label}{lead.subfuente ? ` › ${lead.subfuente}` : ""}{lead.tipo_servicio_label ? ` · ${lead.tipo_servicio_label}` : ""}{lead.anuncio_nombre ? ` · 📣 ${lead.anuncio_nombre}` : ""}{lead.medico_nombre ? ` · ${lead.medico_nombre}` : ""}
+                {lead.sede_label ? `${lead.sede_label} · ` : ""}{lead.fuente_label}{lead.subfuente ? ` › ${lead.subfuente}` : ""}{lead.tipo_servicio_label ? ` · ${lead.tipo_servicio_label}` : ""}{lead.anuncio_nombre ? ` · 📣 ${lead.anuncio_nombre.length > 32 ? lead.anuncio_nombre.slice(0, 32).trim() + "…" : lead.anuncio_nombre}` : ""}{lead.medico_nombre ? ` · ${lead.medico_nombre}` : ""}
               </div>
             </div>
             <select className="ca-tplsel" value={lead.estado} onChange={(ev) => moverEstado(lead, ev.target.value)}
