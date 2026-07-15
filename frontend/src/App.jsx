@@ -4578,6 +4578,7 @@ function TerapeutasGrid({ citas, terapeutas, horarios = {}, fecha, onAbrirCita }
 function Agenda({ citas, bloqueos = [], fecha, setFecha, vista, setVista, esAsistente, esMedico, onAgendar, onBloquear, onBorrarBloqueo, onVenta, onAtender, onRecordar, onReagendar, onCancelar, onConfirmar, onCobrar, onSetEstado, onAbrirCita, onMensaje, openFicha, onEditarNota, onEliminarCita }) {
   const [filtroMedico, setFiltroMedico] = useState("");
   const [filtroSede, setFiltroSede] = useState("");
+  const [verTodosTipos, setVerTodosTipos] = useState(false);
   const [medicosDir, setMedicosDir] = useState([]);
   useEffect(() => { api.medicos().then(setMedicosDir).catch(() => {}); }, []);
   // Sede "de casa" de cada psicólogo, según su ficha del directorio.
@@ -4682,7 +4683,7 @@ function Agenda({ citas, bloqueos = [], fecha, setFecha, vista, setVista, esAsis
         <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
           <span style={{ width: 58, flexShrink: 0, fontSize: 11.5, color: "var(--muted)", fontWeight: 700, paddingTop: 4 }}>Por tipo</span>
           <div style={{ display: "flex", gap: 7, flexWrap: "wrap", flex: 1 }}>
-            {resumenTipos.map(([tipo, n]) => (
+            {(verTodosTipos ? resumenTipos : resumenTipos.slice(0, 8)).map(([tipo, n]) => (
               <span key={tipo} style={{ display: "inline-flex", alignItems: "center", gap: 7, fontSize: 12.5, fontWeight: 500,
                 padding: "2px 11px 2px 3px", borderRadius: 999, background: "#F4F2EE", color: "var(--ink-soft)", border: "1px solid var(--line)" }}>
                 <span style={{ minWidth: 21, textAlign: "center", fontWeight: 800, fontSize: 11.5, lineHeight: "18px",
@@ -4690,6 +4691,13 @@ function Agenda({ citas, bloqueos = [], fecha, setFecha, vista, setVista, esAsis
                 <span>{tipo}</span>
               </span>
             ))}
+            {resumenTipos.length > 8 && (
+              <button onClick={() => setVerTodosTipos((v) => !v)}
+                style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, fontWeight: 700, cursor: "pointer",
+                  padding: "3px 12px", borderRadius: 999, background: "transparent", color: "var(--accent)", border: "1px dashed var(--accent)" }}>
+                {verTodosTipos ? "ver menos" : `＋${resumenTipos.length - 8} más`}
+              </button>
+            )}
           </div>
         </div>
       )}
