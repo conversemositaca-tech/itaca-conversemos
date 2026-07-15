@@ -543,6 +543,9 @@ export default function ClinicaApp() {
   const [filterFrec, setFilterFrec] = useState("");
   const [soloSinProxima, setSoloSinProxima] = useState(false);
   const [selectedId, setSelectedId] = useState(null);
+  // Detalle completo del paciente abierto (historial, citas, adjuntos, paquetes…).
+  // La LISTA trae solo lo liviano; el detalle se carga al abrir la ficha.
+  const [detalle, setDetalle] = useState(null);
   const [adding, setAdding] = useState(false);
   const [atender, setAtender] = useState(null);
   const [recordar, setRecordar] = useState(null);
@@ -592,7 +595,16 @@ export default function ClinicaApp() {
     showToast("Contraseña actualizada ✓");
   }
 
-  const refrescarPacientes = async () => setPacientes(await api.pacientes());
+  // Trae el detalle completo del paciente (para la ficha). Si falla, la ficha se
+  // queda con la fila liviana de la lista (nombre y estado ya alcanzan).
+  const cargarDetalle = async (id) => {
+    if (!id) { setDetalle(null); return; }
+    try { setDetalle(await api.paciente(id)); } catch { /* mantiene lo liviano */ }
+  };
+  const refrescarPacientes = async () => {
+    setPacientes(await api.pacientes());
+    if (selectedId) cargarDetalle(selectedId); // mantiene la ficha abierta al día
+  };
   const guardarRegistroSesion = async (paciente, datos) => {
     try {
       await api.registrarSesion(paciente.id, datos);
@@ -604,7 +616,11 @@ export default function ClinicaApp() {
   const refrescarCitas = async () => setCitas(await api.citas());
   const refrescarMensajes = async () => setMensajes(await api.mensajes());
 
-  const selected = pacientes.find((p) => p.id === selectedId) || null;
+  // El detalle completo si ya cargó para este paciente; si no, la fila liviana.
+  const selected =
+    (detalle && detalle.id === selectedId)
+      ? detalle
+      : (pacientes.find((p) => p.id === selectedId) || null);
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return pacientes.filter((p) =>
@@ -672,7 +688,7 @@ export default function ClinicaApp() {
 
   function showToast(msg) { setToast(msg); setTimeout(() => setToast(""), 2800); }
   function go(v) { setView(v); setSelectedId(null); }
-  function openFicha(id) { if (!id) return; setView("pacientes"); setSelectedId(id); }
+  function openFicha(id) { if (!id) return; setView("pacientes"); setSelectedId(id); setDetalle(null); cargarDetalle(id); }
 
   // `HOY_ISO` se fija al cargar la página (con el reloj del SERVIDOR). Si dejan la
   // pestaña abierta varios días, hay que refrescar el día:
@@ -810,6 +826,7 @@ export default function ClinicaApp() {
         showToast("Paciente agregado ✓");
         await refrescarPacientes();
         setSelectedId(nuevo.id);
+        cargarDetalle(nuevo.id);
       }
     } catch (e) { showToast("Error: " + e.message); }
   }
@@ -1337,7 +1354,7 @@ export default function ClinicaApp() {
                   ? "Consulta inicial"
                   : `${p.n_sesion ? `Sesión ${p.n_sesion}` : ""}${p.n_sesion && p.proceso_label ? " · " : ""}${p.proceso_label || ""}`;
                 return (
-                  <div key={p.id} className="ca-row click" onClick={() => setSelectedId(p.id)}>
+                  <div key={p.id} className="ca-row click" onClick={() => openFicha(p.id)}>
                     <div className="ca-avatar">{iniciales(p.nombre)}</div>
                     <div style={{ flex: 1 }}>
                       <div className="ca-pname">{p.nombre}</div>
@@ -4028,7 +4045,9 @@ function Ficha({ p, onBack, onEdit, onWhatsApp, onSubirAdjunto, onEliminarAdjunt
 
       <h2 className="ca-secth" id="hc-historia">Historia clínica</h2>
       <div className="ca-card">
-        {p.historial.length === 0 ? (
+        {p.historial === undefined ? (
+          <div style={{ color: "var(--muted)", fontSize: 14 }}>Cargando historia clínica…</div>
+        ) : p.historial.length === 0 ? (
           <div style={{ color: "var(--muted)", fontSize: 14 }}>Aún no hay atenciones registradas. Aparecerán aquí después de la primera consulta.</div>
         ) : (
           <div className="ca-hist">
@@ -4077,7 +4096,9 @@ function Ficha({ p, onBack, onEdit, onWhatsApp, onSubirAdjunto, onEliminarAdjunt
       <div className="ca-card">
         <UploaderAdjunto onSubir={onSubirAdjunto} />
         <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 9 }}>Laboratorios, ecografías, PDFs o imágenes. Máx. 25 MB. Descarga protegida (solo personal de la clínica).</div>
-        {p.adjuntos.length === 0 ? (
+        {p.adjuntos === undefined ? (
+          <div style={{ color: "var(--muted)", fontSize: 14, marginTop: 14 }}>Cargando archivos…</div>
+        ) : p.adjuntos.length === 0 ? (
           <div style={{ color: "var(--muted)", fontSize: 14, marginTop: 14 }}>Aún no hay archivos para este paciente.</div>
         ) : (
           <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 8 }}>

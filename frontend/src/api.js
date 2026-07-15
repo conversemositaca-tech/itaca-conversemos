@@ -52,6 +52,7 @@ export const api = {
 
   // Pacientes
   pacientes: () => req("/api/pacientes/"),
+  paciente: (id) => req(`/api/pacientes/${id}/`),
   crearPaciente: (data) => req("/api/pacientes/", { method: "POST", body: JSON.stringify(data) }),
   actualizarPaciente: (id, data) =>
     req(`/api/pacientes/${id}/`, { method: "PATCH", body: JSON.stringify(data) }),

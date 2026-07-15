@@ -222,6 +222,30 @@ class PacienteSerializer(serializers.ModelSerializer):
         return out
 
 
+class PacienteListSerializer(PacienteSerializer):
+    """Versión LIVIANA para la lista de pacientes (~1.400 registros).
+
+    Omite las colecciones pesadas —historial de atenciones, historial de citas,
+    adjuntos, paquetes, seguimiento y el detalle de la cuenta— que solo hacen
+    falta al ABRIR la ficha. Esos se traen con el detalle (retrieve) de a uno.
+    Mantiene lo que muestran las filas y usan los filtros: última visita, próxima
+    cita, saldo pendiente, frecuencia, modalidad, sede, etc.
+    """
+
+    class Meta(PacienteSerializer.Meta):
+        fields = [
+            f for f in PacienteSerializer.Meta.fields
+            if f not in ("historial", "adjuntos", "citas", "paquetes", "seguimiento")
+        ]
+
+    def get_cuenta(self, obj):
+        # Solo los totales (para el chip "Debe S/…"); sin el detalle de ítems.
+        cobros = [c for c in obj.cobros.all() if c.estado != "anulado"]
+        cobrado = sum((c.monto for c in cobros if c.estado == "pagado"), Decimal("0"))
+        pendiente = sum((c.monto for c in cobros if c.estado == "pendiente"), Decimal("0"))
+        return {"cobrado": float(cobrado), "pendiente": float(pendiente), "items": []}
+
+
 class CitaSerializer(serializers.ModelSerializer):
     pacienteId = serializers.PrimaryKeyRelatedField(
         source="paciente", queryset=Paciente.objects.all()

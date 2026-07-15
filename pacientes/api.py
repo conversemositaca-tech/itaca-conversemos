@@ -22,7 +22,7 @@ from .models import (
 from .serializers import (
     AdjuntoSerializer, AplicacionEscalaSerializer, AtencionSerializer, BloqueoAgendaSerializer,
     CitaSerializer, ContactoProfesionalSerializer, ObjetivoTerapeuticoSerializer, PacienteSerializer,
-    RespuestaNPSSerializer, TareaSerializer,
+    PacienteListSerializer, RespuestaNPSSerializer, TareaSerializer,
 )
 
 # Tipos de archivo permitidos para adjuntos clínicos.
@@ -98,25 +98,50 @@ class PacienteViewSet(viewsets.ModelViewSet):
 
     serializer_class = PacienteSerializer
 
+    def get_serializer_class(self):
+        # La LISTA usa el serializer liviano (sin historial/citas/adjuntos/…):
+        # con ~1.400 pacientes eso evita serializar y prefetchear todo el detalle
+        # de cada uno. El detalle completo se sirve al abrir la ficha (retrieve).
+        if self.action == "list":
+            return PacienteListSerializer
+        return PacienteSerializer
+
     def get_queryset(self):
-        # Prefetch profundo para servir la lista de pacientes SIN N+1: cada campo
-        # calculado del serializer (próxima cita, última atención, historial,
-        # adjuntos, cuenta, paquetes) trabaja sobre estas relaciones ya cargadas.
-        # Antes cada uno re-consultaba por paciente (~1900 × varias queries = ~30s).
-        atenciones_qs = Atencion.objects.select_related("medico").prefetch_related(
-            Prefetch("adjuntos", queryset=Adjunto.objects.select_related("subido_por")),
-            Prefetch("ediciones", queryset=EdicionAtencion.objects.select_related("editado_por")),
-        )
-        qs = (
-            Paciente.objects.del_tenant_actual()
-            .select_related("profesional")
-            .prefetch_related(
-                Prefetch("atenciones", queryset=atenciones_qs),
-                Prefetch("adjuntos", queryset=Adjunto.objects.select_related("subido_por")),
-                Prefetch("citas", queryset=Cita.objects.select_related("medico")),
-                "cobros", "seguimientos", "paquetes",
+        if self.action == "list":
+            # LISTA: prefetch MÍNIMO. Solo lo que necesitan las filas y los
+            # filtros —última atención, próxima cita y el saldo—, con `.only()`
+            # para no traer los textos largos (contenido de atenciones, notas de
+            # citas). El historial completo llega al abrir la ficha (retrieve).
+            qs = (
+                Paciente.objects.del_tenant_actual()
+                .select_related("profesional")
+                .prefetch_related(
+                    Prefetch("atenciones", queryset=Atencion.objects.only(
+                        "id", "paciente_id", "fecha")),
+                    Prefetch("citas", queryset=Cita.objects.only(
+                        "id", "paciente_id", "inicio", "estado", "especialidad")),
+                    "cobros",
+                )
             )
-        )
+        else:
+            # DETALLE / escritura: prefetch profundo para servir la ficha SIN N+1.
+            # Cada campo calculado del serializer (próxima cita, última atención,
+            # historial, adjuntos, cuenta, paquetes) trabaja sobre estas relaciones
+            # ya cargadas, en vez de re-consultar por paciente.
+            atenciones_qs = Atencion.objects.select_related("medico").prefetch_related(
+                Prefetch("adjuntos", queryset=Adjunto.objects.select_related("subido_por")),
+                Prefetch("ediciones", queryset=EdicionAtencion.objects.select_related("editado_por")),
+            )
+            qs = (
+                Paciente.objects.del_tenant_actual()
+                .select_related("profesional")
+                .prefetch_related(
+                    Prefetch("atenciones", queryset=atenciones_qs),
+                    Prefetch("adjuntos", queryset=Adjunto.objects.select_related("subido_por")),
+                    Prefetch("citas", queryset=Cita.objects.select_related("medico")),
+                    "cobros", "seguimientos", "paquetes",
+                )
+            )
         if _es_comercial(self.request.user):
             return qs.none()
         # El psicólogo solo ve a los pacientes de su ficha del directorio.
