@@ -4664,35 +4664,39 @@ function Agenda({ citas, bloqueos = [], fecha, setFecha, vista, setVista, esAsis
         </div>
       </div>
 
+      <div style={{ display: "flex", flexDirection: "column", gap: 8, background: "var(--surface)", border: "1px solid var(--line)", borderRadius: 12, padding: "10px 13px", margin: "8px 0 14px" }}>
       {resumen.length > 0 && (
-        <div style={{ display: "flex", gap: 7, flexWrap: "wrap", margin: "2px 0 4px" }}>
+        <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
           {resumen.map((e) => (
-            <span key={e.v} style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 12.5, fontWeight: 600,
-              padding: "3px 10px", borderRadius: 999, background: (STATUS[e.v] || {}).bg, color: (STATUS[e.v] || {}).fg }}>
-              {e.l}: {e.n}
+            <span key={e.v} style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 600,
+              padding: "3px 11px", borderRadius: 999, background: (STATUS[e.v] || {}).bg, color: (STATUS[e.v] || {}).fg }}>
+              {e.l} <b style={{ fontWeight: 800 }}>{e.n}</b>
             </span>
           ))}
         </div>
       )}
       {resumenTipos.length > 0 && (
-        <div style={{ display: "flex", gap: 7, flexWrap: "wrap", margin: "0 0 6px", alignItems: "center" }}>
+        <div style={{ display: "flex", gap: 7, flexWrap: "wrap", alignItems: "center" }}>
           <span style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>Por tipo:</span>
           {resumenTipos.map(([tipo, n]) => (
-            <span key={tipo} style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 12.5, fontWeight: 600,
-              padding: "3px 10px", borderRadius: 999, background: (SPECIALTY[tipo]?.bg) || "#EFEDE8", color: (SPECIALTY[tipo]?.fg) || "#7C7870" }}>
-              {(SPECIALTY[tipo]?.dot) || ""} {n} {tipo}
+            <span key={tipo} style={{ display: "inline-flex", alignItems: "center", gap: 7, fontSize: 12.5, fontWeight: 500,
+              padding: "2px 11px 2px 3px", borderRadius: 999, background: "#F4F2EE", color: "var(--ink-soft)", border: "1px solid var(--line)" }}>
+              <span style={{ minWidth: 21, textAlign: "center", fontWeight: 800, fontSize: 11.5, lineHeight: "18px",
+                padding: "0 6px", borderRadius: 999, background: (SPECIALTY[tipo]?.fg) || "#7C7870", color: "#fff" }}>{n}</span>
+              <span>{tipo}</span>
             </span>
           ))}
         </div>
       )}
 
-      <div style={{ display: "flex", gap: 13, flexWrap: "wrap", alignItems: "center", margin: "2px 0 4px 2px", fontSize: 11.5, color: "var(--muted)" }}>
+      <div style={{ display: "flex", gap: 13, flexWrap: "wrap", alignItems: "center", borderTop: "1px solid var(--line)", paddingTop: 8, fontSize: 11.5, color: "var(--muted)" }}>
         <span style={{ fontWeight: 700, color: "var(--ink-soft)" }}>Color de la cita:</span>
         {COLOR_CITA_LEYENDA.map((x) => (
           <span key={x.l} style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
             <span style={{ width: 10, height: 10, borderRadius: 3, background: x.fg, display: "inline-block" }} />{x.l}
           </span>
         ))}
+      </div>
       </div>
       {vista === "dia" ? (
         <div style={{ marginTop: 18 }}>
