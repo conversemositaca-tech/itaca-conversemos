@@ -4578,6 +4578,7 @@ function TerapeutasGrid({ citas, terapeutas, horarios = {}, fecha, onAbrirCita }
 function Agenda({ citas, bloqueos = [], fecha, setFecha, vista, setVista, esAsistente, esMedico, onAgendar, onBloquear, onBorrarBloqueo, onVenta, onAtender, onRecordar, onReagendar, onCancelar, onConfirmar, onCobrar, onSetEstado, onAbrirCita, onMensaje, openFicha, onEditarNota, onEliminarCita }) {
   const [filtroMedico, setFiltroMedico] = useState("");
   const [filtroSede, setFiltroSede] = useState("");
+  const [filtroEstado, setFiltroEstado] = useState("");
   const [verTodosTipos, setVerTodosTipos] = useState(false);
   const [medicosDir, setMedicosDir] = useState([]);
   useEffect(() => { api.medicos().then(setMedicosDir).catch(() => {}); }, []);
@@ -4600,6 +4601,10 @@ function Agenda({ citas, bloqueos = [], fecha, setFecha, vista, setVista, esAsis
   const delDia = (iso) => citas
     .filter((c) => c.fecha === iso && (!filtroMedico || c.medico === filtroMedico) && (!filtroSede || c.sede === filtroSede))
     .sort((a, b) => a.hora.localeCompare(b.hora));
+  // Filtro por ESTADO al hacer clic en un chip de arriba. NO se aplica a `visibles`
+  // (de ahí salen los conteos, que deben seguir mostrando el total), sino solo a
+  // lo que se dibuja en cada vista.
+  const filtEstado = (arr) => (filtroEstado ? arr.filter((c) => c.estado === filtroEstado) : arr);
   const visibles = vista === "semana"
     ? citas.filter((c) => semana.includes(c.fecha) && (!filtroMedico || c.medico === filtroMedico) && (!filtroSede || c.sede === filtroSede))
     : vista === "mes"
@@ -4669,13 +4674,28 @@ function Agenda({ citas, bloqueos = [], fecha, setFecha, vista, setVista, esAsis
       {resumen.length > 0 && (
         <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
           <span style={{ width: 58, flexShrink: 0, fontSize: 11.5, color: "var(--muted)", fontWeight: 700, paddingTop: 4 }}>Estado</span>
-          <div style={{ display: "flex", gap: 7, flexWrap: "wrap", flex: 1 }}>
-            {resumen.map((e) => (
-              <span key={e.v} style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 600,
-                padding: "3px 11px", borderRadius: 999, background: (STATUS[e.v] || {}).bg, color: (STATUS[e.v] || {}).fg }}>
-                {e.l} <b style={{ fontWeight: 800 }}>{e.n}</b>
-              </span>
-            ))}
+          <div style={{ display: "flex", gap: 7, flexWrap: "wrap", flex: 1, alignItems: "center" }}>
+            {resumen.map((e) => {
+              const activo = filtroEstado === e.v;
+              return (
+                <button key={e.v} onClick={() => setFiltroEstado((s) => (s === e.v ? "" : e.v))}
+                  title={activo ? "Quitar filtro — ver todas" : `Ver solo: ${e.l}`}
+                  style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 600, cursor: "pointer",
+                    padding: "3px 11px", borderRadius: 999, background: (STATUS[e.v] || {}).bg, color: (STATUS[e.v] || {}).fg,
+                    border: `2px solid ${activo ? (STATUS[e.v] || {}).fg : "transparent"}`,
+                    boxShadow: activo ? "0 1px 5px rgba(0,0,0,.16)" : "none",
+                    opacity: filtroEstado && !activo ? 0.45 : 1, transition: "opacity .12s" }}>
+                  {e.l} <b style={{ fontWeight: 800 }}>{e.n}</b>
+                </button>
+              );
+            })}
+            {filtroEstado && (
+              <button onClick={() => setFiltroEstado("")} title="Quitar el filtro de estado"
+                style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, fontWeight: 700, cursor: "pointer",
+                  padding: "3px 10px", borderRadius: 999, background: "transparent", color: "var(--muted)", border: "1px solid var(--line)" }}>
+                <X size={12} strokeWidth={2.4} /> Ver todas
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -4723,10 +4743,10 @@ function Agenda({ citas, bloqueos = [], fecha, setFecha, vista, setVista, esAsis
               {!esMedico && <button className="ca-iconbtn" title="Quitar bloqueo" onClick={() => onBorrarBloqueo(b)}><X size={14} strokeWidth={2} /></button>}
             </div>
           ))}
-          {delDia(fecha).length === 0 ? (
-            bloqueosDia.length === 0 && <div className="ca-empty">No hay sesiones para este día. Usa «Agendar sesión» para reservar una.</div>
+          {filtEstado(delDia(fecha)).length === 0 ? (
+            bloqueosDia.length === 0 && <div className="ca-empty">{filtroEstado ? "No hay citas con ese estado en este día." : "No hay sesiones para este día. Usa «Agendar sesión» para reservar una."}</div>
           ) : (
-            delDia(fecha).map((c) => (
+            filtEstado(delDia(fecha)).map((c) => (
               <CitaRow key={c.id} c={c} esAsistente={esAsistente} esMedico={esMedico}
                 onAtender={onAtender} onRecordar={onRecordar} onReagendar={onReagendar}
                 onCancelar={onCancelar} onConfirmar={onConfirmar} onCobrar={onCobrar}
@@ -4735,7 +4755,7 @@ function Agenda({ citas, bloqueos = [], fecha, setFecha, vista, setVista, esAsis
           )}
         </div>
       ) : vista === "terapeutas" ? (
-        <TerapeutasGrid citas={delDia(fecha)} terapeutas={filtroMedico ? [filtroMedico] : medicos} horarios={horariosPorNombre} fecha={fecha} onAbrirCita={onAbrirCita} />
+        <TerapeutasGrid citas={filtEstado(delDia(fecha))} terapeutas={filtroMedico ? [filtroMedico] : medicos} horarios={horariosPorNombre} fecha={fecha} onAbrirCita={onAbrirCita} />
       ) : vista === "mes" ? (
         <div className="ca-mes">
           <div className="ca-mes-hd">
@@ -4744,7 +4764,7 @@ function Agenda({ citas, bloqueos = [], fecha, setFecha, vista, setVista, esAsis
           <div className="ca-mes-grid">
             {dias.map((iso) => {
               const delMes = dDeISO(iso).getMonth() === mesActual;
-              const dc = delDia(iso).filter((c) => c.estado !== "cancelada");
+              const dc = filtroEstado ? delDia(iso).filter((c) => c.estado === filtroEstado) : delDia(iso).filter((c) => c.estado !== "cancelada");
               return (
                 <div key={iso} className={`ca-mes-cel ${delMes ? "" : "off"} ${iso === HOY_ISO ? "hoy" : ""}`}
                   onClick={() => { setFecha(iso); setVista("dia"); }} title={dc.length ? `${dc.length} sesiones` : ""}>
@@ -4772,10 +4792,10 @@ function Agenda({ citas, bloqueos = [], fecha, setFecha, vista, setVista, esAsis
                 <div className="d">{labelDiaSemana(iso)}</div>
                 <div className="n">{dDeISO(iso).getDate()}</div>
               </div>
-              {delDia(iso).length === 0 ? (
+              {filtEstado(delDia(iso)).length === 0 ? (
                 <div className="ca-wkempty">·</div>
               ) : (
-                delDia(iso).map((c) => {
+                filtEstado(delDia(iso)).map((c) => {
                   const col = colorCita(c);
                   return (
                     <div key={c.id} className={`ca-evt ${c.estado === "cancelada" ? "cancel" : ""}`}
