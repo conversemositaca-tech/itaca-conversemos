@@ -227,38 +227,42 @@ class HoyResumenView(APIView):
             mes_ini = hoy.replace(day=1)
             dias_mes = monthrange(hoy.year, hoy.month)[1]
             m_ini, m_fin = _bounds(mes_ini, hoy)
-            # La coordinadora ve SU sede; la gerencia ve el total de la clínica.
-            sede_scope = getattr(request.user, "sede", "") if rol == "asistente" else ""
-            cobros_mes = (Cobro.objects.del_tenant_actual()
-                          .filter(estado=Cobro.Estado.PAGADO, fecha__gte=m_ini, fecha__lt=m_fin))
-            if sede_scope:
-                cobros_mes = cobros_mes.filter(paciente__sede=sede_scope)
-            generado = float(cobros_mes.aggregate(s=Sum("monto"))["s"] or 0)
-            # Meta de la sede si está configurada; si no, la meta general de la clínica.
             metas_sede = clinica.metas_sede or {}
-            m_sede = metas_sede.get(sede_scope) if sede_scope else None
-            # Meta de la sede; si falta un valor (min o ideal), cae al general (evita
-            # ocultar la tarjeta o dividir entre 0 en el frontend).
-            if isinstance(m_sede, dict):
-                meta_min = float(m_sede.get("min") or 0) or float(clinica.meta_min_mes or 0)
-                meta_ideal = float(m_sede.get("ideal") or 0) or float(clinica.meta_ideal_mes or 0)
+            sede_labels = dict(Paciente.Sede.choices)
+
+            def _meta_de(sede_scope):
+                """Meta del mes para una sede (o total si sede_scope vacío)."""
+                cobros_mes = (Cobro.objects.del_tenant_actual()
+                              .filter(estado=Cobro.Estado.PAGADO, fecha__gte=m_ini, fecha__lt=m_fin))
+                if sede_scope:
+                    cobros_mes = cobros_mes.filter(paciente__sede=sede_scope)
+                generado = float(cobros_mes.aggregate(s=Sum("monto"))["s"] or 0)
+                m_sede = metas_sede.get(sede_scope) if sede_scope else None
+                # Meta de la sede si está configurada; si falta un valor, cae al general
+                # (evita dividir entre 0 en el frontend).
+                if isinstance(m_sede, dict):
+                    meta_min = float(m_sede.get("min") or 0) or float(clinica.meta_min_mes or 0)
+                    meta_ideal = float(m_sede.get("ideal") or 0) or float(clinica.meta_ideal_mes or 0)
+                else:
+                    meta_min = float(clinica.meta_min_mes or 0)
+                    meta_ideal = float(clinica.meta_ideal_mes or 0)
+                esperado = round(meta_min * hoy.day / dias_mes) if meta_min else 0
+                return {
+                    "generado": generado, "meta_min": meta_min, "meta_ideal": meta_ideal,
+                    "pct_min": round(generado / meta_min * 100) if meta_min else 0,
+                    "pct_ideal": round(generado / meta_ideal * 100) if meta_ideal else 0,
+                    "esperado_hoy": esperado, "en_ritmo": generado >= esperado,
+                    "dia": hoy.day, "dias_mes": dias_mes,
+                    "sede": sede_scope,
+                    "sede_label": sede_labels.get(sede_scope, "") if sede_scope else "Total",
+                }
+
+            if rol == "asistente":
+                # La coordinadora ve SOLO la meta de su sede (o el total si no tiene sede).
+                out["meta"] = _meta_de(getattr(request.user, "sede", "") or "")
             else:
-                meta_min = float(clinica.meta_min_mes or 0)
-                meta_ideal = float(clinica.meta_ideal_mes or 0)
-            # Cuánto "deberían" llevar hoy para ir en ritmo hacia la meta mínima.
-            esperado = round(meta_min * hoy.day / dias_mes) if meta_min else 0
-            out["meta"] = {
-                "generado": generado,
-                "meta_min": meta_min,
-                "meta_ideal": meta_ideal,
-                "pct_min": round(generado / meta_min * 100) if meta_min else 0,
-                "pct_ideal": round(generado / meta_ideal * 100) if meta_ideal else 0,
-                "esperado_hoy": esperado,
-                "en_ritmo": generado >= esperado,
-                "dia": hoy.day,
-                "dias_mes": dias_mes,
-                "sede": sede_scope,  # "" = todas (gerencia); "lima"/"piura" = coordinadora
-            }
+                # Gerencia: una meta POR SEDE (no sumadas), cada una hacia su objetivo.
+                out["metas"] = [_meta_de(s) for s, _ in Paciente.Sede.choices]
 
         if es_admin:
             cobros = Cobro.objects.del_tenant_actual().filter(fecha__gte=ini, fecha__lt=fin)

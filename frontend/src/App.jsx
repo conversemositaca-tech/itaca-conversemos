@@ -89,6 +89,26 @@ const STATUS = {
   por_confirmar: { bg: "#F7ECDD", fg: "#9C6B2E" },
 };
 
+// Color de la cita en la agenda por su ESTADO DE PAGO/confirmación (pedido de las
+// coordinadoras, como en AgendaPro): verde = pagada, azul = confirmada pero falta
+// pago, ámbar = por confirmar (perseguir), gris = cancelada / no asistió.
+function colorCita(c) {
+  if (!c) return { bg: "#F7ECDD", fg: "#9C6B2E", l: "Por confirmar" };
+  if (c.estado === "cancelada" || c.estado === "no_asistio")
+    return { bg: "#F1EFEC", fg: "#8A857C", l: "Cancelada / no asistió" };
+  if (c.cobrada)
+    return { bg: "#E1F2E8", fg: "#2E7D52", l: "Pagada" };
+  if (c.estado === "confirmada" || c.estado === "asistio" || c.estado === "atendida")
+    return { bg: "#E7EEF6", fg: "#3D5C82", l: "Confirmada · falta pago" };
+  return { bg: "#FBF1DD", fg: "#B0822F", l: "Por confirmar" };
+}
+const COLOR_CITA_LEYENDA = [
+  { fg: "#2E7D52", l: "Pagada" },
+  { fg: "#3D5C82", l: "Confirmada · falta pago" },
+  { fg: "#B0822F", l: "Por confirmar" },
+  { fg: "#8A857C", l: "Cancelada / no asistió" },
+];
+
 // Estados que el coordinador puede fijar desde la fila de la agenda.
 const ESTADOS_CITA = [
   { v: "agendada", l: "Agendada" },
@@ -2853,6 +2873,44 @@ function PanelPsicologo({ panel }) {
   );
 }
 
+// Barra de "Meta comercial del mes". Se muestra una por sede (gerencia) o solo
+// la de la sede del coordinador. La barra llega hasta la meta IDEAL.
+function MetaComercialBar({ m }) {
+  const pos = (v) => `${Math.min(Math.max((v / m.meta_ideal) * 100, 0), 100)}%`;
+  const falta = Math.max(m.esperado_hoy - m.generado, 0);
+  const sedeLbl = m.sede_label || m.sede || "";
+  return (
+    <div className="ca-card" style={{ marginTop: 14 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
+        <div style={{ fontSize: 14, fontWeight: 600, display: "flex", alignItems: "center", gap: 7 }}>
+          <TrendingUp size={15} strokeWidth={2} style={{ color: "var(--accent)" }} /> Meta comercial del mes
+          {sedeLbl && <span style={{ marginLeft: 8, fontSize: 11.5, fontWeight: 600, padding: "1px 9px", borderRadius: 999, background: "#EEF2EC", color: "#4B6B4E", textTransform: "capitalize" }}>{sedeLbl}</span>}
+        </div>
+        <div style={{ fontSize: 12.5, fontWeight: 600, color: m.en_ritmo ? "#2F6B4F" : "#B0822F" }}>
+          {m.en_ritmo ? "✓ En ritmo" : `${money(falta)} por debajo del ritmo`}
+        </div>
+      </div>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
+        <span style={{ fontSize: 24, fontWeight: 700 }}>{money(m.generado)}</span>
+        <span style={{ fontSize: 12.5, color: "var(--muted)" }}>generado · día {m.dia} de {m.dias_mes}</span>
+        <span style={{ marginLeft: "auto", fontSize: 13.5, fontWeight: 600, color: m.pct_min >= 100 ? "#2F6B4F" : "var(--ink)" }}>
+          {m.pct_min}% de la meta mínima
+        </span>
+      </div>
+      <div style={{ position: "relative", height: 12, borderRadius: 999, background: "var(--line)", overflow: "hidden" }}>
+        <div style={{ width: pos(m.generado), height: "100%", background: m.pct_min >= 100 ? "#2F6B4F" : "var(--accent)", transition: "width .3s" }} />
+        <div title={`Meta mínima ${money(m.meta_min)}`} style={{ position: "absolute", left: pos(m.meta_min), top: 0, width: 2, height: "100%", background: "#8A8378" }} />
+        <div title={`Ritmo esperado a hoy: ${money(m.esperado_hoy)}`} style={{ position: "absolute", left: pos(m.esperado_hoy), top: 0, width: 2, height: "100%", background: "#B0822F", opacity: 0.85 }} />
+      </div>
+      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11.5, color: "var(--muted)", marginTop: 6 }}>
+        <span>Mínima {money(m.meta_min)}</span>
+        <span title="Lo que deberías llevar hoy para ir en ritmo">Ritmo hoy {money(m.esperado_hoy)}</span>
+        <span>Ideal {money(m.meta_ideal)}</span>
+      </div>
+    </div>
+  );
+}
+
 function Hoy({ proximas, citasHoy, porConfirmar, atendidas, onOpen, onGo, onRetencion, cumple, esAdmin, esMedico }) {
   const [r, setR] = useState(null);
   const [legalRec, setLegalRec] = useState(null);
@@ -3009,43 +3067,12 @@ function Hoy({ proximas, citasHoy, porConfirmar, atendidas, onOpen, onGo, onRete
         )}
       </div>
 
-      {!esMedico && r && r.meta && r.meta.meta_ideal > 0 && (() => {
-        const m = r.meta;
-        const pos = (v) => `${Math.min(Math.max((v / m.meta_ideal) * 100, 0), 100)}%`;
-        const falta = Math.max(m.esperado_hoy - m.generado, 0);
-        return (
-          <div className="ca-card" style={{ marginTop: 14 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
-              <div style={{ fontSize: 14, fontWeight: 600, display: "flex", alignItems: "center", gap: 7 }}>
-                <TrendingUp size={15} strokeWidth={2} style={{ color: "var(--accent)" }} /> Meta comercial del mes
-                {m.sede && <span style={{ marginLeft: 8, fontSize: 11.5, fontWeight: 600, padding: "1px 9px", borderRadius: 999, background: "#EEF2EC", color: "#4B6B4E", textTransform: "capitalize" }}>{m.sede}</span>}
-              </div>
-              <div style={{ fontSize: 12.5, fontWeight: 600, color: m.en_ritmo ? "#2F6B4F" : "#B0822F" }}>
-                {m.en_ritmo ? "✓ En ritmo" : `${money(falta)} por debajo del ritmo`}
-              </div>
-            </div>
-
-            <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
-              <span style={{ fontSize: 24, fontWeight: 700 }}>{money(m.generado)}</span>
-              <span style={{ fontSize: 12.5, color: "var(--muted)" }}>generado · día {m.dia} de {m.dias_mes}</span>
-              <span style={{ marginLeft: "auto", fontSize: 13.5, fontWeight: 600, color: m.pct_min >= 100 ? "#2F6B4F" : "var(--ink)" }}>
-                {m.pct_min}% de la meta mínima
-              </span>
-            </div>
-
-            {/* La barra llega hasta la meta IDEAL. Marcas: meta mínima y el ritmo esperado a hoy. */}
-            <div style={{ position: "relative", height: 12, borderRadius: 999, background: "var(--line)", overflow: "hidden" }}>
-              <div style={{ width: pos(m.generado), height: "100%", background: m.pct_min >= 100 ? "#2F6B4F" : "var(--accent)", transition: "width .3s" }} />
-              <div title={`Meta mínima ${money(m.meta_min)}`} style={{ position: "absolute", left: pos(m.meta_min), top: 0, width: 2, height: "100%", background: "#8A8378" }} />
-              <div title={`Ritmo esperado a hoy: ${money(m.esperado_hoy)}`} style={{ position: "absolute", left: pos(m.esperado_hoy), top: 0, width: 2, height: "100%", background: "#B0822F", opacity: 0.85 }} />
-            </div>
-            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11.5, color: "var(--muted)", marginTop: 6 }}>
-              <span>Mínima {money(m.meta_min)}</span>
-              <span title="Lo que deberías llevar hoy para ir en ritmo">Ritmo hoy {money(m.esperado_hoy)}</span>
-              <span>Ideal {money(m.meta_ideal)}</span>
-            </div>
-          </div>
-        );
+      {!esMedico && (() => {
+        // Gerencia: una barra por sede (r.metas); coordinación: solo la suya (r.meta).
+        const metas = (r?.metas && r.metas.length) ? r.metas : (r?.meta ? [r.meta] : []);
+        const vis = metas.filter((m) => m && m.meta_ideal > 0);
+        if (!vis.length) return null;
+        return <>{vis.map((m, i) => <MetaComercialBar key={m.sede || i} m={m} />)}</>;
       })()}
 
       {cumple && cumple.length > 0 && (
@@ -4395,8 +4422,9 @@ function NotaCitaModal({ cita, onClose, onSaved, showToast }) {
 function CitaRow({ c, esAsistente, esMedico, onAtender, onRecordar, onReagendar, onCancelar, onConfirmar, onCobrar, onSetEstado, onMensaje, openFicha, onEditarNota, onEliminarCita }) {
   const activa = c.estado !== "atendida" && c.estado !== "cancelada";
   const col = STATUS[c.estado] || {};
+  const cc = colorCita(c);
   return (
-    <div className="ca-row">
+    <div className="ca-row" style={{ borderLeft: `4px solid ${cc.fg}` }} title={cc.l}>
       <div className="ca-time"><Clock size={13} strokeWidth={2} style={{ color: "var(--muted)" }} />{c.hora}</div>
       <div style={{ flex: 1, minWidth: 150 }}>
         <button className="ca-pnamebtn" onClick={() => openFicha(c.pacienteId)}>{c.paciente}</button>
@@ -4501,10 +4529,10 @@ function TerapeutasGrid({ citas, terapeutas, horarios = {}, fecha, onAbrirCita }
                       <span style={{ fontSize: 10.5, color: disp ? "#3E7A65" : "var(--muted)", opacity: 0.75 }}>{disp ? "Libre" : "No disp."}</span>
                     )}
                     {evs.map((c) => {
-                      const col = STATUS[c.estado] || STATUS.agendada;
+                      const col = colorCita(c);
                       return (
                         <button key={c.id} onClick={() => onAbrirCita(c)}
-                          title={`${c.hora} · ${c.paciente} · ${c.especialidad} · ${c.estado_label}`}
+                          title={`${c.hora} · ${c.paciente} · ${c.especialidad} · ${col.l}`}
                           style={{ display: "block", width: "100%", textAlign: "left", border: "none",
                                    borderLeft: `3px solid ${col.fg}`, background: col.bg, borderRadius: 6,
                                    padding: "4px 7px", marginBottom: 4, cursor: "pointer" }}>
@@ -4635,6 +4663,14 @@ function Agenda({ citas, bloqueos = [], fecha, setFecha, vista, setVista, esAsis
         </div>
       )}
 
+      <div style={{ display: "flex", gap: 13, flexWrap: "wrap", alignItems: "center", margin: "2px 0 4px 2px", fontSize: 11.5, color: "var(--muted)" }}>
+        <span style={{ fontWeight: 700, color: "var(--ink-soft)" }}>Color de la cita:</span>
+        {COLOR_CITA_LEYENDA.map((x) => (
+          <span key={x.l} style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+            <span style={{ width: 10, height: 10, borderRadius: 3, background: x.fg, display: "inline-block" }} />{x.l}
+          </span>
+        ))}
+      </div>
       {vista === "dia" ? (
         <div style={{ marginTop: 18 }}>
           {bloqueosDia.map((b) => (
