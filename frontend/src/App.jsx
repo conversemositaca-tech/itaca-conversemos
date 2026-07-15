@@ -5677,13 +5677,19 @@ function Marketing({ showToast, onConvertir, esAdmin }) {
       <div className="ca-card">
         <AnuncioForm onSave={agregarAnuncio} />
         {anuncios.length > 0 && (
-          <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 7 }}>
+          <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 9 }}>
             {anuncios.map((a) => (
-              <div key={a.id} style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 13.5 }}>
-                <span style={{ fontWeight: 600 }}>{a.nombre}</span>
-                <span className="ca-pmeta">{a.plataforma_label}{a.sede_label ? ` · ${a.sede_label}` : ""} · {a.n_leads} lead{a.n_leads === 1 ? "" : "s"}</span>
-                {a.link && <a href={a.link} target="_blank" rel="noreferrer" style={{ color: "var(--accent)", fontSize: 12.5 }}>ver</a>}
-                <button className="ca-iconbtn" style={{ marginLeft: "auto" }} title="Eliminar" onClick={() => quitarAnuncio(a.id)}><Trash2 size={13} strokeWidth={2} /></button>
+              <div key={a.id} style={{ display: "flex", alignItems: "flex-start", gap: 12, padding: "11px 13px", border: "1px solid var(--line)", borderRadius: 11, background: "var(--bg)" }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 600, fontSize: 13.8, lineHeight: 1.4 }}>{a.nombre}</div>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginTop: 5 }}>
+                    <span style={{ fontSize: 11.5, fontWeight: 600, padding: "1px 9px", borderRadius: 999, background: "#EEF2EC", color: "#4B6B4E" }}>{a.plataforma_label}</span>
+                    {a.sede_label && <span style={{ fontSize: 11.5, fontWeight: 600, padding: "1px 9px", borderRadius: 999, background: "#EEF2EC", color: "#4B6B4E" }}>{a.sede_label}</span>}
+                    <span style={{ fontSize: 11.5, fontWeight: 700, padding: "1px 9px", borderRadius: 999, background: a.n_leads ? "#E1F2E8" : "var(--line)", color: a.n_leads ? "#2E7D52" : "var(--muted)" }}>{a.n_leads} lead{a.n_leads === 1 ? "" : "s"}</span>
+                    {a.link && <a href={a.link} target="_blank" rel="noreferrer" style={{ color: "var(--accent)", fontSize: 12.5, fontWeight: 600, display: "inline-flex", alignItems: "center", gap: 3 }}><ExternalLink size={12} strokeWidth={2} /> ver anuncio</a>}
+                  </div>
+                </div>
+                <button className="ca-iconbtn" title="Eliminar anuncio" onClick={() => quitarAnuncio(a.id)}><Trash2 size={14} strokeWidth={2} /></button>
               </div>
             ))}
           </div>
