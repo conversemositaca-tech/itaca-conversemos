@@ -93,20 +93,20 @@ const STATUS = {
 // coordinadoras, como en AgendaPro): verde = pagada, azul = confirmada pero falta
 // pago, ámbar = por confirmar (perseguir), gris = cancelada / no asistió.
 function colorCita(c) {
-  if (!c) return { bg: "#F7ECDD", fg: "#9C6B2E", l: "Por confirmar" };
+  if (!c) return { bg: "#FBEBC7", fg: "#9A6B1E", l: "Por confirmar" };
   if (c.estado === "cancelada" || c.estado === "no_asistio")
-    return { bg: "#F1EFEC", fg: "#8A857C", l: "Cancelada / no asistió" };
+    return { bg: "#E8E5E0", fg: "#7C766C", l: "Cancelada / no asistió" };
   if (c.cobrada)
-    return { bg: "#E1F2E8", fg: "#2E7D52", l: "Pagada" };
+    return { bg: "#CFEEDD", fg: "#1F7A47", l: "Pagada" };
   if (c.estado === "confirmada" || c.estado === "asistio" || c.estado === "atendida")
-    return { bg: "#E7EEF6", fg: "#3D5C82", l: "Confirmada · falta pago" };
-  return { bg: "#FBF1DD", fg: "#B0822F", l: "Por confirmar" };
+    return { bg: "#D3E4F7", fg: "#2E5C93", l: "Confirmada · falta pago" };
+  return { bg: "#FBEBC7", fg: "#9A6B1E", l: "Por confirmar" };
 }
 const COLOR_CITA_LEYENDA = [
-  { fg: "#2E7D52", l: "Pagada" },
-  { fg: "#3D5C82", l: "Confirmada · falta pago" },
-  { fg: "#B0822F", l: "Por confirmar" },
-  { fg: "#8A857C", l: "Cancelada / no asistió" },
+  { bg: "#CFEEDD", fg: "#1F7A47", l: "Pagada" },
+  { bg: "#D3E4F7", fg: "#2E5C93", l: "Confirmada · falta pago" },
+  { bg: "#FBEBC7", fg: "#9A6B1E", l: "Por confirmar" },
+  { bg: "#E8E5E0", fg: "#7C766C", l: "Cancelada / no asistió" },
 ];
 
 // Estados que el coordinador puede fijar desde la fila de la agenda.
@@ -4424,7 +4424,7 @@ function CitaRow({ c, esAsistente, esMedico, onAtender, onRecordar, onReagendar,
   const col = STATUS[c.estado] || {};
   const cc = colorCita(c);
   return (
-    <div className="ca-row" style={{ borderLeft: `4px solid ${cc.fg}` }} title={cc.l}>
+    <div className="ca-row" style={{ background: cc.bg, borderLeft: `5px solid ${cc.fg}` }} title={cc.l}>
       <div className="ca-time"><Clock size={13} strokeWidth={2} style={{ color: "var(--muted)" }} />{c.hora}</div>
       <div style={{ flex: 1, minWidth: 150 }}>
         <button className="ca-pnamebtn" onClick={() => openFicha(c.pacienteId)}>{c.paciente}</button>
@@ -4708,7 +4708,7 @@ function Agenda({ citas, bloqueos = [], fecha, setFecha, vista, setVista, esAsis
                   onClick={() => { setFecha(iso); setVista("dia"); }} title={dc.length ? `${dc.length} sesiones` : ""}>
                   <div className="d">{dDeISO(iso).getDate()}</div>
                   {dc.slice(0, 3).map((c) => {
-                    const col = STATUS[c.estado] || STATUS.por_confirmar;
+                    const col = colorCita(c);
                     return (
                       <div key={c.id} className="ca-mes-evt" style={{ background: col.bg, color: col.fg }}
                         title={`${c.hora} · ${c.paciente} · ${c.especialidad}`}>
@@ -4734,7 +4734,7 @@ function Agenda({ citas, bloqueos = [], fecha, setFecha, vista, setVista, esAsis
                 <div className="ca-wkempty">·</div>
               ) : (
                 delDia(iso).map((c) => {
-                  const col = STATUS[c.estado] || STATUS.por_confirmar;
+                  const col = colorCita(c);
                   return (
                     <div key={c.id} className={`ca-evt ${c.estado === "cancelada" ? "cancel" : ""}`}
                       style={{ background: col.bg, borderLeftColor: col.fg }}
