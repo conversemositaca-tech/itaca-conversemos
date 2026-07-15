@@ -2774,7 +2774,10 @@ function MiProgreso({ pr }) {
         </div>
       </div>
 
-      <div style={{ fontSize: 12.5, fontWeight: 600, color: "var(--ink-soft)", marginBottom: 8 }}>Mis medallas 🏅</div>
+      <div style={{ fontSize: 12.5, fontWeight: 600, color: "var(--ink-soft)", marginBottom: 2 }}>Mis medallas 🏅</div>
+      <div style={{ fontSize: 11.5, color: "var(--muted)", marginBottom: 9, lineHeight: 1.45 }}>
+        Cada medalla premia una parte de tu trabajo (historias al día, sesiones, satisfacción de tus pacientes…). Sube de grado <b>Bronce → Plata → Oro → Diamante → Platino → Leyenda</b> y suma puntos para tu <b>nivel</b>. «Faltan X» es lo que te falta para el siguiente grado.
+      </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(132px,1fr))", gap: 10 }}>
         {(pr.medallas || []).map((m) => {
           const t = tierDe(m.nivel), desbloq = m.nivel > 0;
@@ -6868,8 +6871,8 @@ const ESP_EST_CONT = {
 };
 // Colores de la agenda: 2 tonos para distinguir quién ocupa (pedido de Gaby).
 const ESP_TIPO = {
-  externo: { l: "Externo (alquiler)", bg: "#D7F4FA", fg: "#0A7D92", bd: "#8FD9E7" },
-  conversemos: { l: "Conversemos", bg: "#E3F0E8", fg: "#2F6B4F", bd: "#A9D2BC" },
+  externo: { l: "Externo (alquiler)", bg: "#BCE7F1", fg: "#086F82", bd: "#5FC3D6" },
+  conversemos: { l: "Conversemos", bg: "#C6E6D3", fg: "#256045", bd: "#86C4A6" },
 };
 // Planes del dossier comercial (precio de lanzamiento). Auto-rellenan el contrato.
 const ESP_PLANES = [
