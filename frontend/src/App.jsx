@@ -6918,8 +6918,19 @@ function EspaciosProfesionales({ showToast }) {
       <div className="ca-tophead">
         <div>
           <h1 className="ca-h1">Espacios profesionales</h1>
-          <div className="ca-sub">Alquiler de consultorios · interesados, clientes, ocupación y pagos</div>
+          <div className="ca-sub">Alquiler de consultorios a profesionales externos (y uso interno de Conversemos)</div>
         </div>
+      </div>
+
+      <div style={{ background: "var(--accent-soft)", border: "1px solid #BEE7EF", borderRadius: 12, padding: "12px 15px", margin: "4px 0 16px", fontSize: 13.3, lineHeight: 1.55 }}>
+        <div style={{ fontWeight: 600, marginBottom: 5 }}>¿Para qué sirve esta sección?</div>
+        Aquí gestionas el <b>alquiler de tus consultorios</b>. Cada pestaña:
+        <ul style={{ margin: "6px 0 0", paddingLeft: 20 }}>
+          <li><b>Agenda de ocupación</b> — calendario de qué consultorio está ocupado, cuándo y por quién (verde = Conversemos, azul = profesional externo).</li>
+          <li><b>Interesados</b> — profesionales que quieren alquilar; desde aquí los conviertes en cliente con contrato.</li>
+          <li><b>Clientes activos</b> — los contratos de alquiler vigentes (quién, qué consultorio, condiciones).</li>
+          <li><b>Pagos</b> — los cobros del alquiler de cada cliente.</li>
+        </ul>
       </div>
 
       <div className="ca-seg" style={{ marginLeft: 0, marginBottom: 16, flexWrap: "wrap" }}>
