@@ -4448,7 +4448,7 @@ function CitaRow({ c, esAsistente, esMedico, onAtender, onRecordar, onReagendar,
   const col = STATUS[c.estado] || {};
   const cc = colorCita(c);
   return (
-    <div className="ca-row" style={{ background: cc.bg, borderLeft: `5px solid ${cc.fg}` }} title={cc.l}>
+    <div className="ca-row" style={{ background: cc.bg, borderLeft: `5px solid ${cc.fg}`, flexWrap: "wrap" }} title={cc.l}>
       <div className="ca-time"><Clock size={13} strokeWidth={2} style={{ color: "var(--muted)" }} />{c.hora}</div>
       <div style={{ flex: 1, minWidth: 150 }}>
         <button className="ca-pnamebtn" onClick={() => openFicha(c.pacienteId)}>{c.paciente}</button>
@@ -4457,7 +4457,6 @@ function CitaRow({ c, esAsistente, esMedico, onAtender, onRecordar, onReagendar,
           {c.medico}{c.n_sesion ? ` · Sesión N° ${c.n_sesion}` : ""}{c.sede_label ? ` · ${c.sede_label}` : ""} · {c.modalidad === "virtual" ? "Virtual" : "Presencial"}
           {c.modalidad === "virtual" && c.enlace && (<> · <a href={c.enlace} target="_blank" rel="noreferrer" style={{ color: "var(--accent)", fontWeight: 600 }}>Unirse</a></>)}
         </div>
-        {c.notas && <div className="ca-pmeta" style={{ fontStyle: "italic" }}>{c.notas}</div>}
       </div>
       <SpecialtyTag name={c.especialidad} />
       {esMedico ? (
