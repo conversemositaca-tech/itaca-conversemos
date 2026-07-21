@@ -3,12 +3,55 @@
 Reconstruye, a partir de los leads estructurados (origen, anuncio, etapa, fechas),
 el mismo reporte que las asistentes arman a mano, por sede y período.
 """
+import re
+
 from .models import Lead
 
 MESES = ["", "enero", "febrero", "marzo", "abril", "mayo", "junio",
          "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"]
 E = Lead.Estado
 FUENTE_LABEL = dict(Lead.Fuente.choices)
+
+# Avance del embudo: si la misma persona tiene varias filas de lead (costumbre de
+# registrar la consulta o el proceso como fila nueva), vale la más avanzada.
+_AVANCE = {
+    E.GANADO: 11, E.PENDIENTE_PAGO: 10, E.EVALUANDO: 9,
+    E.AGENDO_ESPERA_PAGO: 8, E.AGENDO_NO_PAGO: 7, E.AGENDADO: 6,
+    E.NO_REALIZADA: 5, E.SEGUIMIENTO: 4, E.RECONTACTO: 3, E.CONTACTADO: 2,
+    E.NUEVO: 1, E.PERDIDO: 0,
+}
+
+
+def clave_persona(lead):
+    """Identifica a la persona detrás del lead: teléfono (últimos 9 dígitos) o,
+    si no hay, el nombre normalizado. Sin nada, cada fila cuenta por sí sola."""
+    tel = re.sub(r"\D", "", lead.telefono or "")[-9:]
+    if tel:
+        return "t:" + tel
+    nombre = re.sub(r"\s+", " ", (lead.nombre or "").strip().lower())
+    if nombre:
+        return "n:" + nombre
+    return f"id:{lead.pk}"
+
+
+def personas_unicas(leads):
+    """Colapsa filas duplicadas de la misma persona; se queda con la fila más
+    avanzada del embudo (y ante empate, la más reciente). Así 'total leads' son
+    personas, y las consultas/procesos son subconjuntos, no sumandos."""
+    por_persona = {}
+    for l in leads:
+        k = clave_persona(l)
+        prev = por_persona.get(k)
+        if prev is None:
+            por_persona[k] = l
+            continue
+        mejor = _AVANCE.get(l.estado, 1) > _AVANCE.get(prev.estado, 1) or (
+            _AVANCE.get(l.estado, 1) == _AVANCE.get(prev.estado, 1)
+            and l.creado_en > prev.creado_en
+        )
+        if mejor:
+            por_persona[k] = l
+    return list(por_persona.values())
 
 
 def _rango_txt(desde, hasta):
@@ -23,12 +66,17 @@ def generar_reporte_pauta(clinica, sede, desde, hasta):
     if sede:
         base = base.filter(sede=sede)
 
-    # Leads que llegaron en el período.
+    # Leads que llegaron en el período. Se cuentan PERSONAS únicas: si la consulta
+    # o el proceso se registró como fila aparte, no se suma de nuevo (los que
+    # avanzan salen del mismo total, no se agregan encima).
     leads_periodo = base.filter(creado_en__date__gte=desde, creado_en__date__lte=hasta)
-    total_leads = leads_periodo.count()
+    total_leads = len(personas_unicas(list(leads_periodo)))
 
-    # Consultas: leads cuya consulta ocurrió en el período (incluye recontactos de antes).
-    consultas = list(base.filter(fecha_consulta__gte=desde, fecha_consulta__lte=hasta).select_related("anuncio"))
+    # Consultas: leads cuya consulta ocurrió en el período (incluye recontactos de
+    # antes). También sin duplicar persona.
+    consultas = personas_unicas(list(
+        base.filter(fecha_consulta__gte=desde, fecha_consulta__lte=hasta).select_related("anuncio")
+    ))
     total_consultas = len(consultas)
 
     def cuenta(estado):
@@ -37,7 +85,9 @@ def generar_reporte_pauta(clinica, sede, desde, hasta):
     proceso = cuenta(E.GANADO)
     evaluando = cuenta(E.EVALUANDO)
     pendiente = cuenta(E.PENDIENTE_PAGO)
-    por_desarrollarse = cuenta(E.AGENDADO)
+    agendo_no_pago = cuenta(E.AGENDO_NO_PAGO)
+    agendo_espera = cuenta(E.AGENDO_ESPERA_PAGO)
+    por_desarrollarse = cuenta(E.AGENDADO) + agendo_no_pago + agendo_espera
     no_realizada = cuenta(E.NO_REALIZADA)
     desarrolladas = proceso + evaluando + pendiente
     recontactos = sum(1 for c in consultas if c.creado_en.date() < desde)
@@ -49,10 +99,15 @@ def generar_reporte_pauta(clinica, sede, desde, hasta):
         por_origen[k] = por_origen.get(k, 0) + 1
     por_origen = sorted(por_origen.items(), key=lambda x: -x[1])
 
-    # Procesos confirmados en el período (por fecha de cierre).
-    procesos_qs = base.filter(estado=E.GANADO, fecha_cierre__gte=desde, fecha_cierre__lte=hasta)
-    procesos_total = procesos_qs.count()
-    procesos_mes = procesos_qs.filter(fecha_consulta__gte=desde, fecha_consulta__lte=hasta).count()
+    # Procesos confirmados en el período (por fecha de cierre), sin duplicar persona.
+    procesos = personas_unicas(list(
+        base.filter(estado=E.GANADO, fecha_cierre__gte=desde, fecha_cierre__lte=hasta)
+    ))
+    procesos_total = len(procesos)
+    procesos_mes = sum(
+        1 for p in procesos
+        if p.fecha_consulta and desde <= p.fecha_consulta <= hasta
+    )
     procesos_prev = procesos_total - procesos_mes
 
     # Publicidad que atrajo consultas.
@@ -99,6 +154,10 @@ def generar_reporte_pauta(clinica, sede, desde, hasta):
     L.append(f"* {evaluando} evaluando inicio")
     L.append(f"* {pendiente} pendientes de pago")
     L.append(f"* {por_desarrollarse} por desarrollarse")
+    if agendo_no_pago:
+        L.append(f"* {agendo_no_pago} agendaron y no pagaron")
+    if agendo_espera:
+        L.append(f"* {agendo_espera} agendaron, esperando pago")
     L.append("")
     L.append(f"📣 Publicidad que atrajo consultas: {total_pauta}")
     if anuncios:
@@ -111,6 +170,7 @@ def generar_reporte_pauta(clinica, sede, desde, hasta):
     datos = {
         "total_leads": total_leads, "total_consultas": total_consultas,
         "desarrolladas": desarrolladas, "por_desarrollarse": por_desarrollarse,
+        "agendo_no_pago": agendo_no_pago, "agendo_espera_pago": agendo_espera,
         "proceso": proceso, "evaluando": evaluando, "pendiente_pago": pendiente,
         "no_realizada": no_realizada, "procesos_total": procesos_total,
         "procesos_mes": procesos_mes, "procesos_prev": procesos_prev,

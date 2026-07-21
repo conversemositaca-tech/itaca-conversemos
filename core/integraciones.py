@@ -11,6 +11,9 @@ sale la clínica, y TODO se filtra/crea con esa clínica explícitamente (aislam
 multitenant · Ley 29733). No dependemos del middleware de tenant porque estas
 rutas no tienen usuario logueado.
 """
+import re
+from datetime import date, timedelta
+
 from django.conf import settings
 from django.db.models import Q
 from rest_framework import status
@@ -191,25 +194,60 @@ class ContextoView(_Base):
         })
 
 
+_DIAS_SEMANA = {
+    "lunes": 0, "martes": 1, "miercoles": 2, "miércoles": 2, "jueves": 3,
+    "viernes": 4, "sabado": 5, "sábado": 5, "domingo": 6,
+}
+_ETIQUETA_DIA = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"]
+
+
+def _fecha_de_pregunta(t):
+    """Detecta de qué FECHA pregunta el psicólogo: hoy, mañana, pasado mañana, un
+    día de la semana ('el viernes') o dd/mm. Devuelve (date, etiqueta) o None."""
+    hoy = timezone.localdate()
+    if re.search(r"pasado\s*ma[nñ]ana", t):
+        return hoy + timedelta(days=2), "pasado mañana"
+    if re.search(r"\bma[nñ]ana\b", t):
+        return hoy + timedelta(days=1), "mañana"
+    if re.search(r"\bhoy\b", t):
+        return hoy, "hoy"
+    for nombre, idx in _DIAS_SEMANA.items():
+        if re.search(rf"\b{nombre}\b", t):
+            delta = (idx - hoy.weekday()) % 7  # 0 = hoy mismo (ese día ya es hoy)
+            f = hoy + timedelta(days=delta)
+            return f, f"el {_ETIQUETA_DIA[idx]} {f:%d/%m}"
+    m = re.search(r"\b(\d{1,2})[/-](\d{1,2})(?:[/-](\d{2,4}))?\b", t)
+    if m:
+        d, mes = int(m.group(1)), int(m.group(2))
+        anio = int(m.group(3)) if m.group(3) else hoy.year
+        if anio < 100:
+            anio += 2000
+        try:
+            return date(anio, mes, d), f"el {d:02d}/{mes:02d}"
+        except ValueError:
+            pass
+    return None
+
+
+def _agenda_de(psico, fecha):
+    return (Cita.objects.filter(clinica=psico.clinica, medico=psico, inicio__date=fecha)
+            .exclude(estado=Cita.Estado.CANCELADA).select_related("paciente").order_by("inicio"))
+
+
+def _linea_cita(c):
+    mod = " (virtual)" if getattr(c, "modalidad", "") == "virtual" else ""
+    return f"• {timezone.localtime(c.inicio):%H:%M} — {c.paciente.nombre}{mod}"
+
+
 def _responder_consulta(psico, pregunta):
     """Responde en texto (formato WhatsApp) una pregunta del psicólogo sobre SUS
-    datos reales: pacientes activos, agenda de hoy, pacientes sin próxima cita.
-    Todo acotado a su clínica y a los pacientes/citas que le corresponden."""
+    datos reales: pacientes activos, su agenda (hoy, mañana, un día concreto o la
+    semana), pacientes sin próxima cita. Todo acotado a su clínica."""
     t = (pregunta or "").lower()
     mis_pac = Paciente.objects.filter(clinica=psico.clinica, profesional__usuario=psico)
 
-    # 1) Agenda de hoy
-    if any(k in t for k in ["hoy", "agenda", "sesiones de hoy", "citas de hoy", "citas hoy"]):
-        hoy = timezone.localdate()
-        citas = (Cita.objects.filter(clinica=psico.clinica, medico=psico, inicio__date=hoy)
-                 .exclude(estado=Cita.Estado.CANCELADA).select_related("paciente").order_by("inicio"))
-        n = citas.count()
-        if not n:
-            return "Hoy no tienes sesiones agendadas. 🌿"
-        cuerpo = "\n".join(f"• {timezone.localtime(c.inicio):%H:%M} — {c.paciente.nombre}" for c in citas[:25])
-        return f"Hoy tienes *{n}* sesión(es):\n{cuerpo}"
-
-    # 2) Pacientes sin próxima cita (para reactivar)
+    # 1) Pacientes sin próxima cita (para reactivar) — antes que la agenda, porque
+    #    "sin cita" contiene la palabra "cita".
     if any(k in t for k in ["sin proxima", "sin próxima", "reactivar", "retencion", "retención", "sin cita", "no tienen cita"]):
         con_futura = set(
             Cita.objects.filter(clinica=psico.clinica, medico=psico, inicio__gte=timezone.now())
@@ -223,7 +261,38 @@ def _responder_consulta(psico, pregunta):
         extra = f"\n… y {n - 15} más." if n > 15 else ""
         return f"*{n}* paciente(s) sin próxima cita (conviene reagendar):\n{cuerpo}{extra}"
 
-    # 3) Pacientes activos (por defecto para preguntas de "pacientes"/"cartera")
+    # 2) Agenda de la semana ("qué tengo esta semana")
+    es_agenda = any(k in t for k in ["agenda", "sesion", "sesión", "cita", "agendad"])
+    if "semana" in t and (es_agenda or "tengo" in t or "paciente" in t or len(t) <= 25):
+        hoy = timezone.localdate()
+        bloques, total = [], 0
+        for i in range(7):
+            f = hoy + timedelta(days=i)
+            citas = list(_agenda_de(psico, f)[:25])
+            if not citas:
+                continue
+            total += len(citas)
+            dia = "Hoy" if i == 0 else ("Mañana" if i == 1 else _ETIQUETA_DIA[f.weekday()].capitalize())
+            bloques.append(f"*{dia} {f:%d/%m}*\n" + "\n".join(_linea_cita(c) for c in citas))
+        if not total:
+            return "No tienes sesiones agendadas en los próximos 7 días. 🌿"
+        return f"Tu semana ({total} sesión(es)):\n\n" + "\n\n".join(bloques)
+
+    # 3) Agenda por FECHA: "hoy", "mañana", "el viernes", "25/07"… Si menciona una
+    #    fecha (aunque diga "pacientes tengo mañana"), es una consulta de agenda.
+    fecha_et = _fecha_de_pregunta(t)
+    if fecha_et or es_agenda:
+        fecha, etiqueta = fecha_et if fecha_et else (timezone.localdate(), "hoy")
+        citas = _agenda_de(psico, fecha)
+        n = citas.count()
+        etiqueta_cap = etiqueta[0].upper() + etiqueta[1:]
+        if not n:
+            return (f"{etiqueta_cap} no tienes sesiones agendadas. 🌿\n\n"
+                    "_También puedes preguntarme por otro día: mañana, el viernes, 25/07 o \"esta semana\"._")
+        cuerpo = "\n".join(_linea_cita(c) for c in citas[:25])
+        return f"{etiqueta_cap} tienes *{n}* sesión(es):\n{cuerpo}"
+
+    # 4) Pacientes activos (por defecto para preguntas de "pacientes"/"cartera")
     if any(k in t for k in ["activ", "paciente", "cartera", "cuantos", "cuántos", "tengo"]):
         activos = mis_pac.exclude(frecuencia=Paciente.Frecuencia.ALTA).order_by("nombre")
         n = activos.count()
@@ -236,8 +305,9 @@ def _responder_consulta(psico, pregunta):
 
     # Fallback: qué puede responder
     return ("Puedo darte datos rápidos de tu consulta. Pregúntame, por ejemplo:\n"
+            "• ¿Qué sesiones tengo hoy? ¿Y mañana? ¿Y el viernes?\n"
+            "• ¿Qué tengo esta semana?\n"
             "• ¿Qué pacientes tengo activos?\n"
-            "• ¿Qué sesiones tengo hoy?\n"
             "• ¿Qué pacientes están sin próxima cita?\n\n"
             "O envíame la nota (texto o voz) para *registrar una sesión*.")
 
@@ -254,6 +324,33 @@ class ConsultaView(_Base):
                             status=status.HTTP_403_FORBIDDEN)
         pregunta = (d.get("pregunta") or "").strip()
         return Response({"ok": True, "respuesta": _responder_consulta(psico, pregunta)})
+
+
+class ResumenDiarioView(_Base):
+    """Agenda del día de TODOS los psicólogos activos con teléfono registrado,
+    para que Eli les envíe su recordatorio automático de la mañana.
+    GET /api/integraciones/resumen-dia/?fecha=YYYY-MM-DD  (sin fecha = hoy)"""
+
+    def get(self, request):
+        f = (request.query_params.get("fecha") or "").strip()
+        try:
+            y, m, d = [int(x) for x in f.split("-")]
+            fecha = date(y, m, d)
+        except (ValueError, TypeError, AttributeError):
+            fecha = timezone.localdate()
+        out = []
+        for u in Usuario.objects.filter(rol=Usuario.Rol.MEDICO, is_active=True).exclude(telefono=""):
+            citas = _agenda_de(u, fecha)
+            out.append({
+                "telefono": _solo_digitos(u.telefono),
+                "nombre": u.nombre or u.email,
+                "citas": [{
+                    "hora": f"{timezone.localtime(c.inicio):%H:%M}",
+                    "paciente": c.paciente.nombre,
+                    "modalidad": getattr(c, "modalidad", "") or "",
+                } for c in citas[:30]],
+            })
+        return Response({"ok": True, "fecha": fecha.isoformat(), "psicologos": out})
 
 
 class NotaVozView(_Base):

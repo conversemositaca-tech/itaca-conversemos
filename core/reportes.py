@@ -118,6 +118,7 @@ class ReporteSemanalViewSet(viewsets.ModelViewSet):
         (facturación, ocupación, retención) sigue siendo manual."""
         from finanzas.models import Cobro
         from leads.models import Lead
+        from leads.reporte import personas_unicas
         from pacientes.models import Paciente
 
         clinica = get_clinica_actual()
@@ -125,10 +126,18 @@ class ReporteSemanalViewSet(viewsets.ModelViewSet):
         desde = _fecha(request.query_params.get("desde"), hoy.replace(day=1))
         hasta = _fecha(request.query_params.get("hasta"), hoy)
 
+        # Personas únicas: si una consulta o proceso se registró como fila nueva
+        # del mismo lead, no se cuenta doble (leads ⊇ consultas ⊇ procesos).
         leads = Lead.objects.filter(clinica=clinica)
-        en_periodo = leads.filter(creado_en__date__gte=desde, creado_en__date__lte=hasta)
-        consultas = leads.filter(fecha_consulta__gte=desde, fecha_consulta__lte=hasta)
-        procesos = leads.filter(estado=Lead.Estado.GANADO, fecha_cierre__gte=desde, fecha_cierre__lte=hasta)
+        en_periodo = personas_unicas(list(
+            leads.filter(creado_en__date__gte=desde, creado_en__date__lte=hasta)
+        ))
+        consultas = personas_unicas(list(
+            leads.filter(fecha_consulta__gte=desde, fecha_consulta__lte=hasta)
+        ))
+        procesos = personas_unicas(list(
+            leads.filter(estado=Lead.Estado.GANADO, fecha_cierre__gte=desde, fecha_cierre__lte=hasta)
+        ))
         pac = Paciente.objects.filter(clinica=clinica)
 
         # --- Facturación REAL del mes (cobros pagados), atribuida por la sede del paciente ---
@@ -168,10 +177,10 @@ class ReporteSemanalViewSet(viewsets.ModelViewSet):
             pass
 
         return Response({
-            "leads_lima": en_periodo.filter(sede="lima").count(),
-            "leads_piura": en_periodo.filter(sede="piura").count(),
-            "consultas_agendadas": consultas.count(),
-            "pacientes_iniciaron": procesos.count(),
+            "leads_lima": sum(1 for l in en_periodo if l.sede == "lima"),
+            "leads_piura": sum(1 for l in en_periodo if l.sede == "piura"),
+            "consultas_agendadas": len(consultas),
+            "pacientes_iniciaron": len(procesos),
             "pac_activos_lima": pac.filter(sede="lima").count(),
             "pac_activos_piura": pac.filter(sede="piura").count(),
             "retencion_lima": retencion("lima"),

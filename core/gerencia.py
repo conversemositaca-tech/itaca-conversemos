@@ -271,10 +271,14 @@ class HoyResumenView(APIView):
 
             # Eliminaciones recientes (citas/pagos) — la gerencia se entera.
             from pacientes.models import RegistroEliminacion
-            elim = (RegistroEliminacion.objects.del_tenant_actual()
-                    .filter(revisado=False,
-                            creado_en__gte=timezone.now() - timedelta(days=7))
-                    .select_related("usuario")[:12])
+            elim_qs = (RegistroEliminacion.objects.del_tenant_actual()
+                       .filter(revisado=False,
+                               creado_en__gte=timezone.now() - timedelta(days=7)))
+            # Total pendiente ANTES del recorte: si hay más de 12, el frontend lo
+            # dice ("mostrando 12 de N") y ofrece "OK a todo" — antes parecía que
+            # los avisos "volvían" porque cada OK revelaba el siguiente.
+            out["eliminaciones_total"] = elim_qs.count()
+            elim = elim_qs.select_related("usuario")[:12]
             out["eliminaciones"] = [{
                 "id": e.id,
                 "tipo": e.tipo, "tipo_label": e.get_tipo_display(),
@@ -306,6 +310,24 @@ class EliminacionRevisarView(APIView):
             reg.revisado_por = request.user
             reg.save(update_fields=["revisado", "revisado_en", "revisado_por"])
         return Response({"ok": True, "id": reg.id})
+
+
+class EliminacionesRevisarTodasView(APIView):
+    """POST /api/eliminaciones/revisar-todas/ — marca TODAS las alertas de
+    eliminación pendientes como revisadas de una vez (botón "OK a todo"). Los
+    registros se conservan para trazabilidad; solo dejan de salir en el inicio."""
+
+    def post(self, request):
+        if get_clinica_actual() is None:
+            return Response({"detail": "Sin clínica en contexto."}, status=status.HTTP_400_BAD_REQUEST)
+        if getattr(request.user, "rol", None) != "admin":
+            return Response({"detail": "Solo gerencia/coordinación puede revisar eliminaciones."},
+                            status=status.HTTP_403_FORBIDDEN)
+        from pacientes.models import RegistroEliminacion
+        n = (RegistroEliminacion.objects.del_tenant_actual()
+             .filter(revisado=False)
+             .update(revisado=True, revisado_en=timezone.now(), revisado_por=request.user))
+        return Response({"ok": True, "revisadas": n})
 
 
 class GerenciaResumenView(APIView):

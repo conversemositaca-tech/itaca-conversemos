@@ -134,6 +134,8 @@ const LEAD_ESTADOS = [
   { v: "seguimiento", l: "En seguimiento" },
   { v: "recontacto", l: "Recontactar" },
   { v: "agendado", l: "Consulta agendada" },
+  { v: "agendo_no_pago", l: "Agendó, no pagó" },
+  { v: "agendo_espera_pago", l: "Agendó, esperando pago" },
   { v: "no_realizada", l: "Consulta no realizada" },
   { v: "evaluando", l: "Evaluando inicio" },
   { v: "pendiente_pago", l: "Pendiente de pago" },
@@ -150,6 +152,8 @@ const LEAD_ESTADO_COLOR = {
   nuevo: { bg: "#EFEDE8", fg: "#7C7870" },
   agendado: _VERDE,        // consulta agendada
   ganado: _VERDE,          // inició proceso
+  agendo_no_pago: _NARANJA,     // agendó pero no pagó: perseguir el pago
+  agendo_espera_pago: _AMARILLO, // agendó, esperando confirmación de pago
   contactado: _AMARILLO,
   seguimiento: _AMARILLO,
   evaluando: _AMARILLO,
@@ -1285,7 +1289,7 @@ export default function ClinicaApp() {
       <main className="ca-main ca-pos">
         {view === "hoy" && (
           <Hoy proximas={proximas} citasHoy={citasHoy.length} porConfirmar={porConfirmar} atendidas={atendidas} onOpen={openFicha} onGo={go}
-            onRetencion={() => { setSoloSinProxima(true); go("pacientes"); }} cumple={cumpleHoy} esAdmin={usuario?.rol === "admin"} esMedico={usuario?.rol === "medico"} />
+            onRetencion={() => { setSoloSinProxima(true); go("pacientes"); }} cumple={cumpleHoy} esAdmin={usuario?.rol === "admin"} esMedico={usuario?.rol === "medico"} showToast={showToast} />
         )}
 
         {view === "agenda" && (
@@ -2035,7 +2039,7 @@ const OPC_DOC = [{ v: "dni", l: "DNI" }, { v: "ce", l: "C. Extranjería" }, { v:
 const OPC_GENERO = [{ v: "", l: "—" }, { v: "femenino", l: "Femenino" }, { v: "masculino", l: "Masculino" }, { v: "otro", l: "Otro" }];
 const _op = (pares) => pares.map(([v, l]) => ({ v, l }));
 const OPC_FUENTE = _op([["instagram", "Instagram"], ["facebook", "Facebook"], ["tiktok", "TikTok"], ["referido", "Referido"], ["whatsapp", "WhatsApp"], ["bot", "Bot"], ["web", "Web"], ["agendapro", "AgendaPro"], ["derivado", "Derivado"], ["linkedin", "LinkedIn"], ["convenio", "Convenio"], ["otro", "Otro"]]);
-const OPC_ESTADO_LEAD = _op([["nuevo", "Nuevo"], ["contactado", "Contactado"], ["agendado", "Agendado"], ["no_realizada", "No realizada"], ["evaluando", "Evaluando"], ["pendiente_pago", "Pend. pago"], ["ganado", "Inició proceso"], ["perdido", "Perdido"]]);
+const OPC_ESTADO_LEAD = _op([["nuevo", "Nuevo"], ["contactado", "Contactado"], ["agendado", "Agendado"], ["agendo_no_pago", "Agendó, no pagó"], ["agendo_espera_pago", "Agendó, esp. pago"], ["no_realizada", "No realizada"], ["evaluando", "Evaluando"], ["pendiente_pago", "Pend. pago"], ["ganado", "Inició proceso"], ["perdido", "Perdido"]]);
 const OPC_ESTADO_COBRO = _op([["pagado", "Pagado"], ["pendiente", "Pendiente"], ["anulado", "Anulado"]]);
 const OPC_MEDIO = _op([["", "—"], ["efectivo", "Efectivo"], ["yape", "Yape"], ["plin", "Plin"], ["tarjeta", "Tarjeta"], ["transferencia", "Transferencia"], ["mercado_pago", "Mercado Pago"]]);
 const OPC_CAT_EGRESO = _op([["insumos", "Insumos"], ["sueldos", "Sueldos"], ["alquiler", "Alquiler"], ["equipos", "Equipos"], ["marketing", "Marketing"], ["otro", "Otro"]]);
@@ -2931,7 +2935,7 @@ function MetaComercialBar({ m }) {
   );
 }
 
-function Hoy({ proximas, citasHoy, porConfirmar, atendidas, onOpen, onGo, onRetencion, cumple, esAdmin, esMedico }) {
+function Hoy({ proximas, citasHoy, porConfirmar, atendidas, onOpen, onGo, onRetencion, cumple, esAdmin, esMedico, showToast }) {
   const [r, setR] = useState(null);
   const [legalRec, setLegalRec] = useState(null);
   const [recordatorios, setRecordatorios] = useState([]);
@@ -2960,8 +2964,18 @@ function Hoy({ proximas, citasHoy, porConfirmar, atendidas, onOpen, onGo, onRete
   const legalTotal = legalRec ? legalRec.cumple + legalRec.aniv + legalRec.vence : 0;
   const revisarElim = (id) => {
     api.marcarEliminacionRevisada(id)
-      .then(() => setR((prev) => (prev ? { ...prev, eliminaciones: (prev.eliminaciones || []).filter((e) => e.id !== id) } : prev)))
-      .catch(() => {});
+      // Recarga el resumen: si había más avisos que los 12 mostrados, entran los
+      // siguientes y el contador total baja de verdad (persistido en el servidor).
+      .then(() => api.hoy().then(setR))
+      .catch((e) => (showToast || window.alert)("No se pudo marcar como revisado: " + e.message));
+  };
+  const revisarTodasElim = () => {
+    api.marcarTodasEliminacionesRevisadas()
+      .then((res) => {
+        setR((prev) => (prev ? { ...prev, eliminaciones: [], eliminaciones_total: 0 } : prev));
+        showToast && showToast(`${res.revisadas} aviso(s) marcados como revisados ✓`);
+      })
+      .catch((e) => (showToast || window.alert)("No se pudo marcar todo: " + e.message));
   };
   const _hh = new Date().getHours();
   const saludo = _hh < 12 ? "Buenos días 🌞" : _hh < 19 ? "Buenas tardes ☀️" : "Buenas noches 🌙";
@@ -3016,7 +3030,14 @@ function Hoy({ proximas, citasHoy, porConfirmar, atendidas, onOpen, onGo, onRete
         <div className="ca-card" style={{ marginTop: 14, borderColor: "#F0D6D6", background: "#FDF6F6" }}>
           <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 10, display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap" }}>
             <Trash2 size={15} strokeWidth={2} style={{ color: "#9C4646" }} /> Eliminaciones recientes
-            <span style={{ fontWeight: 400, color: "var(--muted)", fontSize: 12.5 }}>· citas y pagos borrados en los últimos 7 días</span>
+            <span style={{ fontWeight: 400, color: "var(--muted)", fontSize: 12.5 }}>
+              · citas y pagos borrados en los últimos 7 días
+              {(r.eliminaciones_total || 0) > r.eliminaciones.length && ` · mostrando ${r.eliminaciones.length} de ${r.eliminaciones_total}`}
+            </span>
+            <button className="ca-mini" style={{ marginLeft: "auto", color: "#2F6B4F", borderColor: "#BFE0CC" }}
+              onClick={revisarTodasElim} title="Marcar TODOS los avisos pendientes como revisados y conformes">
+              <Check size={13} strokeWidth={2.2} /> OK a todo{(r.eliminaciones_total || r.eliminaciones.length) > 1 ? ` (${r.eliminaciones_total || r.eliminaciones.length})` : ""}
+            </button>
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
             {r.eliminaciones.map((e, i) => (
@@ -4555,11 +4576,11 @@ function TerapeutasGrid({ citas, terapeutas, horarios = {}, fecha, onAbrirCita }
                       const col = colorCita(c);
                       return (
                         <button key={c.id} onClick={() => onAbrirCita(c)}
-                          title={`${c.hora} · ${c.paciente} · ${c.especialidad} · ${col.l}`}
+                          title={`${c.hora} · ${c.paciente} · ${c.especialidad} · ${col.l}${c.agendado_web ? " · 🌐 Reserva web del paciente" : ""}`}
                           style={{ display: "block", width: "100%", textAlign: "left", border: "none",
                                    borderLeft: `3px solid ${col.fg}`, background: col.bg, borderRadius: 6,
                                    padding: "4px 7px", marginBottom: 4, cursor: "pointer" }}>
-                          <span style={{ fontSize: 11.5, fontWeight: 600, color: col.fg }}>{c.hora}</span>
+                          <span style={{ fontSize: 11.5, fontWeight: 600, color: col.fg }}>{c.agendado_web ? "🌐 " : ""}{c.hora}</span>
                           <span style={{ fontSize: 12.5, display: "block" }}>{c.paciente}</span>
                         </button>
                       );
@@ -4730,6 +4751,9 @@ function Agenda({ citas, bloqueos = [], fecha, setFecha, vista, setVista, esAsis
               <span style={{ width: 10, height: 10, borderRadius: 3, background: x.fg, display: "inline-block" }} />{x.l}
             </span>
           ))}
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }} title="La reservó el paciente desde la web — priorizar contacto para confirmar y cobrar">
+            🌐 Reservó el paciente por la web
+          </span>
         </div>
       </div>
       </div>
@@ -4773,8 +4797,8 @@ function Agenda({ citas, bloqueos = [], fecha, setFecha, vista, setVista, esAsis
                     const col = colorCita(c);
                     return (
                       <div key={c.id} className="ca-mes-evt" style={{ background: col.bg, color: col.fg }}
-                        title={`${c.hora} · ${c.paciente} · ${c.especialidad}`}>
-                        {c.hora} {c.paciente}
+                        title={`${c.hora} · ${c.paciente} · ${c.especialidad}${c.agendado_web ? " · 🌐 Reserva web del paciente" : ""}`}>
+                        {c.agendado_web ? "🌐 " : ""}{c.hora} {c.paciente}
                       </div>
                     );
                   })}
@@ -4800,8 +4824,8 @@ function Agenda({ citas, bloqueos = [], fecha, setFecha, vista, setVista, esAsis
                   return (
                     <div key={c.id} className={`ca-evt ${c.estado === "cancelada" ? "cancel" : ""}`}
                       style={{ background: col.bg, borderLeftColor: col.fg }}
-                      onClick={() => { setFecha(iso); setVista("dia"); }} title={`${c.hora} · ${c.paciente} · ${c.especialidad}`}>
-                      <div className="h" style={{ color: col.fg }}>{c.hora}</div>
+                      onClick={() => { setFecha(iso); setVista("dia"); }} title={`${c.hora} · ${c.paciente} · ${c.especialidad}${c.agendado_web ? " · 🌐 Reserva web del paciente" : ""}`}>
+                      <div className="h" style={{ color: col.fg }}>{c.agendado_web ? "🌐 " : ""}{c.hora}</div>
                       <div className="p">{c.paciente}</div>
                     </div>
                   );
@@ -4827,6 +4851,7 @@ function CitaDetalleModal({ cita, esMedico, esAsistente, onClose, onSetEstado, o
           <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)" }}><X size={18} /></button>
         </div>
         <button className="ca-pnamebtn" style={{ fontSize: 17, fontWeight: 600 }} onClick={() => openFicha(cita.pacienteId)}>{cita.paciente}</button>
+        {cita.agendado_web && <span title="La reservó el paciente desde la web — priorizar contacto para confirmar y cobrar" style={{ marginLeft: 8, fontSize: 11, background: "#E3F1F2", color: "#0C5E69", padding: "2px 8px", borderRadius: 999, fontWeight: 700, verticalAlign: "middle" }}>🌐 Reserva web</span>}
         <div className="ca-pmeta" style={{ marginTop: 4, lineHeight: 1.6 }}>
           {cita.fecha} · {cita.hora}<br />
           {cita.medico || "Sin psicólogo"}{cita.n_sesion ? ` · Sesión N° ${cita.n_sesion}` : ""}<br />

@@ -10,7 +10,7 @@ from core.tenant import get_clinica_actual
 from pacientes.models import Paciente
 
 from .models import Anuncio, Lead
-from .reporte import generar_reporte_pauta
+from .reporte import generar_reporte_pauta, personas_unicas
 from .serializers import AnuncioSerializer, LeadSerializer
 
 _FUENTE_LABEL = dict(Lead.Fuente.choices)
@@ -196,7 +196,8 @@ class LeadViewSet(viewsets.ModelViewSet):
             leads = leads.filter(creado_en__date__gte=_parse_fecha(desde, date.min))
         if hasta:
             leads = leads.filter(creado_en__date__lte=_parse_fecha(hasta, date.max))
-        leads = list(leads)
+        # Personas únicas (una fila nueva por etapa no debe contar doble).
+        leads = personas_unicas(list(leads))
 
         E = Lead.Estado
         CONSULTA = {E.EVALUANDO, E.PENDIENTE_PAGO, E.GANADO}
@@ -251,14 +252,16 @@ class LeadViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=["get"])
     def reportes(self, request):
-        """Embudo global + cierre por doctor + por fuente."""
-        leads = list(self.get_queryset())
+        """Embudo global + cierre por doctor + por fuente. Cuenta PERSONAS únicas:
+        si la consulta/proceso se registró como fila aparte, no suma de nuevo."""
+        leads = personas_unicas(list(self.get_queryset()))
         E = Lead.Estado
 
+        AGENDADOS = (E.AGENDADO, E.AGENDO_NO_PAGO, E.AGENDO_ESPERA_PAGO, E.GANADO)
         embudo = {
             "recibidos": len(leads),
-            "contactados": sum(1 for l in leads if l.estado in (E.CONTACTADO, E.AGENDADO, E.GANADO)),
-            "agendados": sum(1 for l in leads if l.estado in (E.AGENDADO, E.GANADO)),
+            "contactados": sum(1 for l in leads if l.estado == E.CONTACTADO or l.estado in AGENDADOS),
+            "agendados": sum(1 for l in leads if l.estado in AGENDADOS),
             "iniciaron": sum(1 for l in leads if l.estado == E.GANADO),
             "perdidos": sum(1 for l in leads if l.estado == E.PERDIDO),
         }
@@ -272,7 +275,7 @@ class LeadViewSet(viewsets.ModelViewSet):
                 "leads": 0, "agendados": 0, "cierres": 0,
             })
             m["leads"] += 1
-            if l.estado in (E.AGENDADO, E.GANADO):
+            if l.estado in AGENDADOS:
                 m["agendados"] += 1
             if l.estado == E.GANADO:
                 m["cierres"] += 1
