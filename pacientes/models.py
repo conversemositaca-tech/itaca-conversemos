@@ -529,11 +529,20 @@ def texto_consentimiento_default(clinica, tipo="consentimiento"):
 class Consentimiento(ModeloTenant):
     """Consentimiento informado / políticas para aceptación digital del paciente.
     Se envía un enlace; el paciente lo lee y 'firma' con un clic + su nombre (sello
-    de fecha/hora e IP). No es firma certificada: es aceptación con trazabilidad."""
+    de fecha/hora e IP). Si en cambio responde su OK por WhatsApp, el equipo registra
+    esa aceptación (`aceptado_via` + `registrado_por`).
+    No es firma certificada: es aceptación con trazabilidad."""
 
     class Tipo(models.TextChoices):
         CONSENTIMIENTO = "consentimiento", "Consentimiento informado"
         POLITICAS = "politicas", "Políticas de atención"
+
+    class Via(models.TextChoices):
+        """Cómo llegó la aceptación del paciente."""
+
+        ENLACE = "enlace", "Aceptó en el enlace"
+        WHATSAPP = "whatsapp", "Dio su OK por WhatsApp"
+        PRESENCIAL = "presencial", "Aceptó en consulta"
 
     paciente = models.ForeignKey(Paciente, on_delete=models.CASCADE, related_name="consentimientos")
     tipo = models.CharField(max_length=20, choices=Tipo.choices, default=Tipo.CONSENTIMIENTO)
@@ -541,9 +550,15 @@ class Consentimiento(ModeloTenant):
     texto = models.TextField()
     aceptado = models.BooleanField(default=False)
     aceptado_en = models.DateTimeField(null=True, blank=True)
+    aceptado_via = models.CharField(max_length=12, choices=Via.choices, blank=True, default="")
     firmante_nombre = models.CharField(max_length=200, blank=True, default="")
     firmante_documento = models.CharField(max_length=40, blank=True, default="")
     ip = models.GenericIPAddressField(null=True, blank=True)
+    # Quién del equipo registró el OK cuando no llegó por el enlace (trazabilidad · Ley 29733).
+    registrado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, related_name="consentimientos_registrados",
+        null=True, blank=True,
+    )
 
     class Meta:
         verbose_name = "Consentimiento"

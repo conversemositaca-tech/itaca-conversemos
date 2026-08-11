@@ -3772,24 +3772,60 @@ function TareasPaciente({ pacienteId, puede, showToast }) {
   );
 }
 
-function ConsentimientoPaciente({ pacienteId }) {
+const LBL_CONSENT = { consentimiento: "Consentimiento informado", politicas: "Políticas de atención" };
+
+function ConsentimientoPaciente({ pacienteId, showToast }) {
   const [docs, setDocs] = useState(null);
-  useEffect(() => { api.consentimientos(pacienteId).then(setDocs).catch(() => setDocs([])); }, [pacienteId]);
+  const [marcando, setMarcando] = useState(0);
+  function cargar() { api.consentimientos(pacienteId).then(setDocs).catch(() => setDocs([])); }
+  useEffect(() => { cargar(); }, [pacienteId]);
+
+  // El paciente dio su OK por WhatsApp: se registra la aceptación (queda quién y cuándo).
+  async function marcarAceptado(d) {
+    const que = LBL_CONSENT[d.tipo] || d.tipo_label;
+    if (!window.confirm(`¿El paciente ya dio su OK de estar de acuerdo? (${que})\n\nQuedará como aceptado, con la fecha de hoy y tu nombre como quien lo registró.`)) return;
+    setMarcando(d.id);
+    try {
+      await api.marcarConsentimientoAceptado(d.id, "whatsapp");
+      cargar();
+      showToast && showToast("Aceptación registrada ✓");
+    } catch (e) { showToast && showToast("Error: " + e.message); }
+    finally { setMarcando(0); }
+  }
+
   if (!docs || docs.length === 0) return null;
-  const LBL = { consentimiento: "Consentimiento informado", politicas: "Políticas de atención" };
+  // Un solo estado por tipo: si el paciente ya aceptó, ese es el estado (un reenvío
+  // posterior no lo vuelve "pendiente de firma").
+  const porTipo = [];
+  for (const d of docs) {
+    const i = porTipo.findIndex((x) => x.tipo === d.tipo);
+    if (i < 0) porTipo.push(d);
+    else if (d.aceptado && !porTipo[i].aceptado) porTipo[i] = d;
+  }
   return (
     <>
       <h2 className="ca-secth">Consentimiento y políticas</h2>
       <div className="ca-card" style={{ marginBottom: 26 }}>
-        {docs.map((d) => (
-          <div key={d.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderTop: "1px solid var(--line)", fontSize: 13.5 }}>
-            <span style={{ flex: 1 }}>{LBL[d.tipo] || d.tipo_label}</span>
+        {porTipo.map((d) => (
+          <div key={d.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderTop: "1px solid var(--line)", fontSize: 13.5, flexWrap: "wrap" }}>
+            <span style={{ flex: 1, minWidth: 150 }}>{LBL_CONSENT[d.tipo] || d.tipo_label}</span>
             {d.aceptado ? (
               <span style={{ color: "#2F6B4F", fontWeight: 600, display: "inline-flex", alignItems: "center", gap: 5, flexWrap: "wrap", justifyContent: "flex-end" }}>
                 <Check size={14} strokeWidth={2.5} /> Aceptado{d.aceptado_fecha ? ` · ${d.aceptado_fecha}` : ""}{d.firmante_nombre ? ` · ${d.firmante_nombre}` : ""}
+                {d.aceptado_via && d.aceptado_via !== "enlace" && (
+                  <span style={{ color: "var(--muted)", fontWeight: 400 }}>
+                    ({d.aceptado_via_label}{d.registrado_por_nombre ? ` · registró ${d.registrado_por_nombre}` : ""})
+                  </span>
+                )}
               </span>
             ) : (
-              <span style={{ color: "#9C6B2E", fontWeight: 600 }}>Enviado · pendiente de firma</span>
+              <>
+                <span style={{ color: "#9C6B2E", fontWeight: 600 }}>Enviado · pendiente de firma</span>
+                <button className="ca-mini" onClick={() => marcarAceptado(d)} disabled={marcando === d.id}
+                  title="El paciente respondió que está de acuerdo por WhatsApp">
+                  <Check size={13} strokeWidth={2.2} /> {marcando === d.id ? "Registrando…" : "Dio su OK"}
+                </button>
+              </>
             )}
           </div>
         ))}
@@ -3964,7 +4000,7 @@ function Ficha({ p, onBack, onEdit, onWhatsApp, onSubirAdjunto, onEliminarAdjunt
 
       <RedProfesionalesPaciente pacienteId={p.id} puede={puedeRegistrar} showToast={showToast} />
 
-      <ConsentimientoPaciente pacienteId={p.id} />
+      <ConsentimientoPaciente pacienteId={p.id} showToast={showToast} />
 
       {/* Pagos y estado de cuenta: NO para el psicólogo. */}
       {!esMedico && (p.cuenta || puedeCobrar) && (
