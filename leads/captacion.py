@@ -21,6 +21,7 @@ from core.models import Clinica
 from core.tenant import get_clinica_actual
 from pacientes.models import Paciente
 
+from . import whatsapp_auto
 from .models import Lead
 
 FUENTES_VALIDAS = {c[0] for c in Lead.Fuente.choices}
@@ -67,6 +68,13 @@ def _agregar_nota(lead, texto):
     extra = f"[{timezone.localtime():%d/%m %H:%M}] {texto}"
     lead.notas = (lead.notas + "\n" + extra).strip() if lead.notas else extra
     lead.save(update_fields=["notas"])
+
+
+def _base_url(request):
+    """Origen público del sistema (para armar el enlace de auto-agendamiento)."""
+    host = request.get_host()
+    esquema = "http" if host.startswith(("localhost", "127.")) else "https"
+    return f"{esquema}://{host}"
 
 
 def _urls(token):
@@ -182,7 +190,13 @@ def _parse_evolution(payload):
 
 class IntakeWhatsappView(_IntakeBase):
     """Webhook de Evolution: registra como lead el primer mensaje de un número
-    desconocido. Siempre responde 200 para que Evolution no reintente."""
+    desconocido. Siempre responde 200 para que Evolution no reintente.
+
+    Además de registrarlo, el sistema LEE el mensaje (`leads.whatsapp_auto`):
+    guarda la ubicación y el tipo de consulta que menciona, marca si pide cita y
+    le responde solo las preguntas frecuentes (precios, tipos de terapia,
+    ubicación) con el enlace para agendar. También lo hace cuando el lead ya
+    existe y vuelve a escribir, así la conversación no se queda trabada."""
 
     def post(self, request, token):
         clinica = _clinica_por_token(token)
@@ -198,7 +212,8 @@ class IntakeWhatsappView(_IntakeBase):
         existente = _lead_existente(clinica, numero, dias=60)
         if existente:
             _agregar_nota(existente, f"WhatsApp: {texto}" if texto else "Volvió a escribir por WhatsApp.")
-            return Response({"ok": True, "duplicado": True, "lead_id": existente.id})
+            auto = whatsapp_auto.procesar_lead(clinica, existente, texto, base_url=_base_url(request))
+            return Response({"ok": True, "duplicado": True, "lead_id": existente.id, "auto": auto})
 
         lead = Lead.objects.create(
             clinica=clinica,
@@ -208,4 +223,6 @@ class IntakeWhatsappView(_IntakeBase):
             notas=texto,
             estado=Lead.Estado.NUEVO,
         )
-        return Response({"ok": True, "duplicado": False, "lead_id": lead.id}, status=status.HTTP_201_CREATED)
+        auto = whatsapp_auto.procesar_lead(clinica, lead, texto, base_url=_base_url(request))
+        return Response({"ok": True, "duplicado": False, "lead_id": lead.id, "auto": auto},
+                        status=status.HTTP_201_CREATED)
