@@ -146,6 +146,10 @@ export const api = {
   convertirLead: (id) => req(`/api/leads/${id}/convertir/`, { method: "POST" }),
   eliminarLead: (id) => req(`/api/leads/${id}/`, { method: "DELETE" }),
   leadSeguimiento: (id, nota) => req(`/api/leads/${id}/seguimiento/`, { method: "POST", body: JSON.stringify({ nota }) }),
+  // Simula un mensaje de WhatsApp: qué detecta el sistema y qué respondería
+  // (no crea el lead ni envía nada).
+  probarWhatsapp: (texto, nombre) =>
+    req("/api/leads/probar-whatsapp/", { method: "POST", body: JSON.stringify({ texto, nombre }) }),
   reportePauta: ({ sede, desde, hasta }) => {
     const qs = new URLSearchParams();
     if (sede) qs.set("sede", sede);

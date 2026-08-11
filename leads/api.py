@@ -9,6 +9,8 @@ from rest_framework.response import Response
 from core.tenant import get_clinica_actual
 from pacientes.models import Paciente
 
+from . import whatsapp_auto
+from .captacion import _base_url
 from .models import Anuncio, Lead
 from .reporte import generar_reporte_pauta, personas_unicas
 from .serializers import AnuncioSerializer, LeadSerializer
@@ -162,6 +164,34 @@ class LeadViewSet(viewsets.ModelViewSet):
             lead.observaciones = (lead.observaciones + "\n" + extra).strip() if lead.observaciones else extra
         lead.save(update_fields=["ultimo_contacto", "observaciones"])
         return Response(LeadSerializer(lead).data)
+
+    @action(detail=False, methods=["post"], url_path="probar-whatsapp")
+    def probar_whatsapp(self, request):
+        """Simula un mensaje de WhatsApp: muestra qué datos detecta el sistema y
+        qué le respondería, SIN crear el lead ni enviar nada.
+
+        Sirve para revisar los textos automáticos (plantillas `faq_*`) antes de
+        que llegue gente real, y sin gastar mensajes."""
+        texto = str(request.data.get("texto") or "").strip()
+        if not texto:
+            return Response({"detail": "Escribe un mensaje de ejemplo."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        clinica = get_clinica_actual()
+        if clinica is None:
+            return Response({"detail": "Sin clínica en contexto."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        analisis = whatsapp_auto.analizar(texto)
+        respuesta = whatsapp_auto.armar_respuesta(
+            clinica, analisis,
+            nombre=str(request.data.get("nombre") or "").strip(),
+            base_url=_base_url(request),
+        )
+        return Response({
+            "analisis": analisis,
+            "sede_label": dict(Lead.Sede.choices).get(analisis["sede"], ""),
+            "tipo_servicio_label": dict(Lead.TipoServicio.choices).get(analisis["tipo_servicio"], ""),
+            "respuesta": respuesta,
+        })
 
     @action(detail=False, methods=["get"], url_path="reporte-pauta")
     def reporte_pauta(self, request):

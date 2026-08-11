@@ -26,7 +26,7 @@ def plantilla_por_clave(clinica, clave):
 
 
 def registrar_y_enviar(clinica, *, telefono, texto, tipo, paciente=None, cita=None,
-                       usuario=None, plantilla=None):
+                       usuario=None, plantilla=None, sede=""):
     """Intenta enviar por WhatsApp y deja registro en la bitácora.
 
     Si `plantilla` tiene una plantilla aprobada de Meta (wa_template_nombre) y la
@@ -35,8 +35,11 @@ def registrar_y_enviar(clinica, *, telefono, texto, tipo, paciente=None, cita=No
 
     Devuelve (mensaje, resultado, wa_url). `wa_url` es el enlace de respaldo
     (wa.me) cuando el envío automático no salió (sin configurar o falló).
+
+    `sede` solo hace falta cuando no hay paciente ni cita de dónde sacarla (por
+    ejemplo al responderle a un lead): elige el número de esa sede para enviar.
     """
-    sede = _sede_de(paciente, cita)
+    sede = sede or _sede_de(paciente, cita)
     if cloud_api.esta_configurado(clinica, sede):
         if plantilla is not None and plantilla.wa_template_nombre:
             params = params_plantilla(plantilla, paciente=paciente, cita=cita, clinica=clinica)

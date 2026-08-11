@@ -139,6 +139,20 @@ class Lead(ModeloTenant):
     observaciones = models.TextField(blank=True, default="")
     # Último seguimiento (para el semáforo automático de leads sin contactar).
     ultimo_contacto = models.DateTimeField("último seguimiento", null=True, blank=True)
+    # --- Lo que el sistema lee solo de los mensajes de WhatsApp de la pauta
+    # (leads/whatsapp_auto.py). El equipo puede corregirlos a mano. ---
+    ubicacion = models.CharField(
+        "distrito / zona que indicó", max_length=120, blank=True, default="",
+        help_text="Se detecta del mensaje de WhatsApp (ej. «Miraflores»).",
+    )
+    pide_cita = models.BooleanField(
+        "¿Pidió cita por WhatsApp?", default=False,
+        help_text="El mensaje pedía cita/horarios: hay que responderle rápido.",
+    )
+    auto_respondido_en = models.DateTimeField(
+        "última respuesta automática", null=True, blank=True,
+        help_text="Cuándo el sistema le contestó solo sus preguntas frecuentes.",
+    )
     paciente = models.ForeignKey(
         "pacientes.Paciente",
         on_delete=models.SET_NULL,

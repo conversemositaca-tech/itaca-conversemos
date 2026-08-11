@@ -14,6 +14,9 @@ class Mensaje(ModeloTenant):
         RECORDATORIO = "recordatorio", "Recordatorio de cita"
         CONFIRMACION = "confirmacion", "Confirmación"
         SEGUIMIENTO = "seguimiento", "Seguimiento"
+        # Respuesta que el sistema envía solo a un lead que preguntó por WhatsApp
+        # (precios, tipos de terapia, ubicación…): leads/whatsapp_auto.py.
+        AUTOMATICO = "automatico", "Respuesta automática"
         MANUAL = "manual", "Mensaje manual"
 
     class Estado(models.TextChoices):

@@ -387,3 +387,34 @@ los feriados de Perú. Zona horaria por defecto: `America/Lima` (GMT-5).
    `faster-whisper==1.2.1` pineado (corre en Python 3.14). Resuelve el problema histórico
    de adherencia (idea de Emma: "no pedirles que escriban"). Pendiente opcional: clave de
    OpenAI para el auto-estructurado; grabar en el navegador (hoy se sube archivo / audio WA).
+29. ✓ Captación por WhatsApp automática (corrección #3 de Gaby, 2026-08-11). El mensaje de
+   bienvenida solo pedía el número y la conversación se trababa cuando la persona respondía
+   otra cosa (preguntas de terapia/costos, "quiero cita en Miraflores, Lima").
+   - Nuevo `leads/whatsapp_auto.py` (sin IA, sin servicios externos): `analizar(texto)` saca
+     **ubicación** (distrito → sede; gana el distrito más específico y se compara palabra
+     exacta para no confundir "Ate" con "atención"), **tipo de consulta**
+     (`Lead.TipoServicio`: pareja/niños/adolescentes/familia/lenguaje/evaluación/adultos),
+     **modalidad** (online/presencial) y si **pide cita**; `armar_respuesta(...)` contesta las
+     **preguntas frecuentes** (tipos de terapia, precios, ubicación, cómo agendar) y agrega el
+     enlace de **auto-agendamiento** (`/agendar/<token>`) cuando pide cita.
+   - Textos editables como **plantillas** (`mensajes.PlantillaMensaje`, claves `faq_servicios`,
+     `faq_precios`, `faq_ubicacion`, `faq_agenda`); si no existen, se usa el texto por defecto
+     del módulo y los **precios salen del catálogo real** (`Servicio` activos y reservables).
+     La respuesta pide solo los datos que faltan y se envía por la vía normal
+     (`mensajes.services.registrar_y_enviar`, tipo nuevo `Mensaje.Tipo.AUTOMATICO` → queda en
+     la bitácora). Tope: una respuesta automática por lead cada `VENTANA_RESPUESTA_HORAS` (12).
+   - `Lead` += `ubicacion`, `pide_cita`, `auto_respondido_en` (migración 0012, aditiva) y el
+     serializer expone `espera_respuesta` (llegó por chat, estado nuevo, sin seguimiento y de los
+     últimos `DIAS_BANDEJA`=30 días, para que el histórico importado no llene la bandeja).
+     Enganchado en el webhook de Evolution (`IntakeWhatsappView`, también cuando el lead ya
+     existe y vuelve a escribir) y en `core.whatsapp_cloud._capturar_leads`.
+   - Frontend: bandeja **"Solicitudes por WhatsApp"** al inicio de Captación (pendientes
+     ordenados por *pide cita* y días esperando, con ubicación/tipo/mensaje, botones Responder
+     (wa.me) · Atendido · Editar, y contadores "piden cita" / "esperan 2+ días"), campo
+     **Distrito** en el modal de lead, columnas Distrito/Pide cita en el editor Excel y
+     `POST /api/leads/probar-whatsapp/` con su panel **"Probar respuesta automática"** (muestra
+     lo detectado y el texto, sin crear lead ni enviar nada).
+   - Pruebas: `leads/tests.py` cubre los casos reales de las capturas (`python manage.py test leads`).
+   - **Pendiente (fuera de alcance)**: `core.whatsapp_cloud._capturar_leads` sigue **sin
+     enganchar** al webhook de Meta (`WhatsappWebhookView.post` solo registra en log, como
+     antes); mientras la línea oficial viva en Cloud API hay que conectarla ahí.

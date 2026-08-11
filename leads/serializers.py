@@ -1,9 +1,12 @@
+from datetime import timedelta
+
 from django.utils import timezone
 from rest_framework import serializers
 
 from core.utils import fecha_corta
 
 from .models import Anuncio, Lead
+from .whatsapp_auto import DIAS_BANDEJA, FUENTES_CHAT
 
 
 class AnuncioSerializer(serializers.ModelSerializer):
@@ -32,6 +35,7 @@ class LeadSerializer(serializers.ModelSerializer):
     semaforo = serializers.SerializerMethodField()
     seguimiento_frecuencia_label = serializers.CharField(source="get_seguimiento_frecuencia_display", read_only=True)
     recontacto_vencido = serializers.SerializerMethodField()
+    espera_respuesta = serializers.SerializerMethodField()
 
     class Meta:
         model = Lead
@@ -44,9 +48,10 @@ class LeadSerializer(serializers.ModelSerializer):
             "medico", "medico_nombre", "estado", "estado_label", "motivo_perdida", "notas",
             "motivo_consulta", "resumen_conversacion", "objeciones", "observaciones",
             "ultimo_contacto", "dias_sin_contacto", "semaforo",
+            "ubicacion", "pide_cita", "auto_respondido_en", "espera_respuesta",
             "paciente", "paciente_nombre", "creado", "creado_iso",
         ]
-        read_only_fields = ["paciente"]
+        read_only_fields = ["paciente", "auto_respondido_en"]
 
     def get_fuente_label(self, obj):
         # Si el origen es Otro/Convenio/Alianza y se especificó, muestra ese texto.
@@ -59,6 +64,18 @@ class LeadSerializer(serializers.ModelSerializer):
         if obj.estado != Lead.Estado.RECONTACTO or not obj.recontacto_fecha:
             return False
         return obj.recontacto_fecha <= timezone.localdate()
+
+    def get_espera_respuesta(self, obj):
+        """True si escribió por chat (WhatsApp/IG) y NADIE le respondió todavía.
+
+        Es la bandeja de "no dejar leads sin atender": deja de estar pendiente
+        cuando alguien registra un seguimiento o el lead avanza en el embudo.
+        Solo cuenta lo reciente (`DIAS_BANDEJA`), no el histórico importado."""
+        if obj.fuente not in FUENTES_CHAT or obj.paciente_id:
+            return False
+        if obj.estado != Lead.Estado.NUEVO or obj.ultimo_contacto is not None:
+            return False
+        return obj.creado_en >= timezone.now() - timedelta(days=DIAS_BANDEJA)
 
     def get_medico_nombre(self, obj):
         return str(obj.medico) if obj.medico_id else ""
