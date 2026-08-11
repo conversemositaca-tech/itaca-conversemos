@@ -2075,6 +2075,8 @@ const FORMATOS = [
       { campo: "fuente", label: "Fuente", tipo: "select", opciones: OPC_FUENTE },
       { campo: "estado", label: "Estado", tipo: "select", opciones: OPC_ESTADO_LEAD },
       { campo: "medico", label: "Psicólogo", tipo: "fk", fk: "medicos", labelCampo: "medico_nombre" },
+      { campo: "ubicacion", label: "Distrito", tipo: "text" },
+      { campo: "pide_cita", label: "Pide cita", tipo: "check" },
       { campo: "fecha_consulta", label: "F. consulta", tipo: "fecha" },
       { campo: "fecha_cierre", label: "F. cierre", tipo: "fecha" },
       { campo: "campania", label: "Campaña", tipo: "text" },
@@ -5461,6 +5463,151 @@ function ReporteCierreMkt({ showToast }) {
   );
 }
 
+// ---- Solicitudes que llegaron por WhatsApp (bandeja de "nadie sin responder") ----
+// Los mensajes de la pauta entran solos como leads. El sistema ya leyó cada
+// mensaje y guardó lo que pudo (ubicación, tipo de consulta, si pide cita) y le
+// contestó las preguntas frecuentes. Esta bandeja es para que una persona
+// retome la conversación y ningún lead se quede sin atender.
+const WA_PILL = { fontSize: 10.5, fontWeight: 600, padding: "1px 8px", borderRadius: 999, whiteSpace: "nowrap" };
+
+function waLinkTel(telefono) {
+  const d = String(telefono || "").replace(/\D/g, "");
+  if (!d) return "";
+  // Celular peruano de 9 dígitos: se le antepone el código de país (igual que el backend).
+  return `https://wa.me/${d.length === 9 && d.startsWith("9") ? "51" + d : d}`;
+}
+
+function SolicitudesWhatsapp({ leads, onSeguimiento, onEditar, showToast }) {
+  const [verTodas, setVerTodas] = useState(false);
+  const [prueba, setPrueba] = useState({ abierto: false, texto: "", data: null, cargando: false });
+  const pendientes = useMemo(
+    () => leads
+      .filter((l) => l.espera_respuesta)
+      .sort((a, b) => (b.pide_cita ? 1 : 0) - (a.pide_cita ? 1 : 0)
+        || (b.dias_sin_contacto || 0) - (a.dias_sin_contacto || 0)),
+    [leads],
+  );
+  const conCita = pendientes.filter((l) => l.pide_cita).length;
+  const demoradas = pendientes.filter((l) => (l.dias_sin_contacto || 0) >= 2).length;
+  const visibles = verTodas ? pendientes : pendientes.slice(0, 10);
+
+  async function probar() {
+    const texto = prueba.texto.trim();
+    if (!texto) return showToast("Escribe un mensaje de ejemplo.");
+    setPrueba((p) => ({ ...p, cargando: true }));
+    try {
+      const data = await api.probarWhatsapp(texto, "");
+      setPrueba((p) => ({ ...p, data, cargando: false }));
+    } catch (err) {
+      showToast("Error: " + err.message);
+      setPrueba((p) => ({ ...p, cargando: false }));
+    }
+  }
+
+  return (
+    <>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap", marginTop: 26 }}>
+        <h2 className="ca-secth" style={{ marginTop: 0 }}>Solicitudes por WhatsApp ({pendientes.length})</h2>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          {conCita > 0 && <span style={{ ...WA_PILL, background: "#E1F2E8", color: "#2E7D52" }}>📅 {conCita} piden cita</span>}
+          {demoradas > 0 && <span style={{ ...WA_PILL, background: "#F7E5E5", color: "#B4564E" }}>⏰ {demoradas} esperan 2+ días</span>}
+          <button className="ca-link" onClick={() => setPrueba((p) => ({ ...p, abierto: !p.abierto }))}>
+            {prueba.abierto ? "Ocultar prueba" : "Probar respuesta automática"}
+          </button>
+        </div>
+      </div>
+
+      <div className="ca-pmeta" style={{ margin: "-4px 0 10px 2px" }}>
+        Leads de WhatsApp/Instagram de los últimos 30 días que todavía nadie contestó. Salen de esta
+        bandeja al marcarlos «Atendido» o al moverlos en el embudo.
+      </div>
+
+      {prueba.abierto && (
+        <div className="ca-card" style={{ marginBottom: 12 }}>
+          <div style={{ fontSize: 13.5, color: "var(--ink-soft)", lineHeight: 1.55, marginBottom: 10 }}>
+            Escribe un mensaje como los que llegan por WhatsApp y mira <strong>qué datos detecta</strong> el
+            sistema y <strong>qué responde solo</strong>. No crea ningún lead ni envía nada.
+          </div>
+          <textarea className="ca-input" rows={2} value={prueba.texto} style={{ resize: "vertical" }}
+            placeholder="Ej.: Hola, hacen terapia de pareja? cuánto cuesta? quiero una cita en Miraflores, Lima"
+            onChange={(e) => setPrueba((p) => ({ ...p, texto: e.target.value }))} />
+          <div style={{ display: "flex", gap: 10, marginTop: 10, alignItems: "center", flexWrap: "wrap" }}>
+            <button className="ca-btn" onClick={probar} disabled={prueba.cargando}>
+              <Send size={14} strokeWidth={2} /> {prueba.cargando ? "Probando…" : "Ver qué responde"}
+            </button>
+            <span style={{ fontSize: 12, color: "var(--muted)" }}>
+              Los textos se editan en <strong>Plantillas</strong>, con las claves <code>faq_servicios</code>,{" "}
+              <code>faq_precios</code>, <code>faq_ubicacion</code> y <code>faq_agenda</code>.
+            </span>
+          </div>
+          {prueba.data && (
+            <div style={{ marginTop: 12 }}>
+              <div style={{ display: "flex", gap: 7, flexWrap: "wrap", marginBottom: 9 }}>
+                {prueba.data.analisis.ubicacion && <span style={{ ...WA_PILL, background: "#E1F0FB", color: "#2A6FA6" }}>📍 {prueba.data.analisis.ubicacion}{prueba.data.sede_label ? ` · sede ${prueba.data.sede_label}` : ""}</span>}
+                {prueba.data.tipo_servicio_label && <span style={{ ...WA_PILL, background: "#FCE7EF", color: "#9C4670" }}>{prueba.data.tipo_servicio_label}</span>}
+                {prueba.data.analisis.modalidad && <span style={{ ...WA_PILL, background: "#EDE6F4", color: "#6B4E96" }}>{prueba.data.analisis.modalidad}</span>}
+                {prueba.data.analisis.pide_cita && <span style={{ ...WA_PILL, background: "#E1F2E8", color: "#2E7D52" }}>📅 pide cita</span>}
+                {(prueba.data.analisis.intenciones || []).length === 0 && <span style={{ ...WA_PILL, background: "var(--line)", color: "var(--ink-soft)" }}>sin preguntas reconocidas</span>}
+              </div>
+              {prueba.data.respuesta ? (
+                <pre style={{ whiteSpace: "pre-wrap", fontFamily: "inherit", fontSize: 13.5, lineHeight: 1.55, background: "var(--accent-soft)", borderRadius: 10, padding: 14, margin: 0 }}>{prueba.data.respuesta}</pre>
+              ) : (
+                <div className="ca-pmeta">Con ese mensaje el sistema no responde solo: lo deja en esta bandeja para que una persona conteste.</div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {pendientes.length === 0 ? (
+        <div className="ca-empty">Ningún lead de WhatsApp está esperando respuesta ✓</div>
+      ) : (
+        <>
+          {visibles.map((lead) => (
+            <div key={lead.id} className="ca-row" style={lead.pide_cita ? { borderLeft: "3px solid #2F8F5B" } : undefined}>
+              <div style={{ flex: 1, minWidth: 170 }}>
+                <div className="ca-pname">
+                  {lead.nombre}
+                  {lead.pide_cita && <span style={{ ...WA_PILL, marginLeft: 8, background: "#E1F2E8", color: "#2E7D52", verticalAlign: "middle" }}>PIDE CITA</span>}
+                  {lead.ubicacion && <span style={{ ...WA_PILL, marginLeft: 8, background: "#E1F0FB", color: "#2A6FA6", verticalAlign: "middle" }}>📍 {lead.ubicacion}</span>}
+                  {lead.auto_respondido_en && <span style={{ ...WA_PILL, marginLeft: 8, background: "var(--hover)", color: "var(--ink-soft)", verticalAlign: "middle" }} title="El sistema ya le contestó sus preguntas frecuentes">🤖 respondido</span>}
+                </div>
+                <div className="ca-pmeta">
+                  {lead.telefono || "sin número"}
+                  {lead.sede_label ? ` · ${lead.sede_label}` : ""}
+                  {lead.tipo_servicio_label ? ` · ${lead.tipo_servicio_label}` : ""}
+                  {` · esperando ${lead.dias_sin_contacto} día${lead.dias_sin_contacto === 1 ? "" : "s"}`}
+                </div>
+                {lead.motivo_consulta && (
+                  <div className="ca-pmeta" style={{ fontStyle: "italic", marginTop: 2 }}>
+                    «{lead.motivo_consulta.length > 120 ? lead.motivo_consulta.slice(0, 120).trim() + "…" : lead.motivo_consulta}»
+                  </div>
+                )}
+              </div>
+              {lead.telefono && (
+                <a className="ca-mini wa" href={waLinkTel(lead.telefono)} target="_blank" rel="noreferrer" title="Abrir la conversación de WhatsApp">
+                  <MessageCircle size={13} strokeWidth={2} /> Responder
+                </a>
+              )}
+              <button className="ca-mini" onClick={() => onSeguimiento(lead)} title="Registrar que ya lo atendiste (sale de esta bandeja)">
+                <Check size={13} strokeWidth={2.2} /> Atendido
+              </button>
+              <button className="ca-iconbtn" title="Editar lead (agendar, asignar psicólogo…)" onClick={() => onEditar(lead)}>
+                <Pencil size={14} strokeWidth={2} />
+              </button>
+            </div>
+          ))}
+          {pendientes.length > visibles.length && (
+            <button className="ca-link" onClick={() => setVerTodas(true)} style={{ marginTop: 8 }}>
+              Ver las {pendientes.length} solicitudes
+            </button>
+          )}
+        </>
+      )}
+    </>
+  );
+}
+
 function Marketing({ showToast, onConvertir, esAdmin }) {
   const [leads, setLeads] = useState([]);
   const [rep, setRep] = useState(null);
@@ -5610,6 +5757,9 @@ function Marketing({ showToast, onConvertir, esAdmin }) {
         </div>
       </div>
 
+      <SolicitudesWhatsapp leads={leads} showToast={showToast}
+        onSeguimiento={seguimientoLead} onEditar={setEditandoLead} />
+
       <ReporteCierreMkt showToast={showToast} />
 
       {/* ---- Generador del reporte de pauta (listo para WhatsApp) ---- */}
@@ -5657,6 +5807,12 @@ function Marketing({ showToast, onConvertir, esAdmin }) {
               onCopy={() => copiar(origen + cfg.path_web, "web")} copiado={copiado === "web"} />
             <UrlBox label="WhatsApp (webhook de Evolution)" url={origen + cfg.path_whatsapp}
               onCopy={() => copiar(origen + cfg.path_whatsapp, "wa")} copiado={copiado === "wa"} />
+            <div style={{ fontSize: 12.5, color: "var(--ink-soft)", lineHeight: 1.5, marginTop: 2 }}>
+              De cada mensaje de WhatsApp el sistema guarda solo el <strong>distrito</strong> y el
+              <strong> tipo de consulta</strong>, marca si <strong>pide cita</strong> y responde las
+              preguntas frecuentes (terapias, precios, ubicación) con el enlace para agendar.
+              Todo queda arriba, en <strong>Solicitudes por WhatsApp</strong>.
+            </div>
             <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center", marginTop: 14 }}>
               <button className="ca-btn ghost" onClick={probar} style={{ opacity: probando ? 0.6 : 1, pointerEvents: probando ? "none" : "auto" }}>
                 <Plus size={14} strokeWidth={2.2} /> {probando ? "Enviando…" : "Probar con un lead de ejemplo"}
@@ -5914,6 +6070,7 @@ function CrearLeadModal({ lead, medicos, anuncios, onClose, onSave }) {
     especialidad: lead?.especialidad || Object.keys(SPECIALTY)[0],
     medico: lead?.medico || "",
     tipo_servicio: lead?.tipo_servicio || "",
+    ubicacion: lead?.ubicacion || "",
     motivo_consulta: lead?.motivo_consulta || "",
     resumen_conversacion: lead?.resumen_conversacion || "",
     objeciones: lead?.objeciones || "",
@@ -5947,7 +6104,7 @@ function CrearLeadModal({ lead, medicos, anuncios, onClose, onSave }) {
       fecha_consulta: f.agendo_consulta === false ? null : (f.fecha_consulta || null),
       hora_consulta: f.agendo_consulta === false ? null : (f.hora_consulta || null), fecha_cierre: f.fecha_cierre || null,
       campania: f.campania.trim(), especialidad: f.especialidad, medico: f.medico ? Number(f.medico) : null,
-      tipo_servicio: f.tipo_servicio, motivo_consulta: f.motivo_consulta.trim(),
+      tipo_servicio: f.tipo_servicio, ubicacion: f.ubicacion.trim(), motivo_consulta: f.motivo_consulta.trim(),
       resumen_conversacion: f.resumen_conversacion.trim(), objeciones: f.objeciones.trim(),
       observaciones: f.observaciones.trim(),
     });
@@ -6063,7 +6220,10 @@ function CrearLeadModal({ lead, medicos, anuncios, onClose, onSave }) {
           <div style={{ flex: 1 }}><div className="ca-label">Campaña (opcional)</div><input className="ca-input" value={f.campania} onChange={set("campania")} placeholder="ej. Pauta junio" /></div>
           <div style={{ flex: 1 }}><div className="ca-label">Psicólogo</div><select className="ca-input" value={f.medico} onChange={set("medico")}><option value="">Sin asignar</option>{medicos.map((m) => <option key={m.id} value={m.id}>{m.nombre}</option>)}</select></div>
         </div>
-        <div style={{ marginBottom: 12 }}><div className="ca-label">Tipo de servicio</div><select className="ca-input" value={f.tipo_servicio} onChange={set("tipo_servicio")}>{TIPOS_SERVICIO.map((x) => <option key={x.v} value={x.v}>{x.l}</option>)}</select></div>
+        <div style={{ display: "flex", gap: 11, marginBottom: 12 }}>
+          <div style={{ flex: 1 }}><div className="ca-label">Tipo de servicio</div><select className="ca-input" value={f.tipo_servicio} onChange={set("tipo_servicio")}>{TIPOS_SERVICIO.map((x) => <option key={x.v} value={x.v}>{x.l}</option>)}</select></div>
+          <div style={{ flex: 1 }}><div className="ca-label">Distrito / zona</div><input className="ca-input" value={f.ubicacion} onChange={set("ubicacion")} placeholder="ej. Miraflores (se detecta de WhatsApp)" /></div>
+        </div>
         <div className="ca-secth" style={{ marginTop: 4, marginBottom: 8, fontSize: 13 }}>Información comercial</div>
         <div style={{ marginBottom: 10 }}><div className="ca-label">Motivo de consulta</div><textarea className="ca-input" rows={2} value={f.motivo_consulta} onChange={set("motivo_consulta")} /></div>
         <div style={{ marginBottom: 10 }}><div className="ca-label">Resumen de la conversación</div><textarea className="ca-input" rows={2} value={f.resumen_conversacion} onChange={set("resumen_conversacion")} placeholder="Útil: las charlas de WhatsApp luego se borran" /></div>

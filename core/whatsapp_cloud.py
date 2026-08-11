@@ -85,13 +85,16 @@ def _capturar_nps(clinica, numero, texto):
     return False
 
 
-def _capturar_leads(data):
+def _capturar_leads(data, base_url=""):
     """Convierte los mensajes entrantes de WhatsApp (Meta Cloud API) en leads.
 
     - Solo procesa mensajes reales (ignora acuses de entrega/lectura).
     - Enruta cada mensaje a su clínica/sede por el `phone_number_id`.
     - No duplica: si ya hay un lead reciente o es paciente, solo deja una nota.
+    - Lee el mensaje (`leads.whatsapp_auto`): guarda ubicación y tipo de consulta,
+      marca si pide cita y responde las preguntas frecuentes.
     """
+    from leads import whatsapp_auto
     from leads.captacion import _agregar_nota, _es_paciente, _lead_existente
     from leads.models import Lead
 
@@ -132,8 +135,9 @@ def _capturar_leads(data):
                 existente = _lead_existente(clinica, numero, dias=60)
                 if existente:
                     _agregar_nota(existente, f"WhatsApp: {texto}" if texto else "Volvió a escribir por WhatsApp.")
+                    whatsapp_auto.procesar_lead(clinica, existente, texto, base_url=base_url)
                     continue
-                Lead.objects.create(
+                lead = Lead.objects.create(
                     clinica=clinica,
                     nombre=(nombres.get(numero) or "")[:200] or f"WhatsApp {numero[-9:]}",
                     telefono=numero,
@@ -142,6 +146,7 @@ def _capturar_leads(data):
                     notas=texto,
                     estado=Lead.Estado.NUEVO,
                 )
+                whatsapp_auto.procesar_lead(clinica, lead, texto, base_url=base_url)
 
 
 def _webhook_url(request):
