@@ -117,6 +117,8 @@ export const api = {
   crearConsentimiento: (paciente, tipo) => req("/api/consentimientos/", { method: "POST", body: JSON.stringify({ paciente, tipo }) }),
   consentimientoPublico: (token) => req(`/api/consentimiento/${token}/`),
   aceptarConsentimiento: (token, data) => req(`/api/consentimiento/${token}/aceptar/`, { method: "POST", body: JSON.stringify(data) }),
+  // El paciente dio su OK por WhatsApp (o en consulta) y el equipo lo registra.
+  marcarConsentimientoAceptado: (id, via) => req(`/api/consentimientos/${id}/marcar-aceptado/`, { method: "POST", body: JSON.stringify({ via: via || "whatsapp" }) }),
 
   // Hora del servidor (para sincronizar "hoy" sin depender del reloj del equipo)
   hora: () => req("/api/hora/"),
