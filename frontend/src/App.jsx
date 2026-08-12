@@ -2,7 +2,8 @@ import React, { useState, useMemo, useEffect } from "react";
 import { createPortal } from "react-dom";
 import {
   Home, Calendar, Users, Receipt, Search, Plus, Clock, ChevronLeft, ChevronDown,
-  Phone, Cake, X, Stethoscope, MessageCircle, Check, Pencil, UserPlus, FileText,
+  Phone, Cake, X, HeartHandshake, MessageCircle, Check, Pencil, UserPlus, FileText,
+  ClipboardList, BookUser, UserRound,
   TrendingUp, Download, AlertTriangle, Megaphone, LogOut,
   Paperclip, Trash2, Activity, Pill, HeartPulse, Copy, BarChart3, UserCog, KeyRound, MapPin,
   Mic, FolderOpen, Lightbulb, ExternalLink, Bell, GraduationCap,
@@ -690,7 +691,7 @@ export default function ClinicaApp() {
     ...(usuario?.rol !== "comercial" ? [{ id: "agenda", label: "Agenda", icon: Calendar }] : []),
     ...(usuario?.rol !== "comercial" ? [{ id: "pacientes", label: "Pacientes", icon: Users }] : []),
     // Profesionales (directorio): gerencia y coordinación; el psicólogo no lo ve.
-    ...((usuario?.rol !== "comercial" && usuario?.rol !== "medico") ? [{ id: "profesionales", label: "Profesionales", icon: HeartPulse }] : []),
+    ...((usuario?.rol !== "comercial" && usuario?.rol !== "medico") ? [{ id: "profesionales", label: "Profesionales", icon: BookUser }] : []),
     // Herramientas (materiales para pacientes + tips): equipo clínico (no comercial).
     // Para el psicólogo reemplaza el acceso a Profesionales.
     ...(usuario?.rol !== "comercial" ? [{ id: "herramientas", label: "Herramientas", icon: FolderOpen }] : []),
@@ -3929,7 +3930,7 @@ function Ficha({ p, onBack, onEdit, onWhatsApp, onSubirAdjunto, onEliminarAdjunt
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
             <span className="ca-field"><Cake size={14} strokeWidth={1.9} style={{ color: "var(--muted)" }} /> {p.edad != null ? `${p.edad} años` : "Edad —"}{p.genero_label ? ` · ${p.genero_label}` : ""}</span>
             {p.sede_label && <span className="ca-field"><MapPin size={14} strokeWidth={1.9} style={{ color: "var(--muted)" }} /> Sede {p.sede_label}</span>}
-            {p.profesional_nombre && <span className="ca-field"><HeartPulse size={14} strokeWidth={1.9} style={{ color: "var(--accent)" }} /> {p.profesional_nombre}</span>}
+            {p.profesional_nombre && <span className="ca-field"><UserRound size={14} strokeWidth={1.9} style={{ color: "var(--accent)" }} /> {p.profesional_nombre}</span>}
             {(p.frecuencia_label || p.modalidad_label) && <span className="ca-field"><Clock size={14} strokeWidth={1.9} style={{ color: "var(--muted)" }} /> {[p.frecuencia_label, p.modalidad_label].filter(Boolean).join(" · ")}</span>}
           </div>
         </div>
@@ -4600,7 +4601,7 @@ function CitaRow({ c, esAsistente, esMedico, onAtender, onRecordar, onReagendar,
           <button className="ca-mini wa" onClick={() => onMensaje(c)} title="Enviar mensaje (recordatorio y demás plantillas)"><MessageCircle size={13} strokeWidth={2} /> Mensaje{c.recordado ? " ✓" : ""}</button>
         )}
         {activa && !esAsistente && (
-          <button className="ca-mini" onClick={() => onAtender(c)}><Stethoscope size={13} strokeWidth={2} /> {esMedico ? "Registrar sesión" : "Atender"}</button>
+          <button className="ca-mini" onClick={() => onAtender(c)}><HeartHandshake size={13} strokeWidth={2} /> {esMedico ? "Registrar sesión" : "Atender"}</button>
         )}
         {esMedico && (
           <button className="ca-mini" onClick={() => openFicha(c.pacienteId)} title="Historia clínica"><FileText size={13} strokeWidth={2} /> Historia</button>
@@ -5010,7 +5011,7 @@ function CitaDetalleModal({ cita, esMedico, esAsistente, onClose, onSetEstado, o
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }}>
           <button className="ca-mini" onClick={() => { onClose(); openFicha(cita.pacienteId); }}><FileText size={13} strokeWidth={2} /> Ficha / pagos</button>
           {!esMedico && <button className="ca-mini wa" onClick={() => { onClose(); onMensaje(cita); }}><MessageCircle size={13} strokeWidth={2} /> Mensaje</button>}
-          {activa && !esAsistente && <button className="ca-mini" onClick={() => { onClose(); onAtender(cita); }}><Stethoscope size={13} strokeWidth={2} /> {esMedico ? "Registrar sesión" : "Atender"}</button>}
+          {activa && !esAsistente && <button className="ca-mini" onClick={() => { onClose(); onAtender(cita); }}><HeartHandshake size={13} strokeWidth={2} /> {esMedico ? "Registrar sesión" : "Atender"}</button>}
           {!esMedico && <button className="ca-mini" onClick={() => { onClose(); onCobrar(cita); }}><Receipt size={13} strokeWidth={2} /> Cobrar</button>}
           {activa && !esMedico && <button className="ca-mini" onClick={() => { onClose(); onReagendar(cita); }}><Calendar size={13} strokeWidth={2} /> Mover</button>}
           {activa && <button className="ca-mini" style={{ color: "#B4564E" }} onClick={() => { onClose(); onCancelar(cita); }}><X size={13} strokeWidth={2} /> Cancelar</button>}
@@ -6536,9 +6537,9 @@ const SUGERENCIA_ESTADO_COLOR = {
 // Profesionales para el rol psicólogo.
 const RECURSO_TABS = [
   { v: "herramienta", l: "Herramientas para el paciente", icon: FolderOpen, hint: "Materiales, guías y enlaces para compartir con los pacientes." },
-  { v: "terapeuta", l: "Herramientas para el terapeuta", icon: Stethoscope, hint: "Recursos clínicos para usar durante la sesión: escalas, dinámicas, materiales de intervención." },
+  { v: "terapeuta", l: "Herramientas para el terapeuta", icon: ClipboardList, hint: "Recursos clínicos para usar durante la sesión: escalas, dinámicas, materiales de intervención." },
   { v: "manual", l: "Manuales y guías", icon: GraduationCap, hint: "Manuales clínicos, protocolos, guías de intervención, procedimientos internos y material de capacitación." },
-  { v: "tip", l: "Autocuidado del terapeuta", icon: HeartPulse, hint: "Contenido de bienestar y autocuidado para el equipo terapéutico." },
+  { v: "tip", l: "Autocuidado del terapeuta", icon: Leaf, hint: "Contenido de bienestar y autocuidado para el equipo terapéutico." },
   { v: "recordatorio", l: "Recordatorios del equipo", icon: Bell, hint: "Avisos de gerencia (capacitación, supervisión, NPS…) que salen en el inicio del equipo.", soloAdmin: true },
 ];
 
