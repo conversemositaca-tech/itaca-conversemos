@@ -89,6 +89,15 @@ const STATUS = {
   por_confirmar: { bg: "#F7ECDD", fg: "#9C6B2E" },
 };
 
+// Enlace de videollamada listo para abrir. Si se guardó sin "https://" (pegado
+// como "meet.google.com/abc-defg-hij"), el navegador lo tomaría como ruta del
+// propio sistema y no abriría la reunión. Cubre también las citas ya guardadas.
+function urlEnlace(v) {
+  const s = (v || "").trim();
+  if (!s) return "";
+  return /^https?:\/\//i.test(s) ? s : `https://${s}`;
+}
+
 // Color de la cita en la agenda por su ESTADO DE PAGO/confirmación (pedido de las
 // coordinadoras, como en AgendaPro): verde = pagada, azul = confirmada pero falta
 // pago, ámbar = por confirmar (perseguir), gris = cancelada / no asistió.
@@ -4514,7 +4523,7 @@ function CitaRow({ c, esAsistente, esMedico, onAtender, onRecordar, onReagendar,
         {c.agendado_web && <span title="La reservó el paciente desde la web — priorizar contacto para confirmar y cobrar" style={{ marginLeft: 6, fontSize: 10.5, background: "#E3F1F2", color: "#0C5E69", padding: "1px 7px", borderRadius: 999, fontWeight: 700, verticalAlign: "middle" }}>🌐 Web</span>}
         <div className="ca-pmeta">
           {c.medico}{c.n_sesion ? ` · Sesión N° ${c.n_sesion}` : ""}{c.sede_label ? ` · ${c.sede_label}` : ""} · {c.modalidad === "virtual" ? "Virtual" : "Presencial"}
-          {c.modalidad === "virtual" && c.enlace && (<> · <a href={c.enlace} target="_blank" rel="noreferrer" style={{ color: "var(--accent)", fontWeight: 600 }}>Unirse</a></>)}
+          {c.modalidad === "virtual" && c.enlace && (<> · <a href={urlEnlace(c.enlace)} target="_blank" rel="noreferrer" style={{ color: "var(--accent)", fontWeight: 600 }}>Unirse</a></>)}
         </div>
       </div>
       <SpecialtyTag name={c.especialidad} />
@@ -4894,7 +4903,7 @@ function CitaDetalleModal({ cita, esMedico, esAsistente, onClose, onSetEstado, o
           {cita.fecha} · {cita.hora}<br />
           {cita.medico || "Sin psicólogo"}{cita.n_sesion ? ` · Sesión N° ${cita.n_sesion}` : ""}<br />
           {cita.especialidad}{cita.sede_label ? ` · ${cita.sede_label}` : ""} · {cita.modalidad === "virtual" ? "Virtual" : "Presencial"}
-          {cita.modalidad === "virtual" && cita.enlace && (<> · <a href={cita.enlace} target="_blank" rel="noreferrer" style={{ color: "var(--accent)", fontWeight: 600 }}>Unirse</a></>)}
+          {cita.modalidad === "virtual" && cita.enlace && (<> · <a href={urlEnlace(cita.enlace)} target="_blank" rel="noreferrer" style={{ color: "var(--accent)", fontWeight: 600 }}>Unirse</a></>)}
           {cita.notas ? <><br /><span style={{ fontStyle: "italic" }}>{cita.notas}</span></> : null}
         </div>
 

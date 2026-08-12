@@ -49,6 +49,19 @@ def _dec_o_none(valor):
         return None
 
 
+def _normaliza_enlace(valor):
+    """Deja el enlace de videollamada listo para abrirse en el navegador.
+
+    Coordinación suele pegar `meet.google.com/abc-defg-hij` sin el `https://`.
+    Sin esquema, el navegador lo trata como ruta relativa y termina dentro del
+    propio sistema en vez de abrir Meet, así que aquí se le antepone.
+    """
+    s = (valor or "").strip()
+    if not s:
+        return ""
+    return s if s.startswith(("http://", "https://")) else f"https://{s}"
+
+
 def _inicio_desde(fecha_str, hora_str):
     """Construye un datetime con zona horaria desde 'YYYY-MM-DD' (vacío = hoy)
     y 'HH:MM'. Lanza ValueError si el formato no es válido."""
@@ -344,7 +357,7 @@ class CitaViewSet(viewsets.ModelViewSet):
         # Datos de la sesión: sede, modalidad (presencial/virtual) + enlace, notas, N° de sesión.
         sede = request.data.get("sede") if request.data.get("sede") in dict(Paciente.Sede.choices) else (paciente.sede or "")
         modalidad = request.data.get("modalidad") if request.data.get("modalidad") in dict(Cita.Modalidad.choices) else Cita.Modalidad.PRESENCIAL
-        enlace = (request.data.get("enlace") or "").strip() if modalidad == Cita.Modalidad.VIRTUAL else ""
+        enlace = _normaliza_enlace(request.data.get("enlace")) if modalidad == Cita.Modalidad.VIRTUAL else ""
         notas = (request.data.get("notas") or "").strip()
         motivo_consulta = (request.data.get("motivo_consulta") or "").strip()
         n_sesion = _int_o_none(request.data.get("n_sesion"))
