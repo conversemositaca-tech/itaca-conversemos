@@ -340,6 +340,13 @@ class CitaViewSet(viewsets.ModelViewSet):
             qs = qs.filter(medico=self.request.user)
         return qs.order_by("inicio")
 
+    def perform_update(self, serializer):
+        # El psicólogo no registra la decisión del paciente (es de coordinación);
+        # si llegara en el payload, se descarta para no pisar lo que ya anotaron.
+        if _es_medico(self.request.user):
+            serializer.validated_data.pop("decision", None)
+        serializer.save()
+
     def destroy(self, request, *args, **kwargs):
         """Elimina una cita (coordinación/admin) y deja constancia para gerencia."""
         from usuarios.models import Usuario

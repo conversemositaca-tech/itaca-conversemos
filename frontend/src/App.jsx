@@ -131,6 +131,29 @@ const ESTADOS_CITA = [
   { v: "cancelada", l: "Cancelada" },
 ];
 
+// "Qué pasó con la sesión": los códigos DP de la GUÍA PARA NOTAS del equipo (los
+// mismos que usaban en AgendaPro). Coordinación los registra desde la agenda y
+// puede filtrar por ellos. El código clasifica; la nota libre explica el caso.
+const DECISIONES = [
+  { g: "Inicio", v: "DP-01", l: "DP-01 · Inicia proceso" },
+  { g: "Inicio", v: "DP-02", l: "DP-02 · Solicita tiempo para decidir" },
+  { g: "Inicio", v: "DP-03", l: "DP-03 · Seguimiento posterior" },
+  { g: "Inicio", v: "DP-04", l: "DP-04 · No inicia proceso" },
+  { g: "Servicios específicos", v: "DP-05", l: "DP-05 · Evaluación psicológica" },
+  { g: "Servicios específicos", v: "DP-06", l: "DP-06 · Informe psicológico" },
+  { g: "Servicios específicos", v: "DP-07", l: "DP-07 · Convenio / Empresa" },
+  { g: "Continuidad", v: "DP-08", l: "DP-08 · Continúa proceso" },
+  { g: "Continuidad", v: "DP-09", l: "DP-09 · Suspende temporalmente / Finaliza proceso" },
+  { g: "Continuidad", v: "DP-10", l: "DP-10 · Alta terapéutica" },
+  { g: "Derivaciones e interconsultas", v: "DP-11", l: "DP-11 · Derivación interna" },
+  { g: "Derivaciones e interconsultas", v: "DP-12", l: "DP-12 · Derivación externa" },
+  { g: "Derivaciones e interconsultas", v: "DP-13", l: "DP-13 · Interconsulta (interna o externa)" },
+  { g: "Dificultades o barreras", v: "DP-14", l: "DP-14 · Limitación económica" },
+  { g: "Dificultades o barreras", v: "DP-15", l: "DP-15 · Limitación de horario" },
+  { g: "Dificultades o barreras", v: "DP-16", l: "DP-16 · Inconformidad con la atención" },
+];
+const DECISION_GRUPOS = [...new Set(DECISIONES.map((d) => d.g))];
+
 const MENSAJE_ESTADO = {
   enviado: { bg: "#E9F1ED", fg: "#3E7A65" },
   fallido: { bg: "#F7E5E5", fg: "#9C4646" },
@@ -954,6 +977,17 @@ export default function ClinicaApp() {
     } catch (e) { showToast("Error: " + e.message); }
   }
 
+  // "Qué pasó con la sesión" (código DP de la guía del equipo). Lo registra
+  // coordinación desde la agenda; el psicólogo no lo ve.
+  async function setDecisionCita(cita, decision) {
+    try {
+      await api.actualizarCita(cita.id, { decision });
+      const lbl = (DECISIONES.find((d) => d.v === decision) || {}).l;
+      showToast(decision ? `Anotado: ${lbl} ✓` : "Se quitó la decisión");
+      refrescarCitas().catch(() => {});
+    } catch (e) { showToast("Error: " + e.message); }
+  }
+
   const nombreClinica = usuario?.clinica?.nombre || "Clínica";
   const ciudadClinica = usuario?.clinica?.ciudad || "";
   const esAsistente = usuario?.rol === "asistente";
@@ -1333,6 +1367,7 @@ export default function ClinicaApp() {
             onMensaje={(c) => { const p = pacientes.find((x) => x.id === c.pacienteId); if (p) { setWaPaciente(p); setWaCita(c); } else showToast("No se encontró el paciente"); }}
             onCobrar={(c) => setCobrando({ pacienteId: c.pacienteId, paciente: c.paciente, citaId: c.id, especialidad: c.especialidad })}
             onEditarNota={setNotaCita}
+            onSetDecision={usuario?.rol === "medico" ? undefined : setDecisionCita}
             onEliminarCita={(usuario?.rol === "asistente" || usuario?.rol === "admin") ? eliminarCita : undefined}
           />
         )}
@@ -4532,7 +4567,7 @@ function NotaCitaModal({ cita, onClose, onSaved, showToast }) {
   );
 }
 
-function CitaRow({ c, esAsistente, esMedico, onAtender, onRecordar, onReagendar, onCancelar, onConfirmar, onCobrar, onSetEstado, onMensaje, openFicha, onEditarNota, onEliminarCita }) {
+function CitaRow({ c, esAsistente, esMedico, onAtender, onRecordar, onReagendar, onCancelar, onConfirmar, onCobrar, onSetEstado, onMensaje, openFicha, onEditarNota, onEliminarCita, onSetDecision }) {
   const activa = c.estado !== "atendida" && c.estado !== "cancelada";
   const col = STATUS[c.estado] || {};
   const cc = colorCita(c);
@@ -4575,6 +4610,20 @@ function CitaRow({ c, esAsistente, esMedico, onAtender, onRecordar, onReagendar,
         ) : (
           <button className="ca-mini" onClick={() => onCobrar(c)} title="Registrar cobro"><Receipt size={13} strokeWidth={2} /> Cobrar</button>
         ))}
+        {/* Qué pasó con la sesión (código DP). Solo coordinación/gerencia; el
+            psicólogo no lo ve. Va junto a la nota libre, no la reemplaza. */}
+        {!esMedico && onSetDecision && (
+          <select className="ca-input" title={c.decision_label || "Anotar qué pasó con la sesión"}
+            style={{ width: "auto", maxWidth: 190, padding: "5px 9px", fontSize: 12.5, borderRadius: 999, cursor: "pointer" }}
+            value={c.decision || ""} onChange={(e) => onSetDecision(c, e.target.value)}>
+            <option value="">¿Qué pasó?</option>
+            {DECISION_GRUPOS.map((g) => (
+              <optgroup key={g} label={g}>
+                {DECISIONES.filter((d) => d.g === g).map((d) => <option key={d.v} value={d.v}>{d.l}</option>)}
+              </optgroup>
+            ))}
+          </select>
+        )}
         {onEditarNota && (
           <button className="ca-mini" onClick={() => onEditarNota(c)} title={c.notas ? `Nota: ${c.notas}` : "Agregar una nota de seguimiento a esta cita"}>
             <Pencil size={13} strokeWidth={2} /> Nota{c.notas ? " ✓" : ""}
@@ -4664,10 +4713,11 @@ function TerapeutasGrid({ citas, terapeutas, horarios = {}, fecha, onAbrirCita }
   );
 }
 
-function Agenda({ citas, bloqueos = [], fecha, setFecha, vista, setVista, esAsistente, esMedico, onAgendar, onBloquear, onBorrarBloqueo, onVenta, onAtender, onRecordar, onReagendar, onCancelar, onConfirmar, onCobrar, onSetEstado, onAbrirCita, onMensaje, openFicha, onEditarNota, onEliminarCita }) {
+function Agenda({ citas, bloqueos = [], fecha, setFecha, vista, setVista, esAsistente, esMedico, onAgendar, onBloquear, onBorrarBloqueo, onVenta, onAtender, onRecordar, onReagendar, onCancelar, onConfirmar, onCobrar, onSetEstado, onAbrirCita, onMensaje, openFicha, onEditarNota, onEliminarCita, onSetDecision }) {
   const [filtroMedico, setFiltroMedico] = useState("");
   const [filtroSede, setFiltroSede] = useState("");
   const [filtroEstado, setFiltroEstado] = useState("");
+  const [filtroDecision, setFiltroDecision] = useState("");
   const [verTodosTipos, setVerTodosTipos] = useState(false);
   const [medicosDir, setMedicosDir] = useState([]);
   useEffect(() => { api.medicos().then(setMedicosDir).catch(() => {}); }, []);
@@ -4690,7 +4740,8 @@ function Agenda({ citas, bloqueos = [], fecha, setFecha, vista, setVista, esAsis
   // El psicólogo NO ve las citas canceladas: seguían apareciendo en su día y lo
   // confundían sobre su propia agenda (pedido de coordinación). Coordinación y
   // gerencia sí las siguen viendo — necesitan el registro de lo que se canceló.
-  const citasBase = esMedico ? citas.filter((c) => c.estado !== "cancelada") : citas;
+  const citasBase = (esMedico ? citas.filter((c) => c.estado !== "cancelada") : citas)
+    .filter((c) => !filtroDecision || c.decision === filtroDecision);
   const delDia = (iso) => citasBase
     .filter((c) => c.fecha === iso && (!filtroMedico || c.medico === filtroMedico) && (!filtroSede || c.sede === filtroSede))
     .sort((a, b) => a.hora.localeCompare(b.hora));
@@ -4726,8 +4777,8 @@ function Agenda({ citas, bloqueos = [], fecha, setFecha, vista, setVista, esAsis
         </div>
         <div style={{ display: "flex", gap: 9, alignItems: "center" }}>
           {!esMedico && <ExportBtns nombre="agenda" titulo="Agenda" disabled={activas.length === 0}
-            headers={["Fecha", "Hora", "Paciente", "Psicologo", "Especialidad", "N° sesion", "Sede", "Modalidad", "Estado"]}
-            filas={activas.map((c) => [c.fecha, c.hora, c.paciente, c.medico, c.especialidad, c.n_sesion || "", c.sede_label || "", c.modalidad === "virtual" ? "Virtual" : "Presencial", c.estado_label])} />}
+            headers={["Fecha", "Hora", "Paciente", "Psicologo", "Especialidad", "N° sesion", "Sede", "Modalidad", "Estado", "Que paso"]}
+            filas={activas.map((c) => [c.fecha, c.hora, c.paciente, c.medico, c.especialidad, c.n_sesion || "", c.sede_label || "", c.modalidad === "virtual" ? "Virtual" : "Presencial", c.estado_label, c.decision_label || ""])} />}
           {!esMedico && <button className="ca-btn ghost" onClick={onVenta}><Receipt size={15} strokeWidth={2} /> Venta</button>}
           {!esMedico && <button className="ca-btn ghost" onClick={onBloquear}><Clock size={15} strokeWidth={2} /> Bloquear horario</button>}
           {!esMedico && <button className="ca-btn" onClick={onAgendar}><Plus size={16} strokeWidth={2.2} /> Agendar sesión</button>}
@@ -4753,6 +4804,18 @@ function Agenda({ citas, bloqueos = [], fecha, setFecha, vista, setVista, esAsis
           <select className="ca-datein" value={filtroMedico} onChange={(e) => setFiltroMedico(e.target.value)}>
             <option value="">Todos los psicólogos</option>
             {medicos.map((m) => <option key={m} value={m}>{m}</option>)}
+          </select>
+        )}
+        {/* Filtro por lo que pasó en la sesión (código DP). Solo coordinación/gerencia. */}
+        {!esMedico && (
+          <select className="ca-datein" value={filtroDecision} onChange={(e) => setFiltroDecision(e.target.value)}
+            title="Filtrar por lo que pasó en la sesión">
+            <option value="">Qué pasó: todas</option>
+            {DECISION_GRUPOS.map((g) => (
+              <optgroup key={g} label={g}>
+                {DECISIONES.filter((d) => d.g === g).map((d) => <option key={d.v} value={d.v}>{d.l}</option>)}
+              </optgroup>
+            ))}
           </select>
         )}
         <div className="ca-seg">
@@ -4846,7 +4909,8 @@ function Agenda({ citas, bloqueos = [], fecha, setFecha, vista, setVista, esAsis
               <CitaRow key={c.id} c={c} esAsistente={esAsistente} esMedico={esMedico}
                 onAtender={onAtender} onRecordar={onRecordar} onReagendar={onReagendar}
                 onCancelar={onCancelar} onConfirmar={onConfirmar} onCobrar={onCobrar}
-                onSetEstado={onSetEstado} onMensaje={onMensaje} openFicha={openFicha} onEditarNota={onEditarNota} onEliminarCita={onEliminarCita} />
+                onSetEstado={onSetEstado} onMensaje={onMensaje} openFicha={openFicha} onEditarNota={onEditarNota} onEliminarCita={onEliminarCita}
+                onSetDecision={onSetDecision} />
             ))
           )}
         </div>

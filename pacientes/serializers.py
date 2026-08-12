@@ -263,6 +263,7 @@ class CitaSerializer(serializers.ModelSerializer):
     modalidad_label = serializers.CharField(source="get_modalidad_display", read_only=True)
     sede_label = serializers.CharField(source="get_sede_display", read_only=True)
     categoria_label = serializers.CharField(source="get_categoria_display", read_only=True)
+    decision_label = serializers.CharField(source="get_decision_display", read_only=True)
     # Se recibe como texto (no URLField) para poder arreglar el enlace antes de
     # validarlo: coordinación pega "meet.google.com/abc" sin esquema y eso daba 400.
     enlace = serializers.CharField(required=False, allow_blank=True)
@@ -273,9 +274,19 @@ class CitaSerializer(serializers.ModelSerializer):
             "id", "pacienteId", "paciente", "medico", "especialidad", "categoria", "categoria_label",
             "fecha", "hora", "inicio", "estado", "estado_label", "recordado", "cobrada",
             "n_sesion", "sede", "sede_label", "modalidad", "modalidad_label", "enlace", "notas", "motivo_consulta",
-            "agendado_web",
+            "agendado_web", "decision", "decision_label",
         ]
         read_only_fields = ["inicio"]
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        # La decisión del paciente (código DP) es registro de coordinación: el
+        # psicólogo no la ve ni la edita (pedido de Gaby).
+        req = self.context.get("request")
+        if req is not None and getattr(req.user, "rol", None) == "medico":
+            data.pop("decision", None)
+            data.pop("decision_label", None)
+        return data
 
     def validate_enlace(self, valor):
         """Antepone https:// si falta y luego sí exige que sea una URL válida.
