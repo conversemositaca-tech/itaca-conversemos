@@ -9648,16 +9648,17 @@ function Ocupacion({ showToast }) {
           <h1 className="ca-h1">Ocupación de agenda</h1>
           <div className="ca-sub">Horas disponibles vs. sesiones realizadas, por psicólogo</div>
         </div>
-        <ExportBtns nombre={`ocupacion_${data.anio}_${data.mes}_s${data.semana}`}
-          titulo={`Ocupación de agenda · Sem ${data.semana} · ${MESES_FULL[data.mes] || ""} ${data.anio}`}
+        <ExportBtns nombre={`ocupacion_${data.anio}_${data.mes}_${data.semana ? `s${data.semana}` : "mes"}`}
+          titulo={`Ocupación de agenda · ${data.semana ? `Sem ${data.semana}` : "Mes completo"} · ${MESES_FULL[data.mes] || ""} ${data.anio}`}
           disabled={data.sedes.length === 0}
-          headers={["Sede", "Psicologo", "Horas/sem", "Sesiones", "Libres", "% Ocupacion", "Consultas", "1er proceso", "% Cierre", "Recompra"]}
+          headers={["Sede", "Psicologo", data.semana ? "Horas/sem" : "Horas/mes", "Sesiones", "Libres", "% Ocupacion", "Consultas", "1er proceso", "% Cierre", "Recompra"]}
           filas={data.sedes.flatMap((g) => g.psicologos.map((p) => [g.sede_label, p.nombre, p.horas_disponibles, p.sesiones, Math.max(0, p.horas_disponibles - p.sesiones), `${p.ocupacion}%`, p.consultas, p.primer_proceso, `${p.consultas ? Math.round((p.primer_proceso / p.consultas) * 100) : 0}%`, p.recompra]))} />
       </div>
 
       <div className="ca-fchips" style={{ marginTop: 18, alignItems: "flex-end" }}>
-        <div style={{ width: 108 }}><div className="ca-label">Semana</div>
+        <div style={{ width: 132 }}><div className="ca-label">Período</div>
           <select className="ca-input" value={sel.semana} onChange={set("semana")}>
+            <option value={0}>Todo el mes</option>
             {[1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>Semana {n}</option>)}
           </select>
         </div>
@@ -9679,7 +9680,7 @@ function Ocupacion({ showToast }) {
       </div>
 
       {data.sedes.length === 0 ? (
-        <div className="ca-empty">No hay sesiones registradas en esa semana.</div>
+        <div className="ca-empty">No hay sesiones registradas en {data.semana ? "esa semana" : "ese mes"}.</div>
       ) : data.sedes.map((g) => (
         <div key={g.sede} style={{ marginTop: 24 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
@@ -9691,7 +9692,7 @@ function Ocupacion({ showToast }) {
               <thead>
                 <tr>
                   <th>Psicólogo</th>
-                  <th style={{ textAlign: "right" }}>Horas/sem</th>
+                  <th style={{ textAlign: "right" }}>{data.semana ? "Horas/sem" : "Horas/mes"}</th>
                   <th style={{ textAlign: "right" }}>Sesiones</th>
                   <th style={{ textAlign: "right" }}>Libres</th>
                   <th style={{ textAlign: "right" }}>% Ocup.</th>
