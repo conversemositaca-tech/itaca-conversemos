@@ -851,12 +851,24 @@ export default function ClinicaApp() {
         const nuevo = await api.crearPaciente({ nombre: data.nuevoNombre, especialidad: data.especialidad, sede: data.sede || "", tel: data.nuevoTel || "" });
         pacienteId = nuevo.id;
       }
-      const r = await api.agendarCita({
+      const enviar = (forzar) => api.agendarCita({
         pacienteId, fecha: data.fecha, hora: data.hora, especialidad: data.especialidad,
         categoria: data.categoria || "", motivo_consulta: data.motivo_consulta || "",
         medicoId: data.medicoId || null, sede: data.sede || "", modalidad: data.modalidad || "presencial",
         enlace: data.enlace || "", notas: data.notas || "", n_sesion: data.n_sesion || null,
+        ...(forzar ? { forzar: true } : {}),
       });
+      let r;
+      try {
+        r = await enviar(false);
+      } catch (err) {
+        // 409 = ese psicólogo ya tiene una cita a esa hora. No se agenda salvo que
+        // se confirme el sobrecupo a propósito (el paciente que ya llegó, doble
+        // sesión pactada…). El paciente nuevo, si se creó, ya quedó creado.
+        if (err.status !== 409) throw err;
+        if (!window.confirm(`${err.message}\n\n¿Agendar igual (sobrecupo)?`)) return;
+        r = await enviar(true);
+      }
       // Feedback inmediato: cerrar modal + toast ya; la recarga va en segundo plano.
       setAdding(false);
       if (data.fecha) setAgendaFecha(data.fecha); // saltar al día de la cita recién creada
@@ -867,7 +879,14 @@ export default function ClinicaApp() {
 
   async function moverCita(cita, fecha, hora) {
     try {
-      await api.moverCita(cita.id, fecha, hora);
+      try {
+        await api.moverCita(cita.id, fecha, hora);
+      } catch (err) {
+        // 409 = el psicólogo ya tiene otra cita en ese horario (ver agendarCita).
+        if (err.status !== 409) throw err;
+        if (!window.confirm(`${err.message}\n\n¿Moverla igual (sobrecupo)?`)) return;
+        await api.moverCita(cita.id, fecha, hora, true);
+      }
       setReagendar(null);
       setAgendaFecha(fecha);
       showToast("Sesión reagendada ✓");
