@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
 
 from django.db.models import Prefetch
@@ -31,6 +31,10 @@ EXT_PERMITIDAS = {
     "doc", "docx", "xls", "xlsx", "txt", "dcm", "zip",
 }
 MAX_ADJUNTO_MB = 25
+# Cuánto dura una sesión. Es el mismo supuesto que ya usaban los slots de la web
+# pública (1 h) y el evento que se sincroniza a Google Calendar; la cita solo
+# guarda su `inicio`, no su duración.
+DURACION_CITA = timedelta(hours=1)
 
 
 def _int_o_none(valor):
@@ -60,6 +64,42 @@ def _normaliza_enlace(valor):
     if not s:
         return ""
     return s if s.startswith(("http://", "https://")) else f"https://{s}"
+
+
+def _choque_de_horario(medico, inicio, excluir_id=None):
+    """Cita del mismo psicólogo que se solapa con `inicio`, o None.
+
+    La cita solo guarda su hora de inicio, así que se asume 1 hora de duración
+    (lo mismo que los slots de la web pública y el evento de Google Calendar):
+    hay choque si la otra cita empieza dentro de la hora previa o posterior.
+    """
+    if not medico:
+        return None
+    qs = (
+        Cita.objects.del_tenant_actual()
+        .filter(
+            medico=medico,
+            inicio__gt=inicio - DURACION_CITA,
+            inicio__lt=inicio + DURACION_CITA,
+        )
+        .exclude(estado__in=[Cita.Estado.CANCELADA, Cita.Estado.REPROGRAMADA])
+        .select_related("paciente")
+    )
+    if excluir_id:
+        qs = qs.exclude(pk=excluir_id)
+    return qs.first()
+
+
+def _detalle_choque(medico, choque):
+    """Cuerpo del 409: qué cita estorba, en palabras de coordinación."""
+    hora = timezone.localtime(choque.inicio).strftime("%H:%M")
+    return {
+        "detail": (
+            f"{medico} ya tiene una cita a las {hora} con {choque.paciente.nombre}. "
+            f"Elige otro horario, u otro psicólogo."
+        ),
+        "choque": {"hora": hora, "paciente": choque.paciente.nombre, "medico": str(medico)},
+    }
 
 
 def _inicio_desde(fecha_str, hora_str):
@@ -347,12 +387,19 @@ class CitaViewSet(viewsets.ModelViewSet):
                 if medico_id else None
             ) or Usuario.objects.filter(clinica=clinica, rol=Usuario.Rol.MEDICO).first()
 
-        # Aviso (no bloqueante) si el mismo médico ya tiene una cita a esa hora.
-        aviso = None
-        if medico and Cita.objects.del_tenant_actual().filter(
-            medico=medico, inicio=inicio
-        ).exclude(estado=Cita.Estado.CANCELADA).exists():
-            aviso = f"Aviso: {medico} ya tiene otra cita a las {timezone.localtime(inicio):%H:%M}."
+        # Choque de horario. Antes solo se avisaba —y el aviso era un toast que se
+        # iba solo—, así que quedaban dos pacientes con el mismo psicólogo a la
+        # misma hora. Ahora se rechaza, salvo que se confirme el sobrecupo a
+        # propósito (`forzar`). La sesión se asume de 1 hora, igual que los slots
+        # de la web pública y el evento que se crea en Google Calendar.
+        choque = _choque_de_horario(medico, inicio)
+        if choque and not request.data.get("forzar"):
+            return Response(_detalle_choque(medico, choque), status=status.HTTP_409_CONFLICT)
+        aviso = (
+            f"Ojo: {medico} tiene otra cita a las {timezone.localtime(choque.inicio):%H:%M} "
+            f"({choque.paciente.nombre}). Se agendó igual porque lo confirmaste."
+            if choque else None
+        )
 
         # Datos de la sesión: sede, modalidad (presencial/virtual) + enlace, notas, N° de sesión.
         sede = request.data.get("sede") if request.data.get("sede") in dict(Paciente.Sede.choices) else (paciente.sede or "")
@@ -512,9 +559,15 @@ class CitaViewSet(viewsets.ModelViewSet):
         otra cita: es la misma con nueva fecha y estado claro)."""
         cita = self.get_object()
         try:
-            cita.inicio = _inicio_desde(request.data.get("fecha"), request.data.get("hora"))
+            nuevo_inicio = _inicio_desde(request.data.get("fecha"), request.data.get("hora"))
         except (ValueError, TypeError):
             return Response({"detail": "Fecha u hora inválida (usa fecha y HH:MM)."}, status=status.HTTP_400_BAD_REQUEST)
+        # Mismo control que al agendar: mover una cita encima de otra del mismo
+        # psicólogo también dejaba dos pacientes a la misma hora.
+        choque = _choque_de_horario(cita.medico, nuevo_inicio, excluir_id=cita.pk)
+        if choque and not request.data.get("forzar"):
+            return Response(_detalle_choque(cita.medico, choque), status=status.HTTP_409_CONFLICT)
+        cita.inicio = nuevo_inicio
         cita.estado = Cita.Estado.REPROGRAMADA
         cita.recordatorio_enviado = False
         cita.save(update_fields=["inicio", "estado", "recordatorio_enviado"])

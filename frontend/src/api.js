@@ -61,8 +61,9 @@ export const api = {
   citas: () => req("/api/citas/"),
   // data = { pacienteId | nuevoNombre, especialidad, fecha (YYYY-MM-DD), hora (HH:MM) }
   agendarCita: (data) => req("/api/citas/", { method: "POST", body: JSON.stringify(data) }),
-  moverCita: (id, fecha, hora) =>
-    req(`/api/citas/${id}/mover/`, { method: "POST", body: JSON.stringify({ fecha, hora }) }),
+  // `forzar` = mover igual aunque el psicólogo ya tenga otra cita a esa hora.
+  moverCita: (id, fecha, hora, forzar) =>
+    req(`/api/citas/${id}/mover/`, { method: "POST", body: JSON.stringify({ fecha, hora, ...(forzar ? { forzar: true } : {}) }) }),
   cancelarCita: (id) => req(`/api/citas/${id}/cancelar/`, { method: "POST" }),
   // Eliminar (borrar) una cita — coordinación/admin. Queda registrado para gerencia.
   borrarCita: (id) => req(`/api/citas/${id}/`, { method: "DELETE" }),
