@@ -84,6 +84,7 @@ class Lead(ModeloTenant):
         AGENDADO = "agendado", "Consulta agendada"
         AGENDO_NO_PAGO = "agendo_no_pago", "Agendó, no pagó"
         AGENDO_ESPERA_PAGO = "agendo_espera_pago", "Agendó, esperando pago"
+        CONSULTA_REALIZADA = "consulta_realizada", "Consulta realizada"
         NO_REALIZADA = "no_realizada", "Consulta no realizada"
         EVALUANDO = "evaluando", "Evaluando inicio"
         PENDIENTE_PAGO = "pendiente_pago", "Pendiente de pago"
