@@ -8875,12 +8875,40 @@ function Profesionales({ showToast, esAdmin }) {
 
   const filtradas = (lista || []).filter((p) => !sede || p.sede === sede);
 
+  // Reordenar el directorio. Este orden es EL MISMO que ve el paciente en la web
+  // de auto-agendamiento (/agendar), donde antes salían siempre alfabéticos.
+  // Se guarda `orden` = posición en la lista completa; si hay filtro de sede, los
+  // que quedaron fuera conservan su lugar.
+  async function mover(p, delta) {
+    const idx = filtradas.findIndex((x) => x.id === p.id);
+    const destino = idx + delta;
+    if (idx < 0 || destino < 0 || destino >= filtradas.length) return;
+    const reordenado = [...filtradas];
+    [reordenado[idx], reordenado[destino]] = [reordenado[destino], reordenado[idx]];
+    const idsFiltrados = new Set(filtradas.map((x) => x.id));
+    let k = 0;
+    const completa = lista.map((x) => (idsFiltrados.has(x.id) ? reordenado[k++] : x));
+    setLista(completa.map((x, i) => ({ ...x, orden: i })));  // se ve al instante
+    try {
+      const cambios = completa
+        .map((x, i) => (x.orden === i ? null : api.actualizarProfesional(x.id, { orden: i })))
+        .filter(Boolean);
+      await Promise.all(cambios);
+    } catch (e) {
+      showToast("Error: " + e.message);
+    }
+    await cargar();
+  }
+
   return (
     <div>
       <div className="ca-tophead">
         <div>
           <h1 className="ca-h1">Profesionales</h1>
-          <div className="ca-sub">Directorio del equipo{lista ? ` · ${lista.length}` : ""}</div>
+          <div className="ca-sub">
+            Directorio del equipo{lista ? ` · ${lista.length}` : ""}
+            {esAdmin && " · con las flechas ordenas cómo aparecen en la web de agendar"}
+          </div>
         </div>
         <div style={{ display: "flex", gap: 9, alignItems: "center" }}>
           <ExportBtns nombre="profesionales" titulo="Profesionales" disabled={!filtradas || filtradas.length === 0}
@@ -8946,6 +8974,20 @@ function Profesionales({ showToast, esAdmin }) {
                   <Users size={13} strokeWidth={2} /> {p.n_pacientes} en total
                 </button>
                 {esAdmin && <button className="ca-mini" onClick={() => setEditar(p)}><Pencil size={13} strokeWidth={2} /> Editar ficha</button>}
+                {esAdmin && (
+                  <span style={{ display: "flex", gap: 4, marginLeft: "auto" }}>
+                    <button className="ca-iconbtn" title="Subir en la web de agendar"
+                      disabled={filtradas.findIndex((x) => x.id === p.id) === 0}
+                      onClick={() => mover(p, -1)}>
+                      <ChevronDown size={14} strokeWidth={2} style={{ transform: "rotate(180deg)" }} />
+                    </button>
+                    <button className="ca-iconbtn" title="Bajar en la web de agendar"
+                      disabled={filtradas.findIndex((x) => x.id === p.id) === filtradas.length - 1}
+                      onClick={() => mover(p, 1)}>
+                      <ChevronDown size={14} strokeWidth={2} />
+                    </button>
+                  </span>
+                )}
                 {esAdmin && <button className="ca-iconbtn" title="Eliminar" onClick={() => eliminar(p)}><Trash2 size={14} strokeWidth={2} /></button>}
               </div>
             </div>
