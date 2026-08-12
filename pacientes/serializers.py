@@ -1,5 +1,7 @@
 from decimal import Decimal
 
+from django.core.exceptions import ValidationError as DjangoValidationError
+from django.core.validators import URLValidator
 from django.utils import timezone
 from rest_framework import serializers
 
@@ -261,6 +263,9 @@ class CitaSerializer(serializers.ModelSerializer):
     modalidad_label = serializers.CharField(source="get_modalidad_display", read_only=True)
     sede_label = serializers.CharField(source="get_sede_display", read_only=True)
     categoria_label = serializers.CharField(source="get_categoria_display", read_only=True)
+    # Se recibe como texto (no URLField) para poder arreglar el enlace antes de
+    # validarlo: coordinación pega "meet.google.com/abc" sin esquema y eso daba 400.
+    enlace = serializers.CharField(required=False, allow_blank=True)
 
     class Meta:
         model = Cita
@@ -271,6 +276,23 @@ class CitaSerializer(serializers.ModelSerializer):
             "agendado_web",
         ]
         read_only_fields = ["inicio"]
+
+    def validate_enlace(self, valor):
+        """Antepone https:// si falta y luego sí exige que sea una URL válida.
+
+        Sin esquema el navegador abre el enlace como ruta relativa del propio
+        sistema (terminaba en /meet.google.com/...) y la videollamada no cargaba.
+        """
+        s = (valor or "").strip()
+        if not s:
+            return ""
+        if not s.startswith(("http://", "https://")):
+            s = f"https://{s}"
+        try:
+            URLValidator()(s)
+        except DjangoValidationError:
+            raise serializers.ValidationError("Escribe un enlace válido, por ejemplo https://meet.google.com/abc-defg-hij")
+        return s
 
     def get_cobrada(self, obj):
         # Usa los cobros ya prefetcheados (evita 1 query por cita = N+1 en la agenda).
