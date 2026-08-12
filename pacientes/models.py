@@ -227,6 +227,35 @@ class Cita(ModeloTenant):
         PAREJAS = "parejas", "Parejas"
         CONSTANCIAS = "constancias", "Constancias e informes"
 
+    class Decision(models.TextChoices):
+        """Qué decidió el paciente tras la sesión (guía DP de AgendaPro).
+
+        Es la codificación que ya usa el equipo en sus notas: coordinación la
+        registra desde la agenda y puede filtrar por ella. El código se guarda
+        tal cual (DP-01…DP-16) para que calce con el histórico de AgendaPro.
+        """
+        # Inicio
+        DP01 = "DP-01", "DP-01 · Inicia proceso"
+        DP02 = "DP-02", "DP-02 · Solicita tiempo para decidir"
+        DP03 = "DP-03", "DP-03 · Seguimiento posterior"
+        DP04 = "DP-04", "DP-04 · No inicia proceso"
+        # Servicios específicos
+        DP05 = "DP-05", "DP-05 · Evaluación psicológica"
+        DP06 = "DP-06", "DP-06 · Informe psicológico"
+        DP07 = "DP-07", "DP-07 · Convenio / Empresa"
+        # Continuidad
+        DP08 = "DP-08", "DP-08 · Continúa proceso"
+        DP09 = "DP-09", "DP-09 · Suspende temporalmente / Finaliza proceso"
+        DP10 = "DP-10", "DP-10 · Alta terapéutica"
+        # Derivaciones e interconsultas
+        DP11 = "DP-11", "DP-11 · Derivación interna"
+        DP12 = "DP-12", "DP-12 · Derivación externa"
+        DP13 = "DP-13", "DP-13 · Interconsulta (interna o externa)"
+        # Dificultades o barreras
+        DP14 = "DP-14", "DP-14 · Limitación económica"
+        DP15 = "DP-15", "DP-15 · Limitación de horario"
+        DP16 = "DP-16", "DP-16 · Inconformidad con la atención"
+
     paciente = models.ForeignKey(Paciente, on_delete=models.PROTECT, related_name="citas")
     medico = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -258,6 +287,13 @@ class Cita(ModeloTenant):
     n_sesion = models.PositiveIntegerField(
         "N° de sesión", null=True, blank=True,
         help_text="Número de sesión que representa esta cita (si no se indica, usa el del paciente).",
+    )
+    # Qué pasó con la sesión, en el código DP que ya usa el equipo. Lo registra
+    # coordinación desde la agenda (el psicólogo no lo ve) y sirve para filtrar.
+    # Convive con `notas`: el código clasifica, la nota explica.
+    decision = models.CharField(
+        "decisión del paciente", max_length=6, choices=Decision.choices, blank=True, default="",
+        db_index=True,
     )
 
     class Meta:
