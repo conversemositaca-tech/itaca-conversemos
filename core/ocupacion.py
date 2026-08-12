@@ -40,12 +40,24 @@ def _semana_del_mes(d):
 
 
 def ocupacion_por_sede(clinica, anio, mes, semana):
-    """Ocupación de la semana (citas atendidas vs horas disponibles), por sede."""
+    """Ocupación (citas atendidas vs horas disponibles), por sede.
+
+    Con `semana` = 1..5 mira esa semana del mes; con `semana` None/0 mira el MES
+    COMPLETO. En el mes, las horas disponibles del psicólogo (que están cargadas
+    por semana) se escalan por las semanas que tiene el mes —días/7— para que el
+    porcentaje siga comparando lo mismo con lo mismo.
+    """
     profes = list(Profesional.objects.filter(clinica=clinica, activo=True).order_by("sede", "nombre"))
     # usuario (login del psicólogo) -> ficha del directorio
     prof_por_usuario = {p.usuario_id: p.id for p in profes if p.usuario_id}
 
-    d_ini, d_fin = _rango_semana_del_mes(anio, mes, semana)
+    if semana:
+        d_ini, d_fin = _rango_semana_del_mes(anio, mes, semana)
+        factor_horas = 1.0
+    else:
+        ultimo = monthrange(anio, mes)[1]
+        d_ini, d_fin = date(anio, mes, 1), date(anio, mes, ultimo)
+        factor_horas = ultimo / 7
     tz = timezone.get_current_timezone()
     ini = timezone.make_aware(datetime.combine(d_ini, time.min), tz)
     fin = timezone.make_aware(datetime.combine(d_fin, time.max), tz)
@@ -77,7 +89,7 @@ def ocupacion_por_sede(clinica, anio, mes, semana):
     sedes = {}
     for p in profes:
         d = por_prof.get(p.id, vacio)
-        horas = p.horas_disponibles
+        horas = round(p.horas_disponibles * factor_horas)
         pct = round(d["sesiones"] / horas * 100) if horas else 0
         grupo = sedes.setdefault(p.sede, {
             "sede": p.sede, "sede_label": SEDE_LABEL.get(p.sede, p.sede or "Sin sede"),
@@ -104,10 +116,11 @@ def ocupacion_por_sede(clinica, anio, mes, semana):
 
 
 class OcupacionView(APIView):
-    """Ocupación de agenda por psicólogo para una semana (anio/mes/semana).
+    """Ocupación de agenda por psicólogo (anio/mes/semana).
 
     Por defecto, la semana en curso (antes caía a la última semana registrada a
-    mano, que podía ser de hace meses).
+    mano, que podía ser de hace meses). Con `semana=0` devuelve el MES COMPLETO
+    —pedido de coordinación, que solo podía verlo semana por semana—.
     """
 
     def get(self, request):
@@ -122,10 +135,15 @@ class OcupacionView(APIView):
 
         anio = _int(request.query_params.get("anio"), hoy.year)
         mes = min(max(_int(request.query_params.get("mes"), hoy.month), 1), 12)
-        semana = min(max(_int(request.query_params.get("semana"), _semana_del_mes(hoy)), 1), 5)
-        d_ini, d_fin = _rango_semana_del_mes(anio, mes, semana)
+        # semana = 0 → mes completo. Si no viene, la semana en curso.
+        semana = min(max(_int(request.query_params.get("semana"), _semana_del_mes(hoy)), 0), 5)
+        if semana:
+            d_ini, d_fin = _rango_semana_del_mes(anio, mes, semana)
+        else:
+            d_ini, d_fin = date(anio, mes, 1), date(anio, mes, monthrange(anio, mes)[1])
         return Response({
             "anio": anio, "mes": mes, "semana": semana,
+            "vista": "semana" if semana else "mes",
             "desde": d_ini.isoformat(), "hasta": d_fin.isoformat(),
             "sedes": ocupacion_por_sede(clinica, anio, mes, semana),
         })

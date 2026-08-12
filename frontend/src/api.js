@@ -265,7 +265,8 @@ export const api = {
     const qs = new URLSearchParams();
     if (anio) qs.set("anio", anio);
     if (mes) qs.set("mes", mes);
-    if (semana) qs.set("semana", semana);
+    // semana 0 = mes completo, así que se manda aunque sea 0 (no vale `if (semana)`).
+    if (semana !== undefined && semana !== null && semana !== "") qs.set("semana", semana);
     return req(`/api/ocupacion/?${qs.toString()}`);
   },
 
