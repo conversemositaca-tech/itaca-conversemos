@@ -179,7 +179,7 @@ const FUENTES_PAUTA = ["tiktok_ads", "facebook_ads", "meta_ads", "google", "inst
 const SUBFUENTES = {
   tiktok_ads: ["WhatsApp", "Mensajería de TikTok"],
   facebook_ads: ["WhatsApp", "Mensajería de Facebook", "Mensajería de Instagram"],
-  bot: ["WhatsApp Piura", "WhatsApp Lima"],
+  bot: ["Eli bot", "WhatsApp Piura", "WhatsApp Lima"],
   referido: ["Psicólogos", "Paciente", "Gabi", "Emma", "Ayvi", "Yazmin"],
 };
 const TIPOS_SERVICIO = [
