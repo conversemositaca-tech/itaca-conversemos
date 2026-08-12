@@ -115,6 +115,15 @@ def generar_reporte_pauta(clinica, sede, desde, hasta):
     )
     procesos_prev = procesos_total - procesos_mes
 
+    # Procesos por origen (mismo desglose que ya se hace con las consultas: marketing
+    # necesita saber de qué canal salieron los que SÍ iniciaron proceso, no solo
+    # cuántos fueron).
+    por_origen_procesos = {}
+    for p in procesos:
+        k = FUENTE_LABEL.get(p.fuente, p.fuente)
+        por_origen_procesos[k] = por_origen_procesos.get(k, 0) + 1
+    por_origen_procesos = sorted(por_origen_procesos.items(), key=lambda x: -x[1])
+
     # Publicidad que atrajo consultas.
     consultas_pauta = [c for c in consultas if c.es_pauta]
     total_pauta = len(consultas_pauta)
@@ -146,6 +155,10 @@ def generar_reporte_pauta(clinica, sede, desde, hasta):
     L.append(f"✅ *Total procesos: {procesos_total}*")
     L.append(f"* {procesos_mes} de consultas del período")
     L.append(f"* {procesos_prev} de consultantes de períodos anteriores")
+    if por_origen_procesos:
+        L.append("Por origen:")
+        for nombre, n in por_origen_procesos:
+            L.append(f"* {nombre}: {n}")
     L.append("")
     L.append("_Detalle de citas_")
     L.append(f"{total_consultas} consultas agendadas")
@@ -184,6 +197,7 @@ def generar_reporte_pauta(clinica, sede, desde, hasta):
         "procesos_mes": procesos_mes, "procesos_prev": procesos_prev,
         "consultas_por_publicidad": total_pauta, "recontactos": recontactos,
         "por_origen": [{"origen": k, "n": v} for k, v in por_origen],
+        "por_origen_procesos": [{"origen": k, "n": v} for k, v in por_origen_procesos],
         "anuncios": [{"nombre": k[0], "link": k[1], "n": v} for k, v in anuncios],
     }
     return {"texto": texto, "datos": datos}
