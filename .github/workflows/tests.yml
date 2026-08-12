@@ -1,0 +1,38 @@
+name: Tests
+
+# Corre las pruebas en cada Pull Request y en cada push a main. El resultado
+# (✅ o ❌) aparece en el PR, que es donde Mirai aprueba desde el celular: si la
+# liquidación o la agenda se rompen, se ve ANTES del merge y no en producción.
+#
+# Solo Python: no usa la API de Anthropic, así que no consume créditos.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      # Base de prueba local del runner: no toca Railway ni ninguna base real.
+      DATABASE_URL: sqlite:///db.sqlite3
+      DJANGO_DB_SSL: "False"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"   # la misma del Dockerfile
+          cache: pip
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+
+      - name: Migraciones al día
+        # Falla si alguien cambió un modelo y olvidó generar la migración: en
+        # producción el contenedor migra al arrancar, así que eso rompería el deploy.
+        run: python manage.py makemigrations --check --dry-run
+
+      - name: Correr las pruebas
+        run: python manage.py test
