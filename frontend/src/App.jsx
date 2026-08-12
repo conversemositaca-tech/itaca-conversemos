@@ -4666,7 +4666,11 @@ function Agenda({ citas, bloqueos = [], fecha, setFecha, vista, setVista, esAsis
   const semana = vista === "semana" ? semanaDe(fecha) : null;
   const dias = vista === "mes" ? mesDe(fecha) : null;
   const mesActual = vista === "mes" ? dDeISO(fecha).getMonth() : null;
-  const delDia = (iso) => citas
+  // El psicólogo NO ve las citas canceladas: seguían apareciendo en su día y lo
+  // confundían sobre su propia agenda (pedido de coordinación). Coordinación y
+  // gerencia sí las siguen viendo — necesitan el registro de lo que se canceló.
+  const citasBase = esMedico ? citas.filter((c) => c.estado !== "cancelada") : citas;
+  const delDia = (iso) => citasBase
     .filter((c) => c.fecha === iso && (!filtroMedico || c.medico === filtroMedico) && (!filtroSede || c.sede === filtroSede))
     .sort((a, b) => a.hora.localeCompare(b.hora));
   // Filtro por ESTADO al hacer clic en un chip de arriba. NO se aplica a `visibles`
@@ -4674,9 +4678,9 @@ function Agenda({ citas, bloqueos = [], fecha, setFecha, vista, setVista, esAsis
   // lo que se dibuja en cada vista.
   const filtEstado = (arr) => (filtroEstado ? arr.filter((c) => c.estado === filtroEstado) : arr);
   const visibles = vista === "semana"
-    ? citas.filter((c) => semana.includes(c.fecha) && (!filtroMedico || c.medico === filtroMedico) && (!filtroSede || c.sede === filtroSede))
+    ? citasBase.filter((c) => semana.includes(c.fecha) && (!filtroMedico || c.medico === filtroMedico) && (!filtroSede || c.sede === filtroSede))
     : vista === "mes"
-    ? citas.filter((c) => dias.includes(c.fecha) && dDeISO(c.fecha).getMonth() === mesActual && (!filtroMedico || c.medico === filtroMedico) && (!filtroSede || c.sede === filtroSede))
+    ? citasBase.filter((c) => dias.includes(c.fecha) && dDeISO(c.fecha).getMonth() === mesActual && (!filtroMedico || c.medico === filtroMedico) && (!filtroSede || c.sede === filtroSede))
     : delDia(fecha);
   const activas = visibles.filter((c) => c.estado !== "cancelada");
   // Resumen de cuántas citas hay en cada estado (del día/semana mostrado).
