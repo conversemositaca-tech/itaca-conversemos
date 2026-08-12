@@ -15,7 +15,10 @@ FUENTE_LABEL = dict(Lead.Fuente.choices)
 # Avance del embudo: si la misma persona tiene varias filas de lead (costumbre de
 # registrar la consulta o el proceso como fila nueva), vale la más avanzada.
 _AVANCE = {
-    E.GANADO: 11, E.PENDIENTE_PAGO: 10, E.EVALUANDO: 9,
+    E.GANADO: 12, E.PENDIENTE_PAGO: 11, E.EVALUANDO: 10,
+    # "Consulta realizada" va sobre los "agendó…" (la consulta ya ocurrió) y bajo
+    # "evaluando inicio" (ahí ya se está decidiendo si empieza el proceso).
+    E.CONSULTA_REALIZADA: 9,
     E.AGENDO_ESPERA_PAGO: 8, E.AGENDO_NO_PAGO: 7, E.AGENDADO: 6,
     E.NO_REALIZADA: 5, E.SEGUIMIENTO: 4, E.RECONTACTO: 3, E.CONTACTADO: 2,
     E.NUEVO: 1, E.PERDIDO: 0,
@@ -89,7 +92,9 @@ def generar_reporte_pauta(clinica, sede, desde, hasta):
     agendo_espera = cuenta(E.AGENDO_ESPERA_PAGO)
     por_desarrollarse = cuenta(E.AGENDADO) + agendo_no_pago + agendo_espera
     no_realizada = cuenta(E.NO_REALIZADA)
-    desarrolladas = proceso + evaluando + pendiente
+    consulta_realizada = cuenta(E.CONSULTA_REALIZADA)
+    # La consulta ya se desarrolló, aunque todavía no se sepa si inicia proceso.
+    desarrolladas = proceso + evaluando + pendiente + consulta_realizada
     recontactos = sum(1 for c in consultas if c.creado_en.date() < desde)
 
     # Consultas por origen.
@@ -150,6 +155,8 @@ def generar_reporte_pauta(clinica, sede, desde, hasta):
         L.append(f"_{no_realizada} no se realizaron_")
     L.append("")
     L.append("Estado de las consultas:")
+    if consulta_realizada:
+        L.append(f"* {consulta_realizada} consulta realizada")
     L.append(f"* {proceso} iniciaron proceso")
     L.append(f"* {evaluando} evaluando inicio")
     L.append(f"* {pendiente} pendientes de pago")
@@ -172,6 +179,7 @@ def generar_reporte_pauta(clinica, sede, desde, hasta):
         "desarrolladas": desarrolladas, "por_desarrollarse": por_desarrollarse,
         "agendo_no_pago": agendo_no_pago, "agendo_espera_pago": agendo_espera,
         "proceso": proceso, "evaluando": evaluando, "pendiente_pago": pendiente,
+        "consulta_realizada": consulta_realizada,
         "no_realizada": no_realizada, "procesos_total": procesos_total,
         "procesos_mes": procesos_mes, "procesos_prev": procesos_prev,
         "consultas_por_publicidad": total_pauta, "recontactos": recontactos,
