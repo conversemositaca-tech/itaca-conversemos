@@ -145,6 +145,7 @@ const LEAD_ESTADOS = [
   { v: "agendado", l: "Consulta agendada" },
   { v: "agendo_no_pago", l: "Agendó, no pagó" },
   { v: "agendo_espera_pago", l: "Agendó, esperando pago" },
+  { v: "consulta_realizada", l: "Consulta realizada" },
   { v: "no_realizada", l: "Consulta no realizada" },
   { v: "evaluando", l: "Evaluando inicio" },
   { v: "pendiente_pago", l: "Pendiente de pago" },
@@ -163,6 +164,7 @@ const LEAD_ESTADO_COLOR = {
   ganado: _VERDE,          // inició proceso
   agendo_no_pago: _NARANJA,     // agendó pero no pagó: perseguir el pago
   agendo_espera_pago: _AMARILLO, // agendó, esperando confirmación de pago
+  consulta_realizada: _VERDE,   // la consulta sí se desarrolló
   contactado: _AMARILLO,
   seguimiento: _AMARILLO,
   evaluando: _AMARILLO,
@@ -2048,7 +2050,7 @@ const OPC_DOC = [{ v: "dni", l: "DNI" }, { v: "ce", l: "C. Extranjería" }, { v:
 const OPC_GENERO = [{ v: "", l: "—" }, { v: "femenino", l: "Femenino" }, { v: "masculino", l: "Masculino" }, { v: "otro", l: "Otro" }];
 const _op = (pares) => pares.map(([v, l]) => ({ v, l }));
 const OPC_FUENTE = _op([["instagram", "Instagram"], ["facebook", "Facebook"], ["tiktok", "TikTok"], ["referido", "Referido"], ["whatsapp", "WhatsApp"], ["bot", "Bot"], ["web", "Web"], ["agendapro", "AgendaPro"], ["derivado", "Derivado"], ["linkedin", "LinkedIn"], ["convenio", "Convenio"], ["otro", "Otro"]]);
-const OPC_ESTADO_LEAD = _op([["nuevo", "Nuevo"], ["contactado", "Contactado"], ["agendado", "Agendado"], ["agendo_no_pago", "Agendó, no pagó"], ["agendo_espera_pago", "Agendó, esp. pago"], ["no_realizada", "No realizada"], ["evaluando", "Evaluando"], ["pendiente_pago", "Pend. pago"], ["ganado", "Inició proceso"], ["perdido", "Perdido"]]);
+const OPC_ESTADO_LEAD = _op([["nuevo", "Nuevo"], ["contactado", "Contactado"], ["agendado", "Agendado"], ["agendo_no_pago", "Agendó, no pagó"], ["agendo_espera_pago", "Agendó, esp. pago"], ["consulta_realizada", "Consulta realizada"], ["no_realizada", "No realizada"], ["evaluando", "Evaluando"], ["pendiente_pago", "Pend. pago"], ["ganado", "Inició proceso"], ["perdido", "Perdido"]]);
 const OPC_ESTADO_COBRO = _op([["pagado", "Pagado"], ["pendiente", "Pendiente"], ["anulado", "Anulado"]]);
 const OPC_MEDIO = _op([["", "—"], ["efectivo", "Efectivo"], ["yape", "Yape"], ["plin", "Plin"], ["tarjeta", "Tarjeta"], ["transferencia", "Transferencia"], ["mercado_pago", "Mercado Pago"]]);
 const OPC_CAT_EGRESO = _op([["insumos", "Insumos"], ["sueldos", "Sueldos"], ["alquiler", "Alquiler"], ["equipos", "Equipos"], ["marketing", "Marketing"], ["otro", "Otro"]]);
