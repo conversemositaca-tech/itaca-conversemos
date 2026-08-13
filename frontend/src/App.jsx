@@ -5754,6 +5754,7 @@ function Marketing({ showToast, onConvertir, esAdmin }) {
   const [cargando, setCargando] = useState(true);
   const [creando, setCreando] = useState(false);
   const [editandoLead, setEditandoLead] = useState(null);
+  const [anuncioEdit, setAnuncioEdit] = useState(null);  // anuncio que se está editando
   const [filtroSedeLead, setFiltroSedeLead] = useState("");
   const [filtroEstadoLead, setFiltroEstadoLead] = useState("");
   const [desdeLead, setDesdeLead] = useState("");
@@ -5799,6 +5800,20 @@ function Marketing({ showToast, onConvertir, esAdmin }) {
     if (!window.confirm("¿Eliminar este anuncio?")) return;
     try { await api.eliminarAnuncio(id); await cargar(); }
     catch (err) { showToast("Error: " + err.message); }
+  }
+  async function editarAnuncio(data) {
+    try {
+      await api.actualizarAnuncio(data.id, data);
+      await cargar(); setAnuncioEdit(null); showToast("Anuncio actualizado ✓");
+    } catch (err) { showToast("Error: " + err.message); }
+  }
+  // Pausar en vez de borrar: deja de ofrecerse al registrar leads, pero se
+  // conservan los que ya trajo (si se borra, esa historia se pierde).
+  async function alternarAnuncio(a) {
+    try {
+      await api.actualizarAnuncio(a.id, { activo: !a.activo });
+      await cargar(); showToast(a.activo ? "Anuncio pausado" : "Anuncio activado ✓");
+    } catch (err) { showToast("Error: " + err.message); }
   }
   async function guardarLead(data) {
     try {
@@ -6050,20 +6065,29 @@ function Marketing({ showToast, onConvertir, esAdmin }) {
 
       <h2 className="ca-secth" style={{ marginTop: 30 }}>Anuncios de pauta ({anuncios.length})</h2>
       <div className="ca-card">
-        <AnuncioForm onSave={agregarAnuncio} />
+        <AnuncioForm onSave={anuncioEdit ? editarAnuncio : agregarAnuncio}
+          anuncio={anuncioEdit} onCancelar={() => setAnuncioEdit(null)} />
         {anuncios.length > 0 && (
           <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 9 }}>
             {anuncios.map((a) => (
-              <div key={a.id} style={{ display: "flex", alignItems: "flex-start", gap: 12, padding: "11px 13px", border: "1px solid var(--line)", borderRadius: 11, background: "var(--bg)" }}>
+              <div key={a.id} style={{ display: "flex", alignItems: "flex-start", gap: 12, padding: "11px 13px", border: "1px solid var(--line)", borderRadius: 11, background: "var(--bg)", opacity: a.activo ? 1 : 0.55 }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontWeight: 600, fontSize: 13.8, lineHeight: 1.4 }}>{a.nombre}</div>
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginTop: 5 }}>
                     <span style={{ fontSize: 11.5, fontWeight: 600, padding: "1px 9px", borderRadius: 999, background: "#EEF2EC", color: "#4B6B4E" }}>{a.plataforma_label}</span>
                     {a.sede_label && <span style={{ fontSize: 11.5, fontWeight: 600, padding: "1px 9px", borderRadius: 999, background: "#EEF2EC", color: "#4B6B4E" }}>{a.sede_label}</span>}
                     <span style={{ fontSize: 11.5, fontWeight: 700, padding: "1px 9px", borderRadius: 999, background: a.n_leads ? "#E1F2E8" : "var(--line)", color: a.n_leads ? "#2E7D52" : "var(--muted)" }}>{a.n_leads} lead{a.n_leads === 1 ? "" : "s"}</span>
+                    {!a.activo && <span style={{ fontSize: 11.5, fontWeight: 700, padding: "1px 9px", borderRadius: 999, background: "#F7ECDD", color: "#9C6B2E" }}>Pausado</span>}
                     {a.link && <a href={a.link} target="_blank" rel="noreferrer" style={{ color: "var(--accent)", fontSize: 12.5, fontWeight: 600, display: "inline-flex", alignItems: "center", gap: 3 }}><ExternalLink size={12} strokeWidth={2} /> ver anuncio</a>}
                   </div>
                 </div>
+                <button className="ca-mini" onClick={() => alternarAnuncio(a)}
+                  title={a.activo ? "Pausar: deja de ofrecerse al registrar leads" : "Volver a ofrecerlo al registrar leads"}>
+                  {a.activo ? "Pausar" : "Activar"}
+                </button>
+                <button className="ca-mini" onClick={() => setAnuncioEdit(a)} title="Editar este anuncio">
+                  <Pencil size={13} strokeWidth={2} /> Editar
+                </button>
                 <button className="ca-iconbtn" title="Eliminar anuncio" onClick={() => quitarAnuncio(a.id)}><Trash2 size={14} strokeWidth={2} /></button>
               </div>
             ))}
@@ -6160,11 +6184,21 @@ function Marketing({ showToast, onConvertir, esAdmin }) {
   );
 }
 
-function AnuncioForm({ onSave }) {
+// Sirve para crear y para editar: con `anuncio` cargado, el botón guarda los
+// cambios en vez de agregar uno nuevo (pedido de las coordinadoras, que tenían
+// anuncios repetidos y sin forma de corregirlos).
+function AnuncioForm({ onSave, anuncio, onCancelar }) {
   const [nombre, setNombre] = useState("");
   const [link, setLink] = useState("");
   const [plataforma, setPlataforma] = useState("instagram");
   const [sede, setSede] = useState("ambas");
+  const editando = !!anuncio;
+  useEffect(() => {
+    setNombre(anuncio?.nombre || "");
+    setLink(anuncio?.link || "");
+    setPlataforma(anuncio?.plataforma || "instagram");
+    setSede(anuncio?.sede || "ambas");
+  }, [anuncio]);
   const PLATS = [{ v: "instagram", l: "Instagram" }, { v: "facebook", l: "Facebook" }, { v: "tiktok", l: "TikTok" }, { v: "otro", l: "Otro" }];
   const SEDES_A = [{ v: "ambas", l: "Todas las sedes" }, { v: "lima", l: "Lima" }, { v: "piura", l: "Piura" }];
   return (
@@ -6174,9 +6208,13 @@ function AnuncioForm({ onSave }) {
       <div style={{ flex: 1, minWidth: 110 }}><div className="ca-label">Plataforma</div><select className="ca-input" value={plataforma} onChange={(e) => setPlataforma(e.target.value)}>{PLATS.map((p) => <option key={p.v} value={p.v}>{p.l}</option>)}</select></div>
       <div style={{ flex: 1, minWidth: 120 }}><div className="ca-label">Sede</div><select className="ca-input" value={sede} onChange={(e) => setSede(e.target.value)}>{SEDES_A.map((s) => <option key={s.v} value={s.v}>{s.l}</option>)}</select></div>
       <button className="ca-btn" style={{ opacity: nombre.trim() ? 1 : 0.5, pointerEvents: nombre.trim() ? "auto" : "none" }}
-        onClick={() => { onSave({ nombre: nombre.trim(), link: link.trim(), plataforma, sede }); setNombre(""); setLink(""); }}>
-        <Plus size={15} strokeWidth={2.2} /> Agregar
+        onClick={() => {
+          onSave({ ...(editando ? { id: anuncio.id } : {}), nombre: nombre.trim(), link: link.trim(), plataforma, sede });
+          if (!editando) { setNombre(""); setLink(""); }
+        }}>
+        {editando ? <><Check size={15} strokeWidth={2.2} /> Guardar cambios</> : <><Plus size={15} strokeWidth={2.2} /> Agregar</>}
       </button>
+      {editando && <button className="ca-btn ghost" onClick={onCancelar}>Cancelar</button>}
     </div>
   );
 }
@@ -6316,7 +6354,13 @@ function CrearLeadModal({ lead, medicos, anuncios, onClose, onSave }) {
             <div className="ca-label">Anuncio que lo atrajo</div>
             <select className="ca-input" value={f.anuncio} onChange={set("anuncio")}>
               <option value="">— (sin especificar)</option>
-              {anunciosActivos.map((a) => <option key={a.id} value={a.id}>{a.nombre}</option>)}
+              {/* Plataforma y sede ADELANTE: los títulos son largos y se repiten
+                  entre Facebook e Instagram, así que al final no se distinguían. */}
+              {anunciosActivos.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {`[${a.plataforma_label}${a.sede_label ? ` · ${a.sede_label}` : ""}] ${a.nombre}`}
+                </option>
+              ))}
             </select>
             {anunciosActivos.length === 0 && <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 4 }}>Aún no has agregado anuncios. Puedes crearlos abajo, en «Generar reporte de pauta».</div>}
           </div>
