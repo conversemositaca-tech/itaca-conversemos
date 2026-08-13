@@ -40,10 +40,20 @@ def clave_persona(lead):
 def personas_unicas(leads):
     """Colapsa filas duplicadas de la misma persona; se queda con la fila más
     avanzada del embudo (y ante empate, la más reciente). Así 'total leads' son
-    personas, y las consultas/procesos son subconjuntos, no sumandos."""
+    personas, y las consultas/procesos son subconjuntos, no sumandos.
+
+    El ORIGEN (anuncio y pauta) se hereda de cualquier fila de esa persona que lo
+    traiga, aunque no sea la ganadora: el equipo registra el avance como fila
+    nueva y ahí ya no vuelve a elegir el anuncio. Sin esto, la consulta contaba
+    pero se perdía de qué anuncio vino, y el reporte mostraba un puñado de
+    anuncios en vez de todos.
+    """
     por_persona = {}
+    con_origen = {}  # persona -> primera fila suya que sí trae anuncio/pauta
     for l in leads:
         k = clave_persona(l)
+        if k not in con_origen and (l.anuncio_id or l.es_pauta):
+            con_origen[k] = l
         prev = por_persona.get(k)
         if prev is None:
             por_persona[k] = l
@@ -54,6 +64,14 @@ def personas_unicas(leads):
         )
         if mejor:
             por_persona[k] = l
+
+    for k, ganador in por_persona.items():
+        fuente_origen = con_origen.get(k)
+        if fuente_origen is None or fuente_origen is ganador:
+            continue
+        if not ganador.anuncio_id and fuente_origen.anuncio_id:
+            ganador.anuncio = fuente_origen.anuncio
+        ganador.es_pauta = ganador.es_pauta or fuente_origen.es_pauta
     return list(por_persona.values())
 
 
@@ -125,7 +143,10 @@ def generar_reporte_pauta(clinica, sede, desde, hasta):
     por_origen_procesos = sorted(por_origen_procesos.items(), key=lambda x: -x[1])
 
     # Publicidad que atrajo consultas.
-    consultas_pauta = [c for c in consultas if c.es_pauta]
+    # Tener un anuncio elegido YA significa que vino de pauta: si el lead se
+    # registró con un origen que no está marcado como pauta (p. ej. "WhatsApp
+    # directo"), su anuncio igual tiene que contar.
+    consultas_pauta = [c for c in consultas if c.es_pauta or c.anuncio_id]
     total_pauta = len(consultas_pauta)
     por_anuncio = {}
     for c in consultas_pauta:
