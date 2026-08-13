@@ -172,3 +172,77 @@ class RangoDeAgendaTests(TestCase):
     def test_sin_rango_siguen_saliendo_todas(self):
         """Compatibilidad: quien no manda fechas recibe la agenda completa."""
         self.assertEqual(len(self.client.get("/api/citas/").json()), 3)
+
+
+class EditarCitaTests(TestCase):
+    """Reasignar el psicólogo y numerar la sesión sin borrar la cita.
+
+    Pedido de las coordinadoras: "que se pueda cambiar el psicólogo asignado a
+    una cita sin necesidad de eliminarla y crear una nueva", y "que se pueda
+    modificar el número de la cita o, en caso de no tenerlo, agregarlo después".
+    """
+
+    def setUp(self):
+        self.clinica = Clinica.objects.create(nombre="Conversemos", slug="conversemos-edit")
+        self.coord = Usuario.objects.create_user(
+            email="coord2@test.pe", password="x", clinica=self.clinica, rol=Usuario.Rol.ASISTENTE,
+        )
+        self.psico = Usuario.objects.create_user(
+            email="p1@test.pe", password="x", clinica=self.clinica, rol=Usuario.Rol.MEDICO,
+        )
+        self.otro = Usuario.objects.create_user(
+            email="p2@test.pe", password="x", clinica=self.clinica, rol=Usuario.Rol.MEDICO,
+        )
+        self.paciente = Paciente.objects.create(clinica=self.clinica, nombre="Ana Pérez", n_sesion=3)
+        self.manana = timezone.localdate() + timedelta(days=1)
+        self.cita = self._cita("10:00", self.psico)
+        self.client.force_login(self.coord)
+
+    def _cita(self, hora, medico, paciente=None):
+        h, m = [int(x) for x in hora.split(":")]
+        return Cita.objects.create(
+            clinica=self.clinica, paciente=paciente or self.paciente, medico=medico,
+            inicio=timezone.make_aware(datetime.combine(self.manana, time(h, m))),
+            estado=Cita.Estado.AGENDADA, especialidad="Terapia individual",
+        )
+
+    def _patch(self, datos):
+        return self.client.patch(f"/api/citas/{self.cita.id}/", datos, content_type="application/json")
+
+    def test_cambiar_el_psicologo_de_una_cita(self):
+        r = self._patch({"medicoId": self.otro.id})
+        self.assertEqual(r.status_code, 200)
+        self.cita.refresh_from_db()
+        self.assertEqual(self.cita.medico, self.otro)
+
+    def test_no_reasigna_encima_de_otra_cita_del_nuevo_psicologo(self):
+        otro_paciente = Paciente.objects.create(clinica=self.clinica, nombre="Luis Gómez")
+        self._cita("10:00", self.otro, paciente=otro_paciente)  # el nuevo ya está ocupado
+        r = self._patch({"medicoId": self.otro.id})
+        self.assertEqual(r.status_code, 409)
+        self.cita.refresh_from_db()
+        self.assertEqual(self.cita.medico, self.psico)  # se quedó con el suyo
+
+    def test_reasignar_con_sobrecupo_confirmado(self):
+        otro_paciente = Paciente.objects.create(clinica=self.clinica, nombre="Luis Gómez")
+        self._cita("10:00", self.otro, paciente=otro_paciente)
+        r = self._patch({"medicoId": self.otro.id, "forzar": True})
+        self.assertEqual(r.status_code, 200)
+
+    def test_poner_el_numero_de_sesion_despues(self):
+        r = self._patch({"n_sesion": 7})
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.json()["n_sesion"], 7)
+        self.assertEqual(r.json()["n_sesion_efectivo"], 7)
+
+    def test_sin_numero_propio_se_muestra_el_del_paciente(self):
+        r = self.client.get("/api/citas/")
+        cita = r.json()[0]
+        self.assertIsNone(cita["n_sesion"])
+        self.assertEqual(cita["n_sesion_efectivo"], 3)  # el del paciente
+
+    def test_el_psicologo_no_puede_reasignar_la_cita(self):
+        self.client.force_login(self.psico)
+        self._patch({"medicoId": self.otro.id})
+        self.cita.refresh_from_db()
+        self.assertEqual(self.cita.medico, self.psico)  # se ignora, no se reasigna
