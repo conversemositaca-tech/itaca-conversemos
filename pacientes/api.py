@@ -338,6 +338,17 @@ class CitaViewSet(viewsets.ModelViewSet):
         # El psicólogo ve solo SU agenda; el admin, la de toda la clínica.
         if _es_medico(self.request.user):
             qs = qs.filter(medico=self.request.user)
+        # Ventana de fechas. Sin esto se devolvía la agenda ENTERA de la clínica
+        # —incluido todo el histórico importado de AgendaPro, con sus cobros— en
+        # cada carga de la página: la respuesta pesaba tanto que a veces no
+        # llegaba, y el equipo tenía que recargar tres o cuatro veces para ver
+        # sus citas. La agenda nunca muestra más de un mes a la vez.
+        desde = (self.request.query_params.get("desde") or "").strip()
+        hasta = (self.request.query_params.get("hasta") or "").strip()
+        if desde:
+            qs = qs.filter(inicio__date__gte=desde)
+        if hasta:
+            qs = qs.filter(inicio__date__lte=hasta)
         return qs.order_by("inicio")
 
     def perform_update(self, serializer):

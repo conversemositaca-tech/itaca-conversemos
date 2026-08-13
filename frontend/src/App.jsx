@@ -603,11 +603,35 @@ export default function ClinicaApp() {
   const [registrandoSesion, setRegistrandoSesion] = useState(null);
   const [toast, setToast] = useState("");
 
+  // Qué tramo de la agenda se le pide al servidor. Antes se traían TODAS las
+  // citas de la clínica —con el histórico de AgendaPro dentro— en cada carga: la
+  // respuesta pesaba tanto que a veces no llegaba, y había que recargar la página
+  // 3 o 4 veces para ver las citas. La pantalla nunca muestra más de un mes.
+  const rangoCitas = (fechaVista) => {
+    const min = fechaVista < HOY_ISO ? fechaVista : HOY_ISO;  // el panel de "hoy"
+    const max = fechaVista > HOY_ISO ? fechaVista : HOY_ISO;  // va siempre incluido
+    return { desde: sumarDias(min, -15), hasta: sumarDias(max, 45) };
+  };
+  const rangoCargado = React.useRef({ desde: "", hasta: "" });
+
   async function cargarDatos() {
+    const r = rangoCitas(agendaFecha);
+    rangoCargado.current = r;
+    // Si una sola petición fallaba, se perdían las cinco y la pantalla quedaba
+    // vacía sin decir por qué. Ahora se aplica lo que sí llegó y se avisa.
     const [pac, cit, msg, srv, blo] = await Promise.all([
-      api.pacientes(), api.citas(), api.mensajes(), api.servicios(), api.bloqueos().catch(() => []),
+      api.pacientes().catch(() => null),
+      api.citas(r.desde, r.hasta).catch(() => null),
+      api.mensajes().catch(() => null),
+      api.servicios().catch(() => null),
+      api.bloqueos().catch(() => []),
     ]);
-    setPacientes(pac); setCitas(cit); setMensajes(msg); setServicios(srv); setBloqueos(blo);
+    if (pac) setPacientes(pac);
+    if (cit) setCitas(cit);
+    if (msg) setMensajes(msg);
+    if (srv) setServicios(srv);
+    setBloqueos(blo);
+    if (!pac || !cit) showToast("No se pudo cargar todo. Revisa tu conexión y vuelve a entrar.");
   }
   const refrescarBloqueos = async () => setBloqueos(await api.bloqueos().catch(() => []));
   async function iniciar() {
@@ -618,6 +642,14 @@ export default function ClinicaApp() {
   useEffect(() => {
     iniciar().catch(() => setUsuario(null)).finally(() => setIniciando(false));
   }, []);
+
+  // Al navegar la agenda a una fecha fuera del tramo cargado, se pide ese tramo.
+  useEffect(() => {
+    if (!usuario) return;
+    const { desde, hasta } = rangoCargado.current;
+    if (desde && agendaFecha >= desde && agendaFecha <= hasta) return;
+    refrescarCitas(rangoCitas(agendaFecha)).catch(() => showToast("No pude traer las citas de esa fecha."));
+  }, [agendaFecha, usuario]);
 
   async function handleLogin(email, password) {
     const d = await api.login(email, password);
@@ -652,7 +684,11 @@ export default function ClinicaApp() {
       showToast("Sesión de la semana registrada ✓");
     } catch (e) { showToast("Error: " + e.message); }
   };
-  const refrescarCitas = async () => setCitas(await api.citas());
+  const refrescarCitas = async (rango) => {
+    const r = rango || rangoCargado.current;
+    rangoCargado.current = r;
+    setCitas(await api.citas(r.desde, r.hasta));
+  };
   const refrescarMensajes = async () => setMensajes(await api.mensajes());
 
   // El detalle completo si ya cargó para este paciente; si no, la fila liviana.
