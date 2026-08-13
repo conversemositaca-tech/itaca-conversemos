@@ -6269,8 +6269,10 @@ function CrearLeadModal({ lead, medicos, anuncios, onClose, onSave }) {
       fecha_llegada: f.fecha_llegada || null, sede: f.sede, fuente: f.fuente,
       subfuente: f.fuente === "referido" ? f.subfuente.trim() : ((SUBFUENTES[f.fuente] || []).includes(f.subfuente) ? f.subfuente : ""),
       fuente_otro: ["otro", "convenio", "alianza"].includes(f.fuente) ? f.fuente_otro.trim() : "",
-      es_pauta: esFuentePauta ? f.es_pauta : false,
-      anuncio: esFuentePauta && f.es_pauta && f.anuncio ? Number(f.anuncio) : null, es_pareja: f.es_pareja,
+      // Elegir un anuncio ya dice que vino de pauta, sea cual sea el canal por
+      // el que escribió: si hay anuncio, se guarda y cuenta como pauta.
+      es_pauta: (esFuentePauta ? f.es_pauta : false) || !!f.anuncio,
+      anuncio: f.anuncio ? Number(f.anuncio) : null, es_pareja: f.es_pareja,
       estado: f.estado, agendo_consulta: f.agendo_consulta,
       seguimiento_frecuencia: f.estado === "seguimiento" ? f.seguimiento_frecuencia : "",
       recontacto_fecha: f.estado === "recontacto" ? (f.recontacto_fecha || null) : null,
@@ -6349,9 +6351,12 @@ function CrearLeadModal({ lead, medicos, anuncios, onClose, onSave }) {
             </label>
           </div>
         )}
-        {esFuentePauta && f.es_pauta && (
-          <div style={{ marginBottom: 12 }}>
-            <div className="ca-label">Anuncio que lo atrajo</div>
+        {/* El anuncio se puede elegir con CUALQUIER origen. La pauta de Meta manda
+            a la gente a WhatsApp, así que el lead se registra como "WhatsApp
+            directo" o "Bot" y antes ahí no aparecía este desplegable: el anuncio
+            se perdía y el reporte no sabía de dónde vino esa consulta. */}
+        <div style={{ marginBottom: 12 }}>
+          <div className="ca-label">Anuncio que lo atrajo (si vino de uno)</div>
             <select className="ca-input" value={f.anuncio} onChange={set("anuncio")}>
               <option value="">— (sin especificar)</option>
               {/* Plataforma y sede ADELANTE: los títulos son largos y se repiten
@@ -6362,9 +6367,8 @@ function CrearLeadModal({ lead, medicos, anuncios, onClose, onSave }) {
                 </option>
               ))}
             </select>
-            {anunciosActivos.length === 0 && <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 4 }}>Aún no has agregado anuncios. Puedes crearlos abajo, en «Generar reporte de pauta».</div>}
-          </div>
-        )}
+          {anunciosActivos.length === 0 && <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 4 }}>Aún no has agregado anuncios. Puedes crearlos abajo, en «Generar reporte de pauta».</div>}
+        </div>
         <div style={{ marginBottom: 12 }}>
           <div className="ca-label">¿Agendó consulta?</div>
           <div style={{ display: "flex", gap: 8 }}>
