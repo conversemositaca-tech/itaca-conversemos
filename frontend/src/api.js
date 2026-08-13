@@ -58,7 +58,15 @@ export const api = {
     req(`/api/pacientes/${id}/`, { method: "PATCH", body: JSON.stringify(data) }),
 
   // Citas
-  citas: () => req("/api/citas/"),
+  // Sin rango trae la agenda entera (histórico incluido): úsalo siempre con
+  // `desde`/`hasta`, que es lo único que la pantalla llega a mostrar.
+  citas: (desde, hasta) => {
+    const qs = new URLSearchParams();
+    if (desde) qs.set("desde", desde);
+    if (hasta) qs.set("hasta", hasta);
+    const s = qs.toString();
+    return req(`/api/citas/${s ? `?${s}` : ""}`);
+  },
   // data = { pacienteId | nuevoNombre, especialidad, fecha (YYYY-MM-DD), hora (HH:MM) }
   agendarCita: (data) => req("/api/citas/", { method: "POST", body: JSON.stringify(data) }),
   // `forzar` = mover igual aunque el psicólogo ya tenga otra cita a esa hora.

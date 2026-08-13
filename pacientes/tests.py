@@ -120,3 +120,55 @@ class AgendarCitaTests(TestCase):
     def test_una_cita_presencial_no_guarda_enlace(self):
         r = self._agendar("09:00", modalidad="presencial", enlace="meet.google.com/abc")
         self.assertEqual(r.json()["enlace"], "")
+
+
+class RangoDeAgendaTests(TestCase):
+    """La agenda se pide por tramo de fechas.
+
+    Antes `/api/citas/` devolvía la agenda ENTERA de la clínica —incluido todo el
+    histórico importado de AgendaPro, con sus cobros— en cada carga de la página.
+    La respuesta pesaba tanto que a veces no llegaba, y el equipo reportó que
+    "algunos pacientes no aparecen hasta que actualizamos 3-4 veces la página".
+    """
+
+    def setUp(self):
+        self.clinica = Clinica.objects.create(nombre="Conversemos", slug="conversemos-rango")
+        self.coord = Usuario.objects.create_user(
+            email="coord@test.pe", password="x", clinica=self.clinica, rol=Usuario.Rol.ASISTENTE,
+        )
+        self.psico = Usuario.objects.create_user(
+            email="psi@test.pe", password="x", clinica=self.clinica, rol=Usuario.Rol.MEDICO,
+        )
+        self.paciente = Paciente.objects.create(clinica=self.clinica, nombre="Ana Pérez")
+        self.hoy = timezone.localdate()
+        self._cita(self.hoy)                             # hoy
+        self._cita(self.hoy - timedelta(days=400))       # histórico viejo
+        self._cita(self.hoy + timedelta(days=200))       # muy a futuro
+        self.client.force_login(self.coord)
+
+    def _cita(self, fecha):
+        return Cita.objects.create(
+            clinica=self.clinica, paciente=self.paciente, medico=self.psico,
+            inicio=timezone.make_aware(datetime.combine(fecha, time(10, 0))),
+            estado=Cita.Estado.AGENDADA, especialidad="Terapia individual",
+        )
+
+    def test_el_tramo_pedido_deja_fuera_el_historico(self):
+        r = self.client.get("/api/citas/", {
+            "desde": (self.hoy - timedelta(days=15)).isoformat(),
+            "hasta": (self.hoy + timedelta(days=45)).isoformat(),
+        })
+        self.assertEqual(r.status_code, 200)
+        fechas = [c["fecha"] for c in r.json()]
+        self.assertEqual(fechas, [self.hoy.isoformat()])  # solo la de hoy
+
+    def test_se_puede_pedir_el_historico_a_proposito(self):
+        r = self.client.get("/api/citas/", {
+            "desde": (self.hoy - timedelta(days=500)).isoformat(),
+            "hasta": self.hoy.isoformat(),
+        })
+        self.assertEqual(len(r.json()), 2)  # la vieja y la de hoy
+
+    def test_sin_rango_siguen_saliendo_todas(self):
+        """Compatibilidad: quien no manda fechas recibe la agenda completa."""
+        self.assertEqual(len(self.client.get("/api/citas/").json()), 3)
