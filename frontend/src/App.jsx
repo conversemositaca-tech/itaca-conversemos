@@ -602,6 +602,8 @@ export default function ClinicaApp() {
   const [editingPaciente, setEditingPaciente] = useState(null);
   const [registrandoSesion, setRegistrandoSesion] = useState(null);
   const [toast, setToast] = useState("");
+  // Directorio de psicólogos: hace falta para poder reasignar una cita.
+  const [medicosDir, setMedicosDir] = useState([]);
 
   // Qué tramo de la agenda se le pide al servidor. Antes se traían TODAS las
   // citas de la clínica —con el histórico de AgendaPro dentro— en cada carga: la
@@ -642,6 +644,10 @@ export default function ClinicaApp() {
   useEffect(() => {
     iniciar().catch(() => setUsuario(null)).finally(() => setIniciando(false));
   }, []);
+
+  useEffect(() => {
+    if (usuario) api.medicos().then(setMedicosDir).catch(() => {});
+  }, [usuario]);
 
   // Al navegar la agenda a una fecha fuera del tramo cargado, se pide ese tramo.
   useEffect(() => {
@@ -1016,6 +1022,28 @@ export default function ClinicaApp() {
 
   // "Qué pasó con la sesión" (código DP de la guía del equipo). Lo registra
   // coordinación desde la agenda; el psicólogo no lo ve.
+  // Reasignar el psicólogo de una cita, o ponerle/corregirle el N° de sesión,
+  // sin borrarla y volver a crearla.
+  async function editarCita(cita, datos) {
+    try {
+      await api.actualizarCita(cita.id, datos);
+      showToast("Cita actualizada ✓");
+      setCitaDetalle(null);
+      refrescarCitas().catch(() => {});
+    } catch (e) {
+      if (e.status === 409 && window.confirm(`${e.message}\n\n¿Asignarla igual (sobrecupo)?`)) {
+        try {
+          await api.actualizarCita(cita.id, { ...datos, forzar: true });
+          showToast("Cita actualizada ✓");
+          setCitaDetalle(null);
+          refrescarCitas().catch(() => {});
+          return;
+        } catch (e2) { showToast("Error: " + e2.message); return; }
+      }
+      if (e.status !== 409) showToast("Error: " + e.message);
+    }
+  }
+
   async function setDecisionCita(cita, decision) {
     try {
       await api.actualizarCita(cita.id, { decision });
@@ -1544,7 +1572,8 @@ export default function ClinicaApp() {
             onClose={() => setCitaDetalle(null)} onSetEstado={setEstadoCita} openFicha={openFicha}
             onAtender={setAtender} onReagendar={setReagendar} onCancelar={setCancelando}
             onMensaje={(c) => { const p = pacientes.find((x) => x.id === c.pacienteId); if (p) { setWaPaciente(p); setWaCita(c); } else showToast("No se encontró el paciente"); }}
-            onCobrar={(c) => setCobrando({ pacienteId: c.pacienteId, paciente: c.paciente, citaId: c.id, especialidad: c.especialidad })} />
+            onCobrar={(c) => setCobrando({ pacienteId: c.pacienteId, paciente: c.paciente, citaId: c.id, especialidad: c.especialidad })}
+            medicos={medicosDir} onGuardar={usuario?.rol === "medico" ? undefined : editarCita} />
         )}
         {bloqueando && <BloqueoModal fechaInicial={agendaFecha} onClose={() => setBloqueando(null)} onSave={guardarBloqueo} />}
         {cancelando && (
@@ -4615,7 +4644,7 @@ function CitaRow({ c, esAsistente, esMedico, onAtender, onRecordar, onReagendar,
         <button className="ca-pnamebtn" onClick={() => openFicha(c.pacienteId)}>{c.paciente}</button>
         {c.agendado_web && <span title="La reservó el paciente desde la web — priorizar contacto para confirmar y cobrar" style={{ marginLeft: 6, fontSize: 10.5, background: "#E3F1F2", color: "#0C5E69", padding: "1px 7px", borderRadius: 999, fontWeight: 700, verticalAlign: "middle" }}>🌐 Web</span>}
         <div className="ca-pmeta">
-          {c.medico}{c.n_sesion ? ` · Sesión N° ${c.n_sesion}` : ""}{c.sede_label ? ` · ${c.sede_label}` : ""} · {c.modalidad === "virtual" ? "Virtual" : "Presencial"}
+          {c.medico}{c.n_sesion_efectivo ? ` · Sesión N° ${c.n_sesion_efectivo}` : ""}{c.sede_label ? ` · ${c.sede_label}` : ""} · {c.modalidad === "virtual" ? "Virtual" : "Presencial"}
           {c.modalidad === "virtual" && c.enlace && (<> · <a href={urlEnlace(c.enlace)} target="_blank" rel="noreferrer" style={{ color: "var(--accent)", fontWeight: 600 }}>Unirse</a></>)}
         </div>
       </div>
@@ -4685,7 +4714,14 @@ function CitaRow({ c, esAsistente, esMedico, onAtender, onRecordar, onReagendar,
 
 // Agenda multi-terapeuta (estilo AgendaPro): horas a la izquierda, una columna por
 // CADA psicólogo activo (atienda o no ese día). Clic en una cita abre su detalle.
-function TerapeutasGrid({ citas, terapeutas, horarios = {}, fecha, onAbrirCita }) {
+function TerapeutasGrid({ citas, terapeutas, horarios = {}, fecha, onAbrirCita, bloqueos = [] }) {
+  // Los horarios bloqueados tienen que verse aquí: es la pantalla desde la que
+  // se ofrecen turnos, y antes una hora bloqueada aparecía como "Libre".
+  const minutos = (hhmm) => { const [h, m] = String(hhmm || "").split(":").map(Number); return (h || 0) * 60 + (m || 0); };
+  const bloqueoEn = (terapeuta, h) => bloqueos.find((b) => {
+    const suyo = !b.medico_nombre || b.medico_nombre === terapeuta;  // sin psicólogo = toda la sede
+    return suyo && minutos(b.hora_inicio) < (h + 1) * 60 && h * 60 < minutos(b.hora_fin);
+  });
   // Día de la semana (1=Lun … 7=Dom) de la fecha mostrada, sin líos de zona horaria.
   const wd = (() => { if (!fecha) return null; const [y, m, d] = fecha.split("-").map(Number); const g = new Date(y, m - 1, d).getDay(); return g === 0 ? 7 : g; })();
   const horasSet = new Set();
@@ -4720,11 +4756,15 @@ function TerapeutasGrid({ citas, terapeutas, horarios = {}, fecha, onAbrirCita }
               <td style={{ color: "var(--muted)", fontSize: 12, whiteSpace: "nowrap", verticalAlign: "top" }}>{String(h).padStart(2, "0")}:00</td>
               {terapeutas.map((t) => {
                 const evs = citas.filter((c) => c.medico === t && parseInt(c.hora.slice(0, 2), 10) === h && c.estado !== "cancelada");
-                const disp = trabaja(t, h);
+                const bloq = bloqueoEn(t, h);
+                const disp = trabaja(t, h) && !bloq;
                 return (
                   <td key={t} style={{ verticalAlign: "top", background: evs.length ? undefined : (disp ? "#F3FBF6" : "repeating-linear-gradient(45deg,#F1F0EE,#F1F0EE 6px,#ECEBE8 6px,#ECEBE8 12px)") }}>
                     {evs.length === 0 && (
-                      <span style={{ fontSize: 10.5, color: disp ? "#3E7A65" : "var(--muted)", opacity: 0.75 }}>{disp ? "Libre" : "No disp."}</span>
+                      bloq
+                        ? <span title={`${bloq.hora_inicio}–${bloq.hora_fin} · ${bloq.motivo || "No disponible"}`}
+                            style={{ fontSize: 10.5, color: "#9C6B2E", fontWeight: 600 }}>🚫 {bloq.motivo || "Bloqueado"}</span>
+                        : <span style={{ fontSize: 10.5, color: disp ? "#3E7A65" : "var(--muted)", opacity: 0.75 }}>{disp ? "Libre" : "No disp."}</span>
                     )}
                     {evs.map((c) => {
                       const col = colorCita(c);
@@ -4815,7 +4855,7 @@ function Agenda({ citas, bloqueos = [], fecha, setFecha, vista, setVista, esAsis
         <div style={{ display: "flex", gap: 9, alignItems: "center" }}>
           {!esMedico && <ExportBtns nombre="agenda" titulo="Agenda" disabled={activas.length === 0}
             headers={["Fecha", "Hora", "Paciente", "Psicologo", "Especialidad", "N° sesion", "Sede", "Modalidad", "Estado", "Que paso"]}
-            filas={activas.map((c) => [c.fecha, c.hora, c.paciente, c.medico, c.especialidad, c.n_sesion || "", c.sede_label || "", c.modalidad === "virtual" ? "Virtual" : "Presencial", c.estado_label, c.decision_label || ""])} />}
+            filas={activas.map((c) => [c.fecha, c.hora, c.paciente, c.medico, c.especialidad, c.n_sesion_efectivo || "", c.sede_label || "", c.modalidad === "virtual" ? "Virtual" : "Presencial", c.estado_label, c.decision_label || ""])} />}
           {!esMedico && <button className="ca-btn ghost" onClick={onVenta}><Receipt size={15} strokeWidth={2} /> Venta</button>}
           {!esMedico && <button className="ca-btn ghost" onClick={onBloquear}><Clock size={15} strokeWidth={2} /> Bloquear horario</button>}
           {!esMedico && <button className="ca-btn" onClick={onAgendar}><Plus size={16} strokeWidth={2.2} /> Agendar sesión</button>}
@@ -4952,7 +4992,7 @@ function Agenda({ citas, bloqueos = [], fecha, setFecha, vista, setVista, esAsis
           )}
         </div>
       ) : vista === "terapeutas" ? (
-        <TerapeutasGrid citas={filtEstado(delDia(fecha))} terapeutas={filtroMedico ? [filtroMedico] : medicos} horarios={horariosPorNombre} fecha={fecha} onAbrirCita={onAbrirCita} />
+        <TerapeutasGrid citas={filtEstado(delDia(fecha))} terapeutas={filtroMedico ? [filtroMedico] : medicos} horarios={horariosPorNombre} fecha={fecha} onAbrirCita={onAbrirCita} bloqueos={bloqueosDia} />
       ) : vista === "mes" ? (
         <div className="ca-mes">
           <div className="ca-mes-hd">
@@ -5012,10 +5052,18 @@ function Agenda({ citas, bloqueos = [], fecha, setFecha, vista, setVista, esAsis
   );
 }
 
-function CitaDetalleModal({ cita, esMedico, esAsistente, onClose, onSetEstado, openFicha, onAtender, onCobrar, onReagendar, onCancelar, onMensaje }) {
+function CitaDetalleModal({ cita, esMedico, esAsistente, onClose, onSetEstado, openFicha, onAtender, onCobrar, onReagendar, onCancelar, onMensaje, onGuardar, medicos = [] }) {
   const [estado, setEstado] = useState(cita.estado);
+  // `medico` viene como nombre; para el selector se busca su id en el directorio.
+  const [medicoId, setMedicoId] = useState(
+    String((medicos.find((m) => m.nombre === cita.medico) || {}).id || "")
+  );
+  const [nSesion, setNSesion] = useState(cita.n_sesion ? String(cita.n_sesion) : "");
   const col = STATUS[estado] || {};
   const activa = estado !== "atendida" && estado !== "cancelada";
+  const hayCambios =
+    medicoId !== String((medicos.find((m) => m.nombre === cita.medico) || {}).id || "") ||
+    nSesion !== (cita.n_sesion ? String(cita.n_sesion) : "");
   return (
     <div className="ca-modal-bg" onClick={onClose}>
       <div className="ca-modal" style={{ maxWidth: 420 }} onClick={(e) => e.stopPropagation()}>
@@ -5041,6 +5089,32 @@ function CitaDetalleModal({ cita, esMedico, esAsistente, onClose, onSetEstado, o
               onChange={(e) => { setEstado(e.target.value); onSetEstado(cita, e.target.value); }}>
               {ESTADOS_CITA.map((e) => <option key={e.v} value={e.v} style={{ background: "#fff", color: "var(--ink)" }}>{e.l}</option>)}
             </select>
+          </div>
+        )}
+
+        {/* Reasignar y numerar la sesión sin borrar la cita y volver a crearla
+            (pedido de las coordinadoras). Solo coordinación y gerencia. */}
+        {!esMedico && onGuardar && (
+          <div style={{ display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap", margin: "4px 0 14px" }}>
+            <div style={{ flex: 2, minWidth: 150 }}>
+              <div className="ca-label">Psicólogo</div>
+              <select className="ca-input" value={medicoId} onChange={(e) => setMedicoId(e.target.value)}>
+                <option value="">— Sin asignar</option>
+                {medicos.map((m) => <option key={m.id} value={m.id}>{m.nombre}</option>)}
+              </select>
+            </div>
+            <div style={{ width: 92 }}>
+              <div className="ca-label">N° sesión</div>
+              <input className="ca-input" value={nSesion} inputMode="numeric" placeholder={cita.n_sesion_efectivo || "—"}
+                onChange={(e) => setNSesion(e.target.value.replace(/\D/g, ""))} />
+            </div>
+            <button className="ca-btn" disabled={!hayCambios} style={{ opacity: hayCambios ? 1 : 0.5 }}
+              onClick={() => onGuardar(cita, {
+                medicoId: medicoId ? Number(medicoId) : null,
+                n_sesion: nSesion ? Number(nSesion) : null,
+              })}>
+              <Check size={15} strokeWidth={2.2} /> Guardar
+            </button>
           </div>
         )}
 

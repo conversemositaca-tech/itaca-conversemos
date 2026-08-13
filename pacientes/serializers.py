@@ -7,6 +7,8 @@ from rest_framework import serializers
 
 from core.utils import fecha_corta
 
+from usuarios.models import Usuario
+
 from .models import (
     Adjunto, AplicacionEscala, Atencion, BloqueoAgenda, Cita, ContactoProfesional,
     ObjetivoTerapeutico, Paciente, RespuestaNPS, Tarea, severidad_escala,
@@ -259,7 +261,16 @@ class CitaSerializer(serializers.ModelSerializer):
     estado_label = serializers.CharField(source="get_estado_display", read_only=True)
     recordado = serializers.BooleanField(source="recordatorio_enviado", read_only=True)
     cobrada = serializers.SerializerMethodField()
-    n_sesion = serializers.SerializerMethodField()
+    # `medicoId` permite CAMBIAR el psicólogo de una cita ya agendada, sin tener
+    # que borrarla y crearla de nuevo (pedido de las coordinadoras). `medico` es
+    # solo el nombre, para mostrar.
+    medicoId = serializers.PrimaryKeyRelatedField(
+        source="medico", required=False, allow_null=True, write_only=True,
+        queryset=Usuario.objects.filter(rol="medico"),
+    )
+    # El N° de sesión real de la cita (editable, puede ir vacío) y el que se
+    # muestra, que cae al del paciente cuando la cita no lo trae.
+    n_sesion_efectivo = serializers.SerializerMethodField()
     modalidad_label = serializers.CharField(source="get_modalidad_display", read_only=True)
     sede_label = serializers.CharField(source="get_sede_display", read_only=True)
     categoria_label = serializers.CharField(source="get_categoria_display", read_only=True)
@@ -271,9 +282,10 @@ class CitaSerializer(serializers.ModelSerializer):
     class Meta:
         model = Cita
         fields = [
-            "id", "pacienteId", "paciente", "medico", "especialidad", "categoria", "categoria_label",
+            "id", "pacienteId", "paciente", "medico", "medicoId", "especialidad", "categoria", "categoria_label",
             "fecha", "hora", "inicio", "estado", "estado_label", "recordado", "cobrada",
-            "n_sesion", "sede", "sede_label", "modalidad", "modalidad_label", "enlace", "notas", "motivo_consulta",
+            "n_sesion", "n_sesion_efectivo",
+            "sede", "sede_label", "modalidad", "modalidad_label", "enlace", "notas", "motivo_consulta",
             "agendado_web", "decision", "decision_label",
         ]
         read_only_fields = ["inicio"]
@@ -287,6 +299,14 @@ class CitaSerializer(serializers.ModelSerializer):
             data.pop("decision", None)
             data.pop("decision_label", None)
         return data
+
+    def validate_medicoId(self, usuario):
+        """El psicólogo nuevo tiene que ser de la misma clínica."""
+        req = self.context.get("request")
+        clinica = getattr(getattr(req, "user", None), "clinica_id", None)
+        if usuario and clinica and usuario.clinica_id != clinica:
+            raise serializers.ValidationError("Ese psicólogo no es de esta clínica.")
+        return usuario
 
     def validate_enlace(self, valor):
         """Antepone https:// si falta y luego sí exige que sea una URL válida.
@@ -309,7 +329,7 @@ class CitaSerializer(serializers.ModelSerializer):
         # Usa los cobros ya prefetcheados (evita 1 query por cita = N+1 en la agenda).
         return any(c.estado != "anulado" for c in obj.cobros.all())
 
-    def get_n_sesion(self, obj):
+    def get_n_sesion_efectivo(self, obj):
         # El N° de la cita si se indicó; si no, el del paciente.
         return obj.n_sesion if obj.n_sesion else obj.paciente.n_sesion
 
