@@ -6,7 +6,7 @@ from django.http import FileResponse
 from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
-from rest_framework.exceptions import PermissionDenied
+from rest_framework.exceptions import APIException, PermissionDenied
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -64,6 +64,12 @@ def _normaliza_enlace(valor):
     if not s:
         return ""
     return s if s.startswith(("http://", "https://")) else f"https://{s}"
+
+
+class ChoqueDeHorario(APIException):
+    """409 al agendar/mover/reasignar sobre un horario ya ocupado."""
+
+    status_code = status.HTTP_409_CONFLICT
 
 
 def _choque_de_horario(medico, inicio, excluir_id=None):
@@ -352,10 +358,18 @@ class CitaViewSet(viewsets.ModelViewSet):
         return qs.order_by("inicio")
 
     def perform_update(self, serializer):
-        # El psicólogo no registra la decisión del paciente (es de coordinación);
-        # si llegara en el payload, se descarta para no pisar lo que ya anotaron.
+        # El psicólogo no registra la decisión del paciente ni reasigna citas a
+        # otro colega: las dos cosas son de coordinación. Si llegan en el payload
+        # se descartan, para no pisar lo que ya anotaron.
         if _es_medico(self.request.user):
             serializer.validated_data.pop("decision", None)
+            serializer.validated_data.pop("medico", None)
+        # Cambiar de psicólogo puede meter la cita encima de otra suya.
+        nuevo = serializer.validated_data.get("medico")
+        if nuevo and nuevo != serializer.instance.medico:
+            choque = _choque_de_horario(nuevo, serializer.instance.inicio, excluir_id=serializer.instance.pk)
+            if choque and not self.request.data.get("forzar"):
+                raise ChoqueDeHorario(_detalle_choque(nuevo, choque))
         serializer.save()
 
     def destroy(self, request, *args, **kwargs):
