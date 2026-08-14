@@ -49,9 +49,9 @@ class LeadSerializer(serializers.ModelSerializer):
             "motivo_consulta", "resumen_conversacion", "objeciones", "observaciones",
             "ultimo_contacto", "dias_sin_contacto", "semaforo",
             "ubicacion", "pide_cita", "auto_respondido_en", "espera_respuesta",
-            "paciente", "paciente_nombre", "creado", "creado_iso",
+            "paciente", "paciente_nombre", "cita", "creado", "creado_iso",
         ]
-        read_only_fields = ["paciente", "auto_respondido_en"]
+        read_only_fields = ["paciente", "cita", "auto_respondido_en"]
 
     def get_fuente_label(self, obj):
         # Si el origen es Otro/Convenio/Alianza y se especificó, muestra ese texto.

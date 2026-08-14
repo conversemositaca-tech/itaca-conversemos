@@ -162,6 +162,18 @@ class Lead(ModeloTenant):
         blank=True,
         help_text="Se enlaza cuando el lead se convierte en paciente.",
     )
+    # Cita que se creó en la agenda para la consulta de este lead. Antes había que
+    # registrar la consulta dos veces —una en Marketing y otra en la Agenda—, y de
+    # ahí salían los pacientes duplicados. Guardar el vínculo permite MOVER esa
+    # cita cuando corrigen la fecha del lead, en vez de crear otra.
+    cita = models.ForeignKey(
+        "pacientes.Cita",
+        on_delete=models.SET_NULL,
+        related_name="leads",
+        null=True,
+        blank=True,
+        help_text="Cita de la consulta agendada, creada desde el lead.",
+    )
     actualizado_en = models.DateTimeField(auto_now=True)
 
     class Meta:
