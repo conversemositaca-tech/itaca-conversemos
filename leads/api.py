@@ -31,6 +31,82 @@ def _parse_fecha(valor, por_defecto):
         return por_defecto
 
 
+def _paciente_del_lead(lead):
+    """El paciente de este lead: el enlazado, uno que ya exista con su teléfono, o
+    uno nuevo. NO toca el estado del lead (agendar una consulta no es cerrarla).
+
+    El match por teléfono es el mismo criterio que usa la reserva web: sin él, la
+    coordinadora terminaba creando un paciente repetido cada vez que registraba
+    la cita a mano, y eso descuadraba los conteos.
+    """
+    if lead.paciente_id:
+        return lead.paciente
+    from usuarios.models import Profesional
+
+    tel = _norm_tel(lead.telefono)
+    if tel:
+        for p in Paciente.objects.del_tenant_actual().exclude(telefono=""):
+            if _norm_tel(p.telefono) == tel:
+                lead.paciente = p
+                lead.save(update_fields=["paciente"])
+                return p
+    ficha = Profesional.objects.filter(usuario=lead.medico).first() if lead.medico_id else None
+    paciente = Paciente.objects.create(
+        clinica=lead.clinica, nombre=lead.nombre, telefono=lead.telefono,
+        email=lead.email or "", sede=lead.sede or "", profesional=ficha,
+        especialidad_habitual=lead.especialidad or lead.get_tipo_servicio_display() or "",
+    )
+    lead.paciente = paciente
+    lead.save(update_fields=["paciente"])
+    return paciente
+
+
+def sincronizar_cita_del_lead(lead):
+    """Crea (o mueve) la cita de la consulta agendada de un lead.
+
+    Antes esto se hacía a mano: la coordinadora registraba la consulta en
+    Marketing y volvía a registrarla en la Agenda. La reserva web ya creaba
+    lead + paciente + cita de una sola vez; esto es lo mismo para el registro
+    manual. Devuelve (cita, aviso) — el aviso sale si el horario choca.
+    """
+    from pacientes.api import _choque_de_horario
+    from pacientes.models import Cita
+
+    if not (lead.agendo_consulta and lead.fecha_consulta and lead.hora_consulta and lead.medico_id):
+        return None, None  # sin los cuatro datos no hay cita que crear
+
+    inicio = timezone.make_aware(datetime.combine(lead.fecha_consulta, lead.hora_consulta))
+    paciente = _paciente_del_lead(lead)
+    especialidad = lead.especialidad or lead.get_tipo_servicio_display() or ""
+
+    cita = lead.cita if lead.cita_id else None
+    if cita and cita.estado == Cita.Estado.CANCELADA:
+        cita = None  # la cancelaron: se agenda una nueva
+    choque = _choque_de_horario(lead.medico, inicio, excluir_id=cita.pk if cita else None)
+    aviso = None
+    if choque:
+        aviso = (f"Ojo: {lead.medico} ya tiene una cita a las "
+                 f"{timezone.localtime(choque.inicio):%H:%M} con {choque.paciente.nombre}.")
+
+    if cita:
+        if cita.inicio != inicio or cita.medico_id != lead.medico_id:
+            cita.inicio = inicio
+            cita.medico = lead.medico
+            cita.estado = Cita.Estado.REPROGRAMADA
+            cita.save(update_fields=["inicio", "medico", "estado"])
+        return cita, aviso
+
+    cita = Cita.objects.create(
+        clinica=lead.clinica, paciente=paciente, medico=lead.medico, inicio=inicio,
+        especialidad=especialidad, estado=Cita.Estado.AGENDADA, sede=lead.sede or "",
+        motivo_consulta=lead.motivo_consulta or "",
+        notas=f"Consulta registrada desde Marketing (lead #{lead.id}).",
+    )
+    lead.cita = cita
+    lead.save(update_fields=["cita"])
+    return cita, aviso
+
+
 def convertir_lead_en_paciente(lead):
     """Crea el Paciente desde el Lead (si aún no existe) y los enlaza. Copia sede,
     teléfono y enlaza al psicólogo (su ficha del directorio). Idempotente."""
@@ -105,7 +181,17 @@ class LeadViewSet(viewsets.ModelViewSet):
                      "duplicado": {"id": dup.id, "nombre": dup.nombre}},
                     status=status.HTTP_409_CONFLICT,
                 )
-        return super().create(request, *args, **kwargs)
+        return self._con_aviso(super().create(request, *args, **kwargs))
+
+    def update(self, request, *args, **kwargs):
+        return self._con_aviso(super().update(request, *args, **kwargs))
+
+    def _con_aviso(self, respuesta):
+        """Adjunta el aviso de la cita (choque de horario) a la respuesta."""
+        aviso = getattr(self, "_aviso_cita", None)
+        if aviso and isinstance(respuesta.data, dict):
+            respuesta.data["aviso"] = aviso
+        return respuesta
 
     def _aplicar_fecha_llegada(self, lead):
         """Permite registrar la fecha REAL de llegada (leads antiguos o fuera de
@@ -124,6 +210,9 @@ class LeadViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         lead = serializer.save(clinica=get_clinica_actual())
         self._aplicar_fecha_llegada(lead)
+        # Si trae consulta agendada, la cita queda creada en la agenda: antes había
+        # que registrarla otra vez a mano y de ahí salían los pacientes duplicados.
+        _cita, self._aviso_cita = sincronizar_cita_del_lead(lead)
 
     def perform_update(self, serializer):
         lead = serializer.save()
@@ -131,6 +220,7 @@ class LeadViewSet(viewsets.ModelViewSet):
         # Al marcar "Inició proceso" (ganado), se convierte en paciente automáticamente.
         if lead.estado == Lead.Estado.GANADO and not lead.paciente_id:
             convertir_lead_en_paciente(lead)
+        _cita, self._aviso_cita = sincronizar_cita_del_lead(lead)
 
     def destroy(self, request, *args, **kwargs):
         # Solo la gerencia elimina leads (p. ej. un duplicado que llegó por IG y
