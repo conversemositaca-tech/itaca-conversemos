@@ -3167,6 +3167,20 @@ function Hoy({ proximas, citasHoy, porConfirmar, atendidas, onOpen, onGo, onRete
         </div>
       )}
 
+      {/* Los recordatorios los manda una tarea programada fuera del sistema: si un
+          día no corre, sin este aviso nadie se entera hasta que alguien no llega. */}
+      {r?.recordatorios?.avisar && (
+        <div className="ca-card" style={{ marginTop: 14, borderColor: "#F0E0C0", background: "#FDFAF3", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <Bell size={16} strokeWidth={2} style={{ color: "#9A6B1E" }} />
+          <span style={{ fontSize: 14, fontWeight: 600 }}>
+            {r.recordatorios.pendientes} {r.recordatorios.pendientes === 1 ? "cita de hoy sigue" : "citas de hoy siguen"} sin recordatorio
+          </span>
+          <span style={{ fontSize: 12.5, color: "var(--muted)" }}>
+            Si a esta hora no salieron solos, revisa que el envío automático esté corriendo. Puedes mandarlos a mano desde la agenda, con «Mensaje».
+          </span>
+        </div>
+      )}
+
       {esAdmin && r && r.eliminaciones && r.eliminaciones.length > 0 && (
         <div className="ca-card" style={{ marginTop: 14, borderColor: "#F0D6D6", background: "#FDF6F6" }}>
           <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 10, display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap" }}>
