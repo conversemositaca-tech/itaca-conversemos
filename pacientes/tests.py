@@ -349,3 +349,45 @@ class ListaDePacientesLivianaTests(TestCase):
         self.assertEqual(ficha["medicacion_habitual"], "Sertralina 50mg")
         self.assertEqual(ficha["tutor_nombre"], "Carmen Sánchez")
         self.assertEqual(ficha["brujula_plan"], "Sesiones semanales.")
+
+
+class EliminarPacienteTests(TestCase):
+    """Quién puede eliminar un paciente.
+
+    Pregunta del equipo: "¿la coordinadora puede eliminar pacientes?". En pantalla
+    no hay botón, pero el endpoint aceptaba DELETE de cualquiera con sesión. Las
+    citas y los pagos ya estaban protegidos; los pacientes no.
+    """
+
+    def setUp(self):
+        self.clinica = Clinica.objects.create(nombre="Conversemos", slug="conversemos-del")
+        self.admin = Usuario.objects.create_user(
+            email="ger@test.pe", password="x", clinica=self.clinica, rol=Usuario.Rol.ADMIN,
+        )
+        self.coord = Usuario.objects.create_user(
+            email="coordd@test.pe", password="x", clinica=self.clinica, rol=Usuario.Rol.ASISTENTE,
+        )
+        self.psico = Usuario.objects.create_user(
+            email="psicod@test.pe", password="x", clinica=self.clinica, rol=Usuario.Rol.MEDICO,
+        )
+        self.paciente = Paciente.objects.create(clinica=self.clinica, nombre="Ana Pérez")
+
+    def _borrar(self, quien):
+        self.client.force_login(quien)
+        return self.client.delete(f"/api/pacientes/{self.paciente.id}/")
+
+    def test_la_coordinadora_no_puede(self):
+        self.assertEqual(self._borrar(self.coord).status_code, 403)
+        self.assertEqual(Paciente.objects.count(), 1)
+
+    def test_el_psicologo_tampoco(self):
+        self.assertEqual(self._borrar(self.psico).status_code, 403)
+
+    def test_gerencia_si_puede_y_queda_constancia(self):
+        from pacientes.models import RegistroEliminacion
+        self.assertEqual(self._borrar(self.admin).status_code, 204)
+        self.assertEqual(Paciente.objects.count(), 0)
+        reg = RegistroEliminacion.objects.get()
+        self.assertEqual(reg.tipo, RegistroEliminacion.Tipo.PACIENTE)
+        self.assertEqual(reg.paciente_nombre, "Ana Pérez")
+        self.assertEqual(reg.usuario, self.admin)

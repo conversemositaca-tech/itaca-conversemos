@@ -269,6 +269,27 @@ class PacienteViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         serializer.save(clinica=get_clinica_actual())
 
+    def destroy(self, request, *args, **kwargs):
+        """Eliminar un paciente: solo gerencia, y queda constancia.
+
+        El endpoint aceptaba DELETE de cualquiera con sesión —incluido un
+        psicólogo—, aunque en pantalla no hubiera botón. Las citas y los pagos ya
+        estaban protegidos así; los pacientes no. Un paciente con historia
+        (citas, cobros, atenciones) no se puede borrar: las relaciones son PROTECT.
+        """
+        from usuarios.models import Usuario
+        if getattr(request.user, "rol", None) != Usuario.Rol.ADMIN:
+            return Response({"detail": "Solo la gerencia puede eliminar pacientes."},
+                            status=status.HTTP_403_FORBIDDEN)
+        paciente = self.get_object()
+        RegistroEliminacion.objects.create(
+            clinica=get_clinica_actual(), tipo=RegistroEliminacion.Tipo.PACIENTE,
+            paciente_nombre=paciente.nombre,
+            descripcion=f"Paciente eliminado ({paciente.sede or 'sin sede'})",
+            usuario=request.user,
+        )
+        return super().destroy(request, *args, **kwargs)
+
     def perform_update(self, serializer):
         # El psicólogo no ve ni gestiona los datos de contacto del paciente. Si
         # guarda desde su vista, esos campos llegan vacíos: los descartamos para
