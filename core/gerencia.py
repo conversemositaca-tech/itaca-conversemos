@@ -264,6 +264,24 @@ class HoyResumenView(APIView):
                 # Gerencia: una meta POR SEDE (no sumadas), cada una hacia su objetivo.
                 out["metas"] = [_meta_de(s) for s, _ in Paciente.Sede.choices]
 
+        # Recordatorios del día. El envío corre desde una tarea programada FUERA del
+        # servidor, así que si un día no se dispara —el equipo apagado, un error— hoy
+        # nadie se entera hasta que un paciente no llega. Esto lo pone a la vista de
+        # coordinación, pero solo a media mañana: antes de las 9 es normal que aún no
+        # hayan salido y avisar sería ruido.
+        if rol in ("admin", "asistente"):
+            pendientes = (
+                Cita.objects.del_tenant_actual()
+                .filter(inicio__gte=ini, inicio__lt=fin, recordatorio_enviado=False)
+                .exclude(estado__in=[Cita.Estado.ATENDIDA, Cita.Estado.CANCELADA])
+                .exclude(paciente__telefono="")   # sin teléfono no hay nada que enviar
+                .count()
+            )
+            out["recordatorios"] = {
+                "pendientes": pendientes,
+                "avisar": pendientes > 0 and timezone.localtime().hour >= 9,
+            }
+
         if es_admin:
             cobros = Cobro.objects.del_tenant_actual().filter(fecha__gte=ini, fecha__lt=fin)
             out["ingresos_hoy"] = float(cobros.filter(estado=Cobro.Estado.PAGADO).aggregate(s=Sum("monto"))["s"] or 0)
