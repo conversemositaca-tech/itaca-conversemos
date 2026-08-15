@@ -226,6 +226,23 @@ class PacienteSerializer(serializers.ModelSerializer):
         return out
 
 
+# Lo clínico y los datos del tutor NO viajan en la lista: no se muestran en las
+# filas y son ~1.875 registros en cada carga de la página. Además de pesar, es
+# historia clínica saliendo del servidor sin que nadie la esté mirando. Todo esto
+# llega completo al abrir la ficha (retrieve).
+SOLO_EN_LA_FICHA = (
+    "historial", "adjuntos", "citas", "paquetes", "seguimiento",
+    "alergias", "antecedentes", "antecedentes_medicos", "antecedentes_familiares",
+    "antecedentes_otros", "medicacion_habitual", "resumen_clinico",
+    "objetivo_principal", "alertas", "notas_internas",
+    "brujula_motivo", "brujula_hipotesis", "brujula_objetivos", "brujula_fortalezas",
+    "brujula_factores_protectores", "brujula_factores_riesgo", "brujula_barreras",
+    "brujula_plan",
+    "tutor_nombre", "tutor_parentesco", "tutor_telefono", "tutor_documento",
+)
+# `direccion` se queda: la exportación de pacientes la lleva como columna.
+
+
 class PacienteListSerializer(PacienteSerializer):
     """Versión LIVIANA para la lista de pacientes (~1.400 registros).
 
@@ -239,7 +256,7 @@ class PacienteListSerializer(PacienteSerializer):
     class Meta(PacienteSerializer.Meta):
         fields = [
             f for f in PacienteSerializer.Meta.fields
-            if f not in ("historial", "adjuntos", "citas", "paquetes", "seguimiento")
+            if f not in SOLO_EN_LA_FICHA
         ]
 
     def get_cuenta(self, obj):
