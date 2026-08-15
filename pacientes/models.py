@@ -804,6 +804,7 @@ class RegistroEliminacion(ModeloTenant):
     class Tipo(models.TextChoices):
         CITA = "cita", "Cita"
         PAGO = "pago", "Pago"
+        PACIENTE = "paciente", "Paciente"
 
     tipo = models.CharField(max_length=10, choices=Tipo.choices)
     descripcion = models.CharField(max_length=300)

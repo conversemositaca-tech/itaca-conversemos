@@ -1157,6 +1157,22 @@ export default function ClinicaApp() {
         .ca-mini.wa:hover { background:var(--wa-soft); }
         .ca-mini.done { color:var(--wa); border-color:var(--wa-soft); background:var(--wa-soft); cursor:default; }
         .ca-mini.danger { color:#B4564E; }
+        /* Hueco libre de la grilla: se ve como texto hasta que pasas el mouse,
+           y ahí se ofrece para agendar. */
+        .ca-hueco { display:inline-flex; align-items:center; gap:4px; width:100%; background:none;
+          border:1px dashed transparent; color:#3E7A65; opacity:.75; padding:3px 6px; border-radius:6px;
+          font-size:10.5px; font-weight:600; font-family:inherit; cursor:pointer; transition:all .12s; }
+        .ca-hueco:hover { opacity:1; border-color:var(--accent); background:var(--accent-soft); color:var(--accent); }
+        .ca-hueco:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
+        /* "Agendar" al pie de cada día en la vista semana: discreto hasta que
+           pasas el mouse por la columna. */
+        .ca-wkadd { display:flex; align-items:center; justify-content:center; gap:4px; width:100%;
+          margin-top:4px; padding:4px 6px; border:1px dashed var(--line); border-radius:7px;
+          background:none; color:var(--muted); font-size:11px; font-weight:600; font-family:inherit;
+          cursor:pointer; opacity:0; transition:opacity .12s, color .12s, border-color .12s; }
+        .ca-wkcol:hover .ca-wkadd { opacity:1; }
+        .ca-wkadd:hover { color:var(--accent); border-color:var(--accent); }
+        .ca-wkadd:focus-visible { opacity:1; outline:2px solid var(--accent); outline-offset:1px; }
         .ca-mini.danger:hover { background:#FDE9E7; }
         a.ca-mini { text-decoration:none; }
         .ca-search { display:flex; align-items:center; gap:9px; background:var(--surface); border:1px solid var(--line);
@@ -1426,7 +1442,7 @@ export default function ClinicaApp() {
             citas={citas} bloqueos={bloqueos} fecha={agendaFecha} setFecha={setAgendaFecha}
             vista={agendaVista} setVista={setAgendaVista} esAsistente={esAsistente} esMedico={usuario?.rol === "medico"}
             onBloquear={() => setBloqueando({})} onBorrarBloqueo={borrarBloqueo} onVenta={() => setCobrando({})}
-            onAgendar={() => setAdding(true)} onAtender={setAtender} onRecordar={setRecordar}
+            onAgendar={(precarga) => setAdding(precarga && precarga.fecha ? precarga : {})} onAtender={setAtender} onRecordar={setRecordar}
             onReagendar={setReagendar} onCancelar={setCancelando} openFicha={openFicha}
             onConfirmar={confirmarCita} onSetEstado={setEstadoCita} onAbrirCita={setCitaDetalle}
             onMensaje={(c) => { const p = pacientes.find((x) => x.id === c.pacienteId); if (p) { setWaPaciente(p); setWaCita(c); } else showToast("No se encontró el paciente"); }}
@@ -1557,7 +1573,11 @@ export default function ClinicaApp() {
 
         {view === "espacios" && <EspaciosProfesionales showToast={showToast} />}
 
-        {adding && <AgendarModal pacientes={pacientes} fechaInicial={agendaFecha} onClose={() => setAdding(false)} onSave={agendarCita} />}
+        {adding && (
+          <AgendarModal pacientes={pacientes} fechaInicial={adding.fecha || agendaFecha}
+            horaInicial={adding.hora} medicoInicial={adding.medicoId}
+            onClose={() => setAdding(false)} onSave={agendarCita} />
+        )}
         {agendarPara && (
           <AgendarModal pacientes={pacientes} fechaInicial={agendaFecha}
             pacienteFijo={{ id: agendarPara.id, nombre: agendarPara.nombre, especialidad: agendarPara.especialidad, sede: agendarPara.sede, n_sesion: agendarPara.n_sesion }}
@@ -4322,18 +4342,20 @@ function Ficha({ p, onBack, onEdit, onWhatsApp, onSubirAdjunto, onEliminarAdjunt
   );
 }
 
-function AgendarModal({ pacientes, fechaInicial, pacienteFijo, onClose, onSave }) {
+// `horaInicial` y `medicoInicial` llegan cuando se agenda haciendo clic en un
+// hueco de la agenda: el modal se abre con ese psicólogo y esa hora ya puestos.
+function AgendarModal({ pacientes, fechaInicial, horaInicial, medicoInicial, pacienteFijo, onClose, onSave }) {
   const [busca, setBusca] = useState("");
   const [sel, setSel] = useState(pacienteFijo || null);
   const [nuevo, setNuevo] = useState(false);
   const [nuevoTel, setNuevoTel] = useState("");
   const [fecha, setFecha] = useState(fechaInicial || HOY_ISO);
-  const [hora, setHora] = useState("");
+  const [hora, setHora] = useState(horaInicial || "");
   const [esp, setEsp] = useState(pacienteFijo?.especialidad || "");
   const [categoria, setCategoria] = useState("");
   const [servicios, setServicios] = useState([]);
   const [medicos, setMedicos] = useState([]);
-  const [medicoId, setMedicoId] = useState("");
+  const [medicoId, setMedicoId] = useState(medicoInicial ? String(medicoInicial) : "");
   const [sede, setSede] = useState(pacienteFijo?.sede || "");
   const [modalidad, setModalidad] = useState("presencial");
   const [enlace, setEnlace] = useState("");
@@ -4349,7 +4371,10 @@ function AgendarModal({ pacientes, fechaInicial, pacienteFijo, onClose, onSave }
   useEffect(() => { api.servicios().then((s) => setServicios((s || []).filter((x) => x.activo !== false))).catch(() => {}); }, []);
 
   // Solo psicólogos de la sede elegida (si hay sede); si no, todos los activos.
-  const medicosVisibles = medicos.filter((m) => !sede || !m.sede || m.sede === sede);
+  // El ya elegido nunca se oculta: al cambiar la sede se perdería la selección.
+  const medicosVisibles = medicos.filter(
+    (m) => !sede || !m.sede || m.sede === sede || String(m.id) === String(medicoId)
+  );
   // Servicios del catálogo (Precios). Si la categoría elegida coincide con la
   // "especialidad" de algún servicio, se filtra por ella; si no, se muestran todos.
   const serviciosCat = useMemo(() => {
@@ -4736,7 +4761,7 @@ function CitaRow({ c, esAsistente, esMedico, onAtender, onRecordar, onReagendar,
 
 // Agenda multi-terapeuta (estilo AgendaPro): horas a la izquierda, una columna por
 // CADA psicólogo activo (atienda o no ese día). Clic en una cita abre su detalle.
-function TerapeutasGrid({ citas, terapeutas, horarios = {}, fecha, onAbrirCita, bloqueos = [] }) {
+function TerapeutasGrid({ citas, terapeutas, horarios = {}, fecha, onAbrirCita, bloqueos = [], onAgendarEn }) {
   // Los horarios bloqueados tienen que verse aquí: es la pantalla desde la que
   // se ofrecen turnos, y antes una hora bloqueada aparecía como "Libre".
   const minutos = (hhmm) => { const [h, m] = String(hhmm || "").split(":").map(Number); return (h || 0) * 60 + (m || 0); };
@@ -4786,7 +4811,14 @@ function TerapeutasGrid({ citas, terapeutas, horarios = {}, fecha, onAbrirCita, 
                       bloq
                         ? <span title={`${bloq.hora_inicio}–${bloq.hora_fin} · ${bloq.motivo || "No disponible"}`}
                             style={{ fontSize: 10.5, color: "#9C6B2E", fontWeight: 600 }}>🚫 {bloq.motivo || "Bloqueado"}</span>
-                        : <span style={{ fontSize: 10.5, color: disp ? "#3E7A65" : "var(--muted)", opacity: 0.75 }}>{disp ? "Libre" : "No disp."}</span>
+                        : disp && onAgendarEn
+                          // Un hueco libre se puede tomar de un clic: abre el modal con
+                          // ese psicólogo y esa hora ya puestos.
+                          ? <button className="ca-hueco" title={`Agendar a las ${String(h).padStart(2, "0")}:00 con ${t}`}
+                              onClick={() => onAgendarEn(t, `${String(h).padStart(2, "0")}:00`)}>
+                              <Plus size={11} strokeWidth={2.4} /> Libre
+                            </button>
+                          : <span style={{ fontSize: 10.5, color: disp ? "#3E7A65" : "var(--muted)", opacity: 0.75 }}>{disp ? "Libre" : "No disp."}</span>
                     )}
                     {evs.map((c) => {
                       const col = colorCita(c);
@@ -4816,6 +4848,7 @@ function Agenda({ citas, bloqueos = [], fecha, setFecha, vista, setVista, esAsis
   const [filtroMedico, setFiltroMedico] = useState("");
   const [filtroSede, setFiltroSede] = useState("");
   const [filtroEstado, setFiltroEstado] = useState("");
+  const [filtroTipo, setFiltroTipo] = useState("");   // se activa desde los chips «Por tipo»
   const [filtroDecision, setFiltroDecision] = useState("");
   const [verTodosTipos, setVerTodosTipos] = useState(false);
   const [medicosDir, setMedicosDir] = useState([]);
@@ -4833,6 +4866,9 @@ function Agenda({ citas, bloqueos = [], fecha, setFecha, vista, setVista, esAsis
     [medicosDir, filtroSede]
   );
   const horariosPorNombre = useMemo(() => Object.fromEntries(medicosDir.map((m) => [m.nombre, m.horario || {}])), [medicosDir]);
+  // La grilla trabaja con nombres; para precargar el psicólogo al agendar hace
+  // falta su id.
+  const idPorNombre = useMemo(() => Object.fromEntries(medicosDir.map((m) => [m.nombre, m.id])), [medicosDir]);
   const semana = vista === "semana" ? semanaDe(fecha) : null;
   const dias = vista === "mes" ? mesDe(fecha) : null;
   const mesActual = vista === "mes" ? dDeISO(fecha).getMonth() : null;
@@ -4847,7 +4883,10 @@ function Agenda({ citas, bloqueos = [], fecha, setFecha, vista, setVista, esAsis
   // Filtro por ESTADO al hacer clic en un chip de arriba. NO se aplica a `visibles`
   // (de ahí salen los conteos, que deben seguir mostrando el total), sino solo a
   // lo que se dibuja en cada vista.
-  const filtEstado = (arr) => (filtroEstado ? arr.filter((c) => c.estado === filtroEstado) : arr);
+  const filtEstado = (arr) => {
+    const porEstado = filtroEstado ? arr.filter((c) => c.estado === filtroEstado) : arr;
+    return filtroTipo ? porEstado.filter((c) => (c.especialidad || "Sin tipo") === filtroTipo) : porEstado;
+  };
   const visibles = vista === "semana"
     ? citasBase.filter((c) => semana.includes(c.fecha) && (!filtroMedico || c.medico === filtroMedico) && (!filtroSede || c.sede === filtroSede))
     : vista === "mes"
@@ -4958,14 +4997,24 @@ function Agenda({ citas, bloqueos = [], fecha, setFecha, vista, setVista, esAsis
         <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
           <span style={{ width: 58, flexShrink: 0, fontSize: 11.5, color: "var(--muted)", fontWeight: 700, paddingTop: 4 }}>Por tipo</span>
           <div style={{ display: "flex", gap: 7, flexWrap: "wrap", flex: 1 }}>
-            {(verTodosTipos ? resumenTipos : resumenTipos.slice(0, 8)).map(([tipo, n]) => (
-              <span key={tipo} style={{ display: "inline-flex", alignItems: "center", gap: 7, fontSize: 12.5, fontWeight: 500,
-                padding: "2px 11px 2px 3px", borderRadius: 999, background: "#F4F2EE", color: "var(--ink-soft)", border: "1px solid var(--line)" }}>
-                <span style={{ minWidth: 21, textAlign: "center", fontWeight: 800, fontSize: 11.5, lineHeight: "18px",
-                  padding: "0 6px", borderRadius: 999, background: (SPECIALTY[tipo]?.fg) || "#7C7870", color: "#fff" }}>{n}</span>
-                <span>{tipo}</span>
-              </span>
-            ))}
+            {/* Cada tipo filtra la agenda al hacerle clic (y vuelve a mostrar todo
+                si se pulsa el que ya está activo). */}
+            {(verTodosTipos ? resumenTipos : resumenTipos.slice(0, 8)).map(([tipo, n]) => {
+              const activo = filtroTipo === tipo;
+              return (
+                <button key={tipo} onClick={() => setFiltroTipo(activo ? "" : tipo)}
+                  title={activo ? "Quitar el filtro" : `Ver solo ${tipo}`}
+                  style={{ display: "inline-flex", alignItems: "center", gap: 7, fontSize: 12.5, fontWeight: 500,
+                    padding: "2px 11px 2px 3px", borderRadius: 999, cursor: "pointer", fontFamily: "inherit",
+                    background: activo ? "var(--accent-soft)" : "#F4F2EE",
+                    color: activo ? "var(--accent)" : "var(--ink-soft)",
+                    border: `1px solid ${activo ? "var(--accent)" : "var(--line)"}` }}>
+                  <span style={{ minWidth: 21, textAlign: "center", fontWeight: 800, fontSize: 11.5, lineHeight: "18px",
+                    padding: "0 6px", borderRadius: 999, background: (SPECIALTY[tipo]?.fg) || "#7C7870", color: "#fff" }}>{n}</span>
+                  <span>{tipo}</span>
+                </button>
+              );
+            })}
             {resumenTipos.length > 8 && (
               <button onClick={() => setVerTodosTipos((v) => !v)}
                 style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, fontWeight: 700, cursor: "pointer",
@@ -5014,7 +5063,8 @@ function Agenda({ citas, bloqueos = [], fecha, setFecha, vista, setVista, esAsis
           )}
         </div>
       ) : vista === "terapeutas" ? (
-        <TerapeutasGrid citas={filtEstado(delDia(fecha))} terapeutas={filtroMedico ? [filtroMedico] : medicos} horarios={horariosPorNombre} fecha={fecha} onAbrirCita={onAbrirCita} bloqueos={bloqueosDia} />
+        <TerapeutasGrid citas={filtEstado(delDia(fecha))} terapeutas={filtroMedico ? [filtroMedico] : medicos} horarios={horariosPorNombre} fecha={fecha} onAbrirCita={onAbrirCita} bloqueos={bloqueosDia}
+          onAgendarEn={esMedico ? undefined : (nombre, hora) => onAgendar({ fecha, hora, medicoId: idPorNombre[nombre] })} />
       ) : vista === "mes" ? (
         <div className="ca-mes">
           <div className="ca-mes-hd">
@@ -5065,6 +5115,13 @@ function Agenda({ citas, bloqueos = [], fecha, setFecha, vista, setVista, esAsis
                     </div>
                   );
                 })
+              )}
+              {/* Agendar en ese día sin salir de la semana. */}
+              {!esMedico && (
+                <button className="ca-wkadd" title={`Agendar el ${labelLargo(iso)}`}
+                  onClick={() => onAgendar({ fecha: iso })}>
+                  <Plus size={12} strokeWidth={2.4} /> Agendar
+                </button>
               )}
             </div>
           ))}
@@ -6569,7 +6626,9 @@ function CrearLeadModal({ lead, medicos, anuncios, onClose, onSave }) {
         )}
         <div style={{ display: "flex", gap: 11, marginBottom: 18 }}>
           <div style={{ flex: 1 }}><div className="ca-label">Campaña (opcional)</div><input className="ca-input" value={f.campania} onChange={set("campania")} placeholder="ej. Pauta junio" /></div>
-          <div style={{ flex: 1 }}><div className="ca-label">Psicólogo</div><select className="ca-input" value={f.medico} onChange={set("medico")}><option value="">Sin asignar</option>{medicos.map((m) => <option key={m.id} value={m.id}>{m.nombre}</option>)}</select></div>
+          {/* Solo los psicólogos de la sede elegida: con las dos sedes juntas, la
+              lista era larga y se elegía a alguien que no atiende ahí. */}
+          <div style={{ flex: 1 }}><div className="ca-label">Psicólogo</div><select className="ca-input" value={f.medico} onChange={set("medico")}><option value="">Sin asignar</option>{medicos.filter((m) => !f.sede || !m.sede || m.sede === f.sede || String(m.id) === String(f.medico)).map((m) => <option key={m.id} value={m.id}>{m.nombre}</option>)}</select></div>
         </div>
         <div style={{ display: "flex", gap: 11, marginBottom: 12 }}>
           <div style={{ flex: 1 }}><div className="ca-label">Tipo de servicio</div><select className="ca-input" value={f.tipo_servicio} onChange={set("tipo_servicio")}>{TIPOS_SERVICIO.map((x) => <option key={x.v} value={x.v}>{x.l}</option>)}</select></div>
