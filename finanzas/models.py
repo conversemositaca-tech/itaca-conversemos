@@ -143,6 +143,17 @@ class Paquete(ModeloTenant):
         self.save(update_fields=["sesiones_usadas", "estado"])
         return True
 
+    def devolver(self):
+        """Repone una sesión: la cita que la había consumido se canceló o se
+        marcó como falta. Si el paquete estaba agotado, vuelve a quedar activo."""
+        if self.sesiones_usadas <= 0:
+            return False
+        self.sesiones_usadas -= 1
+        if self.estado == self.Estado.AGOTADO:
+            self.estado = self.Estado.ACTIVO
+        self.save(update_fields=["sesiones_usadas", "estado"])
+        return True
+
 
 class Egreso(ModeloTenant):
     """Gasto / salida de dinero de la clínica (insumos, sueldos, alquiler, etc.).

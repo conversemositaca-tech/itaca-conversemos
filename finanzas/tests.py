@@ -14,7 +14,7 @@ from django.test import TestCase
 from django.utils import timezone
 
 from core.models import Clinica
-from finanzas.models import Cobro, Servicio
+from finanzas.models import Cobro, Paquete, Servicio
 from pacientes.models import Cita, Paciente
 from usuarios.models import Usuario
 
@@ -115,3 +115,81 @@ class LiquidacionTests(TestCase):
         self.client.force_login(self.psico)
         r = self.client.get("/api/finanzas/liquidacion/")
         self.assertEqual(r.status_code, 403)
+
+
+class DescuentoDePaqueteTests(TestCase):
+    """El paquete de sesiones se descuenta UNA vez por cita, venga por donde venga.
+
+    Antes el descuento vivía solo dentro de "registrar la ficha clínica": si
+    Coordinación marcaba "Atendida" desde el selector de la agenda, el paquete no
+    bajaba y el paciente consumía sesiones que el sistema seguía dando por
+    disponibles. Y si la cita se re-atendía, descontaba dos veces.
+    """
+
+    def setUp(self):
+        self.clinica = Clinica.objects.create(nombre="Conversemos", slug="conversemos-paq")
+        self.coord = Usuario.objects.create_user(
+            email="coordp@test.pe", password="x", clinica=self.clinica, rol=Usuario.Rol.ASISTENTE,
+        )
+        self.psico = Usuario.objects.create_user(
+            email="psicop@test.pe", password="x", clinica=self.clinica, rol=Usuario.Rol.MEDICO,
+        )
+        self.paciente = Paciente.objects.create(clinica=self.clinica, nombre="Ana Pérez")
+        self.paquete = Paquete.objects.create(
+            clinica=self.clinica, paciente=self.paciente, nombre="Paquete de 4 sesiones",
+            sesiones_total=4, monto=Decimal("420"),
+        )
+        self.cita = Cita.objects.create(
+            clinica=self.clinica, paciente=self.paciente, medico=self.psico,
+            inicio=timezone.now(), estado=Cita.Estado.AGENDADA, especialidad="Terapia individual",
+        )
+        self.client.force_login(self.coord)
+
+    def _estado(self, nuevo, cita=None):
+        return self.client.post(f"/api/citas/{(cita or self.cita).id}/estado/",
+                                {"estado": nuevo}, content_type="application/json")
+
+    def _usadas(self):
+        self.paquete.refresh_from_db()
+        return self.paquete.sesiones_usadas
+
+    def test_marcar_atendida_desde_la_agenda_descuenta(self):
+        """El caso que no funcionaba: coordinación marca el estado a mano."""
+        self._estado("atendida")
+        self.assertEqual(self._usadas(), 1)
+
+    def test_marcar_asistio_tambien_descuenta(self):
+        self._estado("asistio")
+        self.assertEqual(self._usadas(), 1)
+
+    def test_no_descuenta_dos_veces_la_misma_cita(self):
+        self._estado("asistio")
+        self._estado("atendida")   # la misma cita avanza de estado
+        self.assertEqual(self._usadas(), 1)
+
+    def test_cancelar_devuelve_la_sesion(self):
+        self._estado("atendida")
+        self.assertEqual(self._usadas(), 1)
+        self.client.post(f"/api/citas/{self.cita.id}/cancelar/")
+        self.assertEqual(self._usadas(), 0)
+        self.cita.refresh_from_db()
+        self.assertIsNone(self.cita.paquete_id)
+
+    def test_una_cita_agendada_no_consume_nada(self):
+        self._estado("confirmada")
+        self.assertEqual(self._usadas(), 0)
+
+    def test_el_paquete_agotado_no_queda_en_negativo(self):
+        self.paquete.sesiones_total = 1
+        self.paquete.save(update_fields=["sesiones_total"])
+        self._estado("atendida")
+        otra = Cita.objects.create(
+            clinica=self.clinica, paciente=self.paciente, medico=self.psico,
+            inicio=timezone.now(), estado=Cita.Estado.AGENDADA, especialidad="Terapia individual",
+        )
+        self._estado("atendida", cita=otra)
+        self.assertEqual(self._usadas(), 1)          # no pasa de su total
+        otra.refresh_from_db()
+        self.assertIsNone(otra.paquete_id)           # esa cita se cobra aparte
+        self.paquete.refresh_from_db()
+        self.assertEqual(self.paquete.estado, Paquete.Estado.AGOTADO)

@@ -288,6 +288,15 @@ class Cita(ModeloTenant):
         "N° de sesión", null=True, blank=True,
         help_text="Número de sesión que representa esta cita (si no se indica, usa el del paciente).",
     )
+    # Paquete de sesiones prepagadas que cubrió ESTA cita. El paquete solo llevaba
+    # un contador, así que no había forma de saber qué cita había consumido cada
+    # sesión: se descontaba dos veces al re-atender, y no se descontaba nada si
+    # Coordinación marcaba "Atendida" desde el selector. Con el vínculo, el
+    # descuento ocurre UNA vez por cita, venga por donde venga.
+    paquete = models.ForeignKey(
+        "finanzas.Paquete", on_delete=models.SET_NULL, related_name="citas",
+        null=True, blank=True, verbose_name="cubierta por el paquete",
+    )
     # Qué pasó con la sesión, en el código DP que ya usa el equipo. Lo registra
     # coordinación desde la agenda (el psicólogo no lo ve) y sirve para filtrar.
     # Convive con `notas`: el código clasifica, la nota explica.
