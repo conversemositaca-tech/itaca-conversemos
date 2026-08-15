@@ -66,6 +66,57 @@ def _normaliza_enlace(valor):
     return s if s.startswith(("http://", "https://")) else f"https://{s}"
 
 
+# Estados en los que la sesión SÍ ocurrió y por tanto consume una sesión del
+# paquete. Son los mismos que la liquidación cuenta como sesión realizada.
+ESTADOS_REALIZADA = ("atendida", "asistio")
+
+
+def sincronizar_paquete(cita):
+    """Descuenta (o repone) la sesión del paquete que cubre esta cita.
+
+    Antes el descuento vivía dentro de "registrar la ficha clínica", así que si
+    Coordinación marcaba "Atendida" desde el selector de la agenda no se
+    descontaba nada: el paciente consumía sesiones que el sistema seguía dando
+    por disponibles. Y si una cita se re-atendía, descontaba dos veces.
+
+    El vínculo `cita.paquete` es lo que lo hace fiable: una cita consume UNA
+    sesión, venga por donde venga, y si después se cancela o se marca como falta,
+    la sesión vuelve al paquete.
+
+    Devuelve el estado del paquete para mostrarlo, o None si no hubo cambio.
+    """
+    from finanzas.models import Paquete
+
+    realizada = cita.estado in ESTADOS_REALIZADA
+
+    # Ya no ocurrió (se canceló, se reprogramó, faltó): se devuelve la sesión.
+    if cita.paquete_id and not realizada:
+        paq = cita.paquete
+        paq.devolver()
+        cita.paquete = None
+        cita.save(update_fields=["paquete"])
+        return {"nombre": paq.nombre, "usadas": paq.sesiones_usadas,
+                "total": paq.sesiones_total, "restantes": paq.sesiones_restantes,
+                "devuelta": True}
+
+    # Ya estaba descontada, o todavía no corresponde descontar.
+    if cita.paquete_id or not realizada:
+        return None
+
+    paq = (
+        Paquete.objects.del_tenant_actual()
+        .filter(paciente=cita.paciente, estado=Paquete.Estado.ACTIVO)
+        .order_by("fecha")           # se gasta primero el paquete más antiguo
+        .first()
+    )
+    if not paq or not paq.consumir():
+        return None
+    cita.paquete = paq
+    cita.save(update_fields=["paquete"])
+    return {"nombre": paq.nombre, "usadas": paq.sesiones_usadas,
+            "total": paq.sesiones_total, "restantes": paq.sesiones_restantes}
+
+
 class ChoqueDeHorario(APIException):
     """409 al agendar/mover/reasignar sobre un horario ya ocupado."""
 
@@ -530,28 +581,11 @@ class CitaViewSet(viewsets.ModelViewSet):
         # historia clínica que llena el psicólogo). Tras atender, la cita queda
         # "atendida" y Coordinación la cobra con el botón "Cobrar" de la agenda.
 
-        ya_atendida = cita.estado == Cita.Estado.ATENDIDA
         cita.estado = Cita.Estado.ATENDIDA
         cita.save(update_fields=["estado"])
         gcalendar.sync_cita(cita)
 
-        # Descuento automático de paquete de sesiones (genérico, sin vencimiento):
-        # si el paciente tiene un paquete activo y es la 1ª vez que se atiende esta cita.
-        paquete_info = None
-        if not ya_atendida:
-            from finanzas.models import Paquete
-
-            paq = (
-                Paquete.objects.del_tenant_actual()
-                .filter(paciente=cita.paciente, estado=Paquete.Estado.ACTIVO)
-                .order_by("fecha")
-                .first()
-            )
-            if paq and paq.consumir():
-                paquete_info = {
-                    "nombre": paq.nombre, "usadas": paq.sesiones_usadas,
-                    "total": paq.sesiones_total, "restantes": paq.sesiones_restantes,
-                }
+        paquete_info = sincronizar_paquete(cita)
 
         data = CitaSerializer(cita).data
         if paquete_info:
@@ -613,6 +647,7 @@ class CitaViewSet(viewsets.ModelViewSet):
         cita.estado = Cita.Estado.CANCELADA
         cita.save(update_fields=["estado"])
         gcalendar.eliminar_cita(cita)  # quita el evento del calendario
+        sincronizar_paquete(cita)  # si consumía una sesión del paquete, se devuelve
         return Response(CitaSerializer(cita).data)
 
     @action(detail=True, methods=["post"])
@@ -638,7 +673,14 @@ class CitaViewSet(viewsets.ModelViewSet):
             gcalendar.eliminar_cita(cita)
         else:
             gcalendar.sync_cita(cita)
-        return Response(CitaSerializer(cita).data)
+        # Marcar la cita como atendida desde aquí también descuenta la sesión del
+        # paquete (antes solo lo hacía el psicólogo al registrar la ficha, así que
+        # el paquete se quedaba sin descontar), y devolverla al cancelarla.
+        paquete_info = sincronizar_paquete(cita)
+        data = CitaSerializer(cita).data
+        if paquete_info:
+            data["paquete"] = paquete_info
+        return Response(data)
 
 
 class BloqueoAgendaViewSet(viewsets.ModelViewSet):
