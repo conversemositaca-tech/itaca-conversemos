@@ -279,3 +279,64 @@ class ServicioDeLaConsultaTests(TestCase):
         self._servicio("Consulta inicial", 20)
         self._crear_lead(tipo_servicio="adolescentes")
         self.assertEqual(Cita.objects.get().categoria, Cita.Categoria.INFANTOJUVENIL)
+
+
+class SinDobleTareaTests(TestCase):
+    """Lo que se llena en Marketing no se vuelve a escribir en la Agenda.
+
+    Pedido: "asegúrate que los campos funcionen bien para que las coordinadoras no
+    hagan doble tarea". El hueco que quedaba era la modalidad: la cita nacía
+    siempre presencial, así que una consulta virtual obligaba a ir a la agenda a
+    cambiarla y a pegar el enlace otra vez.
+    """
+
+    def setUp(self):
+        self.clinica = Clinica.objects.create(nombre="Conversemos", slug="conversemos-sdt")
+        self.coord = Usuario.objects.create_user(
+            email="coord5@test.pe", password="x", clinica=self.clinica, rol=Usuario.Rol.ASISTENTE,
+        )
+        self.psico = Usuario.objects.create_user(
+            email="p5@test.pe", password="x", clinica=self.clinica, rol=Usuario.Rol.MEDICO,
+        )
+        self.manana = timezone.localdate() + timedelta(days=1)
+        self.client.force_login(self.coord)
+
+    def _crear_lead(self, **extra):
+        datos = {
+            "nombre": "Ana Pérez", "telefono": "987654321", "sede": "piura",
+            "fuente": "whatsapp", "estado": "agendado", "agendo_consulta": True,
+            "fecha_consulta": self.manana.isoformat(), "hora_consulta": "10:00",
+            "medico": self.psico.id, **extra,
+        }
+        return self.client.post("/api/leads/", datos, content_type="application/json")
+
+    def test_la_consulta_virtual_llega_a_la_agenda_con_su_enlace(self):
+        self._crear_lead(modalidad_consulta="virtual", enlace_consulta="meet.google.com/abc-defg-hij")
+        cita = Cita.objects.get()
+        self.assertEqual(cita.modalidad, Cita.Modalidad.VIRTUAL)
+        self.assertEqual(cita.enlace, "https://meet.google.com/abc-defg-hij")  # ya usable
+
+    def test_la_presencial_no_arrastra_enlace(self):
+        self._crear_lead(modalidad_consulta="presencial", enlace_consulta="meet.google.com/abc")
+        cita = Cita.objects.get()
+        self.assertEqual(cita.modalidad, Cita.Modalidad.PRESENCIAL)
+        self.assertEqual(cita.enlace, "")
+
+    def test_cambiar_la_modalidad_en_marketing_actualiza_la_cita(self):
+        self._crear_lead()
+        lead = Lead.objects.get()
+        self.client.patch(f"/api/leads/{lead.id}/",
+                          {"modalidad_consulta": "virtual", "enlace_consulta": "meet.google.com/xyz"},
+                          content_type="application/json")
+        cita = Cita.objects.get()
+        self.assertEqual(cita.modalidad, Cita.Modalidad.VIRTUAL)
+        self.assertEqual(cita.enlace, "https://meet.google.com/xyz")
+
+    def test_el_lead_completa_los_datos_que_le_faltan_a_la_ficha(self):
+        """Sin pisar lo que ya estaba cargado en el paciente."""
+        p = Paciente.objects.create(clinica=self.clinica, nombre="Ana Pérez",
+                                    telefono="987654321", direccion="Av. Grau 123")
+        self._crear_lead(email="ana@correo.pe", ubicacion="Castilla")
+        p.refresh_from_db()
+        self.assertEqual(p.email, "ana@correo.pe")     # lo tomó del lead
+        self.assertEqual(p.direccion, "Av. Grau 123")  # y NO pisó lo que ya tenía

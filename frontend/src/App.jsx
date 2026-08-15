@@ -6360,6 +6360,8 @@ function CrearLeadModal({ lead, medicos, anuncios, onClose, onSave }) {
     agendo_consulta: lead?.agendo_consulta ?? null,
     fecha_consulta: lead?.fecha_consulta || "",
     hora_consulta: lead?.hora_consulta || "",
+    modalidad_consulta: lead?.modalidad_consulta || "presencial",
+    enlace_consulta: lead?.enlace_consulta || "",
     fecha_cierre: lead?.fecha_cierre || "",
     seguimiento_frecuencia: lead?.seguimiento_frecuencia || "",
     recontacto_fecha: lead?.recontacto_fecha || "",
@@ -6402,6 +6404,8 @@ function CrearLeadModal({ lead, medicos, anuncios, onClose, onSave }) {
       recontacto_fecha: f.estado === "recontacto" ? (f.recontacto_fecha || null) : null,
       fecha_consulta: f.agendo_consulta === false ? null : (f.fecha_consulta || null),
       hora_consulta: f.agendo_consulta === false ? null : (f.hora_consulta || null), fecha_cierre: f.fecha_cierre || null,
+      modalidad_consulta: f.agendo_consulta === true ? (f.modalidad_consulta || "presencial") : "",
+      enlace_consulta: f.modalidad_consulta === "virtual" ? (f.enlace_consulta || "").trim() : "",
       campania: f.campania.trim(), especialidad: f.especialidad, medico: f.medico ? Number(f.medico) : null,
       tipo_servicio: f.tipo_servicio, ubicacion: f.ubicacion.trim(), motivo_consulta: f.motivo_consulta.trim(),
       resumen_conversacion: f.resumen_conversacion.trim(), objeciones: f.objeciones.trim(),
@@ -6518,11 +6522,29 @@ function CrearLeadModal({ lead, medicos, anuncios, onClose, onSave }) {
           {f.agendo_consulta === true && (
             <div style={{ flex: 1 }}><div className="ca-label">Hora</div><input className="ca-input" type="time" step={900} value={f.hora_consulta || ""} onChange={set("hora_consulta")} /></div>
           )}
+          {f.agendo_consulta === true && (
+            <div style={{ flex: 1 }}>
+              <div className="ca-label">Modalidad</div>
+              <select className="ca-input" value={f.modalidad_consulta || "presencial"} onChange={set("modalidad_consulta")}>
+                <option value="presencial">Presencial</option>
+                <option value="virtual">Virtual</option>
+              </select>
+            </div>
+          )}
           {f.agendo_consulta === false && (
             <div style={{ flex: 1, alignSelf: "center", fontSize: 12.5, color: "#B4564E" }}>⚠ Quedará marcado «sin agendar» para hacerle seguimiento.</div>
           )}
           <div style={{ flex: 1 }}><div className="ca-label">Inició proceso (fecha)</div><input className="ca-input" type="date" value={f.fecha_cierre || ""} onChange={set("fecha_cierre")} /></div>
         </div>
+        {/* El enlace se pide aquí para que la cita nazca completa: si no, había
+            que ir a la agenda a cambiar la modalidad y pegar el link otra vez. */}
+        {f.agendo_consulta === true && f.modalidad_consulta === "virtual" && (
+          <div style={{ marginBottom: 18 }}>
+            <div className="ca-label">Enlace de la videollamada</div>
+            <input className="ca-input" value={f.enlace_consulta || ""} onChange={set("enlace_consulta")}
+              placeholder="https://meet.google.com/…" />
+          </div>
+        )}
         <div style={{ display: "flex", gap: 11, marginBottom: 18 }}>
           <div style={{ flex: 1 }}><div className="ca-label">Campaña (opcional)</div><input className="ca-input" value={f.campania} onChange={set("campania")} placeholder="ej. Pauta junio" /></div>
           <div style={{ flex: 1 }}><div className="ca-label">Psicólogo</div><select className="ca-input" value={f.medico} onChange={set("medico")}><option value="">Sin asignar</option>{medicos.map((m) => <option key={m.id} value={m.id}>{m.nombre}</option>)}</select></div>

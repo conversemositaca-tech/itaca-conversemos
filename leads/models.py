@@ -115,6 +115,16 @@ class Lead(ModeloTenant):
     es_pareja = models.BooleanField("¿Consulta de pareja?", default=False)
     fecha_consulta = models.DateField("fecha de la consulta", null=True, blank=True)
     hora_consulta = models.TimeField("hora de la consulta", null=True, blank=True)
+    # Cómo será la consulta. Se guarda aquí para que la cita nazca completa: sin
+    # esto entraba siempre como presencial y coordinación tenía que ir a la agenda
+    # a corregirla y a pegar el enlace, repitiendo trabajo ya hecho.
+    modalidad_consulta = models.CharField(
+        "modalidad de la consulta", max_length=12, blank=True, default="",
+        choices=[("presencial", "Presencial"), ("virtual", "Virtual")],
+    )
+    enlace_consulta = models.CharField(
+        "enlace de la videollamada", max_length=300, blank=True, default="",
+    )
     fecha_cierre = models.DateField("fecha en que inició proceso", null=True, blank=True)
     # Seguimiento (estado "seguimiento") y recontacto (estado "recontacto").
     seguimiento_frecuencia = models.CharField(max_length=12, choices=Frecuencia.choices, blank=True, default="")

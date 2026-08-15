@@ -47,6 +47,17 @@ def _paciente_del_lead(lead):
     if tel:
         for p in Paciente.objects.del_tenant_actual().exclude(telefono=""):
             if _norm_tel(p.telefono) == tel:
+                # Aprovecha lo que el lead trae y a la ficha le falta, sin pisar
+                # nada de lo que ya estaba cargado.
+                completar = []
+                if not p.email and lead.email:
+                    p.email = lead.email
+                    completar.append("email")
+                if not p.direccion and lead.ubicacion:
+                    p.direccion = lead.ubicacion
+                    completar.append("direccion")
+                if completar:
+                    p.save(update_fields=completar)
                 lead.paciente = p
                 lead.save(update_fields=["paciente"])
                 return p
@@ -128,17 +139,37 @@ def sincronizar_cita_del_lead(lead):
                  f"{timezone.localtime(choque.inicio):%H:%M} con {choque.paciente.nombre}.")
 
     if cita:
+        cambios = []
         if cita.inicio != inicio or cita.medico_id != lead.medico_id:
             cita.inicio = inicio
             cita.medico = lead.medico
             cita.estado = Cita.Estado.REPROGRAMADA
-            cita.save(update_fields=["inicio", "medico", "estado"])
+            cambios += ["inicio", "medico", "estado"]
+        # Si en Marketing cambian la modalidad o el enlace, la cita los toma: si no,
+        # habría que ir a corregirlos a la agenda, que es la doble tarea de siempre.
+        if lead.modalidad_consulta:
+            from pacientes.api import _normaliza_enlace
+
+            nueva_mod = (Cita.Modalidad.VIRTUAL if lead.modalidad_consulta == "virtual"
+                         else Cita.Modalidad.PRESENCIAL)
+            nuevo_enlace = _normaliza_enlace(lead.enlace_consulta) if nueva_mod == Cita.Modalidad.VIRTUAL else ""
+            if cita.modalidad != nueva_mod or (nuevo_enlace and cita.enlace != nuevo_enlace):
+                cita.modalidad = nueva_mod
+                cita.enlace = nuevo_enlace
+                cambios += ["modalidad", "enlace"]
+        if cambios:
+            cita.save(update_fields=cambios)
         return cita, aviso
 
+    from pacientes.api import _normaliza_enlace
+
+    virtual = lead.modalidad_consulta == "virtual"
     cita = Cita.objects.create(
         clinica=lead.clinica, paciente=paciente, medico=lead.medico, inicio=inicio,
         especialidad=especialidad, categoria=_categoria_de(lead),
         estado=Cita.Estado.AGENDADA, sede=lead.sede or "",
+        modalidad=Cita.Modalidad.VIRTUAL if virtual else Cita.Modalidad.PRESENCIAL,
+        enlace=_normaliza_enlace(lead.enlace_consulta) if virtual else "",
         motivo_consulta=lead.motivo_consulta or "",
         notas=f"Consulta registrada desde Marketing (lead #{lead.id}).",
     )
