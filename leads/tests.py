@@ -340,3 +340,52 @@ class SinDobleTareaTests(TestCase):
         p.refresh_from_db()
         self.assertEqual(p.email, "ana@correo.pe")     # lo tomó del lead
         self.assertEqual(p.direccion, "Av. Grau 123")  # y NO pisó lo que ya tenía
+
+
+class SedeDeLaCitaTests(TestCase):
+    """La sesión cuenta en la sede de quien atiende, no en la del paciente.
+
+    Decisión del equipo: "si la psicóloga es de Piura, entonces va a Piura". En
+    las consultas virtuales una coordinadora de Lima le agenda a una psicóloga de
+    Piura, y esa hora la trabaja Piura. La captación sigue midiendo por el lead.
+    """
+
+    def setUp(self):
+        from usuarios.models import Profesional
+        self.clinica = Clinica.objects.create(nombre="Conversemos", slug="conversemos-sede")
+        self.coord = Usuario.objects.create_user(
+            email="coordsede@test.pe", password="x", clinica=self.clinica, rol=Usuario.Rol.ASISTENTE,
+        )
+        self.psico_piura = Usuario.objects.create_user(
+            email="angi@test.pe", password="x", clinica=self.clinica, rol=Usuario.Rol.MEDICO,
+        )
+        Profesional.objects.create(
+            clinica=self.clinica, nombre="Angi Requena", usuario=self.psico_piura, sede="piura",
+        )
+        self.manana = timezone.localdate() + timedelta(days=1)
+        self.client.force_login(self.coord)
+
+    def _lead_de_lima(self, **extra):
+        datos = {
+            "nombre": "Paciente de Lima", "telefono": "987222333", "sede": "lima",
+            "fuente": "whatsapp", "estado": "agendado", "agendo_consulta": True,
+            "fecha_consulta": self.manana.isoformat(), "hora_consulta": "11:00",
+            "medico": self.psico_piura.id, **extra,
+        }
+        return self.client.post("/api/leads/", datos, content_type="application/json")
+
+    def test_la_cita_va_a_la_sede_de_la_psicologa(self):
+        self._lead_de_lima(modalidad_consulta="virtual")
+        self.assertEqual(Cita.objects.get().sede, "piura")   # la atiende Piura
+
+    def test_el_lead_sigue_siendo_de_su_ciudad(self):
+        """La captación mide de dónde llega la gente: eso no cambia."""
+        self._lead_de_lima(modalidad_consulta="virtual")
+        self.assertEqual(Lead.objects.get().sede, "lima")
+
+    def test_sin_ficha_de_directorio_usa_la_sede_del_lead(self):
+        suelto = Usuario.objects.create_user(
+            email="sinficha@test.pe", password="x", clinica=self.clinica, rol=Usuario.Rol.MEDICO,
+        )
+        self._lead_de_lima(medico=suelto.id)
+        self.assertEqual(Cita.objects.get().sede, "lima")

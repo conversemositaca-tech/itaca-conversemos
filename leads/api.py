@@ -99,6 +99,23 @@ def _servicio_de_consulta(lead):
     return sorted(consultas, key=lambda s: len(s.nombre))[0].nombre
 
 
+def _sede_de_la_cita(lead):
+    """La sesión pertenece a la sede de QUIEN ATIENDE, no a la del paciente.
+
+    En las consultas virtuales el equipo se cubre entre ciudades: una coordinadora
+    de Lima le agenda a una psicóloga de Piura. Esa hora la trabaja Piura, así que
+    la agenda y la ocupación tienen que contarla ahí. La captación sigue midiendo
+    por el lead —de dónde nos llega la gente—, que es otra pregunta.
+    """
+    from usuarios.models import Profesional
+
+    if lead.medico_id:
+        ficha = Profesional.objects.filter(usuario=lead.medico).first()
+        if ficha and ficha.sede:
+            return ficha.sede
+    return lead.sede or ""
+
+
 def _categoria_de(lead):
     """A qué categoría de la agenda corresponde el tipo de servicio del lead."""
     from pacientes.models import Cita
@@ -167,7 +184,7 @@ def sincronizar_cita_del_lead(lead):
     cita = Cita.objects.create(
         clinica=lead.clinica, paciente=paciente, medico=lead.medico, inicio=inicio,
         especialidad=especialidad, categoria=_categoria_de(lead),
-        estado=Cita.Estado.AGENDADA, sede=lead.sede or "",
+        estado=Cita.Estado.AGENDADA, sede=_sede_de_la_cita(lead),
         modalidad=Cita.Modalidad.VIRTUAL if virtual else Cita.Modalidad.PRESENCIAL,
         enlace=_normaliza_enlace(lead.enlace_consulta) if virtual else "",
         motivo_consulta=lead.motivo_consulta or "",

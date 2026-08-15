@@ -1164,6 +1164,26 @@ export default function ClinicaApp() {
           font-size:10.5px; font-weight:600; font-family:inherit; cursor:pointer; transition:all .12s; }
         .ca-hueco:hover { opacity:1; border-color:var(--accent); background:var(--accent-soft); color:var(--accent); }
         .ca-hueco:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
+
+        /* --- Captar lead: bloques por pregunta, en vez de una lista de 25 campos.
+           Las capas (modales) se separan con altura y no con líneas: sombra amplia
+           y esquinas más redondas. Las grillas densas siguen con líneas, que ahí
+           son las que dejan seguir una fila con el ojo. --- */
+        .ca-modal.flota { border-radius:18px; box-shadow:0 2px 6px rgba(31,42,38,.05), 0 18px 50px rgba(31,42,38,.14); }
+        .lead-grupo { background:var(--bg); border-radius:13px; padding:15px; margin-bottom:13px; }
+        .lead-grupo > h4 { margin:0 0 11px; font-size:11.5px; letter-spacing:.09em; text-transform:uppercase;
+          color:var(--muted); font-weight:700; }
+        .lead-cita { display:flex; flex-direction:column; gap:11px; background:var(--card);
+          border-radius:11px; padding:13px; margin-bottom:11px; }
+        .lead-cruce { font-size:12.5px; line-height:1.45; color:#8A6218; background:#FBF0D8;
+          border:1px solid #E6C98A; border-radius:9px; padding:8px 11px; }
+        .lead-mas > summary { cursor:pointer; font-size:13.5px; font-weight:600; color:var(--accent);
+          list-style:none; display:inline-flex; align-items:center; gap:7px; padding:4px 0; }
+        .lead-mas > summary::-webkit-details-marker { display:none; }
+        .lead-mas > summary::before { content:"＋"; font-size:15px; line-height:1; }
+        .lead-mas[open] > summary::before { content:"−"; }
+        .lead-mas > summary:focus-visible { outline:2px solid var(--accent); outline-offset:3px; border-radius:4px; }
+        .lead-mas-bd { display:flex; flex-direction:column; gap:11px; padding-top:12px; }
         /* "Agendar" al pie de cada día en la vista semana: discreto hasta que
            pasas el mouse por la columna. */
         .ca-wkadd { display:flex; align-items:center; justify-content:center; gap:4px; width:100%;
@@ -1565,7 +1585,7 @@ export default function ClinicaApp() {
 
         {view === "mensajes" && <Mensajes mensajes={mensajes} puedeEditar={usuario?.rol === "admin" || usuario?.rol === "asistente"} showToast={showToast} />}
 
-        {view === "marketing" && <Marketing showToast={showToast} onConvertir={refrescarPacientes} esAdmin={usuario?.rol === "admin"} />}
+        {view === "marketing" && <Marketing showToast={showToast} onConvertir={refrescarPacientes} esAdmin={usuario?.rol === "admin"} sedePropia={usuario?.sede || ""} />}
 
         {view === "finanzas" && <Finanzas showToast={showToast} esAdmin={usuario?.rol === "admin"} />}
 
@@ -5946,7 +5966,7 @@ function SolicitudesWhatsapp({ leads, onSeguimiento, onEditar, showToast }) {
   );
 }
 
-function Marketing({ showToast, onConvertir, esAdmin }) {
+function Marketing({ showToast, onConvertir, esAdmin, sedePropia = "" }) {
   const [leads, setLeads] = useState([]);
   const [rep, setRep] = useState(null);
   const [medicos, setMedicos] = useState([]);
@@ -6380,7 +6400,7 @@ function Marketing({ showToast, onConvertir, esAdmin }) {
       )}
 
       {(creando || editandoLead) && (
-        <CrearLeadModal lead={editandoLead} medicos={medicos} anuncios={anuncios}
+        <CrearLeadModal lead={editandoLead} medicos={medicos} anuncios={anuncios} sedePropia={sedePropia}
           onClose={() => { setCreando(false); setEditandoLead(null); }} onSave={guardarLead} />
       )}
     </div>
@@ -6422,13 +6442,15 @@ function AnuncioForm({ onSave, anuncio, onCancelar }) {
   );
 }
 
-function CrearLeadModal({ lead, medicos, anuncios, onClose, onSave }) {
+function CrearLeadModal({ lead, medicos, anuncios, sedePropia, onClose, onSave }) {
   const [f, setF] = useState({
     nombre: lead?.nombre || "",
     telefono: lead?.telefono && lead.telefono !== "—" ? lead.telefono : "",
     email: lead?.email || "",
     fecha_llegada: lead?.creado_iso || HOY_ISO,
-    sede: lead?.sede || "lima",
+    // La sede de quien registra, no una fija: una coordinadora de Piura capta
+    // leads de Piura todo el día. Se puede cambiar para los de la otra ciudad.
+    sede: lead?.sede || sedePropia || "lima",
     fuente: lead?.fuente || "tiktok_ads",
     subfuente: lead?.subfuente || "",
     fuente_otro: lead?.fuente_otro || "",
@@ -6492,78 +6514,76 @@ function CrearLeadModal({ lead, medicos, anuncios, onClose, onSave }) {
     });
   }
 
+  // En PRESENCIAL solo los psicólogos de la sede: el paciente va a ir hasta ahí.
+  // En VIRTUAL salen los de las dos ciudades, agrupados, porque el equipo se cubre
+  // entre sedes. El ya elegido nunca se oculta.
+  const esVirtual = f.modalidad_consulta === "virtual";
+  const medicoElegido = medicos.find((m) => String(m.id) === String(f.medico));
+  const medicosDeLaSede = medicos.filter(
+    (m) => !f.sede || !m.sede || m.sede === f.sede || String(m.id) === String(f.medico)
+  );
+  const cruzaSede = medicoElegido && f.sede && medicoElegido.sede && medicoElegido.sede !== f.sede;
+  const sedeLabel = (v) => (SEDES.find((s) => s.v === v) || {}).l || v;
+
   return (
     <div className="ca-modal-bg" onClick={onClose}>
-      <div className="ca-modal" style={{ maxWidth: 460, maxHeight: "88vh", overflowY: "auto" }} onClick={(ev) => ev.stopPropagation()}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
-          <strong style={{ fontSize: 16 }}>{lead ? "Editar lead" : "Captar lead"}</strong>
+      <div className="ca-modal flota" style={{ maxWidth: 470, maxHeight: "88vh", overflowY: "auto" }} onClick={(ev) => ev.stopPropagation()}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 18 }}>
+          <strong style={{ fontSize: 16.5 }}>{lead ? "Editar lead" : "Captar lead"}</strong>
           <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)" }}><X size={18} /></button>
         </div>
-        <div style={{ marginBottom: 12 }}>
-          <div className="ca-label">Nombre</div>
-          <input className="ca-input" value={f.nombre} onChange={set("nombre")} placeholder="Nombre del interesado" autoFocus />
+
+        {/* ── Quién es ─────────────────────────────────────────────── */}
+        <div className="lead-grupo">
+          <h4>Quién es</h4>
+          <div style={{ marginBottom: 11 }}>
+            <div className="ca-label">Nombre</div>
+            <input className="ca-input" value={f.nombre} onChange={set("nombre")} placeholder="Nombre del interesado" autoFocus />
+          </div>
+          <div style={{ display: "flex", gap: 11, marginBottom: 11 }}>
+            <div style={{ flex: 1.4 }}><div className="ca-label">Teléfono</div><input className="ca-input" value={f.telefono} onChange={set("telefono")} placeholder="987 654 321" /></div>
+            <div style={{ flex: 1 }}><div className="ca-label">Sede</div><select className="ca-input" value={f.sede} onChange={set("sede")}><option value="">—</option>{SEDES.map((s) => <option key={s.v} value={s.v}>{s.l}</option>)}</select></div>
+          </div>
+          <div><div className="ca-label">Correo <span style={{ color: "var(--muted)", fontWeight: 400 }}>(opcional)</span></div><input className="ca-input" value={f.email} onChange={set("email")} placeholder="correo@ejemplo.com" inputMode="email" /></div>
         </div>
-        <div style={{ display: "flex", gap: 11, marginBottom: 12 }}>
-          <div style={{ flex: 1.4 }}><div className="ca-label">Teléfono</div><input className="ca-input" value={f.telefono} onChange={set("telefono")} placeholder="987 654 321" /></div>
-          <div style={{ flex: 1 }}><div className="ca-label">Sede</div><select className="ca-input" value={f.sede} onChange={set("sede")}><option value="">—</option>{SEDES.map((s) => <option key={s.v} value={s.v}>{s.l}</option>)}</select></div>
-        </div>
-        <div style={{ display: "flex", gap: 11, marginBottom: 12 }}>
-          <div style={{ flex: 1.4 }}><div className="ca-label">Correo <span style={{ color: "var(--muted)", fontWeight: 400 }}>(opcional)</span></div><input className="ca-input" value={f.email} onChange={set("email")} placeholder="correo@ejemplo.com" inputMode="email" /></div>
-          <div style={{ flex: 1 }}><div className="ca-label">Llegó el</div><input className="ca-input" type="date" value={f.fecha_llegada} onChange={set("fecha_llegada")} title="Fecha en que llegó el lead (para leads antiguos o fuera de horario)" /></div>
-        </div>
-        <div style={{ display: "flex", gap: 11, marginBottom: 12 }}>
-          <div style={{ flex: 1 }}><div className="ca-label">Origen</div><select className="ca-input" value={f.fuente} onChange={setFuente}>{fuentesOpciones.map((x) => <option key={x.v} value={x.v}>{x.l}</option>)}</select></div>
-          <div style={{ flex: 1 }}><div className="ca-label">Etapa</div><select className="ca-input" value={f.estado} onChange={set("estado")}>{LEAD_ESTADOS.map((s) => <option key={s.v} value={s.v}>{s.l}</option>)}</select></div>
-        </div>
-        {f.fuente === "referido" ? (
-          <div style={{ marginBottom: 12 }}>
-            <div className="ca-label">¿Quién refirió?</div>
-            <input className="ca-input" value={f.subfuente} onChange={set("subfuente")} placeholder="Nombre de quien lo refirió" />
+
+        {/* ── De dónde vino ────────────────────────────────────────── */}
+        <div className="lead-grupo">
+          <h4>De dónde vino</h4>
+          <div style={{ marginBottom: 11 }}>
+            <div className="ca-label">Origen</div>
+            <select className="ca-input" value={f.fuente} onChange={setFuente}>{fuentesOpciones.map((x) => <option key={x.v} value={x.v}>{x.l}</option>)}</select>
           </div>
-        ) : subOpciones.length > 0 && (
-          <div style={{ marginBottom: 12 }}>
-            <div className="ca-label">Canal / subfuente</div>
-            <select className="ca-input" value={f.subfuente} onChange={set("subfuente")}>
-              <option value="">—</option>
-              {subOpciones.map((s) => <option key={s} value={s}>{s}</option>)}
-            </select>
-          </div>
-        )}
-        {["otro", "convenio", "alianza"].includes(f.fuente) && (
-          <div style={{ marginBottom: 12 }}>
-            <div className="ca-label">{f.fuente === "convenio" ? "¿Cuál convenio?" : f.fuente === "alianza" ? "¿Cuál alianza?" : "¿Cuál otro origen?"}</div>
-            <input className="ca-input" value={f.fuente_otro} onChange={set("fuente_otro")}
-              placeholder={f.fuente === "convenio" ? "Nombre del convenio" : f.fuente === "alianza" ? "Nombre de la alianza" : "Especifica de dónde vino el lead"} />
-          </div>
-        )}
-        {f.estado === "seguimiento" && (
-          <div style={{ marginBottom: 12 }}>
-            <div className="ca-label">Frecuencia del seguimiento</div>
-            <select className="ca-input" value={f.seguimiento_frecuencia} onChange={set("seguimiento_frecuencia")}>
-              {LEAD_FRECUENCIAS.map((x) => <option key={x.v} value={x.v}>{x.l}</option>)}
-            </select>
-          </div>
-        )}
-        {f.estado === "recontacto" && (
-          <div style={{ marginBottom: 12 }}>
-            <div className="ca-label">Recontactar el</div>
-            <input className="ca-input" type="date" value={f.recontacto_fecha || ""} onChange={set("recontacto_fecha")} />
-            <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 4 }}>Ej. el lead quiere agendar en quincena — te aparecerá como recordatorio.</div>
-          </div>
-        )}
-        {esFuentePauta && (
-          <div style={{ display: "flex", gap: 16, marginBottom: 12, flexWrap: "wrap" }}>
-            <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13.5, color: "var(--ink-soft)", cursor: "pointer" }}>
+          {f.fuente === "referido" ? (
+            <div style={{ marginBottom: 11 }}>
+              <div className="ca-label">¿Quién refirió?</div>
+              <input className="ca-input" value={f.subfuente} onChange={set("subfuente")} placeholder="Nombre de quien lo refirió" />
+            </div>
+          ) : subOpciones.length > 0 && (
+            <div style={{ marginBottom: 11 }}>
+              <div className="ca-label">Canal / subfuente</div>
+              <select className="ca-input" value={f.subfuente} onChange={set("subfuente")}>
+                <option value="">—</option>
+                {subOpciones.map((s) => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </div>
+          )}
+          {["otro", "convenio", "alianza"].includes(f.fuente) && (
+            <div style={{ marginBottom: 11 }}>
+              <div className="ca-label">{f.fuente === "convenio" ? "¿Cuál convenio?" : f.fuente === "alianza" ? "¿Cuál alianza?" : "¿Cuál otro origen?"}</div>
+              <input className="ca-input" value={f.fuente_otro} onChange={set("fuente_otro")}
+                placeholder={f.fuente === "convenio" ? "Nombre del convenio" : f.fuente === "alianza" ? "Nombre de la alianza" : "Especifica de dónde vino el lead"} />
+            </div>
+          )}
+          {esFuentePauta && (
+            <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13.5, color: "var(--ink-soft)", cursor: "pointer", marginBottom: 11 }}>
               <input type="checkbox" checked={f.es_pauta} onChange={setChk("es_pauta")} /> Vino de pauta (anuncio pagado)
             </label>
-          </div>
-        )}
-        {/* El anuncio se puede elegir con CUALQUIER origen. La pauta de Meta manda
-            a la gente a WhatsApp, así que el lead se registra como "WhatsApp
-            directo" o "Bot" y antes ahí no aparecía este desplegable: el anuncio
-            se perdía y el reporte no sabía de dónde vino esa consulta. */}
-        <div style={{ marginBottom: 12 }}>
-          <div className="ca-label">Anuncio que lo atrajo (si vino de uno)</div>
+          )}
+          {/* El anuncio se puede elegir con CUALQUIER origen: la pauta de Meta manda
+              a la gente a WhatsApp, y antes ahí este desplegable no aparecía. */}
+          <div>
+            <div className="ca-label">Anuncio que lo atrajo <span style={{ color: "var(--muted)", fontWeight: 400 }}>(si vino de uno)</span></div>
             <select className="ca-input" value={f.anuncio} onChange={set("anuncio")}>
               <option value="">— (sin especificar)</option>
               {/* Plataforma y sede ADELANTE: los títulos son largos y se repiten
@@ -6574,11 +6594,14 @@ function CrearLeadModal({ lead, medicos, anuncios, onClose, onSave }) {
                 </option>
               ))}
             </select>
-          {anunciosActivos.length === 0 && <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 4 }}>Aún no has agregado anuncios. Puedes crearlos abajo, en «Generar reporte de pauta».</div>}
+            {anunciosActivos.length === 0 && <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 4 }}>Aún no has agregado anuncios. Puedes crearlos en «Generar reporte de pauta».</div>}
+          </div>
         </div>
-        <div style={{ marginBottom: 12 }}>
-          <div className="ca-label">¿Agendó consulta?</div>
-          <div style={{ display: "flex", gap: 8 }}>
+
+        {/* ── ¿Agendó consulta? ────────────────────────────────────── */}
+        <div className="lead-grupo">
+          <h4>¿Agendó consulta?</h4>
+          <div style={{ display: "flex", gap: 8, marginBottom: 11 }}>
             {[[true, "Sí"], [false, "No"]].map(([v, l]) => {
               const on = f.agendo_consulta === v;
               return (
@@ -6593,55 +6616,103 @@ function CrearLeadModal({ lead, medicos, anuncios, onClose, onSave }) {
               );
             })}
           </div>
-        </div>
-        <div style={{ display: "flex", gap: 11, marginBottom: 12 }}>
+
           {f.agendo_consulta === true && (
-            <div style={{ flex: 1.4 }}><div className="ca-label">Fecha de la consulta</div><input className="ca-input" type="date" value={f.fecha_consulta || ""} onChange={set("fecha_consulta")} /></div>
-          )}
-          {f.agendo_consulta === true && (
-            <div style={{ flex: 1 }}><div className="ca-label">Hora</div><input className="ca-input" type="time" step={900} value={f.hora_consulta || ""} onChange={set("hora_consulta")} /></div>
-          )}
-          {f.agendo_consulta === true && (
-            <div style={{ flex: 1 }}>
-              <div className="ca-label">Modalidad</div>
-              <select className="ca-input" value={f.modalidad_consulta || "presencial"} onChange={set("modalidad_consulta")}>
-                <option value="presencial">Presencial</option>
-                <option value="virtual">Virtual</option>
-              </select>
+            <div className="lead-cita">
+              <div style={{ display: "flex", gap: 11 }}>
+                <div style={{ flex: 1.4 }}><div className="ca-label">Fecha</div><input className="ca-input" type="date" value={f.fecha_consulta || ""} onChange={set("fecha_consulta")} /></div>
+                <div style={{ flex: 1 }}><div className="ca-label">Hora</div><input className="ca-input" type="time" step={900} value={f.hora_consulta || ""} onChange={set("hora_consulta")} /></div>
+              </div>
+              <div style={{ display: "flex", gap: 11 }}>
+                <div style={{ flex: 1.6 }}>
+                  <div className="ca-label">Psicólogo <span style={{ color: "var(--muted)", fontWeight: 400 }}>{esVirtual ? "· cualquier sede, es virtual" : (f.sede ? `· de ${sedeLabel(f.sede)}` : "")}</span></div>
+                  <select className="ca-input" value={f.medico} onChange={set("medico")}>
+                    <option value="">Sin asignar</option>
+                    {esVirtual
+                      ? SEDES.map((s) => {
+                          const suyos = medicos.filter((m) => m.sede === s.v);
+                          return suyos.length ? (
+                            <optgroup key={s.v} label={s.l}>
+                              {suyos.map((m) => <option key={m.id} value={m.id}>{m.nombre}</option>)}
+                            </optgroup>
+                          ) : null;
+                        })
+                      : medicosDeLaSede.map((m) => <option key={m.id} value={m.id}>{m.nombre}</option>)}
+                  </select>
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div className="ca-label">Modalidad</div>
+                  <select className="ca-input" value={f.modalidad_consulta || "presencial"} onChange={set("modalidad_consulta")}>
+                    <option value="presencial">Presencial</option>
+                    <option value="virtual">Virtual</option>
+                  </select>
+                </div>
+              </div>
+              {/* Sesión que cruza sedes: se avisa, no se impide. La cita contará en
+                  la sede de quien atiende, que es donde se trabaja esa hora. */}
+              {cruzaSede && (
+                <div className="lead-cruce">
+                  {medicoElegido.nombre} atiende en {sedeLabel(medicoElegido.sede)} y este lead es de {sedeLabel(f.sede)}.
+                  La cita se contará en {sedeLabel(medicoElegido.sede)}.
+                </div>
+              )}
+              {/* El enlace se pide aquí para que la cita nazca completa: si no, había
+                  que ir a la agenda a cambiar la modalidad y pegar el link otra vez. */}
+              {esVirtual && (
+                <div>
+                  <div className="ca-label">Enlace de la videollamada</div>
+                  <input className="ca-input" value={f.enlace_consulta || ""} onChange={set("enlace_consulta")}
+                    placeholder="https://meet.google.com/…" />
+                </div>
+              )}
+              <div style={{ fontSize: 12, color: "var(--muted)" }}>Con esto la cita queda en la agenda al guardar. No hay que registrarla de nuevo.</div>
             </div>
           )}
           {f.agendo_consulta === false && (
-            <div style={{ flex: 1, alignSelf: "center", fontSize: 12.5, color: "#B4564E" }}>⚠ Quedará marcado «sin agendar» para hacerle seguimiento.</div>
+            <div style={{ fontSize: 12.5, color: "#B4564E", marginBottom: 11 }}>Quedará marcado «sin agendar» para hacerle seguimiento.</div>
           )}
-          <div style={{ flex: 1 }}><div className="ca-label">Inició proceso (fecha)</div><input className="ca-input" type="date" value={f.fecha_cierre || ""} onChange={set("fecha_cierre")} /></div>
+
+          <div><div className="ca-label">Etapa</div><select className="ca-input" value={f.estado} onChange={set("estado")}>{LEAD_ESTADOS.map((s) => <option key={s.v} value={s.v}>{s.l}</option>)}</select></div>
+          {f.estado === "seguimiento" && (
+            <div style={{ marginTop: 11 }}>
+              <div className="ca-label">Frecuencia del seguimiento</div>
+              <select className="ca-input" value={f.seguimiento_frecuencia} onChange={set("seguimiento_frecuencia")}>
+                {LEAD_FRECUENCIAS.map((x) => <option key={x.v} value={x.v}>{x.l}</option>)}
+              </select>
+            </div>
+          )}
+          {f.estado === "recontacto" && (
+            <div style={{ marginTop: 11 }}>
+              <div className="ca-label">Recontactar el</div>
+              <input className="ca-input" type="date" value={f.recontacto_fecha || ""} onChange={set("recontacto_fecha")} />
+              <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 4 }}>Ej. el lead quiere agendar en quincena — te aparecerá como recordatorio.</div>
+            </div>
+          )}
         </div>
-        {/* El enlace se pide aquí para que la cita nazca completa: si no, había
-            que ir a la agenda a cambiar la modalidad y pegar el link otra vez. */}
-        {f.agendo_consulta === true && f.modalidad_consulta === "virtual" && (
-          <div style={{ marginBottom: 18 }}>
-            <div className="ca-label">Enlace de la videollamada</div>
-            <input className="ca-input" value={f.enlace_consulta || ""} onChange={set("enlace_consulta")}
-              placeholder="https://meet.google.com/…" />
+
+        {/* ── Lo que no se llena siempre ───────────────────────────── */}
+        <details className="lead-mas">
+          <summary>Más datos</summary>
+          <div className="lead-mas-bd">
+            <div style={{ display: "flex", gap: 11 }}>
+              <div style={{ flex: 1 }}><div className="ca-label">Llegó el</div><input className="ca-input" type="date" value={f.fecha_llegada} onChange={set("fecha_llegada")} title="Fecha en que llegó el lead (para leads antiguos o fuera de horario)" /></div>
+              <div style={{ flex: 1 }}><div className="ca-label">Tipo de servicio</div><select className="ca-input" value={f.tipo_servicio} onChange={set("tipo_servicio")}>{TIPOS_SERVICIO.map((x) => <option key={x.v} value={x.v}>{x.l}</option>)}</select></div>
+            </div>
+            <div style={{ display: "flex", gap: 11 }}>
+              <div style={{ flex: 1 }}><div className="ca-label">Campaña</div><input className="ca-input" value={f.campania} onChange={set("campania")} placeholder="ej. Pauta agosto" /></div>
+              <div style={{ flex: 1 }}><div className="ca-label">Inició proceso (fecha)</div><input className="ca-input" type="date" value={f.fecha_cierre || ""} onChange={set("fecha_cierre")} /></div>
+            </div>
+            <div><div className="ca-label">Distrito / zona</div><input className="ca-input" value={f.ubicacion} onChange={set("ubicacion")} placeholder="ej. Miraflores (se detecta de WhatsApp)" /></div>
+            <div><div className="ca-label">Motivo de consulta</div><textarea className="ca-input" rows={2} value={f.motivo_consulta} onChange={set("motivo_consulta")} /></div>
+            <div><div className="ca-label">Resumen de la conversación</div><textarea className="ca-input" rows={2} value={f.resumen_conversacion} onChange={set("resumen_conversacion")} placeholder="Útil: las charlas de WhatsApp luego se borran" /></div>
+            <div style={{ display: "flex", gap: 11 }}>
+              <div style={{ flex: 1 }}><div className="ca-label">Objeciones</div><textarea className="ca-input" rows={2} value={f.objeciones} onChange={set("objeciones")} /></div>
+              <div style={{ flex: 1 }}><div className="ca-label">Observaciones</div><textarea className="ca-input" rows={2} value={f.observaciones} onChange={set("observaciones")} /></div>
+            </div>
           </div>
-        )}
-        <div style={{ display: "flex", gap: 11, marginBottom: 18 }}>
-          <div style={{ flex: 1 }}><div className="ca-label">Campaña (opcional)</div><input className="ca-input" value={f.campania} onChange={set("campania")} placeholder="ej. Pauta junio" /></div>
-          {/* Solo los psicólogos de la sede elegida: con las dos sedes juntas, la
-              lista era larga y se elegía a alguien que no atiende ahí. */}
-          <div style={{ flex: 1 }}><div className="ca-label">Psicólogo</div><select className="ca-input" value={f.medico} onChange={set("medico")}><option value="">Sin asignar</option>{medicos.filter((m) => !f.sede || !m.sede || m.sede === f.sede || String(m.id) === String(f.medico)).map((m) => <option key={m.id} value={m.id}>{m.nombre}</option>)}</select></div>
-        </div>
-        <div style={{ display: "flex", gap: 11, marginBottom: 12 }}>
-          <div style={{ flex: 1 }}><div className="ca-label">Tipo de servicio</div><select className="ca-input" value={f.tipo_servicio} onChange={set("tipo_servicio")}>{TIPOS_SERVICIO.map((x) => <option key={x.v} value={x.v}>{x.l}</option>)}</select></div>
-          <div style={{ flex: 1 }}><div className="ca-label">Distrito / zona</div><input className="ca-input" value={f.ubicacion} onChange={set("ubicacion")} placeholder="ej. Miraflores (se detecta de WhatsApp)" /></div>
-        </div>
-        <div className="ca-secth" style={{ marginTop: 4, marginBottom: 8, fontSize: 13 }}>Información comercial</div>
-        <div style={{ marginBottom: 10 }}><div className="ca-label">Motivo de consulta</div><textarea className="ca-input" rows={2} value={f.motivo_consulta} onChange={set("motivo_consulta")} /></div>
-        <div style={{ marginBottom: 10 }}><div className="ca-label">Resumen de la conversación</div><textarea className="ca-input" rows={2} value={f.resumen_conversacion} onChange={set("resumen_conversacion")} placeholder="Útil: las charlas de WhatsApp luego se borran" /></div>
-        <div style={{ display: "flex", gap: 11, marginBottom: 16 }}>
-          <div style={{ flex: 1 }}><div className="ca-label">Objeciones</div><textarea className="ca-input" rows={2} value={f.objeciones} onChange={set("objeciones")} /></div>
-          <div style={{ flex: 1 }}><div className="ca-label">Observaciones</div><textarea className="ca-input" rows={2} value={f.observaciones} onChange={set("observaciones")} /></div>
-        </div>
-        <div style={{ display: "flex", gap: 9, justifyContent: "flex-end" }}>
+        </details>
+
+        <div style={{ display: "flex", gap: 9, justifyContent: "flex-end", marginTop: 18 }}>
           <button className="ca-btn ghost" onClick={onClose}>Cancelar</button>
           <button className="ca-btn" style={{ opacity: canSave ? 1 : 0.5, pointerEvents: canSave ? "auto" : "none" }} onClick={guardar}>
             {lead ? "Guardar" : "Captar"}
