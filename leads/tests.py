@@ -10,7 +10,10 @@ from datetime import datetime, time as dtime, timedelta
 from django.test import SimpleTestCase, TestCase
 from django.utils import timezone
 
+from decimal import Decimal
+
 from core.models import Clinica
+from finanzas.models import Servicio
 from pacientes.models import Cita, Paciente
 from usuarios.models import Usuario
 from leads.models import Anuncio, Lead
@@ -218,3 +221,61 @@ class LeadCreaLaCitaTests(TestCase):
         """Agendar no es iniciar proceso: el embudo no se debe inflar solo."""
         self._crear_lead()
         self.assertEqual(Lead.objects.get().estado, Lead.Estado.AGENDADO)
+
+
+class ServicioDeLaConsultaTests(TestCase):
+    """La cita que nace de un lead es una CONSULTA, no una sesión de terapia.
+
+    Reportado por Gaby: "se automatiza ya, pero como sesión, y es consulta".
+    No es cosmético: la liquidación se calcula por el NOMBRE del servicio, y la
+    consulta inicial y la sesión individual no se pagan igual.
+    """
+
+    def setUp(self):
+        self.clinica = Clinica.objects.create(nombre="Conversemos", slug="conversemos-serv")
+        self.coord = Usuario.objects.create_user(
+            email="coord4@test.pe", password="x", clinica=self.clinica, rol=Usuario.Rol.ASISTENTE,
+        )
+        self.psico = Usuario.objects.create_user(
+            email="p4@test.pe", password="x", clinica=self.clinica, rol=Usuario.Rol.MEDICO,
+        )
+        self.manana = timezone.localdate() + timedelta(days=1)
+        self.client.force_login(self.coord)
+
+    def _servicio(self, nombre, terapeuta):
+        return Servicio.objects.create(
+            clinica=self.clinica, nombre=nombre, precio=Decimal("100"),
+            monto_terapeuta=Decimal(terapeuta),
+        )
+
+    def _crear_lead(self, **extra):
+        datos = {
+            "nombre": "Ayvi Torres", "telefono": "987000111", "sede": "piura",
+            "fuente": "whatsapp", "estado": "agendado", "agendo_consulta": True,
+            "fecha_consulta": self.manana.isoformat(), "hora_consulta": "16:00",
+            "medico": self.psico.id, "especialidad": "Terapia individual",
+            **extra,
+        }
+        return self.client.post("/api/leads/", datos, content_type="application/json")
+
+    def test_la_cita_entra_como_consulta_no_como_terapia(self):
+        self._servicio("Consulta inicial adultos", 20)
+        self._servicio("Terapia individual", 38)
+        self._crear_lead()
+        self.assertEqual(Cita.objects.get().especialidad, "Consulta inicial adultos")
+
+    def test_elige_la_consulta_que_calza_con_el_tipo_de_servicio(self):
+        self._servicio("Consulta inicial adultos", 20)
+        self._servicio("Consulta inicial niños", 20)
+        self._crear_lead(tipo_servicio="ninos")
+        self.assertEqual(Cita.objects.get().especialidad, "Consulta inicial niños")
+
+    def test_sin_consultas_en_el_catalogo_usa_lo_que_traiga_el_lead(self):
+        self._servicio("Terapia individual", 38)
+        self._crear_lead()
+        self.assertEqual(Cita.objects.get().especialidad, "Terapia individual")
+
+    def test_la_categoria_sale_del_tipo_de_servicio(self):
+        self._servicio("Consulta inicial", 20)
+        self._crear_lead(tipo_servicio="adolescentes")
+        self.assertEqual(Cita.objects.get().categoria, Cita.Categoria.INFANTOJUVENIL)

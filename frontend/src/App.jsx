@@ -1573,7 +1573,7 @@ export default function ClinicaApp() {
             onAtender={setAtender} onReagendar={setReagendar} onCancelar={setCancelando}
             onMensaje={(c) => { const p = pacientes.find((x) => x.id === c.pacienteId); if (p) { setWaPaciente(p); setWaCita(c); } else showToast("No se encontró el paciente"); }}
             onCobrar={(c) => setCobrando({ pacienteId: c.pacienteId, paciente: c.paciente, citaId: c.id, especialidad: c.especialidad })}
-            medicos={medicosDir} onGuardar={usuario?.rol === "medico" ? undefined : editarCita} />
+            medicos={medicosDir} servicios={servicios} onGuardar={usuario?.rol === "medico" ? undefined : editarCita} />
         )}
         {bloqueando && <BloqueoModal fechaInicial={agendaFecha} onClose={() => setBloqueando(null)} onSave={guardarBloqueo} />}
         {cancelando && (
@@ -5052,18 +5052,20 @@ function Agenda({ citas, bloqueos = [], fecha, setFecha, vista, setVista, esAsis
   );
 }
 
-function CitaDetalleModal({ cita, esMedico, esAsistente, onClose, onSetEstado, openFicha, onAtender, onCobrar, onReagendar, onCancelar, onMensaje, onGuardar, medicos = [] }) {
+function CitaDetalleModal({ cita, esMedico, esAsistente, onClose, onSetEstado, openFicha, onAtender, onCobrar, onReagendar, onCancelar, onMensaje, onGuardar, medicos = [], servicios = [] }) {
   const [estado, setEstado] = useState(cita.estado);
   // `medico` viene como nombre; para el selector se busca su id en el directorio.
   const [medicoId, setMedicoId] = useState(
     String((medicos.find((m) => m.nombre === cita.medico) || {}).id || "")
   );
   const [nSesion, setNSesion] = useState(cita.n_sesion ? String(cita.n_sesion) : "");
+  const [especialidad, setEspecialidad] = useState(cita.especialidad || "");
   const col = STATUS[estado] || {};
   const activa = estado !== "atendida" && estado !== "cancelada";
   const hayCambios =
     medicoId !== String((medicos.find((m) => m.nombre === cita.medico) || {}).id || "") ||
-    nSesion !== (cita.n_sesion ? String(cita.n_sesion) : "");
+    nSesion !== (cita.n_sesion ? String(cita.n_sesion) : "") ||
+    especialidad !== (cita.especialidad || "");
   return (
     <div className="ca-modal-bg" onClick={onClose}>
       <div className="ca-modal" style={{ maxWidth: 420 }} onClick={(e) => e.stopPropagation()}>
@@ -5108,10 +5110,22 @@ function CitaDetalleModal({ cita, esMedico, esAsistente, onClose, onSetEstado, o
               <input className="ca-input" value={nSesion} inputMode="numeric" placeholder={cita.n_sesion_efectivo || "—"}
                 onChange={(e) => setNSesion(e.target.value.replace(/\D/g, ""))} />
             </div>
+            {/* El servicio decide cuánto se le liquida al psicólogo: una consulta
+                y una sesión no se pagan igual, así que tiene que poder corregirse. */}
+            <div style={{ flex: 2, minWidth: 170 }}>
+              <div className="ca-label">Servicio</div>
+              <select className="ca-input" value={especialidad} onChange={(e) => setEspecialidad(e.target.value)}>
+                {!servicios.some((s) => s.nombre === cita.especialidad) && cita.especialidad && (
+                  <option value={cita.especialidad}>{cita.especialidad}</option>
+                )}
+                {servicios.map((s) => <option key={s.id} value={s.nombre}>{s.nombre}</option>)}
+              </select>
+            </div>
             <button className="ca-btn" disabled={!hayCambios} style={{ opacity: hayCambios ? 1 : 0.5 }}
               onClick={() => onGuardar(cita, {
                 medicoId: medicoId ? Number(medicoId) : null,
                 n_sesion: nSesion ? Number(nSesion) : null,
+                especialidad,
               })}>
               <Check size={15} strokeWidth={2.2} /> Guardar
             </button>
