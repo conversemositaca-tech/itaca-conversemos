@@ -1505,8 +1505,16 @@ export default function ClinicaApp() {
           </>
         )}
 
+        {/* Ojo con «Editar»: solo abre con la ficha COMPLETA cargada. La lista es
+            liviana (no trae los campos clínicos) y el formulario guarda todo lo que
+            tiene, así que abrirlo con la fila de la lista borraría lo que faltara. */}
         {view === "pacientes" && selected && (
-          <Ficha p={selected} esMedico={usuario?.rol === "medico"} onBack={() => setSelectedId(null)} onEdit={() => setEditingPaciente(selected)}
+          <Ficha p={selected} esMedico={usuario?.rol === "medico"} onBack={() => setSelectedId(null)}
+            onEdit={() => {
+              if (detalle && detalle.id === selectedId) return setEditingPaciente(detalle);
+              showToast("Un segundo, terminando de cargar la ficha…");
+              cargarDetalle(selectedId);
+            }}
             onWhatsApp={() => { setWaPaciente(selected); setWaCita(null); }} clinica={nombreClinica} onAgendar={() => setAgendarPara(selected)}
             onRegistrarSesion={() => setRegistrandoSesion(selected)} puedeRegistrar={usuario?.rol === "medico" || usuario?.rol === "admin"}
             onVenderPaquete={() => setVendiendoPaquete(selected)} puedeVenderPaquete={usuario?.rol === "asistente" || usuario?.rol === "admin"}

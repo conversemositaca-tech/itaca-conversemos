@@ -308,3 +308,44 @@ class FusionarPorTelefonoTests(TestCase):
         self._paciente("Ana Pérez", "987654321")
         self._fusionar(aplicar=False)
         self.assertEqual(Paciente.objects.count(), 2)
+
+
+class ListaDePacientesLivianaTests(TestCase):
+    """La lista no arrastra la historia clínica de los 1.875 pacientes.
+
+    Son ~2 MB en cada carga de la página, y además es información clínica saliendo
+    del servidor sin que nadie la esté mirando. Todo eso llega al abrir la ficha.
+    """
+
+    def setUp(self):
+        self.clinica = Clinica.objects.create(nombre="Conversemos", slug="conversemos-lista")
+        self.coord = Usuario.objects.create_user(
+            email="coordl@test.pe", password="x", clinica=self.clinica, rol=Usuario.Rol.ASISTENTE,
+        )
+        self.paciente = Paciente.objects.create(
+            clinica=self.clinica, nombre="Ana Pérez", telefono="987654321",
+            direccion="Av. Grau 123", alergias="Ninguna",
+            resumen_clinico="Trabaja duelo por pérdida reciente.",
+            medicacion_habitual="Sertralina 50mg",
+            tutor_nombre="Carmen Sánchez", brujula_plan="Sesiones semanales.",
+        )
+        self.client.force_login(self.coord)
+
+    def test_la_lista_no_trae_la_historia_clinica(self):
+        fila = self.client.get("/api/pacientes/").json()[0]
+        for campo in ("resumen_clinico", "medicacion_habitual", "alergias",
+                      "brujula_plan", "tutor_nombre", "notas_internas"):
+            self.assertNotIn(campo, fila, f"'{campo}' no debería viajar en la lista")
+
+    def test_la_lista_conserva_lo_que_muestran_las_filas_y_el_export(self):
+        fila = self.client.get("/api/pacientes/").json()[0]
+        for campo in ("id", "nombre", "tel", "sede", "especialidad", "ultima",
+                      "proxima", "cuenta", "direccion", "numero_documento", "edad"):
+            self.assertIn(campo, fila, f"'{campo}' hace falta en la lista")
+
+    def test_la_ficha_sigue_trayendo_todo(self):
+        ficha = self.client.get(f"/api/pacientes/{self.paciente.id}/").json()
+        self.assertEqual(ficha["resumen_clinico"], "Trabaja duelo por pérdida reciente.")
+        self.assertEqual(ficha["medicacion_habitual"], "Sertralina 50mg")
+        self.assertEqual(ficha["tutor_nombre"], "Carmen Sánchez")
+        self.assertEqual(ficha["brujula_plan"], "Sesiones semanales.")
