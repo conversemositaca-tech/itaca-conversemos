@@ -61,6 +61,45 @@ def _paciente_del_lead(lead):
     return paciente
 
 
+def _servicio_de_consulta(lead):
+    """Con qué servicio entra un lead a la agenda: una CONSULTA, no una sesión.
+
+    No es un detalle de texto: la liquidación se calcula por el NOMBRE del
+    servicio, y la consulta inicial y la sesión individual no se pagan igual. Si
+    la cita entra como "Terapia individual", al psicólogo se le liquida de más.
+
+    Se busca el nombre exacto en el catálogo de la clínica (si hay varias
+    consultas —adultos, infantojuvenil…— se prefiere la que calce con el tipo de
+    servicio del lead). Sin catálogo, cae a lo que traiga el lead.
+    """
+    from finanzas.models import Servicio
+
+    consultas = [
+        s for s in Servicio.objects.filter(clinica=lead.clinica, activo=True)
+        if "consulta" in (s.nombre or "").lower()
+    ]
+    if not consultas:
+        return lead.especialidad or lead.get_tipo_servicio_display() or ""
+    tipo = (lead.get_tipo_servicio_display() or "").strip().lower()
+    if tipo:
+        for s in consultas:
+            if tipo in s.nombre.lower():
+                return s.nombre
+    return sorted(consultas, key=lambda s: len(s.nombre))[0].nombre
+
+
+def _categoria_de(lead):
+    """A qué categoría de la agenda corresponde el tipo de servicio del lead."""
+    from pacientes.models import Cita
+
+    return {
+        Lead.TipoServicio.ADULTOS: Cita.Categoria.ADULTOS,
+        Lead.TipoServicio.NINOS: Cita.Categoria.INFANTOJUVENIL,
+        Lead.TipoServicio.ADOLESCENTES: Cita.Categoria.INFANTOJUVENIL,
+        Lead.TipoServicio.PAREJA: Cita.Categoria.PAREJAS,
+    }.get(lead.tipo_servicio, "")
+
+
 def sincronizar_cita_del_lead(lead):
     """Crea (o mueve) la cita de la consulta agendada de un lead.
 
@@ -77,7 +116,7 @@ def sincronizar_cita_del_lead(lead):
 
     inicio = timezone.make_aware(datetime.combine(lead.fecha_consulta, lead.hora_consulta))
     paciente = _paciente_del_lead(lead)
-    especialidad = lead.especialidad or lead.get_tipo_servicio_display() or ""
+    especialidad = _servicio_de_consulta(lead)
 
     cita = lead.cita if lead.cita_id else None
     if cita and cita.estado == Cita.Estado.CANCELADA:
@@ -98,7 +137,8 @@ def sincronizar_cita_del_lead(lead):
 
     cita = Cita.objects.create(
         clinica=lead.clinica, paciente=paciente, medico=lead.medico, inicio=inicio,
-        especialidad=especialidad, estado=Cita.Estado.AGENDADA, sede=lead.sede or "",
+        especialidad=especialidad, categoria=_categoria_de(lead),
+        estado=Cita.Estado.AGENDADA, sede=lead.sede or "",
         motivo_consulta=lead.motivo_consulta or "",
         notas=f"Consulta registrada desde Marketing (lead #{lead.id}).",
     )
