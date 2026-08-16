@@ -1114,7 +1114,8 @@ export default function ClinicaApp() {
         .ca-stats { display:flex; gap:12px; margin:26px 0 34px; flex-wrap:wrap; }
         .ca-stats { display:flex; gap:12px; flex-wrap:wrap; }
         .ca-profgrid { display:grid; grid-template-columns:repeat(auto-fill, minmax(300px, 1fr)); gap:14px; margin-top:16px; }
-        .ca-profcard { background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:16px; }
+        .ca-profcard { background:var(--surface); border:1px solid transparent; border-radius:16px; padding:16px;
+          box-shadow:0 1px 2px rgba(31,42,38,.04), 0 4px 16px rgba(31,42,38,.05); }
         .ca-proffoto { width:54px; height:54px; border-radius:12px; object-fit:cover; flex-shrink:0; }
         .ca-charts2 { display:grid; grid-template-columns:repeat(auto-fit, minmax(320px, 1fr)); gap:14px; margin-top:14px; }
         .ca-table { width:100%; border-collapse:collapse; font-size:13.5px; }
@@ -1124,8 +1125,9 @@ export default function ClinicaApp() {
         .ca-table .num { text-align:right; font-variant-numeric:tabular-nums; }
         .ca-demo { display:grid; grid-template-columns:1fr 1fr; gap:18px; }
         @media (max-width:760px){ .ca-demo { grid-template-columns:1fr; } }
-        .ca-stat { flex:1; min-width:130px; background:var(--surface); border:1px solid var(--line);
-          border-radius:11px; padding:15px 17px; }
+        .ca-stat { flex:1; min-width:130px; background:var(--surface); border:1px solid transparent;
+          border-radius:14px; padding:15px 17px;
+          box-shadow:0 1px 2px rgba(31,42,38,.04), 0 4px 16px rgba(31,42,38,.05); }
         .ca-stat-n { font-size:26px; font-weight:600; letter-spacing:-0.02em; }
         .ca-stat-l { font-size:13px; color:var(--ink-soft); margin-top:2px; }
         .ca-secth { font-size:13px; font-weight:600; color:var(--muted); text-transform:uppercase;
@@ -1204,7 +1206,24 @@ export default function ClinicaApp() {
         .ca-back { display:inline-flex; align-items:center; gap:5px; background:none; border:none;
           color:var(--ink-soft); font-size:13.5px; cursor:pointer; font-family:inherit; padding:4px 0; margin-bottom:16px; }
         .ca-back:hover { color:var(--ink); }
-        .ca-card { background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:22px; }
+        /* Las tarjetas se apoyan sobre el fondo de la app, que ya tiene color: no
+           necesitan borde. Una sombra corta las separa y deja la pantalla más
+           tranquila. Las tablas y la agenda de adentro conservan sus líneas,
+           que ahí son las que dejan seguir una fila con el ojo. */
+        /* El borde va transparente, no ausente: las tarjetas de aviso lo pintan con
+           su color por style inline (amarillo para atención, rojo para
+           eliminaciones) y así conservan su señal sin tocar cada una. */
+        .ca-card { background:var(--surface); border:1px solid transparent; border-radius:16px; padding:22px;
+          box-shadow:0 1px 2px rgba(31,42,38,.04), 0 4px 16px rgba(31,42,38,.05); }
+        /* Tarjeta dentro de tarjeta: la de adentro vuelve a ser plana, si no se
+           acumulan sombras y se ve sucio. */
+        .ca-card .ca-card { box-shadow:none; border-color:var(--line); border-radius:12px; }
+        /* Si la tarjeta además es un botón (el aviso de Legal, por ejemplo), responde
+           al mouse igual que los accesos de arriba. */
+        button.ca-card { transition:transform .14s, box-shadow .14s; }
+        button.ca-card:hover { transform:translateY(-2px);
+          box-shadow:0 2px 4px rgba(31,42,38,.05), 0 12px 28px rgba(31,42,38,.10); }
+        @media (prefers-reduced-motion: reduce) { button.ca-card, button.ca-card:hover { transform:none; } }
         .ca-field { display:flex; align-items:center; gap:8px; font-size:13.5px; color:var(--ink-soft); }
         .ca-hist { border-left:2px solid var(--line); padding-left:16px; margin-left:6px; }
         .ca-histitem { position:relative; padding-bottom:18px; }
@@ -1362,9 +1381,16 @@ export default function ClinicaApp() {
         .ca-bar { height:8px; background:var(--line); border-radius:999px; overflow:hidden; margin-top:10px; }
         .ca-bar > div { height:100%; background:var(--accent); border-radius:999px; }
         .ca-glance { display:grid; grid-template-columns:repeat(2,1fr); gap:12px; margin:26px 0 34px; }
-        .ca-gcard { text-align:left; background:var(--surface); border:1px solid var(--line); border-radius:12px;
-          padding:16px 18px; cursor:pointer; font-family:inherit; transition:border-color .12s, transform .12s, box-shadow .12s; }
-        .ca-gcard:hover { border-color:#DCD7CE; transform:translateY(-1px); box-shadow:0 4px 16px rgba(40,38,34,.05); }
+        /* Los cuatro accesos del inicio son botones: al pasar el mouse suben un
+           poco y la sombra crece, que es lo que hace sentir que se puede tocar. */
+        .ca-gcard { text-align:left; background:var(--surface); border:1px solid transparent; border-radius:16px;
+          padding:16px 18px; cursor:pointer; font-family:inherit; transition:transform .14s, box-shadow .14s;
+          box-shadow:0 1px 2px rgba(31,42,38,.04), 0 4px 16px rgba(31,42,38,.05); }
+        .ca-gcard:hover { transform:translateY(-2px);
+          box-shadow:0 2px 4px rgba(31,42,38,.05), 0 12px 28px rgba(31,42,38,.10); }
+        .ca-gcard:active { transform:translateY(0);
+          box-shadow:0 1px 2px rgba(31,42,38,.05), 0 3px 10px rgba(31,42,38,.06); }
+        @media (prefers-reduced-motion: reduce) { .ca-gcard, .ca-gcard:hover, .ca-gcard:active { transform:none; } }
         .ca-ghead { display:flex; align-items:center; gap:7px; font-size:11.5px; color:var(--muted); font-weight:600;
           text-transform:uppercase; letter-spacing:.04em; margin-bottom:9px; }
         .ca-gmain { font-size:21px; font-weight:600; letter-spacing:-0.02em; }
