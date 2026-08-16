@@ -1169,7 +1169,6 @@ export default function ClinicaApp() {
            Las capas (modales) se separan con altura y no con líneas: sombra amplia
            y esquinas más redondas. Las grillas densas siguen con líneas, que ahí
            son las que dejan seguir una fila con el ojo. --- */
-        .ca-modal.flota { border-radius:18px; box-shadow:0 2px 6px rgba(31,42,38,.05), 0 18px 50px rgba(31,42,38,.14); }
         .lead-grupo { background:var(--bg); border-radius:13px; padding:15px; margin-bottom:13px; }
         .lead-grupo > h4 { margin:0 0 11px; font-size:11.5px; letter-spacing:.09em; text-transform:uppercase;
           color:var(--muted); font-weight:700; }
@@ -1291,10 +1290,22 @@ export default function ClinicaApp() {
         @media (max-width:560px){ .ca-vitgrid { grid-template-columns:repeat(3,1fr); } }
         @media (max-width:820px){ .ca-wk { grid-auto-flow:column; grid-template-columns:none; grid-auto-columns:minmax(118px,1fr);
           overflow-x:auto; padding-bottom:4px; } .ca-seg { margin-left:0; } }
-        .ca-modal-bg { position:fixed; inset:0; background:rgba(40,38,34,.30); display:flex; align-items:center;
-          justify-content:center; padding:20px; z-index:30; }
-        .ca-modal { background:var(--surface); border-radius:14px; width:100%; max-width:430px; padding:22px;
-          border:1px solid var(--line); box-shadow:0 12px 40px rgba(40,38,34,.16); max-height:90vh; overflow-y:auto; }
+        /* Las capas se separan del fondo con ALTURA, no con líneas: sin borde,
+           sombra amplia y esquinas más redondas. El fondo se oscurece un poco más
+           y se difumina, para que lo de encima quede claramente por delante.
+           (Las grillas densas de la agenda mantienen sus líneas: ahí son las que
+           dejan seguir una fila con el ojo.) */
+        .ca-modal-bg { position:fixed; inset:0; background:rgba(31,42,38,.38); display:flex; align-items:center;
+          justify-content:center; padding:20px; z-index:30; backdrop-filter:blur(2px);
+          animation:ca-fondo .16s ease-out; }
+        .ca-modal { background:var(--surface); border-radius:18px; width:100%; max-width:430px; padding:22px;
+          border:none; box-shadow:0 2px 6px rgba(31,42,38,.05), 0 18px 50px rgba(31,42,38,.16);
+          max-height:90vh; overflow-y:auto; animation:ca-capa .18s cubic-bezier(.2,.8,.3,1); }
+        @keyframes ca-fondo { from { opacity:0; } }
+        @keyframes ca-capa { from { opacity:0; transform:translateY(8px) scale(.985); } }
+        @media (prefers-reduced-motion: reduce) {
+          .ca-modal-bg, .ca-modal { animation:none; }
+        }
         .ca-input { width:100%; border:1px solid var(--line); border-radius:8px; padding:9px 11px; font-size:14px;
           font-family:inherit; color:var(--ink); outline:none; margin-top:5px; background:var(--surface); }
         .ca-input:focus { border-color:var(--accent); }
@@ -6527,7 +6538,7 @@ function CrearLeadModal({ lead, medicos, anuncios, sedePropia, onClose, onSave }
 
   return (
     <div className="ca-modal-bg" onClick={onClose}>
-      <div className="ca-modal flota" style={{ maxWidth: 470, maxHeight: "88vh", overflowY: "auto" }} onClick={(ev) => ev.stopPropagation()}>
+      <div className="ca-modal" style={{ maxWidth: 470, maxHeight: "88vh", overflowY: "auto" }} onClick={(ev) => ev.stopPropagation()}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 18 }}>
           <strong style={{ fontSize: 16.5 }}>{lead ? "Editar lead" : "Captar lead"}</strong>
           <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)" }}><X size={18} /></button>
