@@ -25,6 +25,7 @@ from django.utils import timezone
 
 from core import estructurar_nota
 from pacientes.models import Atencion, Cita, ObjetivoTerapeutico, Paciente
+from pacientes.recordatorios import enviar_recordatorios
 from usuarios.models import Usuario
 
 
@@ -351,6 +352,32 @@ class ResumenDiarioView(_Base):
                 } for c in citas[:30]],
             })
         return Response({"ok": True, "fecha": fecha.isoformat(), "psicologos": out})
+
+
+class RecordatoriosView(_Base):
+    """Dispara el envío de los recordatorios de las citas del día.
+
+    Existe para que un cron en la nube (kira-bot) los mande cada mañana, en vez
+    de depender de una tarea programada en la computadora de alguien: si esa
+    computadora está apagada, ese día nadie recibe su recordatorio.
+
+    POST /api/integraciones/recordatorios/
+      body opcional: {"fecha": "YYYY-MM-DD", "dry": true}
+
+    Es seguro llamarlo de más: solo toma las citas que aún no fueron recordadas,
+    así que una segunda llamada el mismo día no reenvía nada.
+    """
+
+    def post(self, request):
+        d = request.data if isinstance(request.data, dict) else {}
+        f = (d.get("fecha") or "").strip()
+        try:
+            y, m, dd = [int(x) for x in f.split("-")]
+            fecha = date(y, m, dd)
+        except (ValueError, TypeError, AttributeError):
+            fecha = timezone.localdate()
+        res = enviar_recordatorios(fecha=fecha, dry=bool(d.get("dry")))
+        return Response({"ok": True, **res})
 
 
 class NotaVozView(_Base):
