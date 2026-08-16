@@ -1,8 +1,9 @@
 """Pruebas del envío de recordatorios de cita.
 
 Son los mensajes que bajan las faltas: si un día dejan de salir, hoy nadie se
-entera hasta que un paciente no llega. Además el envío lo dispara una tarea
-programada FUERA del servidor, así que la lógica conviene tenerla amarrada.
+entera hasta que un paciente no llega. El envío lo dispara algo de FUERA del
+servidor (un cron en la nube, o una tarea programada), así que la lógica
+conviene tenerla amarrada.
 
 El envío real (Evolution / Cloud API) se simula: aquí se prueba a quién se le
 manda, a quién no, y qué pasa cuando el envío falla.
@@ -22,7 +23,7 @@ from mensajes.models import Mensaje
 from pacientes.models import Cita, Paciente
 from usuarios.models import Usuario
 
-ENVIAR = "pacientes.management.commands.enviar_recordatorios.registrar_y_enviar"
+ENVIAR = "pacientes.recordatorios.registrar_y_enviar"
 
 
 def _ok(clinica, **kw):
@@ -105,6 +106,97 @@ class RecordatoriosTests(TestCase):
         self.assertIn("DRY-RUN", salida)
         cita.refresh_from_db()
         self.assertFalse(cita.recordatorio_enviado)
+
+
+class RecordatoriosPorEndpointTests(TestCase):
+    """El mismo envío, disparado desde la nube en vez de una computadora.
+
+    Manda WhatsApps a pacientes reales sin que haya nadie mirando, así que lo
+    que se prueba aquí es sobre todo lo que NO debe pasar: que quede abierto y
+    que alguien reciba el recordatorio dos veces.
+    """
+
+    URL = "/api/integraciones/recordatorios/"
+    TOKEN = "token-de-prueba"
+
+    def setUp(self):
+        self.clinica = Clinica.objects.create(nombre="Conversemos", slug="conversemos-ep")
+        self.psico = Usuario.objects.create_user(
+            email="psicoep@test.pe", password="x", clinica=self.clinica, rol=Usuario.Rol.MEDICO,
+        )
+
+    def _cita(self, nombre="Ana Pérez", telefono="987654321", hora=10):
+        p = Paciente.objects.create(clinica=self.clinica, nombre=nombre, telefono=telefono)
+        return Cita.objects.create(
+            clinica=self.clinica, paciente=p, medico=self.psico,
+            inicio=timezone.make_aware(datetime.combine(timezone.localdate(), time(hora, 0))),
+            estado=Cita.Estado.AGENDADA, especialidad="Terapia individual",
+        )
+
+    def _llamar(self, token=TOKEN, envio=_ok, **body):
+        cab = {"HTTP_X_INTEGRACION_TOKEN": token} if token is not None else {}
+        with patch(ENVIAR, side_effect=envio):
+            return self.client.post(self.URL, body, content_type="application/json", **cab)
+
+    # -- que no quede abierto ------------------------------------------------
+    def test_sin_token_configurado_en_el_servidor_no_manda_nada(self):
+        """Si falta la variable de entorno, la puerta queda cerrada, no abierta."""
+        cita = self._cita()
+        with self.settings(ITACA_INTEGRACION_TOKEN=""):
+            self.assertEqual(self._llamar().status_code, 403)
+        cita.refresh_from_db()
+        self.assertFalse(cita.recordatorio_enviado)
+
+    def test_con_token_equivocado_no_manda_nada(self):
+        cita = self._cita()
+        with self.settings(ITACA_INTEGRACION_TOKEN=self.TOKEN):
+            self.assertEqual(self._llamar(token="otro").status_code, 403)
+        cita.refresh_from_db()
+        self.assertFalse(cita.recordatorio_enviado)
+
+    def test_sin_cabecera_no_manda_nada(self):
+        self._cita()
+        with self.settings(ITACA_INTEGRACION_TOKEN=self.TOKEN):
+            self.assertEqual(self._llamar(token=None).status_code, 403)
+
+    # -- que funcione y no se repita ----------------------------------------
+    def test_con_el_token_correcto_manda_y_marca(self):
+        cita = self._cita()
+        with self.settings(ITACA_INTEGRACION_TOKEN=self.TOKEN):
+            r = self._llamar()
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.json()["enviados"], 1)
+        cita.refresh_from_db()
+        self.assertTrue(cita.recordatorio_enviado)
+
+    def test_llamarlo_dos_veces_el_mismo_dia_no_reenvia(self):
+        """Lo que protege de que el cron y la tarea de Windows corran juntos y
+        el paciente reciba el recordatorio por duplicado."""
+        self._cita()
+        with self.settings(ITACA_INTEGRACION_TOKEN=self.TOKEN):
+            self.assertEqual(self._llamar().json()["enviados"], 1)
+            self.assertEqual(self._llamar().json()["enviados"], 0)
+        self.assertEqual(Mensaje.objects.filter(tipo=Mensaje.Tipo.RECORDATORIO).count(), 0)
+
+    def test_el_dry_no_manda_ni_marca(self):
+        cita = self._cita()
+        with self.settings(ITACA_INTEGRACION_TOKEN=self.TOKEN):
+            r = self._llamar(dry=True)
+        self.assertEqual(r.json()["enviados"], 0)
+        self.assertEqual(r.json()["detalle"][0]["estado"], "se_enviaria")
+        cita.refresh_from_db()
+        self.assertFalse(cita.recordatorio_enviado)
+
+    def test_devuelve_el_detalle_de_lo_que_paso(self):
+        """El cron guarda esta respuesta: si un día falla, ahí está el porqué."""
+        self._cita(nombre="Ana Pérez")
+        self._cita(nombre="Sin teléfono", telefono="", hora=11)
+        with self.settings(ITACA_INTEGRACION_TOKEN=self.TOKEN):
+            d = self._llamar(envio=_falla).json()
+        self.assertEqual((d["fallidos"], d["omitidos"]), (1, 1))
+        motivos = {x["paciente"]: x["estado"] for x in d["detalle"]}
+        self.assertEqual(motivos["Ana Pérez"], "falló")
+        self.assertEqual(motivos["Sin teléfono"], "sin_telefono")
 
 
 class AvisoDeRecordatoriosPendientesTests(TestCase):

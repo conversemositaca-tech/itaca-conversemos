@@ -1,8 +1,11 @@
 """Envía por WhatsApp los recordatorios de las citas de una fecha (por defecto hoy).
 
-Pensado para correr automáticamente cada mañana (Tarea programada de Windows /
-cron). No reenvía a quien ya fue recordado, omite pacientes sin teléfono y deja
-todo en la bitácora.
+La lógica vive en `pacientes.recordatorios`, compartida con el endpoint
+/api/integraciones/recordatorios/ que dispara un cron en la nube. Este comando
+sirve para correrlo a mano o desde una tarea programada.
+
+No reenvía a quien ya fue recordado, omite pacientes sin teléfono y deja todo
+en la bitácora.
 
 Uso:
     python manage.py enviar_recordatorios            # citas de hoy
@@ -14,11 +17,7 @@ from datetime import date
 from django.core.management.base import BaseCommand
 from django.utils import timezone
 
-from core.models import Clinica
-from mensajes.models import Mensaje
-from mensajes.services import plantilla_por_clave, registrar_y_enviar
-from pacientes.api import texto_recordatorio
-from pacientes.models import Cita
+from pacientes.recordatorios import enviar_recordatorios
 
 
 class Command(BaseCommand):
@@ -38,45 +37,23 @@ class Command(BaseCommand):
         dry = options["dry_run"]
         self.stdout.write(f"Recordatorios para {fecha}{' (DRY-RUN, no se envía)' if dry else ''}:")
 
-        enviados = fallidos = omitidos = 0
+        res = enviar_recordatorios(fecha=fecha, dry=dry)
 
-        for clinica in Clinica.objects.filter(activo=True):
-            citas = (
-                Cita.objects.filter(clinica=clinica, inicio__date=fecha, recordatorio_enviado=False)
-                .exclude(estado__in=[Cita.Estado.ATENDIDA, Cita.Estado.CANCELADA])
-                .select_related("paciente", "medico")
-                .order_by("inicio")
-            )
-            for cita in citas:
-                tel = cita.paciente.telefono
-                nombre = cita.paciente.nombre
-                if not tel:
-                    omitidos += 1
-                    self.stdout.write(f"  - {nombre}: sin telefono, se omite")
-                    continue
-
-                texto = texto_recordatorio(cita)
-                if dry:
-                    self.stdout.write(f"  -> {nombre} ({tel}) - {cita.especialidad} {timezone.localtime(cita.inicio):%H:%M}")
-                    continue
-
-                _, resultado, _ = registrar_y_enviar(
-                    clinica, telefono=tel, texto=texto, tipo=Mensaje.Tipo.RECORDATORIO,
-                    paciente=cita.paciente, cita=cita, usuario=None,
-                    plantilla=plantilla_por_clave(clinica, "recordatorio"),
-                )
-                if resultado["estado"] == "enviado":
-                    cita.recordatorio_enviado = True
-                    cita.save(update_fields=["recordatorio_enviado"])
-                    enviados += 1
-                    self.stdout.write(self.style.SUCCESS(f"  [OK] {nombre}"))
-                else:
-                    fallidos += 1
-                    self.stdout.write(self.style.WARNING(f"  [X] {nombre}: {resultado['estado']} - {resultado['detalle']}"))
+        for d in res["detalle"]:
+            quien = f"{d['paciente']} ({d['hora']})"
+            if d["estado"] == "enviado":
+                self.stdout.write(self.style.SUCCESS(f"  [OK] {quien}"))
+            elif d["estado"] == "se_enviaria":
+                self.stdout.write(f"  -> {quien}")
+            elif d["estado"] == "sin_telefono":
+                self.stdout.write(f"  - {quien}: sin telefono, se omite")
+            else:
+                self.stdout.write(self.style.WARNING(f"  [X] {quien}: {d.get('motivo', '')}"))
 
         if dry:
             self.stdout.write("Fin del dry-run.")
         else:
             self.stdout.write(self.style.SUCCESS(
-                f"Listo: {enviados} enviados, {fallidos} fallidos, {omitidos} sin teléfono."
+                f"Listo: {res['enviados']} enviados, {res['fallidos']} fallidos, "
+                f"{res['omitidos']} sin teléfono."
             ))
