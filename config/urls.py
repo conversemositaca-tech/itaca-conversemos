@@ -12,7 +12,7 @@ from core.gerencia import (
 )
 from core.integraciones import (
     ConsultaView, ContextoView, NotaVozView, PacientesBuscarView, PsicologoView,
-    ResumenDiarioView,
+    RecordatoriosView, ResumenDiarioView,
 )
 from core.metricas import MetricaMensualViewSet
 from core.ocupacion import OcupacionView
@@ -140,6 +140,7 @@ urlpatterns = [
     path("api/integraciones/contexto/", ContextoView.as_view(), name="integ-contexto"),
     path("api/integraciones/consulta/", ConsultaView.as_view(), name="integ-consulta"),
     path("api/integraciones/resumen-dia/", ResumenDiarioView.as_view(), name="integ-resumen-dia"),
+    path("api/integraciones/recordatorios/", RecordatoriosView.as_view(), name="integ-recordatorios"),
     # Consentimiento informado: aceptación pública por token (sin login).
     path("api/consentimiento/<str:token>/aceptar/", AceptarConsentimientoView.as_view(), name="consentimiento-aceptar"),
     path("api/consentimiento/<str:token>/", ConsentimientoPublicoView.as_view(), name="consentimiento-publico"),
