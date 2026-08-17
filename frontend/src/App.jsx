@@ -10873,6 +10873,288 @@ function _profSirveServicio(prof, nombreServicio) {
   return kw.some((k) => pob.includes(k));
 }
 
+// Estilos de la página pública de agendamiento (/agendar/<token>).
+// Vive fuera de .clinica-app: no hereda nada del panel interno, así que define
+// su propio sistema. Una sola familia tipográfica, un solo acento, y separación
+// por altura (sombra) en vez de líneas de 1px.
+const AGENDA_CSS = `
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+.ag {
+  --tinta:#16262B; --tinta-2:#4A5F66; --tinta-3:#7E9198;
+  --acento:#0C5E69; --acento-vivo:#127C8A; --acento-suave:#E8F3F4;
+  --papel:#FBFAF8; --superficie:#FFFFFF; --linea:#E7E4DE;
+  --sombra:0 1px 2px rgba(22,38,43,.04), 0 6px 20px rgba(22,38,43,.06);
+  --sombra-alta:0 2px 4px rgba(22,38,43,.05), 0 14px 34px rgba(22,38,43,.10);
+  --curva:cubic-bezier(.2,.8,.3,1);
+  font-family:'Inter',-apple-system,system-ui,sans-serif;
+  background:var(--papel); color:var(--tinta);
+  min-height:100vh; letter-spacing:-0.011em;
+  -webkit-font-smoothing:antialiased;
+}
+.ag *, .ag *::before, .ag *::after { box-sizing:border-box; }
+.ag-wrap { max-width:620px; margin:0 auto; padding:clamp(24px,6vw,56px) clamp(18px,5vw,28px) 80px; }
+
+/* ── Tipografía ─────────────────────────────────────────────────────── */
+.ag-h1 {
+  font-size:clamp(30px,7.5vw,44px); line-height:1.08; font-weight:600;
+  letter-spacing:-0.035em; margin:0 0 16px; text-wrap:balance;
+}
+.ag-h1 em { font-style:normal; color:var(--acento); }
+.ag-h1-sm { font-size:clamp(25px,6vw,33px); margin-bottom:8px; }
+.ag-h2 {
+  font-size:clamp(19px,4.4vw,23px); line-height:1.25; font-weight:600;
+  letter-spacing:-0.025em; margin:0 0 6px; text-wrap:balance;
+}
+.ag-sub { font-size:14.5px; line-height:1.55; color:var(--tinta-2); margin:0 0 22px; max-width:46ch; }
+.ag-lead { font-size:16.5px; line-height:1.55; color:var(--tinta-2); margin:0; max-width:44ch; }
+.ag-bienvenida { font-size:14.5px; line-height:1.65; color:var(--tinta-3); margin:16px 0 0; max-width:46ch; }
+.ag-marca {
+  font-size:11.5px; font-weight:600; letter-spacing:.18em; text-transform:uppercase;
+  color:var(--acento-vivo); margin:0 0 20px;
+}
+.ag-marca-sm { margin:0 0 24px; }
+.ag-rotulo {
+  font-size:11px; font-weight:600; letter-spacing:.11em; text-transform:uppercase;
+  color:var(--tinta-3); margin:0 0 10px;
+}
+.ag-cargando { color:var(--tinta-3); font-size:15px; padding:8px 0; }
+.ag-portada { margin-bottom:38px; }
+.ag-cabecera { margin-bottom:8px; }
+.ag-paso { margin-top:8px; }
+
+/* ── Progreso: una línea fina, sin cinco etiquetas apretadas ────────── */
+.ag-progreso { margin:0 0 26px; }
+.ag-progreso-barra { height:3px; background:var(--linea); border-radius:999px; overflow:hidden; }
+.ag-progreso-barra span {
+  display:block; height:100%; background:var(--acento-vivo); border-radius:999px;
+  transition:width .45s var(--curva);
+}
+.ag-progreso-txt { font-size:12px; color:var(--tinta-3); margin:9px 0 0; font-weight:500; }
+
+.ag-volver {
+  display:inline-flex; align-items:center; gap:3px; background:none; border:none;
+  color:var(--tinta-2); font-family:inherit; font-size:14px; font-weight:500;
+  cursor:pointer; padding:6px 10px 6px 4px; margin:0 0 14px -4px; border-radius:8px;
+  transition:color .14s, background .14s;
+}
+.ag-volver:hover { color:var(--acento); background:var(--acento-suave); }
+.ag-volver svg { transition:transform .16s var(--curva); }
+.ag-volver:hover svg { transform:translateX(-2px); }
+
+/* ── Tarjetas de opción ─────────────────────────────────────────────── */
+.ag-opciones { display:flex; flex-direction:column; gap:12px; }
+
+.ag-sede, .ag-via {
+  position:relative; width:100%; text-align:left; cursor:pointer; font-family:inherit;
+  background:var(--superficie); border:1px solid transparent; border-radius:16px;
+  box-shadow:var(--sombra); transition:transform .16s var(--curva), box-shadow .16s var(--curva);
+}
+.ag-sede { display:block; padding:20px 52px 20px 22px; }
+.ag-sede-nombre { display:block; font-size:19px; font-weight:600; letter-spacing:-0.02em; }
+.ag-sede-dir { display:block; font-size:13.5px; color:var(--tinta-2); margin-top:3px; line-height:1.45; }
+
+.ag-via { display:flex; align-items:flex-start; gap:15px; padding:20px 52px 20px 20px; }
+.ag-via-icono {
+  flex-shrink:0; width:40px; height:40px; border-radius:11px; display:flex;
+  align-items:center; justify-content:center;
+  background:var(--acento-suave); color:var(--acento);
+}
+.ag-via-txt { display:block; }
+.ag-via-label { display:block; font-size:16px; font-weight:600; letter-spacing:-0.015em; }
+.ag-via-desc { display:block; font-size:13.5px; color:var(--tinta-2); margin-top:3px; line-height:1.5; }
+
+.ag-flecha {
+  position:absolute; right:20px; top:50%; margin-top:-10px; color:var(--tinta-3);
+  transition:transform .18s var(--curva), color .18s;
+}
+.ag-sede:hover, .ag-via:hover { transform:translateY(-2px); box-shadow:var(--sombra-alta); }
+.ag-sede:hover .ag-flecha, .ag-via:hover .ag-flecha { transform:translateX(4px); color:var(--acento); }
+.ag-sede:active, .ag-via:active { transform:translateY(0); box-shadow:var(--sombra); }
+
+/* ── Categorías: chips, no tarjetas repetidas ───────────────────────── */
+.ag-cats { display:flex; flex-wrap:wrap; gap:10px; }
+.ag-cat {
+  font-family:inherit; font-size:15px; font-weight:500; cursor:pointer;
+  padding:13px 20px; border-radius:999px; background:var(--superficie);
+  border:1px solid var(--linea); color:var(--tinta);
+  transition:border-color .15s, color .15s, background .15s, transform .15s var(--curva);
+}
+.ag-cat:hover {
+  border-color:var(--acento-vivo); color:var(--acento); background:var(--acento-suave);
+  transform:translateY(-1px);
+}
+
+/* ── Psicólogos ─────────────────────────────────────────────────────── */
+.ag-profs { display:flex; flex-direction:column; gap:14px; }
+.ag-prof {
+  background:var(--superficie); border-radius:18px; padding:22px;
+  box-shadow:var(--sombra); transition:box-shadow .18s var(--curva);
+}
+.ag-prof:hover { box-shadow:var(--sombra-alta); }
+.ag-prof-top { display:flex; align-items:center; gap:15px; }
+.ag-prof-id { min-width:0; }
+.ag-prof-nombre { font-size:17px; font-weight:600; letter-spacing:-0.022em; margin:0; }
+.ag-prof-meta { font-size:12.5px; color:var(--tinta-3); margin:3px 0 0; line-height:1.4; }
+.ag-prof-enfoque { font-size:14px; line-height:1.6; color:var(--tinta-2); margin:15px 0 0; }
+.ag-prof-acciones { display:flex; align-items:center; gap:14px; margin-top:18px; }
+.ag-foto { border-radius:50%; object-fit:cover; flex-shrink:0; }
+.ag-foto-ini {
+  display:flex; align-items:center; justify-content:center; font-weight:600;
+  background:var(--acento-suave); color:var(--acento);
+}
+
+/* ── Botones ────────────────────────────────────────────────────────── */
+.ag-btn {
+  display:inline-flex; align-items:center; justify-content:center; gap:6px;
+  font-family:inherit; font-size:14.5px; font-weight:600; cursor:pointer;
+  padding:11px 20px; border-radius:11px; border:none;
+  background:var(--acento); color:#fff; margin-left:auto;
+  transition:background .15s, transform .15s var(--curva), box-shadow .15s var(--curva);
+  box-shadow:0 1px 2px rgba(12,94,105,.18);
+}
+.ag-btn:hover { background:var(--acento-vivo); transform:translateY(-1px); box-shadow:0 4px 14px rgba(12,94,105,.22); }
+.ag-btn:active { transform:translateY(0); box-shadow:0 1px 2px rgba(12,94,105,.18); }
+.ag-btn svg { transition:transform .16s var(--curva); }
+.ag-btn:hover svg { transform:translateX(3px); }
+.ag-btn:disabled { opacity:.55; cursor:default; transform:none; box-shadow:none; }
+.ag-btn-grande { width:100%; margin:22px 0 0; padding:16px; font-size:16px; border-radius:13px; }
+.ag-btn-texto {
+  background:none; border:none; padding:6px 0; font-family:inherit; font-size:14px;
+  font-weight:600; color:var(--acento); cursor:pointer; position:relative;
+}
+.ag-btn-texto::after {
+  content:''; position:absolute; left:0; right:0; bottom:2px; height:1px;
+  background:currentColor; transform:scaleX(0); transform-origin:left;
+  transition:transform .2s var(--curva);
+}
+.ag-btn-texto:hover::after { transform:scaleX(1); }
+
+/* ── Horarios ───────────────────────────────────────────────────────── */
+.ag-elegido {
+  display:flex; align-items:center; gap:13px; padding:13px 16px; margin-bottom:26px;
+  background:var(--acento-suave); border-radius:14px;
+}
+.ag-elegido-rot { display:block; font-size:11.5px; color:var(--acento); font-weight:600; letter-spacing:.05em; text-transform:uppercase; }
+.ag-elegido-nombre { display:block; font-size:15.5px; font-weight:600; letter-spacing:-0.015em; margin-top:1px; }
+.ag-dia { margin-bottom:24px; }
+.ag-dia-rot { font-size:13.5px; font-weight:600; color:var(--tinta); margin:0 0 10px; letter-spacing:-0.01em; }
+.ag-horas { display:flex; flex-wrap:wrap; gap:9px; }
+.ag-hora {
+  font-family:inherit; font-size:14.5px; font-weight:600; cursor:pointer;
+  font-variant-numeric:tabular-nums; padding:11px 17px; border-radius:999px;
+  background:var(--superficie); border:1px solid var(--linea); color:var(--tinta);
+  transition:background .15s, border-color .15s, color .15s, transform .15s var(--curva);
+}
+.ag-hora:hover {
+  background:var(--acento); border-color:var(--acento); color:#fff;
+  transform:translateY(-2px);
+}
+
+/* ── Formulario ─────────────────────────────────────────────────────── */
+.ag-resumen {
+  display:flex; align-items:center; justify-content:space-between; gap:14px;
+  padding:15px 18px; margin-bottom:28px; background:var(--acento-suave); border-radius:14px;
+}
+.ag-resumen-prof { display:block; font-size:15.5px; font-weight:600; letter-spacing:-0.015em; }
+.ag-resumen-cuando { display:block; font-size:13.5px; color:var(--acento); margin-top:2px; }
+.ag-campo { display:block; margin-bottom:16px; }
+.ag-label { display:block; font-size:13px; font-weight:600; color:var(--tinta-2); margin-bottom:6px; }
+.ag-opt { font-weight:400; color:var(--tinta-3); }
+.ag-input {
+  width:100%; font-family:inherit; font-size:16px; color:var(--tinta);
+  padding:13px 15px; border-radius:11px; border:1px solid var(--linea);
+  background:var(--superficie); transition:border-color .15s, box-shadow .15s;
+}
+.ag-input::placeholder { color:var(--tinta-3); }
+.ag-input:hover { border-color:#D3CFC7; }
+.ag-input:focus {
+  outline:none; border-color:var(--acento-vivo);
+  box-shadow:0 0 0 3px rgba(18,124,138,.14);
+}
+.ag-select { appearance:auto; }
+.ag-textarea { min-height:96px; resize:vertical; line-height:1.55; }
+.ag-fila { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+.ag-error { font-size:14px; color:#9C4646; margin:0 0 4px; }
+
+/* ── Avisos y paneles ───────────────────────────────────────────────── */
+.ag-aviso { border-radius:14px; padding:16px 18px; font-size:14px; line-height:1.55; margin-bottom:20px; }
+.ag-aviso-info { background:var(--acento-suave); color:var(--acento); }
+.ag-aviso-ojo { background:#FDFAF1; color:#8A6D2E; }
+.ag-aviso-mal { background:#FDF6F6; color:#9C4646; }
+.ag-panel { background:var(--superficie); border-radius:18px; padding:24px; box-shadow:var(--sombra); margin-top:22px; }
+.ag-pasos-lista { margin:0; padding-left:20px; font-size:14.5px; line-height:1.65; color:var(--tinta-2); }
+.ag-pasos-lista li { margin-bottom:9px; }
+.ag-pasos-lista li::marker { color:var(--acento-vivo); font-weight:600; }
+.ag-pasos-lista strong { color:var(--tinta); font-weight:600; }
+.ag-nota-suave { font-size:13.5px; line-height:1.55; color:var(--tinta-3); margin:14px 0 0; }
+.ag-centro { text-align:center; max-width:40ch; margin-left:auto; margin-right:auto; }
+.ag-contacto { display:flex; gap:11px; align-items:flex-start; margin-bottom:16px; color:var(--tinta-3); }
+.ag-contacto:last-child { margin-bottom:0; }
+.ag-contacto svg { margin-top:2px; flex-shrink:0; }
+.ag-contacto-sede { font-size:14.5px; font-weight:600; color:var(--tinta); }
+.ag-contacto-dir { font-size:13.5px; color:var(--tinta-2); line-height:1.45; margin-top:1px; }
+.ag-tel { display:inline-block; font-size:14px; font-weight:600; color:var(--acento); text-decoration:none; margin-top:3px; }
+.ag-tel:hover { text-decoration:underline; }
+.ag-ok-marca {
+  width:52px; height:52px; border-radius:50%; display:flex; align-items:center;
+  justify-content:center; background:var(--acento); color:#fff; margin-bottom:20px;
+}
+.ag-cierre { font-size:14.5px; color:var(--tinta-2); text-align:center; margin:28px 0 0; }
+
+/* ── Modal del perfil ───────────────────────────────────────────────── */
+.ag-modal-fondo {
+  position:fixed; inset:0; z-index:60; display:flex; align-items:center; justify-content:center;
+  padding:16px; background:rgba(22,38,43,.42); backdrop-filter:blur(3px);
+  animation:ag-fondo .16s ease-out;
+}
+.ag-modal {
+  position:relative; background:var(--superficie); border-radius:20px; padding:26px;
+  max-width:480px; width:100%; max-height:88vh; overflow-y:auto;
+  box-shadow:0 24px 60px rgba(22,38,43,.24); animation:ag-sube .2s var(--curva);
+}
+.ag-cerrar {
+  position:absolute; top:16px; right:16px; background:none; border:none; cursor:pointer;
+  color:var(--tinta-3); padding:6px; border-radius:8px; transition:background .14s, color .14s;
+}
+.ag-cerrar:hover { background:var(--papel); color:var(--tinta); }
+.ag-frase {
+  margin:20px 0 4px; padding-left:15px; border-left:2px solid var(--acento-vivo);
+  font-size:15px; line-height:1.55; color:var(--acento); font-style:italic;
+}
+.ag-bloque { margin-top:20px; }
+.ag-bloque-txt { font-size:14px; line-height:1.6; color:var(--tinta-2); margin:0; white-space:pre-wrap; }
+
+/* ── Movimiento ─────────────────────────────────────────────────────── */
+@keyframes ag-entrada { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
+@keyframes ag-fondo { from { opacity:0; } to { opacity:1; } }
+@keyframes ag-sube { from { opacity:0; transform:translateY(10px) scale(.99); } to { opacity:1; transform:none; } }
+.ag-entra { animation:ag-entrada .3s var(--curva) both; }
+
+/* ── Foco visible (teclado) ─────────────────────────────────────────── */
+.ag button:focus-visible, .ag a:focus-visible, .ag input:focus-visible,
+.ag select:focus-visible, .ag textarea:focus-visible {
+  outline:2px solid var(--acento-vivo); outline-offset:3px; border-radius:8px;
+}
+
+@media (max-width:520px) {
+  .ag-fila { grid-template-columns:1fr; gap:0; }
+  .ag-prof { padding:18px; }
+  .ag-panel { padding:20px; }
+  .ag-resumen { flex-direction:column; align-items:flex-start; gap:8px; }
+  .ag-sede { padding:18px 46px 18px 18px; }
+  .ag-via { padding:18px 46px 18px 18px; gap:13px; }
+}
+
+@media (prefers-reduced-motion:reduce) {
+  .ag *, .ag *::before, .ag *::after {
+    animation-duration:.01ms !important; animation-iteration-count:1 !important;
+    transition-duration:.01ms !important;
+  }
+  .ag-sede:hover, .ag-via:hover, .ag-hora:hover, .ag-cat:hover, .ag-btn:hover { transform:none; }
+}
+`;
+
 export function AgendarPublico({ token }) {
   const [info, setInfo] = useState(null);
   const [err, setErr] = useState("");
@@ -10927,68 +11209,89 @@ export function AgendarPublico({ token }) {
     } finally { setEnviando(false); }
   }
 
-  // --- Paleta y estilos (marca Conversemos, tono teal) ---
-  const A = "#127C8A", AD = "#0C5E69";
-  const wrap = { maxWidth: 620, margin: "0 auto", padding: "22px 16px 64px", fontFamily: "'Inter',system-ui,sans-serif", color: "#22303A", minHeight: "100vh", background: "#F7FAFB" };
-  const inp = { width: "100%", padding: "11px 12px", borderRadius: 9, border: "1px solid #D6DFE1", fontSize: 15, marginBottom: 11, boxSizing: "border-box", fontFamily: "inherit", background: "#fff" };
-  const cardClick = { border: "1px solid #E1E8EA", borderRadius: 14, padding: 15, marginBottom: 11, cursor: "pointer", background: "#fff", textAlign: "left", width: "100%", display: "block", boxShadow: "0 1px 2px rgba(12,94,105,.04)" };
-  const cardStatic = { border: "1px solid #E1E8EA", borderRadius: 14, padding: 15, marginBottom: 11, background: "#fff", boxShadow: "0 1px 2px rgba(12,94,105,.04)" };
-  const btnPrimary = { padding: "10px 16px", borderRadius: 9, border: "none", background: A, color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer" };
-  const btnGhost = { padding: "10px 16px", borderRadius: 9, border: `1px solid ${A}`, background: "#fff", color: A, fontSize: 14, fontWeight: 600, cursor: "pointer" };
-  const avatar = (p, size = 54) => (p.foto
-    ? <img src={p.foto} alt="" style={{ width: size, height: size, borderRadius: "50%", objectFit: "cover", flexShrink: 0 }} />
-    : <div style={{ width: size, height: size, borderRadius: "50%", background: "#E3F1F2", color: A, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: size * 0.37, flexShrink: 0 }}>{(p.nombre || "?").replace(/^lic\.?\s*/i, "").trim().charAt(0)}</div>);
+  const avatar = (p, size = 56) => (p.foto
+    ? <img src={p.foto} alt="" className="ag-foto" style={{ width: size, height: size }} />
+    : <div className="ag-foto ag-foto-ini" style={{ width: size, height: size, fontSize: size * 0.36 }}>
+        {(p.nombre || "?").replace(/^lic\.?\s*/i, "").trim().charAt(0)}
+      </div>);
 
-  if (err && !info) return <div style={wrap}><h2>Enlace no disponible</h2><p style={{ color: "#9C4646" }}>{err}</p></div>;
-  if (!info) return <div style={wrap}>Cargando…</div>;
+  const pila = <style>{AGENDA_CSS}</style>;
 
-  // Pantalla final: mensaje de PRE-RESERVA (con medios de pago/políticas y contactos).
-  if (hecho) {
-    const s = AGENDA_SEDES[hecho.sede] || null;
-    return (
-      <div style={wrap}>
-        <div style={{ ...cardStatic, padding: 22, marginTop: 8 }}>
-          <div style={{ textAlign: "center" }}>
-            <div style={{ fontSize: 44 }}>💙</div>
-            <h1 style={{ fontSize: 21, margin: "8px 0 2px", color: AD }}>¡Gracias por agendar!</h1>
-            <div style={{ fontSize: 13.5, color: "#5B6B72" }}>a través de nuestra página web</div>
-          </div>
-          <div style={{ fontSize: 14.5, lineHeight: 1.6, color: "#33434B", marginTop: 16 }}>
-            <p style={{ margin: "0 0 12px" }}>
-              Reservaste con <strong>{hecho.profesional}</strong> para el <strong>{hecho.inicio_label}</strong>.
-            </p>
-            <p style={{ margin: "0 0 12px" }}>
-              Queremos comentarte que esta es una <strong>pre-reserva ✨</strong>. En breve nos comunicaremos al número que registraste para confirmar tus datos, el horario, sede, modalidad y psicólogo/a seleccionado/a, para asegurarnos de que recibas la atención que buscas.
-            </p>
-            <p style={{ margin: "0 0 6px", fontWeight: 600 }}>Una vez confirmados los datos, te enviaremos:</p>
-            <div style={{ margin: "0 0 12px", lineHeight: 1.8 }}>
-              ✅ Los medios de pago.<br />✅ Nuestras políticas de atención.<br />✅ La confirmación oficial de tu cita.
-            </div>
-            <div style={{ background: "#FFF7EC", border: "1px solid #F1E2C4", borderRadius: 10, padding: "10px 12px", fontSize: 13.5, color: "#8A6D2E" }}>
-              Recuerda que <strong>solo con el pago realizado</strong> la cita queda confirmada y programada para su desarrollo.
-            </div>
-          </div>
-          <div style={{ marginTop: 16, borderTop: "1px solid #EBF0F1", paddingTop: 14, fontSize: 13.5, color: "#33434B" }}>
-            <div style={{ fontWeight: 600, marginBottom: 8 }}>¿Dudas o consultas? Escríbenos:</div>
-            {(s ? [hecho.sede] : ["piura", "lima"]).map((k) => {
-              const se = AGENDA_SEDES[k];
-              return (
-                <div key={k} style={{ marginBottom: 8, lineHeight: 1.5 }}>
-                  📍 <strong>{se.label}:</strong> {se.direccion}<br />
-                  <span style={{ marginLeft: 20 }}>📞 {se.telefono}</span>
-                </div>
-              );
-            })}
-          </div>
-          <div style={{ textAlign: "center", fontSize: 13.5, color: AD, marginTop: 12, fontWeight: 600 }}>
-            Nos sentimos honrados de acompañarte en este primer paso hacia tu bienestar. 💙
-          </div>
+  if (err && !info) return (
+    <div className="ag">{pila}
+      <main className="ag-wrap">
+        <div className="ag-aviso ag-aviso-mal" style={{ marginTop: 40 }}>
+          <h1 className="ag-h2">Este enlace no está disponible</h1>
+          <p style={{ margin: "6px 0 0" }}>{err}</p>
         </div>
+      </main>
+    </div>
+  );
+  if (!info) return (
+    <div className="ag">{pila}
+      <main className="ag-wrap"><div className="ag-cargando">Cargando…</div></main>
+    </div>
+  );
+
+  // ── Pantalla final: pre-reserva registrada ────────────────────────────
+  if (hecho) {
+    const sedesContacto = AGENDA_SEDES[hecho.sede] ? [hecho.sede] : ["piura", "lima"];
+    return (
+      <div className="ag">{pila}
+        <main className="ag-wrap">
+          <div className="ag-entra">
+            <div className="ag-ok-marca"><Check size={26} strokeWidth={2.5} /></div>
+            <h1 className="ag-h1 ag-h1-sm">Tu hora quedó apartada</h1>
+            <p className="ag-lead">
+              {hecho.profesional} · {hecho.inicio_label}
+            </p>
+
+            <section className="ag-panel">
+              <h2 className="ag-rotulo">Qué pasa ahora</h2>
+              <ol className="ag-pasos-lista">
+                <li>
+                  <strong>Te llamamos o escribimos</strong> al número que dejaste, para confirmar
+                  horario, sede y profesional.
+                </li>
+                <li>
+                  <strong>Te enviamos</strong> los medios de pago y las políticas de atención.
+                </li>
+                <li>
+                  <strong>Con el pago hecho</strong>, tu cita queda confirmada.
+                </li>
+              </ol>
+              <p className="ag-nota-suave">
+                Hasta entonces es una pre-reserva: no tienes que pagar nada todavía.
+              </p>
+            </section>
+
+            <section className="ag-panel">
+              <h2 className="ag-rotulo">Si quieres escribirnos antes</h2>
+              {sedesContacto.map((k) => {
+                const se = AGENDA_SEDES[k];
+                return (
+                  <div key={k} className="ag-contacto">
+                    <MapPin size={16} strokeWidth={1.8} />
+                    <div>
+                      <div className="ag-contacto-sede">{se.label}</div>
+                      <div className="ag-contacto-dir">{se.direccion}</div>
+                      <a className="ag-tel" href={`tel:${se.telefono.replace(/\s/g, "")}`}>{se.telefono}</a>
+                    </div>
+                  </div>
+                );
+              })}
+            </section>
+
+            <p className="ag-cierre">
+              Nos alegra acompañarte en este primer paso.
+            </p>
+          </div>
+        </main>
       </div>
     );
   }
 
-  // --- Derivados de estado ---
+  // ── Derivados de estado ───────────────────────────────────────────────
   const profsSede = info.profesionales.filter((p) => p.sede === sede);
   const catDef = AGENDA_CATS.find((c) => c.v === categoria);
   const matchCat = (p) => {
@@ -11019,248 +11322,300 @@ export function AgendarPublico({ token }) {
   };
 
   const ProfCard = (p) => (
-    <div key={p.id} style={cardStatic}>
-      <div style={{ display: "flex", gap: 13, alignItems: "center" }}>
-        {avatar(p)}
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontWeight: 700, fontSize: 15.5 }}>{p.nombre}</div>
-          <div style={{ fontSize: 12.5, color: "#5B6B72" }}>{p.titulo}{p.sede_label ? ` · ${p.sede_label}` : ""}{p.modalidad_label ? ` · ${p.modalidad_label}` : ""}</div>
-          {p.enfoque ? <div style={{ fontSize: 12.5, color: "#7B8A90", marginTop: 3, lineHeight: 1.45 }}>{p.enfoque.length > 110 ? p.enfoque.slice(0, 110) + "…" : p.enfoque}</div> : null}
+    <article key={p.id} className="ag-prof">
+      <div className="ag-prof-top">
+        {avatar(p, 62)}
+        <div className="ag-prof-id">
+          <h3 className="ag-prof-nombre">{p.nombre}</h3>
+          <p className="ag-prof-meta">
+            {[p.titulo, p.sede_label, p.modalidad_label].filter(Boolean).join(" · ")}
+          </p>
         </div>
       </div>
-      <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-        <button style={btnGhost} onClick={() => setPerfil(p)}>Ver perfil</button>
-        <button style={{ ...btnPrimary, flex: 1 }} onClick={() => setProf(p)}>Elegir</button>
+      {p.enfoque ? (
+        <p className="ag-prof-enfoque">
+          {p.enfoque.length > 150 ? p.enfoque.slice(0, 150).trim() + "…" : p.enfoque}
+        </p>
+      ) : null}
+      <div className="ag-prof-acciones">
+        <button className="ag-btn-texto" onClick={() => setPerfil(p)}>Ver perfil</button>
+        <button className="ag-btn" onClick={() => setProf(p)}>
+          Elegir <ChevronRight size={16} strokeWidth={2.2} />
+        </button>
       </div>
-    </div>
+    </article>
   );
 
   return (
-    <div style={wrap}>
-      {/* Portada / logo de marca */}
-      {showSede ? (
-        <div style={{ borderRadius: 18, overflow: "hidden", marginBottom: 18, boxShadow: "0 8px 26px rgba(12,94,105,.16)" }}>
-          <div style={{ background: `linear-gradient(135deg, ${AD} 0%, ${A} 58%, #18A6B4 100%)`, padding: "32px 22px 28px", color: "#fff", textAlign: "center" }}>
-            <div style={{ fontSize: 12, letterSpacing: 3, textTransform: "uppercase", opacity: 0.85, fontWeight: 600 }}>{info.clinica}</div>
-            <div style={{ fontSize: 25, fontWeight: 800, lineHeight: 1.18, marginTop: 10 }}>Todos necesitamos de un<br />sincero <span style={{ borderBottom: "3px solid rgba(255,255,255,.55)", paddingBottom: 1 }}>conversemos</span></div>
-            <div style={{ fontSize: 13.5, opacity: 0.92, marginTop: 10 }}>Agenda tu cita en línea</div>
-          </div>
-        </div>
-      ) : (
-        <div style={{ textAlign: "center", marginBottom: 14 }}>
-          <div style={{ fontSize: 12, letterSpacing: 2.5, textTransform: "uppercase", color: A, fontWeight: 700 }}>{info.clinica}</div>
-          <div style={{ fontSize: 13, color: "#7B8A90", marginTop: 2 }}>Agenda tu cita en línea</div>
-        </div>
-      )}
+    <div className="ag">{pila}
+      <main className="ag-wrap">
+        {/* ── Portada ── */}
+        {showSede ? (
+          <header className="ag-portada ag-entra">
+            <p className="ag-marca">{info.clinica}</p>
+            <h1 className="ag-h1">
+              Todos necesitamos de un<br /><em>sincero conversemos</em>
+            </h1>
+            <p className="ag-lead">
+              Elige sede, psicólogo y horario. Nosotros confirmamos contigo antes de tu sesión.
+            </p>
+            {/* Condensado de la bienvenida que escribió el equipo: antes eran
+                cuatro párrafos antes de poder hacer nada. */}
+            <p className="ag-bienvenida">
+              Gracias por estar aquí. Creemos que todos, en algún momento, necesitamos un
+              espacio seguro para conversar y entender lo que sentimos.
+            </p>
+          </header>
+        ) : (
+          <header className="ag-cabecera">
+            <p className="ag-marca ag-marca-sm">{info.clinica}</p>
+          </header>
+        )}
 
-      {/* Bienvenida (solo en la portada) */}
-      {showSede && (
-        <div style={{ ...cardStatic, padding: 18, fontSize: 14, lineHeight: 1.6, color: "#33434B" }}>
-          <p style={{ margin: "0 0 10px" }}><strong>Gracias por estar aquí y confiar en nosotros para acompañarte.</strong></p>
-          <p style={{ margin: "0 0 10px" }}>En {info.clinica} creemos que <em>todos, en algún momento, necesitamos un espacio seguro para conversar</em>, comprender lo que sentimos y encontrar nuevas herramientas para seguir adelante.</p>
-          <p style={{ margin: "0 0 10px" }}>Nuestro propósito es <em>cambiar vidas</em> a través de un acompañamiento psicológico humano, profesional y libre de juicios.</p>
-          <p style={{ margin: 0 }}>Nos alegra que estés aquí. Comencemos juntos este camino.</p>
-        </div>
-      )}
-
-      {/* Barra de progreso */}
-      <div style={{ margin: "4px 0 18px" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10.5, marginBottom: 6 }}>
-          {PASOS.map((l, i) => (
-            <span key={l} style={{ color: i <= stepIdx ? A : "#B4C1C4", fontWeight: i === stepIdx ? 700 : 500 }}>{l}</span>
-          ))}
-        </div>
-        <div style={{ height: 6, background: "#E1E8EA", borderRadius: 999, overflow: "hidden" }}>
-          <div style={{ width: `${(stepIdx / (PASOS.length - 1)) * 100}%`, height: "100%", background: A, transition: "width .3s" }} />
-        </div>
-      </div>
-
-      {/* Volver */}
-      {sede && (
-        <button onClick={volver} style={{ background: "none", border: "none", color: A, fontWeight: 600, cursor: "pointer", fontSize: 13.5, padding: "2px 0", marginBottom: 12 }}>← Volver</button>
-      )}
-
-      {!info.hay_agenda && (
-        <div style={{ background: "#FDF6F6", border: "1px solid #F0D6D6", borderRadius: 12, padding: 16, color: "#9C4646", fontSize: 14 }}>
-          Por ahora no hay horarios disponibles en línea. Escríbenos por WhatsApp y te ayudamos a agendar. 🙏
-        </div>
-      )}
-
-      {/* Paso 1: elegir sede */}
-      {info.hay_agenda && showSede && (
-        <div>
-          <h2 style={{ fontSize: 17, margin: "0 0 4px", color: AD }}>📍 ¿Dónde te gustaría atenderte?</h2>
-          <div style={{ fontSize: 13, color: "#7B8A90", marginBottom: 14 }}>Para atención virtual, elige igualmente la sede más cercana a ti.</div>
-          {["lima", "piura"].map((k) => {
-            const se = AGENDA_SEDES[k];
-            return (
-              <button key={k} style={cardClick} onClick={() => setSede(k)}>
-                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                  <div style={{ fontSize: 26 }}>📍</div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontWeight: 700, fontSize: 16 }}>{se.label}</div>
-                    <div style={{ fontSize: 12.5, color: "#7B8A90" }}>{se.direccion}</div>
-                  </div>
-                  <ChevronRight size={18} style={{ color: "#B4C1C4" }} />
-                </div>
-              </button>
-            );
-          })}
-        </div>
-      )}
-
-      {/* Paso 2: ¿ya sabes con quién? */}
-      {showVia && (
-        <div>
-          <h2 style={{ fontSize: 17, margin: "0 0 12px", color: AD }}>👩‍⚕️ ¿Ya sabes con quién deseas atenderte?</h2>
-          {[
-            { v: "elegir", emoji: "🔎", label: "Quiero elegir un profesional", desc: "Verás los psicólogos disponibles y escoges tú." },
-            { v: "ayuda", emoji: "🤝", label: "Necesito ayuda para encontrar al indicado", desc: "Nos cuentas a quién va dirigido y te ayudamos a elegir." },
-          ].map((o) => (
-            <button key={o.v} style={cardClick} onClick={() => setVia(o.v)}>
-              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                <div style={{ fontSize: 24 }}>{o.emoji}</div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 700, fontSize: 15 }}>{o.label}</div>
-                  <div style={{ fontSize: 12.5, color: "#7B8A90" }}>{o.desc}</div>
-                </div>
-                <ChevronRight size={18} style={{ color: "#B4C1C4" }} />
-              </div>
-            </button>
-          ))}
-        </div>
-      )}
-
-      {/* Rama "necesito ayuda": elegir categoría */}
-      {showCat && (
-        <div>
-          <h2 style={{ fontSize: 17, margin: "0 0 4px", color: AD }}>Escoge una categoría</h2>
-          <div style={{ fontSize: 13, color: "#7B8A90", marginBottom: 14 }}>Te mostraremos los horarios de los psicólogos disponibles y un coordinador te contactará para confirmar que sea el ideal para ti.</div>
-          {AGENDA_CATS.map((c) => (
-            <button key={c.v} style={cardClick} onClick={() => setCategoria(c.v)}>
-              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                <div style={{ fontSize: 24 }}>{c.emoji}</div>
-                <div style={{ flex: 1, fontWeight: 700, fontSize: 15 }}>{c.label}</div>
-                <ChevronRight size={18} style={{ color: "#B4C1C4" }} />
-              </div>
-            </button>
-          ))}
-        </div>
-      )}
-
-      {/* Paso 3: elegir profesional */}
-      {needProf && (
-        <div>
-          <h2 style={{ fontSize: 17, margin: "0 0 4px", color: AD }}>Selecciona a tu profesional</h2>
-          {via === "ayuda" && (
-            <div style={{ background: "#EAF5F6", border: "1px solid #CFE6E9", borderRadius: 10, padding: "10px 12px", fontSize: 13, color: "#0C5E69", marginBottom: 14 }}>
-              Según lo que elegiste, estos son los psicólogos con horarios disponibles. Un coordinador se comunicará contigo para ayudarte a verificar que sea el ideal.
+        {/* ── Progreso ── */}
+        {info.hay_agenda && (
+          <div className="ag-progreso" role="group" aria-label={`Paso ${stepIdx + 1} de ${PASOS.length}: ${PASOS[stepIdx]}`}>
+            <div className="ag-progreso-barra">
+              <span style={{ width: `${((stepIdx + 1) / PASOS.length) * 100}%` }} />
             </div>
-          )}
-          {profsMostrar.length === 0 ? (
-            <div style={{ background: "#FDFAF1", border: "1px solid #F0E4C9", borderRadius: 12, padding: 16, fontSize: 14, color: "#8A6D2E" }}>
-              No hay psicólogos con horario en línea en {AGENDA_SEDES[sede]?.label} por ahora. Escríbenos por WhatsApp y te ayudamos a agendar. 🙏
-            </div>
-          ) : profsMostrar.map((p) => ProfCard(p))}
-        </div>
-      )}
+            <p className="ag-progreso-txt">
+              Paso {stepIdx + 1} de {PASOS.length} · {PASOS[stepIdx]}
+            </p>
+          </div>
+        )}
 
-      {/* Paso 4: elegir horario */}
-      {showSlots && (
-        <div>
-          <div style={{ display: "flex", alignItems: "center", gap: 11, background: "#EAF5F6", borderRadius: 12, padding: "10px 14px", marginBottom: 14 }}>
-            {avatar(prof, 38)}
-            <div style={{ fontSize: 14 }}>Reservando con <strong>{prof.nombre}</strong></div>
-          </div>
-          {!slotsData ? <div style={{ color: "#7B8A90" }}>Buscando horarios libres…</div> :
-            slotsData.dias.length === 0 ? (
-              <div style={{ background: "#FDFAF1", border: "1px solid #F0E4C9", borderRadius: 12, padding: 16, fontSize: 14, color: "#8A6D2E" }}>
-                {prof.nombre} no tiene horarios libres en las próximas semanas. Vuelve y prueba con otro/a psicólogo/a o escríbenos por WhatsApp.
-              </div>
-            ) : slotsData.dias.map((d) => (
-              <div key={d.fecha} style={{ marginBottom: 15 }}>
-                <div style={{ fontSize: 13, fontWeight: 700, color: AD, marginBottom: 8 }}>{diaLabel(d.fecha)}</div>
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  {d.slots.map((s) => (
-                    <button key={s.inicio} onClick={() => { setSlot({ ...s, diaLabel: diaLabel(d.fecha) }); setErr(""); }}
-                      style={{ padding: "9px 14px", borderRadius: 999, border: `1px solid ${A}`, background: "#fff", color: A, fontSize: 14, fontWeight: 600, cursor: "pointer" }}>
-                      {s.hora}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ))}
-        </div>
-      )}
-
-      {/* Paso 5: datos + confirmar */}
-      {showDatos && (
-        <div>
-          <div style={{ background: "#E7F3F1", border: "1px solid #CBE6E1", borderRadius: 12, padding: "12px 14px", marginBottom: 16, fontSize: 14, color: "#0C5E69" }}>
-            <strong>{prof.nombre}</strong> · {slot.diaLabel} a las <strong>{slot.hora}</strong>
-            <button onClick={() => setSlot(null)} style={{ marginLeft: 10, background: "none", border: "none", color: A, fontWeight: 600, cursor: "pointer", fontSize: 13 }}>cambiar</button>
-          </div>
-          <input style={inp} value={form.nombre} onChange={setF("nombre")} placeholder="Nombre y apellidos *" autoFocus />
-          <input style={inp} value={form.telefono} onChange={setF("telefono")} placeholder="Teléfono / WhatsApp *" inputMode="tel" />
-          <div style={{ display: "flex", gap: 10 }}>
-            <input style={inp} value={form.documento} onChange={setF("documento")} placeholder="DNI (opcional)" inputMode="numeric" />
-            <input style={inp} value={form.email} onChange={setF("email")} placeholder="Correo (opcional)" inputMode="email" />
-          </div>
-          {(() => {
-            const servs = (info.servicios || []).filter((s) => _profSirveServicio(prof, s.nombre));
-            const lista = servs.length ? servs : (info.servicios || []);
-            if (!lista.length) return null;
-            const val = lista.some((s) => s.nombre === form.servicio) ? form.servicio : (lista[0]?.nombre || "");
-            return (
-              <select style={{ ...inp, appearance: "auto" }} value={val} onChange={setF("servicio")}>
-                {lista.map((s) => <option key={s.nombre} value={s.nombre}>{s.nombre}{s.precio && Number(s.precio) > 0 ? ` — S/${Number(s.precio).toFixed(0)}` : ""}</option>)}
-              </select>
-            );
-          })()}
-          {prof.modalidad === "ambas" && (
-            <select style={{ ...inp, appearance: "auto" }} value={form.modalidad} onChange={setF("modalidad")}>
-              <option value="presencial">Presencial</option>
-              <option value="virtual">Virtual</option>
-            </select>
-          )}
-          <textarea style={{ ...inp, minHeight: 74, resize: "vertical", lineHeight: 1.5 }} value={form.mensaje} onChange={setF("mensaje")} placeholder="¿Qué te gustaría trabajar? (opcional)" />
-          {err ? <div style={{ color: "#9C4646", fontSize: 13, marginBottom: 10 }}>{err}</div> : null}
-          <button onClick={reservar} disabled={enviando}
-            style={{ width: "100%", padding: "14px", borderRadius: 11, border: "none", background: A, color: "#fff", fontSize: 15.5, fontWeight: 700, cursor: "pointer", opacity: enviando ? 0.5 : 1 }}>
-            {enviando ? "Reservando…" : "Confirmar mi pre-reserva"}
+        {sede && (
+          <button onClick={volver} className="ag-volver">
+            <ChevronLeft size={16} strokeWidth={2} /> Volver
           </button>
-          <div style={{ fontSize: 11.5, color: "#7B8A90", marginTop: 10, textAlign: "center" }}>
-            Es una pre-reserva: nuestro equipo te contactará para confirmar y enviarte los medios de pago.
-          </div>
-        </div>
-      )}
+        )}
 
-      {/* Modal "Ver perfil" */}
-      {perfil && (
-        <div onClick={() => setPerfil(null)} style={{ position: "fixed", inset: 0, background: "rgba(18,28,32,.5)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16, zIndex: 60 }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 16, maxWidth: 460, width: "100%", maxHeight: "90vh", overflow: "auto", padding: 22, fontFamily: "inherit" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 13 }}>
-              {avatar(perfil, 58)}
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontWeight: 800, fontSize: 17 }}>{perfil.nombre}</div>
-                <div style={{ fontSize: 12.5, color: "#5B6B72" }}>{perfil.titulo}{perfil.sede_label ? ` · ${perfil.sede_label}` : ""}{perfil.modalidad_label ? ` · ${perfil.modalidad_label}` : ""}</div>
-              </div>
-              <button onClick={() => setPerfil(null)} style={{ background: "none", border: "none", cursor: "pointer", color: "#8A959A" }}><X size={20} /></button>
+        {!info.hay_agenda && (
+          <div className="ag-aviso ag-aviso-mal">
+            Por ahora no hay horarios disponibles en línea. Escríbenos por WhatsApp y te ayudamos a agendar.
+          </div>
+        )}
+
+        {/* ── Paso 1: sede ── */}
+        {info.hay_agenda && showSede && (
+          <section className="ag-paso ag-entra">
+            <h2 className="ag-h2">¿Dónde te gustaría atenderte?</h2>
+            <p className="ag-sub">Si prefieres atención virtual, elige igual la sede más cercana a ti.</p>
+            <div className="ag-opciones">
+              {["lima", "piura"].map((k) => {
+                const se = AGENDA_SEDES[k];
+                return (
+                  <button key={k} className="ag-sede" onClick={() => setSede(k)}>
+                    <span className="ag-sede-nombre">{se.label}</span>
+                    <span className="ag-sede-dir">{se.direccion}</span>
+                    <ChevronRight className="ag-flecha" size={20} strokeWidth={1.8} />
+                  </button>
+                );
+              })}
             </div>
-            {perfil.frase ? <div style={{ fontStyle: "italic", color: AD, fontSize: 14, lineHeight: 1.5, margin: "14px 0 6px", borderLeft: `3px solid ${A}`, paddingLeft: 12 }}>“{perfil.frase}”</div> : null}
-            <div style={{ marginTop: 14 }}>
+          </section>
+        )}
+
+        {/* ── Paso 2: con quién ── */}
+        {showVia && (
+          <section className="ag-paso ag-entra">
+            <h2 className="ag-h2">¿Ya sabes con quién quieres atenderte?</h2>
+            <div className="ag-opciones">
               {[
-                { l: "Especialidades y enfoque", v: [perfil.enfoque, perfil.problematicas].filter(Boolean).join("\n\n") },
-                { l: "Formación y experiencia", v: [perfil.formacion, perfil.trayectoria].filter(Boolean).join("\n\n") },
-                { l: "Público que atiende", v: perfil.poblaciones },
-              ].filter((sc) => sc.v && sc.v.trim()).map((sc) => (
-                <div key={sc.l} style={{ marginBottom: 14 }}>
-                  <div style={{ fontSize: 11.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, color: A, marginBottom: 4 }}>{sc.l}</div>
-                  <div style={{ fontSize: 13.5, color: "#3D474D", lineHeight: 1.55, whiteSpace: "pre-wrap" }}>{sc.v}</div>
-                </div>
+                { v: "elegir", Icono: Search, label: "Quiero elegir yo", desc: "Verás a los psicólogos disponibles, con su perfil y sus horarios." },
+                { v: "ayuda", Icono: HeartHandshake, label: "Ayúdenme a encontrar al indicado", desc: "Nos cuentas para quién es la consulta y te acompañamos a elegir." },
+              ].map(({ v, Icono, label, desc }) => (
+                <button key={v} className="ag-via" onClick={() => setVia(v)}>
+                  <span className="ag-via-icono"><Icono size={20} strokeWidth={1.7} /></span>
+                  <span className="ag-via-txt">
+                    <span className="ag-via-label">{label}</span>
+                    <span className="ag-via-desc">{desc}</span>
+                  </span>
+                  <ChevronRight className="ag-flecha" size={20} strokeWidth={1.8} />
+                </button>
               ))}
             </div>
-            <button style={{ ...btnPrimary, width: "100%", padding: "13px", fontSize: 15 }} onClick={() => { setProf(perfil); setPerfil(null); }}>
+          </section>
+        )}
+
+        {/* ── Rama "ayuda": categoría ── */}
+        {showCat && (
+          <section className="ag-paso ag-entra">
+            <h2 className="ag-h2">¿Para quién es la consulta?</h2>
+            <p className="ag-sub">Te mostraremos a los psicólogos con horario disponible y un coordinador confirmará contigo que sea el ideal.</p>
+            <div className="ag-cats">
+              {AGENDA_CATS.map((c) => (
+                <button key={c.v} className="ag-cat" onClick={() => setCategoria(c.v)}>
+                  {c.label.replace(/^Atención a /, "")}
+                </button>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {/* ── Paso 3: profesional ── */}
+        {needProf && (
+          <section className="ag-paso ag-entra">
+            <h2 className="ag-h2">Elige a tu psicólogo</h2>
+            {via === "ayuda" && (
+              <div className="ag-aviso ag-aviso-info">
+                Estos son los que atienden lo que elegiste y tienen horario libre. Si prefieres,
+                un coordinador te ayuda a confirmar cuál encaja mejor contigo.
+              </div>
+            )}
+            {profsMostrar.length === 0 ? (
+              <div className="ag-aviso ag-aviso-ojo">
+                No hay psicólogos con horario en línea en {AGENDA_SEDES[sede]?.label} por ahora.
+                Escríbenos por WhatsApp y te ayudamos a agendar.
+              </div>
+            ) : <div className="ag-profs">{profsMostrar.map((p) => ProfCard(p))}</div>}
+          </section>
+        )}
+
+        {/* ── Paso 4: horario ── */}
+        {showSlots && (
+          <section className="ag-paso ag-entra">
+            <div className="ag-elegido">
+              {avatar(prof, 40)}
+              <div>
+                <span className="ag-elegido-rot">Reservando con</span>
+                <span className="ag-elegido-nombre">{prof.nombre}</span>
+              </div>
+            </div>
+            <h2 className="ag-h2">Elige tu horario</h2>
+            {!slotsData ? <p className="ag-cargando">Buscando horarios libres…</p> :
+              slotsData.dias.length === 0 ? (
+                <div className="ag-aviso ag-aviso-ojo">
+                  {prof.nombre} no tiene horarios libres en las próximas semanas. Vuelve y prueba
+                  con otro psicólogo, o escríbenos por WhatsApp.
+                </div>
+              ) : slotsData.dias.map((d) => (
+                <div key={d.fecha} className="ag-dia">
+                  <h3 className="ag-dia-rot">{diaLabel(d.fecha)}</h3>
+                  <div className="ag-horas">
+                    {d.slots.map((s) => (
+                      <button key={s.inicio} className="ag-hora"
+                        onClick={() => { setSlot({ ...s, diaLabel: diaLabel(d.fecha) }); setErr(""); }}>
+                        {s.hora}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+          </section>
+        )}
+
+        {/* ── Paso 5: datos ── */}
+        {showDatos && (
+          <section className="ag-paso ag-entra">
+            <div className="ag-resumen">
+              <div>
+                <span className="ag-resumen-prof">{prof.nombre}</span>
+                <span className="ag-resumen-cuando">{slot.diaLabel} · {slot.hora}</span>
+              </div>
+              <button className="ag-btn-texto" onClick={() => setSlot(null)}>Cambiar</button>
+            </div>
+
+            <h2 className="ag-h2">Tus datos</h2>
+
+            <label className="ag-campo">
+              <span className="ag-label">Nombre y apellidos</span>
+              <input className="ag-input" value={form.nombre} onChange={setF("nombre")} autoFocus
+                autoComplete="name" placeholder="Como aparece en tu documento" />
+            </label>
+
+            <label className="ag-campo">
+              <span className="ag-label">Teléfono o WhatsApp</span>
+              <input className="ag-input" value={form.telefono} onChange={setF("telefono")}
+                inputMode="tel" autoComplete="tel" placeholder="Aquí te confirmamos la cita" />
+            </label>
+
+            <div className="ag-fila">
+              <label className="ag-campo">
+                <span className="ag-label">DNI <span className="ag-opt">opcional</span></span>
+                <input className="ag-input" value={form.documento} onChange={setF("documento")} inputMode="numeric" />
+              </label>
+              <label className="ag-campo">
+                <span className="ag-label">Correo <span className="ag-opt">opcional</span></span>
+                <input className="ag-input" value={form.email} onChange={setF("email")} inputMode="email" autoComplete="email" />
+              </label>
+            </div>
+
+            {(() => {
+              const servs = (info.servicios || []).filter((s) => _profSirveServicio(prof, s.nombre));
+              const lista = servs.length ? servs : (info.servicios || []);
+              if (!lista.length) return null;
+              const val = lista.some((s) => s.nombre === form.servicio) ? form.servicio : (lista[0]?.nombre || "");
+              return (
+                <label className="ag-campo">
+                  <span className="ag-label">Tipo de sesión</span>
+                  <select className="ag-input ag-select" value={val} onChange={setF("servicio")}>
+                    {lista.map((s) => (
+                      <option key={s.nombre} value={s.nombre}>
+                        {s.nombre}{s.precio && Number(s.precio) > 0 ? ` — S/${Number(s.precio).toFixed(0)}` : ""}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              );
+            })()}
+
+            {prof.modalidad === "ambas" && (
+              <label className="ag-campo">
+                <span className="ag-label">Modalidad</span>
+                <select className="ag-input ag-select" value={form.modalidad} onChange={setF("modalidad")}>
+                  <option value="presencial">Presencial</option>
+                  <option value="virtual">Virtual</option>
+                </select>
+              </label>
+            )}
+
+            <label className="ag-campo">
+              <span className="ag-label">¿Qué te gustaría trabajar? <span className="ag-opt">opcional</span></span>
+              <textarea className="ag-input ag-textarea" value={form.mensaje} onChange={setF("mensaje")}
+                placeholder="Cuéntanos lo que quieras. Lo lee solo tu psicólogo." />
+            </label>
+
+            {err ? <p className="ag-error" role="alert">{err}</p> : null}
+
+            <button className="ag-btn ag-btn-grande" onClick={reservar} disabled={enviando}>
+              {enviando ? "Reservando…" : "Apartar mi hora"}
+            </button>
+            <p className="ag-nota-suave ag-centro">
+              No pagas nada ahora. Te contactamos para confirmar y recién ahí te enviamos los medios de pago.
+            </p>
+          </section>
+        )}
+      </main>
+
+      {/* ── Modal: perfil del psicólogo ── */}
+      {perfil && (
+        <div className="ag-modal-fondo" onClick={() => setPerfil(null)} role="dialog" aria-modal="true">
+          <div className="ag-modal" onClick={(e) => e.stopPropagation()}>
+            <button className="ag-cerrar" onClick={() => setPerfil(null)} aria-label="Cerrar">
+              <X size={20} strokeWidth={1.8} />
+            </button>
+            <div className="ag-prof-top">
+              {avatar(perfil, 64)}
+              <div className="ag-prof-id">
+                <h2 className="ag-prof-nombre">{perfil.nombre}</h2>
+                <p className="ag-prof-meta">
+                  {[perfil.titulo, perfil.sede_label, perfil.modalidad_label].filter(Boolean).join(" · ")}
+                </p>
+              </div>
+            </div>
+            {perfil.frase ? <blockquote className="ag-frase">{perfil.frase}</blockquote> : null}
+            {[
+              { l: "Especialidades y enfoque", v: [perfil.enfoque, perfil.problematicas].filter(Boolean).join("\n\n") },
+              { l: "Formación y experiencia", v: [perfil.formacion, perfil.trayectoria].filter(Boolean).join("\n\n") },
+              { l: "Público que atiende", v: perfil.poblaciones },
+            ].filter((sc) => sc.v && sc.v.trim()).map((sc) => (
+              <div key={sc.l} className="ag-bloque">
+                <h3 className="ag-rotulo">{sc.l}</h3>
+                <p className="ag-bloque-txt">{sc.v}</p>
+              </div>
+            ))}
+            <button className="ag-btn ag-btn-grande" onClick={() => { setProf(perfil); setPerfil(null); }}>
               Elegir a {perfil.nombre.replace(/^lic\.?\s*/i, "").trim().split(" ")[0]}
             </button>
           </div>
