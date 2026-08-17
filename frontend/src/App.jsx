@@ -10881,11 +10881,14 @@ const AGENDA_CSS = `
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
 .ag {
-  --tinta:#16262B; --tinta-2:#4A5F66; --tinta-3:#7E9198;
-  --acento:#0C5E69; --acento-vivo:#127C8A; --acento-suave:#E8F3F4;
-  --papel:#FBFAF8; --superficie:#FFFFFF; --linea:#E7E4DE;
-  --sombra:0 1px 2px rgba(22,38,43,.04), 0 6px 20px rgba(22,38,43,.06);
-  --sombra-alta:0 2px 4px rgba(22,38,43,.05), 0 14px 34px rgba(22,38,43,.10);
+  /* Tinta y papel tirando a tierra, no a gris azul: es lo que hace que la
+     pantalla se sienta cálida sin tocar el teal de la marca. */
+  --tinta:#2B2521; --tinta-2:#5C534B; --tinta-3:#877C70;
+  --acento:#0C5E69; --acento-vivo:#127C8A; --acento-suave:#E4EFEC;
+  --arena:#F4EBDF; /* bloques destacados: la cita elegida, los iconos */
+  --papel:#FAF6F0; --superficie:#FFFDFA; --linea:#EBE2D6;
+  --sombra:0 1px 2px rgba(74,54,38,.05), 0 6px 20px rgba(74,54,38,.07);
+  --sombra-alta:0 2px 4px rgba(74,54,38,.06), 0 14px 34px rgba(74,54,38,.12);
   --curva:cubic-bezier(.2,.8,.3,1);
   font-family:'Inter',-apple-system,system-ui,sans-serif;
   background:var(--papel); color:var(--tinta);
@@ -10938,7 +10941,7 @@ const AGENDA_CSS = `
   cursor:pointer; padding:6px 10px 6px 4px; margin:0 0 14px -4px; border-radius:8px;
   transition:color .14s, background .14s;
 }
-.ag-volver:hover { color:var(--acento); background:var(--acento-suave); }
+.ag-volver:hover { color:var(--acento); background:var(--arena); }
 .ag-volver svg { transition:transform .16s var(--curva); }
 .ag-volver:hover svg { transform:translateX(-2px); }
 
@@ -10958,7 +10961,7 @@ const AGENDA_CSS = `
 .ag-via-icono {
   flex-shrink:0; width:40px; height:40px; border-radius:11px; display:flex;
   align-items:center; justify-content:center;
-  background:var(--acento-suave); color:var(--acento);
+  background:var(--arena); color:var(--acento);
 }
 .ag-via-txt { display:block; }
 .ag-via-label { display:block; font-size:16px; font-weight:600; letter-spacing:-0.015em; }
@@ -10981,7 +10984,7 @@ const AGENDA_CSS = `
   transition:border-color .15s, color .15s, background .15s, transform .15s var(--curva);
 }
 .ag-cat:hover {
-  border-color:var(--acento-vivo); color:var(--acento); background:var(--acento-suave);
+  border-color:var(--acento-vivo); color:var(--acento); background:var(--arena);
   transform:translateY(-1px);
 }
 
@@ -11001,7 +11004,7 @@ const AGENDA_CSS = `
 .ag-foto { border-radius:50%; object-fit:cover; flex-shrink:0; }
 .ag-foto-ini {
   display:flex; align-items:center; justify-content:center; font-weight:600;
-  background:var(--acento-suave); color:var(--acento);
+  background:var(--arena); color:var(--acento);
 }
 
 /* ── Botones ────────────────────────────────────────────────────────── */
@@ -11033,7 +11036,7 @@ const AGENDA_CSS = `
 /* ── Horarios ───────────────────────────────────────────────────────── */
 .ag-elegido {
   display:flex; align-items:center; gap:13px; padding:13px 16px; margin-bottom:26px;
-  background:var(--acento-suave); border-radius:14px;
+  background:var(--arena); border-radius:14px;
 }
 .ag-elegido-rot { display:block; font-size:11.5px; color:var(--acento); font-weight:600; letter-spacing:.05em; text-transform:uppercase; }
 .ag-elegido-nombre { display:block; font-size:15.5px; font-weight:600; letter-spacing:-0.015em; margin-top:1px; }
@@ -11054,7 +11057,7 @@ const AGENDA_CSS = `
 /* ── Formulario ─────────────────────────────────────────────────────── */
 .ag-resumen {
   display:flex; align-items:center; justify-content:space-between; gap:14px;
-  padding:15px 18px; margin-bottom:28px; background:var(--acento-suave); border-radius:14px;
+  padding:15px 18px; margin-bottom:28px; background:var(--arena); border-radius:14px;
 }
 .ag-resumen-prof { display:block; font-size:15.5px; font-weight:600; letter-spacing:-0.015em; }
 .ag-resumen-cuando { display:block; font-size:13.5px; color:var(--acento); margin-top:2px; }
@@ -11105,13 +11108,13 @@ const AGENDA_CSS = `
 /* ── Modal del perfil ───────────────────────────────────────────────── */
 .ag-modal-fondo {
   position:fixed; inset:0; z-index:60; display:flex; align-items:center; justify-content:center;
-  padding:16px; background:rgba(22,38,43,.42); backdrop-filter:blur(3px);
+  padding:16px; background:rgba(43,37,33,.44); backdrop-filter:blur(3px);
   animation:ag-fondo .16s ease-out;
 }
 .ag-modal {
   position:relative; background:var(--superficie); border-radius:20px; padding:26px;
   max-width:480px; width:100%; max-height:88vh; overflow-y:auto;
-  box-shadow:0 24px 60px rgba(22,38,43,.24); animation:ag-sube .2s var(--curva);
+  box-shadow:0 24px 60px rgba(74,54,38,.26); animation:ag-sube .2s var(--curva);
 }
 .ag-cerrar {
   position:absolute; top:16px; right:16px; background:none; border:none; cursor:pointer;
