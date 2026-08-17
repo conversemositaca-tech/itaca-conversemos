@@ -11007,7 +11007,8 @@ const AGENDA_CSS = `
 .ag-prof-id { min-width:0; }
 .ag-prof-nombre { font-size:17px; font-weight:600; letter-spacing:-0.022em; margin:0; }
 .ag-prof-meta { font-size:12.5px; color:var(--tinta-3); margin:3px 0 0; line-height:1.4; }
-.ag-prof-enfoque { font-size:14px; line-height:1.6; color:var(--tinta-2); margin:15px 0 0; }
+/* Sin resumen en la lista: todas las tarjetas miden lo mismo, así ninguna
+   luce más llena que otra por cómo quedó redactada su ficha. */
 .ag-prof-acciones { display:flex; align-items:center; gap:14px; margin-top:18px; }
 .ag-foto { border-radius:50%; object-fit:cover; flex-shrink:0; }
 .ag-foto-ini {
@@ -11332,6 +11333,10 @@ export function AgendarPublico({ token }) {
     if (sede) return setSede(null);
   };
 
+  // Todas las tarjetas se ven iguales a propósito: el resumen del enfoque salía
+  // recortado aquí, así que quien había llenado bien su ficha lucía más que
+  // quien no, y la lista se leía como una comparación entre colegas. El detalle
+  // está en "Ver perfil", donde se lee a cada uno por separado.
   const ProfCard = (p) => (
     <article key={p.id} className="ag-prof">
       <div className="ag-prof-top">
@@ -11343,15 +11348,10 @@ export function AgendarPublico({ token }) {
           </p>
         </div>
       </div>
-      {p.enfoque ? (
-        <p className="ag-prof-enfoque">
-          {p.enfoque.length > 150 ? p.enfoque.slice(0, 150).trim() + "…" : p.enfoque}
-        </p>
-      ) : null}
       <div className="ag-prof-acciones">
         <button className="ag-btn-texto" onClick={() => setPerfil(p)}>Ver perfil</button>
         <button className="ag-btn" onClick={() => setProf(p)}>
-          Elegir <ChevronRight size={16} strokeWidth={2.2} />
+          Ver horarios <ChevronRight size={16} strokeWidth={2.2} />
         </button>
       </div>
     </article>
@@ -11471,13 +11471,14 @@ export function AgendarPublico({ token }) {
         {/* ── Paso 3: profesional ── */}
         {needProf && (
           <section className="ag-paso ag-entra">
-            <h2 className="ag-h2">Elige a tu psicólogo</h2>
-            {via === "ayuda" && (
-              <div className="ag-aviso ag-aviso-info">
-                Estos son los que atienden lo que elegiste y tienen horario libre. Si prefieres,
-                un coordinador te ayuda a confirmar cuál encaja mejor contigo.
-              </div>
-            )}
+            {/* "Nuestro equipo" y no "elige al mejor": la página presenta a un
+                equipo, no pone a los colegas a competir por la reserva. */}
+            <h2 className="ag-h2">Nuestro equipo en {AGENDA_SEDES[sede]?.label}</h2>
+            <p className="ag-sub">
+              {via === "ayuda"
+                ? "Todos ellos atienden lo que nos contaste. Elige por el horario que mejor te quede: un coordinador te acompaña después para confirmar que estés en buenas manos."
+                : "Puedes ver el perfil de cada uno. Si no sabes por cuál decidirte, elige por el horario que mejor te quede y coordinación te orienta."}
+            </p>
             {profsMostrar.length === 0 ? (
               <div className="ag-aviso ag-aviso-ojo">
                 No hay psicólogos con horario en línea en {AGENDA_SEDES[sede]?.label} por ahora.
@@ -11631,7 +11632,7 @@ export function AgendarPublico({ token }) {
               </div>
             ))}
             <button className="ag-btn ag-btn-grande" onClick={() => { setProf(perfil); setPerfil(null); }}>
-              Elegir a {perfil.nombre.replace(/^lic\.?\s*/i, "").trim().split(" ")[0]}
+              Ver horarios de {perfil.nombre.replace(/^lic\.?\s*/i, "").trim().split(" ")[0]}
             </button>
           </div>
         </div>
