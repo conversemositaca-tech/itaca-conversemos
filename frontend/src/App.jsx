@@ -10881,12 +10881,18 @@ const AGENDA_CSS = `
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
 .ag {
-  /* Tinta y papel tirando a tierra, no a gris azul: es lo que hace que la
-     pantalla se sienta cálida sin tocar el teal de la marca. */
-  --tinta:#2B2521; --tinta-2:#5C534B; --tinta-3:#877C70;
-  --acento:#0C5E69; --acento-vivo:#127C8A; --acento-suave:#E4EFEC;
-  --arena:#F4EBDF; /* bloques destacados: la cita elegida, los iconos */
-  --papel:#FAF6F0; --superficie:#FFFDFA; --linea:#EBE2D6;
+  /* Los tres colores del logo de Itaca Conversemos, medidos del archivo:
+     turquesa #00B8D8, gris #666666 y el casi-negro #231A1B (que ya es cálido:
+     tiene más rojo que azul). El papel es el crema #F7F5F1 que el panel
+     interno usa en su barra lateral.
+     --acento-vivo es el turquesa DE MARCA, pero con 2.2:1 sobre el papel no
+     alcanza para texto: va solo donde es superficie (la barra de progreso, el
+     avatar, el círculo de "listo"). Para texto y botones se usa --acento, el
+     mismo matiz oscurecido hasta que se pueda leer. */
+  --tinta:#231A1B; --tinta-2:#666666; --tinta-3:#8A8078;
+  --acento:#00788C; --acento-vivo:#00B8D8; --acento-suave:#E3F6FA;
+  --arena:#EFEAE1; /* bloques destacados: la cita elegida, el resumen */
+  --papel:#F7F5F1; --superficie:#FFFEFC; --linea:#E6E1D8;
   --sombra:0 1px 2px rgba(74,54,38,.05), 0 6px 20px rgba(74,54,38,.07);
   --sombra-alta:0 2px 4px rgba(74,54,38,.06), 0 14px 34px rgba(74,54,38,.12);
   --curva:cubic-bezier(.2,.8,.3,1);
@@ -10914,9 +10920,11 @@ const AGENDA_CSS = `
 .ag-bienvenida { font-size:14.5px; line-height:1.65; color:var(--tinta-3); margin:16px 0 0; max-width:46ch; }
 .ag-marca {
   font-size:11.5px; font-weight:600; letter-spacing:.18em; text-transform:uppercase;
-  color:var(--acento-vivo); margin:0 0 20px;
+  color:var(--acento); margin:0 0 20px;
 }
 .ag-marca-sm { margin:0 0 24px; }
+.ag-logo { display:block; height:46px; width:auto; max-width:100%; margin:0 0 26px; }
+.ag-logo-sm { height:32px; margin:0 0 22px; opacity:.9; }
 .ag-rotulo {
   font-size:11px; font-weight:600; letter-spacing:.11em; text-transform:uppercase;
   color:var(--tinta-3); margin:0 0 10px;
@@ -10984,7 +10992,7 @@ const AGENDA_CSS = `
   transition:border-color .15s, color .15s, background .15s, transform .15s var(--curva);
 }
 .ag-cat:hover {
-  border-color:var(--acento-vivo); color:var(--acento); background:var(--arena);
+  border-color:var(--acento); color:var(--acento); background:var(--arena);
   transform:translateY(-1px);
 }
 
@@ -11004,7 +11012,7 @@ const AGENDA_CSS = `
 .ag-foto { border-radius:50%; object-fit:cover; flex-shrink:0; }
 .ag-foto-ini {
   display:flex; align-items:center; justify-content:center; font-weight:600;
-  background:var(--arena); color:var(--acento);
+  background:var(--acento-vivo); color:var(--tinta);
 }
 
 /* ── Botones ────────────────────────────────────────────────────────── */
@@ -11014,10 +11022,10 @@ const AGENDA_CSS = `
   padding:11px 20px; border-radius:11px; border:none;
   background:var(--acento); color:#fff; margin-left:auto;
   transition:background .15s, transform .15s var(--curva), box-shadow .15s var(--curva);
-  box-shadow:0 1px 2px rgba(12,94,105,.18);
+  box-shadow:0 1px 2px rgba(0,120,140,.20);
 }
-.ag-btn:hover { background:var(--acento-vivo); transform:translateY(-1px); box-shadow:0 4px 14px rgba(12,94,105,.22); }
-.ag-btn:active { transform:translateY(0); box-shadow:0 1px 2px rgba(12,94,105,.18); }
+.ag-btn:hover { background:#00647A; transform:translateY(-1px); box-shadow:0 4px 14px rgba(0,120,140,.26); }
+.ag-btn:active { transform:translateY(0); box-shadow:0 1px 2px rgba(0,120,140,.20); }
 .ag-btn svg { transition:transform .16s var(--curva); }
 .ag-btn:hover svg { transform:translateX(3px); }
 .ag-btn:disabled { opacity:.55; cursor:default; transform:none; box-shadow:none; }
@@ -11038,7 +11046,7 @@ const AGENDA_CSS = `
   display:flex; align-items:center; gap:13px; padding:13px 16px; margin-bottom:26px;
   background:var(--arena); border-radius:14px;
 }
-.ag-elegido-rot { display:block; font-size:11.5px; color:var(--acento); font-weight:600; letter-spacing:.05em; text-transform:uppercase; }
+.ag-elegido-rot { display:block; font-size:11.5px; color:var(--tinta-2); font-weight:600; letter-spacing:.05em; text-transform:uppercase; }
 .ag-elegido-nombre { display:block; font-size:15.5px; font-weight:600; letter-spacing:-0.015em; margin-top:1px; }
 .ag-dia { margin-bottom:24px; }
 .ag-dia-rot { font-size:13.5px; font-weight:600; color:var(--tinta); margin:0 0 10px; letter-spacing:-0.01em; }
@@ -11060,7 +11068,7 @@ const AGENDA_CSS = `
   padding:15px 18px; margin-bottom:28px; background:var(--arena); border-radius:14px;
 }
 .ag-resumen-prof { display:block; font-size:15.5px; font-weight:600; letter-spacing:-0.015em; }
-.ag-resumen-cuando { display:block; font-size:13.5px; color:var(--acento); margin-top:2px; }
+.ag-resumen-cuando { display:block; font-size:13.5px; color:var(--tinta-2); margin-top:2px; }
 .ag-campo { display:block; margin-bottom:16px; }
 .ag-label { display:block; font-size:13px; font-weight:600; color:var(--tinta-2); margin-bottom:6px; }
 .ag-opt { font-weight:400; color:var(--tinta-3); }
@@ -11072,8 +11080,8 @@ const AGENDA_CSS = `
 .ag-input::placeholder { color:var(--tinta-3); }
 .ag-input:hover { border-color:#D3CFC7; }
 .ag-input:focus {
-  outline:none; border-color:var(--acento-vivo);
-  box-shadow:0 0 0 3px rgba(18,124,138,.14);
+  outline:none; border-color:var(--acento);
+  box-shadow:0 0 0 3px rgba(0,120,140,.16);
 }
 .ag-select { appearance:auto; }
 .ag-textarea { min-height:96px; resize:vertical; line-height:1.55; }
@@ -11082,13 +11090,13 @@ const AGENDA_CSS = `
 
 /* ── Avisos y paneles ───────────────────────────────────────────────── */
 .ag-aviso { border-radius:14px; padding:16px 18px; font-size:14px; line-height:1.55; margin-bottom:20px; }
-.ag-aviso-info { background:var(--acento-suave); color:var(--acento); }
+.ag-aviso-info { background:var(--acento-suave); color:var(--tinta); }
 .ag-aviso-ojo { background:#FDFAF1; color:#8A6D2E; }
 .ag-aviso-mal { background:#FDF6F6; color:#9C4646; }
 .ag-panel { background:var(--superficie); border-radius:18px; padding:24px; box-shadow:var(--sombra); margin-top:22px; }
 .ag-pasos-lista { margin:0; padding-left:20px; font-size:14.5px; line-height:1.65; color:var(--tinta-2); }
 .ag-pasos-lista li { margin-bottom:9px; }
-.ag-pasos-lista li::marker { color:var(--acento-vivo); font-weight:600; }
+.ag-pasos-lista li::marker { color:var(--acento); font-weight:600; }
 .ag-pasos-lista strong { color:var(--tinta); font-weight:600; }
 .ag-nota-suave { font-size:13.5px; line-height:1.55; color:var(--tinta-3); margin:14px 0 0; }
 .ag-centro { text-align:center; max-width:40ch; margin-left:auto; margin-right:auto; }
@@ -11101,7 +11109,7 @@ const AGENDA_CSS = `
 .ag-tel:hover { text-decoration:underline; }
 .ag-ok-marca {
   width:52px; height:52px; border-radius:50%; display:flex; align-items:center;
-  justify-content:center; background:var(--acento); color:#fff; margin-bottom:20px;
+  justify-content:center; background:var(--acento-vivo); color:var(--tinta); margin-bottom:20px;
 }
 .ag-cierre { font-size:14.5px; color:var(--tinta-2); text-align:center; margin:28px 0 0; }
 
@@ -11122,7 +11130,7 @@ const AGENDA_CSS = `
 }
 .ag-cerrar:hover { background:var(--papel); color:var(--tinta); }
 .ag-frase {
-  margin:20px 0 4px; padding-left:15px; border-left:2px solid var(--acento-vivo);
+  margin:20px 0 4px; padding-left:15px; border-left:2px solid var(--acento);
   font-size:15px; line-height:1.55; color:var(--acento); font-style:italic;
 }
 .ag-bloque { margin-top:20px; }
@@ -11137,7 +11145,7 @@ const AGENDA_CSS = `
 /* ── Foco visible (teclado) ─────────────────────────────────────────── */
 .ag button:focus-visible, .ag a:focus-visible, .ag input:focus-visible,
 .ag select:focus-visible, .ag textarea:focus-visible {
-  outline:2px solid var(--acento-vivo); outline-offset:3px; border-radius:8px;
+  outline:2px solid var(--acento); outline-offset:3px; border-radius:8px;
 }
 
 @media (max-width:520px) {
@@ -11355,7 +11363,10 @@ export function AgendarPublico({ token }) {
         {/* ── Portada ── */}
         {showSede ? (
           <header className="ag-portada ag-entra">
-            <p className="ag-marca">{info.clinica}</p>
+            {/* El logo de verdad, no el nombre en mayúsculas. Si no cargara, se
+                oculta y queda el nombre de la clínica debajo. */}
+            <img className="ag-logo" src={`${import.meta.env.BASE_URL}itaca-logo-h.png`}
+              alt={info.clinica} onError={(e) => { e.currentTarget.style.display = "none"; }} />
             <h1 className="ag-h1">
               Todos necesitamos de un<br /><em>sincero conversemos</em>
             </h1>
@@ -11371,7 +11382,8 @@ export function AgendarPublico({ token }) {
           </header>
         ) : (
           <header className="ag-cabecera">
-            <p className="ag-marca ag-marca-sm">{info.clinica}</p>
+            <img className="ag-logo ag-logo-sm" src={`${import.meta.env.BASE_URL}itaca-logo-h.png`}
+              alt={info.clinica} onError={(e) => { e.currentTarget.style.display = "none"; }} />
           </header>
         )}
 
