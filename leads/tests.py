@@ -5,7 +5,7 @@ por terapia de pareja y costos, o pide cita en "Miraflores, Lima".
 
     python manage.py test leads
 """
-from datetime import datetime, time as dtime, timedelta
+from datetime import date, datetime, time as dtime, timedelta
 
 from django.test import SimpleTestCase, TestCase
 from django.utils import timezone
@@ -389,3 +389,119 @@ class SedeDeLaCitaTests(TestCase):
         )
         self._lead_de_lima(medico=suelto.id)
         self.assertEqual(Cita.objects.get().sede, "lima")
+
+
+class ReporteCuadraConElConteoManualTests(TestCase):
+    """Que el reporte diga lo mismo que sale de contar lead por lead.
+
+    Lo reportó Gaby: pones un rango, el reporte arroja sus números, pero si
+    cuentas a mano en el tablero (cuántos pasaron consulta, cuántos iniciaron
+    proceso, de qué canal vino cada uno) no coincide.
+
+    La causa: el equipo registra el avance como una fila NUEVA, y esa fila no
+    siempre repite la fecha de la consulta. El reporte clasificaba mirando la
+    fila que tenía esa fecha, así que el mismo recorrido daba números distintos
+    según cómo se hubiera tipeado el avance.
+    """
+
+    def setUp(self):
+        self.clinica = Clinica.objects.create(nombre="Conversemos", slug="conversemos-cuadre")
+        self.desde, self.hasta = date(2026, 8, 1), date(2026, 8, 31)
+
+    def _fila(self, nombre, telefono, estado, fecha_consulta=None, fecha_cierre=None,
+              dia=5, fuente=Lead.Fuente.WHATSAPP):
+        l = Lead.objects.create(
+            clinica=self.clinica, nombre=nombre, telefono=telefono, sede=Lead.Sede.PIURA,
+            fuente=fuente, estado=estado, fecha_consulta=fecha_consulta, fecha_cierre=fecha_cierre,
+        )
+        Lead.objects.filter(pk=l.pk).update(
+            creado_en=timezone.make_aware(datetime(2026, 8, dia, 10, 0)))
+        return l
+
+    def _datos(self, sede=Lead.Sede.PIURA):
+        return generar_reporte_pauta(self.clinica, sede, self.desde, self.hasta)["datos"]
+
+    def test_el_avance_en_fila_nueva_no_descuadra_el_estado(self):
+        """Consulta el 5, inicia proceso el 20 en otra fila que ya no repite la
+        fecha de consulta. Es UNA persona que inició proceso."""
+        self._fila("Ana Perez", "987111222", Lead.Estado.CONSULTA_REALIZADA,
+                   fecha_consulta=date(2026, 8, 5), dia=5)
+        self._fila("Ana Perez", "987111222", Lead.Estado.GANADO,
+                   fecha_cierre=date(2026, 8, 20), dia=20)
+        d = self._datos()
+        self.assertEqual(d["total_consultas"], 1)
+        self.assertEqual(d["proceso"], 1)
+        self.assertEqual(d["consulta_realizada"], 0)
+
+    def test_el_proceso_cuenta_como_del_periodo_aunque_la_fecha_este_en_otra_fila(self):
+        """La sección de procesos decía '0 de consultas del período' y mandaba a
+        la persona a 'períodos anteriores', aunque su consulta fue este mes."""
+        self._fila("Ana Perez", "987111222", Lead.Estado.CONSULTA_REALIZADA,
+                   fecha_consulta=date(2026, 8, 5), dia=5)
+        self._fila("Ana Perez", "987111222", Lead.Estado.GANADO,
+                   fecha_cierre=date(2026, 8, 20), dia=20)
+        d = self._datos()
+        self.assertEqual(d["procesos_total"], 1)
+        self.assertEqual(d["procesos_mes"], 1)
+        self.assertEqual(d["procesos_prev"], 0)
+
+    def test_da_igual_si_la_fila_del_avance_repite_la_fecha(self):
+        """El número no puede depender de cómo lo tipeó quien registró."""
+        self._fila("Ana Perez", "987111222", Lead.Estado.CONSULTA_REALIZADA,
+                   fecha_consulta=date(2026, 8, 5), dia=5)
+        self._fila("Ana Perez", "987111222", Lead.Estado.GANADO,
+                   fecha_cierre=date(2026, 8, 20), dia=20)
+        sin_repetir = self._datos()
+
+        Lead.objects.all().delete()
+        self._fila("Ana Perez", "987111222", Lead.Estado.CONSULTA_REALIZADA,
+                   fecha_consulta=date(2026, 8, 5), dia=5)
+        self._fila("Ana Perez", "987111222", Lead.Estado.GANADO,
+                   fecha_consulta=date(2026, 8, 5), fecha_cierre=date(2026, 8, 20), dia=20)
+        repitiendo = self._datos()
+
+        for k in ("total_consultas", "proceso", "consulta_realizada",
+                  "procesos_total", "procesos_mes", "procesos_prev"):
+            self.assertEqual(sin_repetir[k], repitiendo[k], f"'{k}' cambia según el tipeo")
+
+    def test_lista_una_por_una_las_consultas_del_periodo(self):
+        self._fila("Ana Perez", "987111222", Lead.Estado.GANADO,
+                   fecha_consulta=date(2026, 8, 5), fecha_cierre=date(2026, 8, 20), dia=5)
+        self._fila("Luis Gomez Rios", "987333444", Lead.Estado.AGENDADO,
+                   fecha_consulta=date(2026, 8, 9), dia=9, fuente=Lead.Fuente.INSTAGRAM)
+        d = self._datos()
+        self.assertEqual(len(d["consultas_detalle"]), d["total_consultas"])
+        detalle = {x["nombre"]: x for x in d["consultas_detalle"]}
+        self.assertIn("Ana P.", detalle)          # sin apellidos completos
+        self.assertIn("Luis G.", detalle)
+        self.assertEqual(detalle["Ana P."]["estado"], "Inició proceso")
+        self.assertEqual(detalle["Luis G."]["origen"], "Instagram")
+
+    def test_el_detalle_no_lleva_telefono_ni_apellido_completo(self):
+        """El reporte se reenvía por WhatsApp: no puede pasear datos del paciente."""
+        self._fila("Ana Maria Perez Loayza", "987111222", Lead.Estado.CONSULTA_REALIZADA,
+                   fecha_consulta=date(2026, 8, 5), dia=5)
+        texto = generar_reporte_pauta(self.clinica, Lead.Sede.PIURA, self.desde, self.hasta)["texto"]
+        self.assertIn("Ana Maria P.", texto)
+        self.assertNotIn("987111222", texto)
+        self.assertNotIn("Loayza", texto)
+
+    def test_sin_filtro_de_sede_cada_anuncio_dice_de_donde_vino(self):
+        """Con las dos sedes juntas no se sabía qué consulta era de Piura."""
+        anuncio = Anuncio.objects.create(
+            clinica=self.clinica, nombre="Reel ansiedad",
+            plataforma=Anuncio.Plataforma.INSTAGRAM, sede=Anuncio.Sede.PIURA,
+        )
+        for nombre, tel, sede in [("Ana Perez", "987111222", Lead.Sede.PIURA),
+                                  ("Luis Gomez", "987333444", Lead.Sede.LIMA)]:
+            l = Lead.objects.create(
+                clinica=self.clinica, nombre=nombre, telefono=tel, sede=sede,
+                fuente=Lead.Fuente.WHATSAPP, es_pauta=True, anuncio=anuncio,
+                estado=Lead.Estado.CONSULTA_REALIZADA, fecha_consulta=date(2026, 8, 5),
+            )
+            Lead.objects.filter(pk=l.pk).update(
+                creado_en=timezone.make_aware(datetime(2026, 8, 5, 10, 0)))
+        d = self._datos(sede="")
+        porsede = {x["sede"]: x["n"] for x in d["anuncios"][0]["por_sede"]}
+        self.assertEqual(porsede.get("Piura"), 1)
+        self.assertEqual(porsede.get("Lima"), 1)
