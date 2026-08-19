@@ -2,6 +2,14 @@
 
 Reconstruye, a partir de los leads estructurados (origen, anuncio, etapa, fechas),
 el mismo reporte que las asistentes arman a mano, por sede y período.
+
+Todo se calcula sobre la PERSONA completa, no sobre una fila suelta: el equipo
+registra cada avance como una fila nueva, y esas filas no siempre repiten lo
+anterior (la fecha de consulta, el anuncio). Mirando una sola fila, el mismo
+recorrido daba números distintos según cómo se tipeó el avance: quien registró
+"inició proceso" sin repetir la fecha de consulta hacía que esa persona
+apareciera como "consulta realizada" y como proceso "de períodos anteriores".
+De ahí venía que el reporte no cuadrara con el conteo manual.
 """
 import re
 
@@ -11,6 +19,7 @@ MESES = ["", "enero", "febrero", "marzo", "abril", "mayo", "junio",
          "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"]
 E = Lead.Estado
 FUENTE_LABEL = dict(Lead.Fuente.choices)
+SEDE_LABEL = dict(Lead.Sede.choices)
 
 # Avance del embudo: si la misma persona tiene varias filas de lead (costumbre de
 # registrar la consulta o el proceso como fila nueva), vale la más avanzada.
@@ -37,48 +46,112 @@ def clave_persona(lead):
     return f"id:{lead.pk}"
 
 
-def personas_unicas(leads):
-    """Colapsa filas duplicadas de la misma persona; se queda con la fila más
-    avanzada del embudo (y ante empate, la más reciente). Así 'total leads' son
-    personas, y las consultas/procesos son subconjuntos, no sumandos.
+def nombre_corto(nombre):
+    """Deja el nombre de pila y la inicial del apellido: Ana María Pérez Loayza
+    queda como Ana María P.
 
-    El ORIGEN (anuncio y pauta) se hereda de cualquier fila de esa persona que lo
-    traiga, aunque no sea la ganadora: el equipo registra el avance como fila
-    nueva y ahí ya no vuelve a elegir el anuncio. Sin esto, la consulta contaba
-    pero se perdía de qué anuncio vino, y el reporte mostraba un puñado de
-    anuncios en vez de todos.
+    El reporte se reenvía por WhatsApp, así que lleva lo justo para reconocer a
+    la persona en el tablero, sin pasear el nombre completo ni el teléfono.
     """
-    por_persona = {}
-    con_origen = {}  # persona -> primera fila suya que sí trae anuncio/pauta
-    for l in leads:
-        k = clave_persona(l)
-        if k not in con_origen and (l.anuncio_id or l.es_pauta):
-            con_origen[k] = l
-        prev = por_persona.get(k)
-        if prev is None:
-            por_persona[k] = l
-            continue
-        mejor = _AVANCE.get(l.estado, 1) > _AVANCE.get(prev.estado, 1) or (
-            _AVANCE.get(l.estado, 1) == _AVANCE.get(prev.estado, 1)
-            and l.creado_en > prev.creado_en
-        )
-        if mejor:
-            por_persona[k] = l
+    partes = [p for p in re.split(r"\s+", (nombre or "").strip()) if p]
+    if not partes:
+        return "(sin nombre)"
+    if len(partes) == 1:
+        return partes[0]
+    # Con tres o más palabras se asume que las dos últimas son apellidos, así se
+    # conservan los nombres compuestos (María Fernanda, Juan Carlos).
+    corte = max(1, len(partes) - 2) if len(partes) >= 3 else 1
+    return " ".join(partes[:corte]) + " " + partes[corte][0].upper() + "."
 
-    for k, ganador in por_persona.items():
-        fuente_origen = con_origen.get(k)
-        if fuente_origen is None or fuente_origen is ganador:
-            continue
-        if not ganador.anuncio_id and fuente_origen.anuncio_id:
-            ganador.anuncio = fuente_origen.anuncio
-        ganador.es_pauta = ganador.es_pauta or fuente_origen.es_pauta
-    return list(por_persona.values())
+
+class Persona:
+    """Una persona del embudo, con todas sus filas consolidadas.
+
+    Cada dato se toma de donde exista, no de la fila más avanzada: la fecha de
+    consulta puede estar en la fila vieja y el estado en la nueva.
+    """
+
+    def __init__(self, filas):
+        self.filas = sorted(filas, key=lambda l: l.creado_en)
+        principal = max(filas, key=lambda l: (_AVANCE.get(l.estado, 1), l.creado_en))
+        self.principal = principal
+        self.estado = principal.estado
+        self.nombre = principal.nombre or next((f.nombre for f in self.filas if f.nombre), "")
+        self.sede = next((f.sede for f in self.filas if f.sede), "")
+        self.primer_contacto = self.filas[0].creado_en
+        self.fechas_consulta = sorted({f.fecha_consulta for f in self.filas if f.fecha_consulta})
+        self.fechas_cierre = sorted({f.fecha_cierre for f in self.filas if f.fecha_cierre})
+        # El origen se hereda de cualquier fila que lo traiga: al registrar el
+        # avance ya no se vuelve a elegir el anuncio.
+        con_anuncio = next((f for f in self.filas if f.anuncio_id), None)
+        self.anuncio = con_anuncio.anuncio if con_anuncio else None
+        self.anuncio_id = con_anuncio.anuncio_id if con_anuncio else None
+        self.es_pauta = any(f.es_pauta for f in self.filas) or bool(self.anuncio_id)
+        # La fuente es CÓMO LLEGÓ: la de su primera fila.
+        self.fuente = self.filas[0].fuente
+
+    @property
+    def fecha_consulta(self):
+        return self.fechas_consulta[0] if self.fechas_consulta else None
+
+    @property
+    def fecha_proceso(self):
+        """Cuándo inició el proceso. Puede caer en un mes distinto al de la
+        consulta, y ahí es donde el equipo necesita ver las dos fechas."""
+        return self.fechas_cierre[0] if self.fechas_cierre else None
+
+    @property
+    def fuente_label(self):
+        return FUENTE_LABEL.get(self.fuente, self.fuente)
+
+    @property
+    def sede_label(self):
+        return SEDE_LABEL.get(self.sede, "")
+
+    @property
+    def estado_label(self):
+        return self.principal.get_estado_display()
+
+    def consulto_entre(self, desde, hasta):
+        return any(desde <= f <= hasta for f in self.fechas_consulta)
+
+    def cerro_entre(self, desde, hasta):
+        return any(desde <= f <= hasta for f in self.fechas_cierre)
+
+
+def personas_de(leads):
+    """Agrupa las filas por persona. Devuelve [Persona]."""
+    por_clave = {}
+    for l in leads:
+        por_clave.setdefault(clave_persona(l), []).append(l)
+    return [Persona(filas) for filas in por_clave.values()]
+
+
+def personas_unicas(leads):
+    """Compatibilidad: una fila representativa por persona (la más avanzada), con
+    el origen ya heredado. El reporte usa `personas_de`."""
+    out = []
+    for p in personas_de(leads):
+        fila = p.principal
+        if not fila.anuncio_id and p.anuncio_id:
+            fila.anuncio = p.anuncio
+        fila.es_pauta = fila.es_pauta or p.es_pauta
+        out.append(fila)
+    return out
 
 
 def _rango_txt(desde, hasta):
     if desde.month == hasta.month and desde.year == hasta.year:
         return f"{desde.day:02d}–{hasta.day:02d} de {MESES[desde.month]} {desde.year}"
-    return f"{desde.day:02d} {MESES[desde.month]} – {hasta.day:02d} {MESES[hasta.month]} {hasta.year}"
+    return (f"{desde.day:02d} de {MESES[desde.month]} – "
+            f"{hasta.day:02d} de {MESES[hasta.month]} {hasta.year}")
+
+
+def _por_origen(personas):
+    d = {}
+    for p in personas:
+        d[p.fuente_label] = d.get(p.fuente_label, 0) + 1
+    return sorted(d.items(), key=lambda x: -x[1])
 
 
 def generar_reporte_pauta(clinica, sede, desde, hasta):
@@ -87,17 +160,18 @@ def generar_reporte_pauta(clinica, sede, desde, hasta):
     if sede:
         base = base.filter(sede=sede)
 
-    # Leads que llegaron en el período. Se cuentan PERSONAS únicas: si la consulta
-    # o el proceso se registró como fila aparte, no se suma de nuevo (los que
-    # avanzan salen del mismo total, no se agregan encima).
-    leads_periodo = base.filter(creado_en__date__gte=desde, creado_en__date__lte=hasta)
-    total_leads = len(personas_unicas(list(leads_periodo)))
+    # Una sola pasada: todas las filas, agrupadas por persona. Los subtotales de
+    # abajo son subconjuntos de esta misma lista, así que no pueden contradecirse.
+    personas = personas_de(list(base.select_related("anuncio")))
 
-    # Consultas: leads cuya consulta ocurrió en el período (incluye recontactos de
-    # antes). También sin duplicar persona.
-    consultas = personas_unicas(list(
-        base.filter(fecha_consulta__gte=desde, fecha_consulta__lte=hasta).select_related("anuncio")
-    ))
+    total_leads = sum(1 for p in personas if desde <= p.primer_contacto.date() <= hasta)
+
+    # Consultas: personas cuya consulta ocurrió en el período (incluye
+    # recontactos de antes).
+    consultas = sorted(
+        [p for p in personas if p.consulto_entre(desde, hasta)],
+        key=lambda p: (p.fecha_consulta, p.nombre.lower()),
+    )
     total_consultas = len(consultas)
 
     def cuenta(estado):
@@ -113,52 +187,39 @@ def generar_reporte_pauta(clinica, sede, desde, hasta):
     consulta_realizada = cuenta(E.CONSULTA_REALIZADA)
     # La consulta ya se desarrolló, aunque todavía no se sepa si inicia proceso.
     desarrolladas = proceso + evaluando + pendiente + consulta_realizada
-    recontactos = sum(1 for c in consultas if c.creado_en.date() < desde)
 
-    # Consultas por origen.
-    por_origen = {}
-    for c in consultas:
-        k = FUENTE_LABEL.get(c.fuente, c.fuente)
-        por_origen[k] = por_origen.get(k, 0) + 1
-    por_origen = sorted(por_origen.items(), key=lambda x: -x[1])
+    # Recontactos: la persona ya existía antes del período.
+    de_antes = [c for c in consultas if c.primer_contacto.date() < desde]
+    recontactos = len(de_antes)
 
-    # Procesos confirmados en el período (por fecha de cierre), sin duplicar persona.
-    procesos = personas_unicas(list(
-        base.filter(estado=E.GANADO, fecha_cierre__gte=desde, fecha_cierre__lte=hasta)
-    ))
+    por_origen = _por_origen(consultas)
+    por_origen_antes = _por_origen(de_antes)
+
+    # Procesos confirmados en el período (por fecha de cierre).
+    procesos = [p for p in personas if p.estado == E.GANADO and p.cerro_entre(desde, hasta)]
     procesos_total = len(procesos)
-    procesos_mes = sum(
-        1 for p in procesos
-        if p.fecha_consulta and desde <= p.fecha_consulta <= hasta
-    )
+    procesos_mes = sum(1 for p in procesos if p.consulto_entre(desde, hasta))
     procesos_prev = procesos_total - procesos_mes
+    por_origen_procesos = _por_origen(procesos)
 
-    # Procesos por origen (mismo desglose que ya se hace con las consultas: marketing
-    # necesita saber de qué canal salieron los que SÍ iniciaron proceso, no solo
-    # cuántos fueron).
-    por_origen_procesos = {}
-    for p in procesos:
-        k = FUENTE_LABEL.get(p.fuente, p.fuente)
-        por_origen_procesos[k] = por_origen_procesos.get(k, 0) + 1
-    por_origen_procesos = sorted(por_origen_procesos.items(), key=lambda x: -x[1])
-
-    # Publicidad que atrajo consultas.
-    # Tener un anuncio elegido YA significa que vino de pauta: si el lead se
-    # registró con un origen que no está marcado como pauta (p. ej. "WhatsApp
-    # directo"), su anuncio igual tiene que contar.
-    consultas_pauta = [c for c in consultas if c.es_pauta or c.anuncio_id]
+    # Publicidad que atrajo consultas. Tener un anuncio elegido YA significa que
+    # vino de pauta, aunque el origen registrado no esté marcado como tal.
+    consultas_pauta = [c for c in consultas if c.es_pauta]
     total_pauta = len(consultas_pauta)
     por_anuncio = {}
     for c in consultas_pauta:
-        if c.anuncio_id:
-            key = (c.anuncio.nombre, c.anuncio.link)
-        else:
-            key = ("(sin anuncio especificado)", "")
-        por_anuncio[key] = por_anuncio.get(key, 0) + 1
-    anuncios = sorted(por_anuncio.items(), key=lambda x: -x[1])
+        key = (c.anuncio.nombre, c.anuncio.link) if c.anuncio_id else ("(sin anuncio especificado)", "")
+        d = por_anuncio.setdefault(key, {"n": 0, "sedes": {}})
+        d["n"] += 1
+        etiqueta = c.sede_label or "sin sede"
+        d["sedes"][etiqueta] = d["sedes"].get(etiqueta, 0) + 1
+    anuncios = sorted(por_anuncio.items(), key=lambda x: -x[1]["n"])
 
-    sede_txt = dict(Lead.Sede.choices).get(sede, "").upper() or "TODAS LAS SEDES"
+    sede_txt = SEDE_LABEL.get(sede, "").upper() or "TODAS LAS SEDES"
     rango = _rango_txt(desde, hasta)
+    # Sin filtro de sede, cada anuncio dice de dónde vino cada consulta: con las
+    # dos sedes juntas no había forma de saber cuál era de Piura y cuál de Lima.
+    detallar_sede = not sede
 
     L = []
     L.append(f"*{clinica.nombre.upper()} · {sede_txt} — {rango}*")
@@ -172,6 +233,8 @@ def generar_reporte_pauta(clinica, sede, desde, hasta):
             L.append(f"* {nombre}: {n}")
     if recontactos:
         L.append(f"_({recontactos} provienen de leads de períodos anteriores — recontacto)_")
+        for nombre, n in por_origen_antes:
+            L.append(f"_* {nombre}: {n}_")
     L.append("")
     L.append(f"✅ *Total procesos: {procesos_total}*")
     L.append(f"* {procesos_mes} de consultas del período")
@@ -202,8 +265,42 @@ def generar_reporte_pauta(clinica, sede, desde, hasta):
     L.append("")
     L.append(f"📣 Publicidad que atrajo consultas: {total_pauta}")
     if anuncios:
-        for (nombre, link), n in anuncios:
-            L.append(f"* {nombre}{(' — ' + link) if link else ''} ({n})")
+        for (nombre, link), d in anuncios:
+            detalle = ""
+            if detallar_sede and d["sedes"]:
+                partes = ", ".join(f"{s} {n}" for s, n in sorted(d["sedes"].items(), key=lambda x: -x[1]))
+                detalle = f" · {partes}"
+            L.append(f"* {nombre}{(' — ' + link) if link else ''} ({d['n']}{detalle})")
+
+    # Lead por lead, para poder cuadrar el número de arriba contra el tablero.
+    if consultas:
+        L.append("")
+        L.append(f"_Las {total_consultas} consultas, una por una_")
+        for i, c in enumerate(consultas, 1):
+            trozos = [c.fuente_label]
+            if c.anuncio_id:
+                trozos.append(c.anuncio.nombre)
+            if detallar_sede and c.sede_label:
+                trozos.append(c.sede_label)
+            # Las dos fechas juntas: cuándo consultó y cuándo inició proceso. Si
+            # caen en meses distintos, se ve aquí sin tener que cruzar reportes.
+            proc = f" el {c.fecha_proceso:%d/%m}" if c.fecha_proceso else ""
+            marca = " · lead de antes del período" if c.primer_contacto.date() < desde else ""
+            L.append(f"{i}. {nombre_corto(c.nombre)} — consulta {c.fecha_consulta:%d/%m} · "
+                     f"{' · '.join(trozos)} → {c.estado_label}{proc}{marca}")
+
+    # Los procesos con SUS DOS FECHAS. Cuando alguien consulta un mes e inicia
+    # proceso al siguiente, el número solo no alcanza para entenderlo: hay que
+    # ver cuándo pasó cada cosa, y verlo desde los dos lados.
+    if procesos:
+        L.append("")
+        L.append(f"_Los {procesos_total} procesos, uno por uno_")
+        for i, p in enumerate(sorted(procesos, key=lambda x: (x.fecha_proceso, x.nombre.lower())), 1):
+            cons = f"consulta {p.fecha_consulta:%d/%m}" if p.fecha_consulta else "sin consulta registrada"
+            aparte = "" if p.consulto_entre(desde, hasta) else " ← consultó en otro período"
+            L.append(f"{i}. {nombre_corto(p.nombre)} — {cons} · "
+                     f"inició proceso {p.fecha_proceso:%d/%m} · {p.fuente_label}{aparte}")
+
     L.append("")
     L.append("_Generado automáticamente por el sistema. Si hay dudas, coméntenme 🫡_")
 
@@ -218,7 +315,30 @@ def generar_reporte_pauta(clinica, sede, desde, hasta):
         "procesos_mes": procesos_mes, "procesos_prev": procesos_prev,
         "consultas_por_publicidad": total_pauta, "recontactos": recontactos,
         "por_origen": [{"origen": k, "n": v} for k, v in por_origen],
+        "por_origen_recontacto": [{"origen": k, "n": v} for k, v in por_origen_antes],
         "por_origen_procesos": [{"origen": k, "n": v} for k, v in por_origen_procesos],
-        "anuncios": [{"nombre": k[0], "link": k[1], "n": v} for k, v in anuncios],
+        "anuncios": [{
+            "nombre": k[0], "link": k[1], "n": v["n"],
+            "por_sede": [{"sede": s, "n": n} for s, n in sorted(v["sedes"].items(), key=lambda x: -x[1])],
+        } for k, v in anuncios],
+        "consultas_detalle": [{
+            "nombre": nombre_corto(c.nombre),
+            "fecha": c.fecha_consulta.isoformat() if c.fecha_consulta else "",
+            "fecha_proceso": c.fecha_proceso.isoformat() if c.fecha_proceso else "",
+            "origen": c.fuente_label,
+            "anuncio": c.anuncio.nombre if c.anuncio_id else "",
+            "sede": c.sede_label,
+            "estado": c.estado_label,
+            "de_antes": c.primer_contacto.date() < desde,
+        } for c in consultas],
+        "procesos_detalle": [{
+            "nombre": nombre_corto(p.nombre),
+            "fecha_consulta": p.fecha_consulta.isoformat() if p.fecha_consulta else "",
+            "fecha_proceso": p.fecha_proceso.isoformat() if p.fecha_proceso else "",
+            "origen": p.fuente_label,
+            "anuncio": p.anuncio.nombre if p.anuncio_id else "",
+            "sede": p.sede_label,
+            "consulta_de_otro_periodo": not p.consulto_entre(desde, hasta),
+        } for p in sorted(procesos, key=lambda x: (x.fecha_proceso, x.nombre.lower()))],
     }
     return {"texto": texto, "datos": datos}
