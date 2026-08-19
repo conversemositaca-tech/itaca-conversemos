@@ -95,6 +95,12 @@ class Persona:
         return self.fechas_consulta[0] if self.fechas_consulta else None
 
     @property
+    def fecha_proceso(self):
+        """Cuándo inició el proceso. Puede caer en un mes distinto al de la
+        consulta, y ahí es donde el equipo necesita ver las dos fechas."""
+        return self.fechas_cierre[0] if self.fechas_cierre else None
+
+    @property
     def fuente_label(self):
         return FUENTE_LABEL.get(self.fuente, self.fuente)
 
@@ -276,9 +282,24 @@ def generar_reporte_pauta(clinica, sede, desde, hasta):
                 trozos.append(c.anuncio.nombre)
             if detallar_sede and c.sede_label:
                 trozos.append(c.sede_label)
-            marca = " · viene de antes" if c.primer_contacto.date() < desde else ""
-            L.append(f"{i}. {nombre_corto(c.nombre)} — {c.fecha_consulta:%d/%m} · "
-                     f"{' · '.join(trozos)} → {c.estado_label}{marca}")
+            # Las dos fechas juntas: cuándo consultó y cuándo inició proceso. Si
+            # caen en meses distintos, se ve aquí sin tener que cruzar reportes.
+            proc = f" el {c.fecha_proceso:%d/%m}" if c.fecha_proceso else ""
+            marca = " · lead de antes del período" if c.primer_contacto.date() < desde else ""
+            L.append(f"{i}. {nombre_corto(c.nombre)} — consulta {c.fecha_consulta:%d/%m} · "
+                     f"{' · '.join(trozos)} → {c.estado_label}{proc}{marca}")
+
+    # Los procesos con SUS DOS FECHAS. Cuando alguien consulta un mes e inicia
+    # proceso al siguiente, el número solo no alcanza para entenderlo: hay que
+    # ver cuándo pasó cada cosa, y verlo desde los dos lados.
+    if procesos:
+        L.append("")
+        L.append(f"_Los {procesos_total} procesos, uno por uno_")
+        for i, p in enumerate(sorted(procesos, key=lambda x: (x.fecha_proceso, x.nombre.lower())), 1):
+            cons = f"consulta {p.fecha_consulta:%d/%m}" if p.fecha_consulta else "sin consulta registrada"
+            aparte = "" if p.consulto_entre(desde, hasta) else " ← consultó en otro período"
+            L.append(f"{i}. {nombre_corto(p.nombre)} — {cons} · "
+                     f"inició proceso {p.fecha_proceso:%d/%m} · {p.fuente_label}{aparte}")
 
     L.append("")
     L.append("_Generado automáticamente por el sistema. Si hay dudas, coméntenme 🫡_")
@@ -303,11 +324,21 @@ def generar_reporte_pauta(clinica, sede, desde, hasta):
         "consultas_detalle": [{
             "nombre": nombre_corto(c.nombre),
             "fecha": c.fecha_consulta.isoformat() if c.fecha_consulta else "",
+            "fecha_proceso": c.fecha_proceso.isoformat() if c.fecha_proceso else "",
             "origen": c.fuente_label,
             "anuncio": c.anuncio.nombre if c.anuncio_id else "",
             "sede": c.sede_label,
             "estado": c.estado_label,
             "de_antes": c.primer_contacto.date() < desde,
         } for c in consultas],
+        "procesos_detalle": [{
+            "nombre": nombre_corto(p.nombre),
+            "fecha_consulta": p.fecha_consulta.isoformat() if p.fecha_consulta else "",
+            "fecha_proceso": p.fecha_proceso.isoformat() if p.fecha_proceso else "",
+            "origen": p.fuente_label,
+            "anuncio": p.anuncio.nombre if p.anuncio_id else "",
+            "sede": p.sede_label,
+            "consulta_de_otro_periodo": not p.consulto_entre(desde, hasta),
+        } for p in sorted(procesos, key=lambda x: (x.fecha_proceso, x.nombre.lower()))],
     }
     return {"texto": texto, "datos": datos}

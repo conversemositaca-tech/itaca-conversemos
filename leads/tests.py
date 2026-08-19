@@ -505,3 +505,36 @@ class ReporteCuadraConElConteoManualTests(TestCase):
         porsede = {x["sede"]: x["n"] for x in d["anuncios"][0]["por_sede"]}
         self.assertEqual(porsede.get("Piura"), 1)
         self.assertEqual(porsede.get("Lima"), 1)
+
+    def test_muestra_las_dos_fechas_cuando_la_consulta_y_el_proceso_cruzan_de_mes(self):
+        """Lo que pidió Mirai: "consultó el 18/7 e inició proceso el 20/8", para
+        que se entienda desde los dos lados sin cruzar reportes."""
+        # Consultó en julio (fuera del período) e inició proceso en agosto.
+        l = Lead.objects.create(
+            clinica=self.clinica, nombre="Rosa Diaz Vega", telefono="987555666",
+            sede=Lead.Sede.PIURA, fuente=Lead.Fuente.WHATSAPP, estado=Lead.Estado.GANADO,
+            fecha_consulta=date(2026, 7, 18), fecha_cierre=date(2026, 8, 20),
+        )
+        Lead.objects.filter(pk=l.pk).update(
+            creado_en=timezone.make_aware(datetime(2026, 7, 18, 10, 0)))
+        r = generar_reporte_pauta(self.clinica, Lead.Sede.PIURA, self.desde, self.hasta)
+
+        # Cuenta como proceso del período, pero marcado como consulta de antes.
+        self.assertEqual(r["datos"]["procesos_total"], 1)
+        self.assertEqual(r["datos"]["procesos_prev"], 1)
+        det = r["datos"]["procesos_detalle"][0]
+        self.assertEqual(det["fecha_consulta"], "2026-07-18")
+        self.assertEqual(det["fecha_proceso"], "2026-08-20")
+        self.assertTrue(det["consulta_de_otro_periodo"])
+        # Y las dos fechas se leen en el texto que se reenvía.
+        self.assertIn("consulta 18/07", r["texto"])
+        self.assertIn("inició proceso 20/08", r["texto"])
+
+    def test_el_listado_de_consultas_dice_cuando_inicio_proceso(self):
+        self._fila("Ana Perez", "987111222", Lead.Estado.CONSULTA_REALIZADA,
+                   fecha_consulta=date(2026, 8, 5), dia=5)
+        self._fila("Ana Perez", "987111222", Lead.Estado.GANADO,
+                   fecha_cierre=date(2026, 8, 20), dia=20)
+        texto = generar_reporte_pauta(self.clinica, Lead.Sede.PIURA, self.desde, self.hasta)["texto"]
+        self.assertIn("consulta 05/08", texto)
+        self.assertIn("Inició proceso el 20/08", texto)
