@@ -538,3 +538,58 @@ class ReporteCuadraConElConteoManualTests(TestCase):
         texto = generar_reporte_pauta(self.clinica, Lead.Sede.PIURA, self.desde, self.hasta)["texto"]
         self.assertIn("consulta 05/08", texto)
         self.assertIn("Inició proceso el 20/08", texto)
+
+    def test_los_anuncios_sin_consultas_tambien_salen(self):
+        """Lo que pidió Mirai: que salgan TODOS los links, no solo los dos que
+        trajeron consulta. Un anuncio que no trajo a nadie es un resultado."""
+        trajo = Anuncio.objects.create(
+            clinica=self.clinica, nombre="Consulta 50 soles", link="https://instagram.com/reel/abc",
+            plataforma=Anuncio.Plataforma.INSTAGRAM, sede=Anuncio.Sede.PIURA)
+        Anuncio.objects.create(
+            clinica=self.clinica, nombre="No todo es rebeldia", link="https://fb.me/xyz",
+            plataforma=Anuncio.Plataforma.FACEBOOK, sede=Anuncio.Sede.PIURA)
+        Anuncio.objects.create(
+            clinica=self.clinica, nombre="Anuncio apagado", link="https://fb.me/off",
+            plataforma=Anuncio.Plataforma.FACEBOOK, sede=Anuncio.Sede.PIURA, activo=False)
+        l = Lead.objects.create(
+            clinica=self.clinica, nombre="Ana Perez", telefono="987111222", sede=Lead.Sede.PIURA,
+            fuente=Lead.Fuente.WHATSAPP, es_pauta=True, anuncio=trajo,
+            estado=Lead.Estado.CONSULTA_REALIZADA, fecha_consulta=date(2026, 8, 5))
+        Lead.objects.filter(pk=l.pk).update(
+            creado_en=timezone.make_aware(datetime(2026, 8, 5, 10, 0)))
+
+        r = generar_reporte_pauta(self.clinica, Lead.Sede.PIURA, self.desde, self.hasta)
+        nombres = {a["nombre"]: a for a in r["datos"]["anuncios"]}
+        self.assertEqual(nombres["Consulta 50 soles"]["n"], 1)
+        self.assertEqual(nombres["No todo es rebeldia"]["n"], 0)   # aparece con 0
+        self.assertNotIn("Anuncio apagado", nombres)               # inactivo, no
+        self.assertIn("https://fb.me/xyz", r["texto"])
+        self.assertIn("Sin consultas en el período", r["texto"])
+
+    def test_distingue_el_anuncio_que_trae_gente_del_que_no_trae_a_nadie(self):
+        """Dos anuncios con 0 consultas no son iguales: uno trajo 3 leads que no
+        agendaron, el otro no trajo a nadie."""
+        con_leads = Anuncio.objects.create(
+            clinica=self.clinica, nombre="Trae gente", link="https://fb.me/1",
+            plataforma=Anuncio.Plataforma.FACEBOOK, sede=Anuncio.Sede.PIURA)
+        Anuncio.objects.create(
+            clinica=self.clinica, nombre="No trae nada", link="https://fb.me/2",
+            plataforma=Anuncio.Plataforma.FACEBOOK, sede=Anuncio.Sede.PIURA)
+        for i in range(3):
+            l = Lead.objects.create(
+                clinica=self.clinica, nombre=f"Lead {i}", telefono=f"98700000{i}",
+                sede=Lead.Sede.PIURA, fuente=Lead.Fuente.WHATSAPP, es_pauta=True,
+                anuncio=con_leads, estado=Lead.Estado.CONTACTADO)
+            Lead.objects.filter(pk=l.pk).update(
+                creado_en=timezone.make_aware(datetime(2026, 8, 3, 10, 0)))
+        d = {a["nombre"]: a for a in self._datos()["anuncios"]}
+        self.assertEqual((d["Trae gente"]["n"], d["Trae gente"]["leads"]), (0, 3))
+        self.assertEqual((d["No trae nada"]["n"], d["No trae nada"]["leads"]), (0, 0))
+
+    def test_el_anuncio_de_ambas_sedes_sale_en_el_reporte_de_cada_una(self):
+        Anuncio.objects.create(
+            clinica=self.clinica, nombre="Campana nacional", link="https://fb.me/nac",
+            plataforma=Anuncio.Plataforma.FACEBOOK, sede=Anuncio.Sede.AMBAS)
+        for sede in (Lead.Sede.PIURA, Lead.Sede.LIMA):
+            nombres = [a["nombre"] for a in self._datos(sede=sede)["anuncios"]]
+            self.assertIn("Campana nacional", nombres, f"falta en {sede}")

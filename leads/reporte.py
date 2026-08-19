@@ -13,7 +13,9 @@ De ahí venía que el reporte no cuadrara con el conteo manual.
 """
 import re
 
-from .models import Lead
+from django.db.models import Q
+
+from .models import Anuncio, Lead
 
 MESES = ["", "enero", "febrero", "marzo", "abril", "mayo", "junio",
          "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"]
@@ -206,14 +208,37 @@ def generar_reporte_pauta(clinica, sede, desde, hasta):
     # vino de pauta, aunque el origen registrado no esté marcado como tal.
     consultas_pauta = [c for c in consultas if c.es_pauta]
     total_pauta = len(consultas_pauta)
+
+    # TODOS los anuncios activos, no solo los que trajeron consulta: si uno no
+    # trajo a nadie, eso también es un resultado y hay que verlo para decidir
+    # dónde poner la plata. Antes, el que no traía consultas desaparecía del
+    # reporte y parecía que no existiera.
+    anuncios_activos = Anuncio.objects.filter(clinica=clinica, activo=True)
+    if sede:
+        # "ambas" (y los que no declaran sede) valen para cualquier sede.
+        anuncios_activos = anuncios_activos.filter(
+            Q(sede=sede) | Q(sede=Anuncio.Sede.AMBAS) | Q(sede=""))
     por_anuncio = {}
+    for a in anuncios_activos:
+        por_anuncio[(a.nombre, a.link)] = {"n": 0, "leads": 0, "sedes": {}}
+
     for c in consultas_pauta:
         key = (c.anuncio.nombre, c.anuncio.link) if c.anuncio_id else ("(sin anuncio especificado)", "")
-        d = por_anuncio.setdefault(key, {"n": 0, "sedes": {}})
+        d = por_anuncio.setdefault(key, {"n": 0, "leads": 0, "sedes": {}})
         d["n"] += 1
         etiqueta = c.sede_label or "sin sede"
         d["sedes"][etiqueta] = d["sedes"].get(etiqueta, 0) + 1
-    anuncios = sorted(por_anuncio.items(), key=lambda x: -x[1]["n"])
+
+    # Cuánta gente trajo cada anuncio en el período, haya llegado a consulta o
+    # no: un anuncio con leads que no agendan no es lo mismo que uno que no
+    # trae a nadie, y sin este dato los dos se veían igual (0 consultas).
+    for p in personas:
+        if not p.anuncio_id or not (desde <= p.primer_contacto.date() <= hasta):
+            continue
+        d = por_anuncio.setdefault((p.anuncio.nombre, p.anuncio.link), {"n": 0, "leads": 0, "sedes": {}})
+        d["leads"] += 1
+
+    anuncios = sorted(por_anuncio.items(), key=lambda x: (-x[1]["n"], -x[1]["leads"], x[0][0].lower()))
 
     sede_txt = SEDE_LABEL.get(sede, "").upper() or "TODAS LAS SEDES"
     rango = _rango_txt(desde, hasta)
@@ -264,13 +289,29 @@ def generar_reporte_pauta(clinica, sede, desde, hasta):
         L.append(f"* {agendo_espera} agendaron, esperando pago")
     L.append("")
     L.append(f"📣 Publicidad que atrajo consultas: {total_pauta}")
-    if anuncios:
-        for (nombre, link), d in anuncios:
-            detalle = ""
-            if detallar_sede and d["sedes"]:
-                partes = ", ".join(f"{s} {n}" for s, n in sorted(d["sedes"].items(), key=lambda x: -x[1]))
-                detalle = f" · {partes}"
-            L.append(f"* {nombre}{(' — ' + link) if link else ''} ({d['n']}{detalle})")
+
+    def _linea_anuncio(nombre, link, d):
+        cuenta_txt = f"{d['n']} consulta" + ("s" if d["n"] != 1 else "")
+        if detallar_sede and d["sedes"]:
+            partes = ", ".join(f"{s} {n}" for s, n in sorted(d["sedes"].items(), key=lambda x: -x[1]))
+            cuenta_txt += f" · {partes}"
+        if d["leads"]:
+            cuenta_txt += f" · {d['leads']} lead" + ("s" if d["leads"] != 1 else "")
+        return f"* {nombre}{(' — ' + link) if link else ''} ({cuenta_txt})"
+
+    con_consultas = [(k, d) for k, d in anuncios if d["n"]]
+    sin_consultas = [(k, d) for k, d in anuncios if not d["n"]]
+    for (nombre, link), d in con_consultas:
+        L.append(_linea_anuncio(nombre, link, d))
+    # Los que no trajeron consulta también se listan: que un anuncio no aparezca
+    # y que no haya traído a nadie se veían igual, y no son lo mismo.
+    if sin_consultas:
+        L.append("")
+        L.append("_Sin consultas en el período:_")
+        for (nombre, link), d in sin_consultas:
+            leads_txt = (f"{d['leads']} lead" + ("s" if d["leads"] != 1 else "")
+                         if d["leads"] else "nadie escribió")
+            L.append(f"_* {nombre}{(' — ' + link) if link else ''} ({leads_txt})_")
 
     # Lead por lead, para poder cuadrar el número de arriba contra el tablero.
     if consultas:
@@ -318,7 +359,7 @@ def generar_reporte_pauta(clinica, sede, desde, hasta):
         "por_origen_recontacto": [{"origen": k, "n": v} for k, v in por_origen_antes],
         "por_origen_procesos": [{"origen": k, "n": v} for k, v in por_origen_procesos],
         "anuncios": [{
-            "nombre": k[0], "link": k[1], "n": v["n"],
+            "nombre": k[0], "link": k[1], "n": v["n"], "leads": v["leads"],
             "por_sede": [{"sede": s, "n": n} for s, n in sorted(v["sedes"].items(), key=lambda x: -x[1])],
         } for k, v in anuncios],
         "consultas_detalle": [{
