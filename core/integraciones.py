@@ -380,6 +380,30 @@ class RecordatoriosView(_Base):
         return Response({"ok": True, **res})
 
 
+class RespaldoView(_Base):
+    """Entrega un volcado completo de los datos, comprimido, para que un cron de
+    afuera lo guarde. Así Itaca no necesita credenciales de almacenamiento.
+
+    GET /api/integraciones/respaldo/          -> el archivo .json.gz
+    GET /api/integraciones/respaldo/?resumen=1 -> solo cuántas filas por modelo
+
+    OJO: el archivo lleva datos de pacientes. Debe quedar en un lugar PRIVADO.
+    """
+
+    def get(self, request):
+        from django.http import HttpResponse
+        from core.respaldo import armar_respaldo, nombre_de_archivo
+
+        datos, resumen = armar_respaldo()
+        if request.query_params.get("resumen"):
+            return Response({"ok": True, "archivo": nombre_de_archivo(),
+                             "bytes": len(datos), "filas": resumen})
+        r = HttpResponse(datos, content_type="application/gzip")
+        r["Content-Disposition"] = f'attachment; filename="{nombre_de_archivo()}"'
+        r["X-Respaldo-Filas"] = str(sum(resumen.values()))
+        return r
+
+
 class NotaVozView(_Base):
     """Guarda una atención en la historia clínica desde Eli.
     POST /api/integraciones/nota-voz/  body: {telefono, paciente_id, tipo, contenido}

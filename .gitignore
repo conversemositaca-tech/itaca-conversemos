@@ -26,3 +26,6 @@ Thumbs.db
 cloudflared.exe
 # Build del frontend (se genera al desplegar)
 /frontend/dist/
+
+# Datos reales de pacientes (nombre + psicologo + sesion): NUNCA al repo.
+datos_pacientes_reales.json
