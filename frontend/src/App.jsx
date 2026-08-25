@@ -1217,6 +1217,9 @@ export default function ClinicaApp() {
           box-shadow:0 1px 2px rgba(31,42,38,.04), 0 4px 16px rgba(31,42,38,.05); }
         /* Tarjeta dentro de tarjeta: la de adentro vuelve a ser plana, si no se
            acumulan sombras y se ve sucio. */
+        .ca-asist { margin-bottom:26px; display:grid; gap:24px; align-items:start;
+          grid-template-columns:minmax(240px, 300px) 1fr; }
+        @media (max-width:720px) { .ca-asist { grid-template-columns:1fr; } }
         .ca-card .ca-card { box-shadow:none; border-color:var(--line); border-radius:12px; }
         /* Si la tarjeta además es un botón (el aviso de Legal, por ejemplo), responde
            al mouse igual que los accesos de arriba. */
@@ -4075,6 +4078,159 @@ function FichaCard({ label, children, style }) {
   );
 }
 
+// ---- Calendario de asistencia del paciente -------------------------------
+// El historial de citas es una lista, y una lista no deja ver PATRONES: que
+// alguien venía semanal y pasó a quincenal, que faltó tres veces seguidas, que
+// hay un hueco de un mes. En un calendario eso se ve de un golpe, y es lo que
+// avisa que un paciente se está yendo antes de que se vaya.
+const ASIST = {
+  atendida: { color: "#0A7D92", fondo: "#D7F4FA", label: "Asistió" },
+  asistio: { color: "#0A7D92", fondo: "#D7F4FA", label: "Asistió" },
+  no_asistio: { color: "#B4564E", fondo: "#FDE9E7", label: "No asistió" },
+  cancelada: { color: "#8A8A8A", fondo: "#EFEFEF", label: "Cancelada" },
+  reprogramada: { color: "#9C6B2E", fondo: "#FFF1DA", label: "Reprogramada" },
+};
+const ASIST_FUTURA = { color: "#6E6E6E", fondo: "transparent", label: "Agendada" };
+const VINO = new Set(["atendida", "asistio"]);
+const DIAS_INI = ["L", "M", "M", "J", "V", "S", "D"];
+
+function CalendarioAsistencia({ citas }) {
+  // Índice fecha -> cita. Si hay varias el mismo día, vale a la que asistió.
+  const porFecha = useMemo(() => {
+    const m = new Map();
+    for (const c of citas || []) {
+      const prev = m.get(c.fecha_iso);
+      if (!prev || (VINO.has(c.estado) && !VINO.has(prev.estado))) m.set(c.fecha_iso, c);
+    }
+    return m;
+  }, [citas]);
+
+  // Arranca en el mes de la última cita: ahí está la información fresca.
+  const ultima = (citas || [])[0];
+  const inicio = ultima ? dLocal(ultima.fecha_iso) : new Date();
+  const [cursor, setCursor] = useState(new Date(inicio.getFullYear(), inicio.getMonth(), 1));
+  const anio = cursor.getFullYear(), mes = cursor.getMonth();
+
+  const celdas = useMemo(() => {
+    const primero = new Date(anio, mes, 1);
+    const desfase = (primero.getDay() + 6) % 7; // la semana empieza el lunes
+    const cuantos = new Date(anio, mes + 1, 0).getDate();
+    const out = new Array(desfase).fill(null);
+    for (let d = 1; d <= cuantos; d++) out.push(d);
+    while (out.length % 7) out.push(null);
+    return out;
+  }, [anio, mes]);
+
+  // Resumen y ritmo: sobre TODAS las citas, no solo el mes a la vista.
+  const resumen = useMemo(() => {
+    const r = { vino: 0, falto: 0, cancelo: 0, proximas: 0 };
+    const fechasVino = [];
+    const hoy = HOY_ISO;
+    for (const c of citas || []) {
+      if (VINO.has(c.estado)) { r.vino++; fechasVino.push(c.fecha_iso); }
+      else if (c.estado === "no_asistio") r.falto++;
+      else if (c.estado === "cancelada") r.cancelo++;
+      else if (c.fecha_iso >= hoy) r.proximas++;
+    }
+    // Cada cuánto viene: mediana de los días entre sesiones a las que sí asistió.
+    // Mediana y no promedio: un solo parón de dos meses no debe deformar el dato.
+    fechasVino.sort();
+    const huecos = [];
+    for (let i = 1; i < fechasVino.length; i++) {
+      huecos.push(Math.round((dLocal(fechasVino[i]) - dLocal(fechasVino[i - 1])) / 86400000));
+    }
+    huecos.sort((a, b) => a - b);
+    r.cada = huecos.length ? huecos[Math.floor(huecos.length / 2)] : null;
+    r.ultima = fechasVino.length ? fechasVino[fechasVino.length - 1] : null;
+    r.diasSinVenir = r.ultima
+      ? Math.round((dLocal(hoy) - dLocal(r.ultima)) / 86400000) : null;
+    return r;
+  }, [citas]);
+
+  const mover = (d) => setCursor(new Date(anio, mes + d, 1));
+
+  return (
+    <div className="ca-card ca-asist">
+      <div>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+          <span style={{ fontSize: 14, fontWeight: 600 }}>{MESES_FULL[mes + 1]} {anio}</span>
+          <div style={{ display: "flex", gap: 2 }}>
+            <button className="ca-mini" style={{ padding: "4px 7px" }} onClick={() => mover(-1)} aria-label="Mes anterior"><ChevronLeft size={14} strokeWidth={2} /></button>
+            <button className="ca-mini" style={{ padding: "4px 7px" }} onClick={() => mover(1)} aria-label="Mes siguiente"><ChevronRight size={14} strokeWidth={2} /></button>
+          </div>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 4, textAlign: "center" }}>
+          {DIAS_INI.map((d, i) => (
+            <span key={i} style={{ fontSize: 10.5, color: "var(--muted)", fontWeight: 600, paddingBottom: 4 }}>{d}</span>
+          ))}
+          {celdas.map((d, i) => {
+            if (d === null) return <span key={i} />;
+            const iso = `${anio}-${String(mes + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+            const cita = porFecha.get(iso);
+            const conocido = cita ? ASIST[cita.estado] : null;
+            const est = cita ? (conocido || ASIST_FUTURA) : null;
+            const esHoy = iso === HOY_ISO;
+            return (
+              <span key={i}
+                title={cita ? `${cita.hora} · ${cita.estado_label}${cita.medico ? " · " + cita.medico : ""}` : ""}
+                style={{
+                  height: 30, display: "flex", alignItems: "center", justifyContent: "center",
+                  fontSize: 12.5, borderRadius: 8, fontVariantNumeric: "tabular-nums",
+                  background: est ? est.fondo : "transparent",
+                  color: est ? est.color : "var(--ink-soft)",
+                  fontWeight: est ? 600 : 400,
+                  border: cita && !conocido ? `1px dashed ${est.color}`
+                    : (esHoy ? "1px solid var(--accent)" : "1px solid transparent"),
+                  cursor: cita ? "help" : "default",
+                }}>
+                {d}
+              </span>
+            );
+          })}
+        </div>
+      </div>
+
+      <div>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 18, marginBottom: 16 }}>
+          {[["Asistió", resumen.vino, "#0A7D92"], ["No asistió", resumen.falto, "#B4564E"],
+            ["Canceló", resumen.cancelo, "#8A8A8A"], ["Por venir", resumen.proximas, "var(--ink-soft)"]].map(([l, n, c]) => (
+            <div key={l}>
+              <div style={{ fontSize: 21, fontWeight: 600, color: c, letterSpacing: "-0.02em" }}>{n}</div>
+              <div style={{ fontSize: 11.5, color: "var(--muted)" }}>{l}</div>
+            </div>
+          ))}
+        </div>
+        <div style={{ fontSize: 13, color: "var(--ink-soft)", lineHeight: 1.7 }}>
+          {resumen.cada != null && (
+            <div>Viene aproximadamente <strong>cada {resumen.cada} día{resumen.cada === 1 ? "" : "s"}</strong>.</div>
+          )}
+          {resumen.diasSinVenir != null && (
+            <div style={resumen.cada != null && resumen.diasSinVenir > resumen.cada * 2 ? { color: "#9C6B2E", fontWeight: 600 } : undefined}>
+              Última sesión hace {resumen.diasSinVenir} día{resumen.diasSinVenir === 1 ? "" : "s"}
+              {resumen.cada != null && resumen.diasSinVenir > resumen.cada * 2
+                ? " — lleva más del doble de su ritmo habitual." : "."}
+            </div>
+          )}
+          {resumen.falto > 0 && (
+            <div>Faltó a {resumen.falto} de {resumen.vino + resumen.falto} sesiones agendadas.</div>
+          )}
+        </div>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 12, marginTop: 16, fontSize: 11.5, color: "var(--muted)" }}>
+          {[["#0A7D92", "#D7F4FA", "Asistió"], ["#B4564E", "#FDE9E7", "No asistió"],
+            ["#8A8A8A", "#EFEFEF", "Cancelada"]].map(([c, f, l]) => (
+            <span key={l} style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+              <span style={{ width: 12, height: 12, borderRadius: 4, background: f, border: `1px solid ${c}` }} />{l}
+            </span>
+          ))}
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+            <span style={{ width: 12, height: 12, borderRadius: 4, border: "1px dashed #6E6E6E" }} />Agendada
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function Ficha({ p, onBack, onEdit, onWhatsApp, onSubirAdjunto, onEliminarAdjunto, puedeEliminar, clinica, onAgendar, onRegistrarSesion, puedeRegistrar, onVenderPaquete, puedeVenderPaquete, onRegistrarPago, puedeCobrar, esMedico, showToast, onRefrescar }) {
   const alertas = (p.alertas || "").split(",").map((s) => s.trim()).filter(Boolean);
   const ultimaEvo = (p.historial || [])[0];
@@ -4318,6 +4474,9 @@ function Ficha({ p, onBack, onEdit, onWhatsApp, onSubirAdjunto, onEliminarAdjunt
 
       {p.citas && p.citas.length > 0 && (
         <>
+          <h2 className="ca-secth">Asistencia</h2>
+          <CalendarioAsistencia citas={p.citas} />
+
           <h2 className="ca-secth">Historial de citas</h2>
           <div className="ca-card" style={{ marginBottom: 26, padding: 0, overflow: "hidden" }}>
             {p.citas.map((c) => (
