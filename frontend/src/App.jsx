@@ -1217,9 +1217,26 @@ export default function ClinicaApp() {
           box-shadow:0 1px 2px rgba(31,42,38,.04), 0 4px 16px rgba(31,42,38,.05); }
         /* Tarjeta dentro de tarjeta: la de adentro vuelve a ser plana, si no se
            acumulan sombras y se ve sucio. */
-        .ca-asist { margin-bottom:26px; display:grid; gap:24px; align-items:start;
-          grid-template-columns:minmax(240px, 300px) 1fr; }
-        @media (max-width:720px) { .ca-asist { grid-template-columns:1fr; } }
+        .ca-asist { margin-bottom:26px; display:grid; gap:28px; align-items:start;
+          grid-template-columns:1fr 236px; }
+        .ca-asist-nav { display:flex; justify-content:flex-end; gap:4px; margin-bottom:10px; }
+        .ca-asist-nav .ca-mini { padding:4px 7px; }
+        .ca-asist-meses { display:grid; grid-template-columns:repeat(3, 1fr); gap:22px; }
+        .ca-asist-rot { font-size:13px; font-weight:600; margin-bottom:10px; }
+        .ca-asist-grid { display:grid; grid-template-columns:repeat(7, 1fr); gap:3px; text-align:center; }
+        .ca-asist-dia { font-size:10.5px; color:var(--muted); font-weight:600; padding-bottom:4px; }
+        .ca-asist-celda { height:29px; display:flex; align-items:center; justify-content:center;
+          font-size:12.5px; border-radius:7px; font-variant-numeric:tabular-nums; }
+        .ca-asist-cifras { display:flex; flex-wrap:wrap; gap:16px; margin-bottom:14px; }
+        .ca-asist-leyenda { display:flex; flex-wrap:wrap; gap:10px; margin-top:16px;
+          font-size:11.5px; color:var(--muted); }
+        .ca-asist-leyenda span { display:inline-flex; align-items:center; gap:5px; }
+        .ca-asist-pto { width:12px; height:12px; border-radius:4px; }
+        /* Se oculta primero el mes MÁS VIEJO: lo reciente siempre queda a la vista. */
+        @media (max-width:1240px) { .ca-asist-meses { grid-template-columns:repeat(2, 1fr); }
+          .ca-asist-m1 { display:none; } }
+        @media (max-width:900px) { .ca-asist { grid-template-columns:1fr; }
+          .ca-asist-meses { grid-template-columns:1fr; } .ca-asist-m2 { display:none; } }
         .ca-card .ca-card { box-shadow:none; border-color:var(--line); border-radius:12px; }
         /* Si la tarjeta además es un botón (el aviso de Legal, por ejemplo), responde
            al mouse igual que los accesos de arriba. */
@@ -4094,6 +4111,51 @@ const ASIST_FUTURA = { color: "#6E6E6E", fondo: "transparent", label: "Agendada"
 const VINO = new Set(["atendida", "asistio"]);
 const DIAS_INI = ["L", "M", "M", "J", "V", "S", "D"];
 
+// Un mes de la cuadrícula. Se dibujan varios seguidos: el ritmo de un paciente
+// no se lee en 30 días, se lee comparando meses.
+function MesAsistencia({ anio, mes, porFecha }) {
+  const celdas = useMemo(() => {
+    const primero = new Date(anio, mes, 1);
+    const desfase = (primero.getDay() + 6) % 7; // la semana empieza el lunes
+    const cuantos = new Date(anio, mes + 1, 0).getDate();
+    const out = new Array(desfase).fill(null);
+    for (let d = 1; d <= cuantos; d++) out.push(d);
+    while (out.length % 7) out.push(null);
+    return out;
+  }, [anio, mes]);
+
+  return (
+    <div>
+      <div className="ca-asist-rot">{MESES_FULL[mes + 1]} {anio}</div>
+      <div className="ca-asist-grid">
+        {DIAS_INI.map((d, i) => <span key={i} className="ca-asist-dia">{d}</span>)}
+        {celdas.map((d, i) => {
+          if (d === null) return <span key={i} />;
+          const iso = `${anio}-${String(mes + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+          const cita = porFecha.get(iso);
+          const conocido = cita ? ASIST[cita.estado] : null;
+          const est = cita ? (conocido || ASIST_FUTURA) : null;
+          const esHoy = iso === HOY_ISO;
+          return (
+            <span key={i} className="ca-asist-celda"
+              title={cita ? `${cita.hora} · ${cita.estado_label}${cita.medico ? " · " + cita.medico : ""}` : ""}
+              style={{
+                background: est ? est.fondo : "transparent",
+                color: est ? est.color : "var(--ink-soft)",
+                fontWeight: est ? 600 : 400,
+                border: cita && !conocido ? `1px dashed ${est.color}`
+                  : (esHoy ? "1px solid var(--accent)" : "1px solid transparent"),
+                cursor: cita ? "help" : "default",
+              }}>
+              {d}
+            </span>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function CalendarioAsistencia({ citas }) {
   // Índice fecha -> cita. Si hay varias el mismo día, vale a la que asistió.
   const porFecha = useMemo(() => {
@@ -4105,23 +4167,19 @@ function CalendarioAsistencia({ citas }) {
     return m;
   }, [citas]);
 
-  // Arranca en el mes de la última cita: ahí está la información fresca.
+  // Termina en el mes de la última cita: ahí está la información fresca, y los
+  // dos meses previos dan el contexto de cómo venía.
   const ultima = (citas || [])[0];
   const inicio = ultima ? dLocal(ultima.fecha_iso) : new Date();
   const [cursor, setCursor] = useState(new Date(inicio.getFullYear(), inicio.getMonth(), 1));
   const anio = cursor.getFullYear(), mes = cursor.getMonth();
+  // Del más antiguo al más reciente; en pantallas chicas se ocultan los viejos.
+  const meses = [-2, -1, 0].map((d) => {
+    const f = new Date(anio, mes + d, 1);
+    return { anio: f.getFullYear(), mes: f.getMonth() };
+  });
 
-  const celdas = useMemo(() => {
-    const primero = new Date(anio, mes, 1);
-    const desfase = (primero.getDay() + 6) % 7; // la semana empieza el lunes
-    const cuantos = new Date(anio, mes + 1, 0).getDate();
-    const out = new Array(desfase).fill(null);
-    for (let d = 1; d <= cuantos; d++) out.push(d);
-    while (out.length % 7) out.push(null);
-    return out;
-  }, [anio, mes]);
-
-  // Resumen y ritmo: sobre TODAS las citas, no solo el mes a la vista.
+  // Resumen y ritmo: sobre TODAS las citas, no solo los meses a la vista.
   const resumen = useMemo(() => {
     const r = { vino: 0, falto: 0, cancelo: 0, proximas: 0 };
     const fechasVino = [];
@@ -4148,50 +4206,30 @@ function CalendarioAsistencia({ citas }) {
   }, [citas]);
 
   const mover = (d) => setCursor(new Date(anio, mes + d, 1));
+  const alerta = resumen.cada != null && resumen.diasSinVenir > resumen.cada * 2;
 
   return (
     <div className="ca-card ca-asist">
       <div>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-          <span style={{ fontSize: 14, fontWeight: 600 }}>{MESES_FULL[mes + 1]} {anio}</span>
-          <div style={{ display: "flex", gap: 2 }}>
-            <button className="ca-mini" style={{ padding: "4px 7px" }} onClick={() => mover(-1)} aria-label="Mes anterior"><ChevronLeft size={14} strokeWidth={2} /></button>
-            <button className="ca-mini" style={{ padding: "4px 7px" }} onClick={() => mover(1)} aria-label="Mes siguiente"><ChevronRight size={14} strokeWidth={2} /></button>
-          </div>
+        <div className="ca-asist-nav">
+          <button className="ca-mini" onClick={() => mover(-1)} aria-label="Meses anteriores">
+            <ChevronLeft size={14} strokeWidth={2} />
+          </button>
+          <button className="ca-mini" onClick={() => mover(1)} aria-label="Meses siguientes">
+            <ChevronRight size={14} strokeWidth={2} />
+          </button>
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 4, textAlign: "center" }}>
-          {DIAS_INI.map((d, i) => (
-            <span key={i} style={{ fontSize: 10.5, color: "var(--muted)", fontWeight: 600, paddingBottom: 4 }}>{d}</span>
+        <div className="ca-asist-meses">
+          {meses.map((m, i) => (
+            <div key={`${m.anio}-${m.mes}`} className={`ca-asist-m${i + 1}`}>
+              <MesAsistencia anio={m.anio} mes={m.mes} porFecha={porFecha} />
+            </div>
           ))}
-          {celdas.map((d, i) => {
-            if (d === null) return <span key={i} />;
-            const iso = `${anio}-${String(mes + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
-            const cita = porFecha.get(iso);
-            const conocido = cita ? ASIST[cita.estado] : null;
-            const est = cita ? (conocido || ASIST_FUTURA) : null;
-            const esHoy = iso === HOY_ISO;
-            return (
-              <span key={i}
-                title={cita ? `${cita.hora} · ${cita.estado_label}${cita.medico ? " · " + cita.medico : ""}` : ""}
-                style={{
-                  height: 30, display: "flex", alignItems: "center", justifyContent: "center",
-                  fontSize: 12.5, borderRadius: 8, fontVariantNumeric: "tabular-nums",
-                  background: est ? est.fondo : "transparent",
-                  color: est ? est.color : "var(--ink-soft)",
-                  fontWeight: est ? 600 : 400,
-                  border: cita && !conocido ? `1px dashed ${est.color}`
-                    : (esHoy ? "1px solid var(--accent)" : "1px solid transparent"),
-                  cursor: cita ? "help" : "default",
-                }}>
-                {d}
-              </span>
-            );
-          })}
         </div>
       </div>
 
-      <div>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 18, marginBottom: 16 }}>
+      <div className="ca-asist-lado">
+        <div className="ca-asist-cifras">
           {[["Asistió", resumen.vino, "#0A7D92"], ["No asistió", resumen.falto, "#B4564E"],
             ["Canceló", resumen.cancelo, "#8A8A8A"], ["Por venir", resumen.proximas, "var(--ink-soft)"]].map(([l, n, c]) => (
             <div key={l}>
@@ -4205,25 +4243,24 @@ function CalendarioAsistencia({ citas }) {
             <div>Viene aproximadamente <strong>cada {resumen.cada} día{resumen.cada === 1 ? "" : "s"}</strong>.</div>
           )}
           {resumen.diasSinVenir != null && (
-            <div style={resumen.cada != null && resumen.diasSinVenir > resumen.cada * 2 ? { color: "#9C6B2E", fontWeight: 600 } : undefined}>
+            <div style={alerta ? { color: "#9C6B2E", fontWeight: 600 } : undefined}>
               Última sesión hace {resumen.diasSinVenir} día{resumen.diasSinVenir === 1 ? "" : "s"}
-              {resumen.cada != null && resumen.diasSinVenir > resumen.cada * 2
-                ? " — lleva más del doble de su ritmo habitual." : "."}
+              {alerta ? " — lleva más del doble de su ritmo habitual." : "."}
             </div>
           )}
           {resumen.falto > 0 && (
             <div>Faltó a {resumen.falto} de {resumen.vino + resumen.falto} sesiones agendadas.</div>
           )}
         </div>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 12, marginTop: 16, fontSize: 11.5, color: "var(--muted)" }}>
+        <div className="ca-asist-leyenda">
           {[["#0A7D92", "#D7F4FA", "Asistió"], ["#B4564E", "#FDE9E7", "No asistió"],
             ["#8A8A8A", "#EFEFEF", "Cancelada"]].map(([c, f, l]) => (
-            <span key={l} style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
-              <span style={{ width: 12, height: 12, borderRadius: 4, background: f, border: `1px solid ${c}` }} />{l}
+            <span key={l}>
+              <span className="ca-asist-pto" style={{ background: f, border: `1px solid ${c}` }} />{l}
             </span>
           ))}
-          <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
-            <span style={{ width: 12, height: 12, borderRadius: 4, border: "1px dashed #6E6E6E" }} />Agendada
+          <span>
+            <span className="ca-asist-pto" style={{ border: "1px dashed #6E6E6E" }} />Agendada
           </span>
         </div>
       </div>
