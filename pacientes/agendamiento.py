@@ -299,7 +299,10 @@ class AgendamientoReservarView(_PublicBase):
             paciente = Paciente.objects.create(
                 clinica=clinica, nombre=nombre, telefono=telefono, email=email, sede=prof.sede,
                 numero_documento=documento,
-                tipo_documento=("ruc" if len(documento) == 11 else "dni") if documento else "dni")
+                tipo_documento=("ruc" if len(documento) == 11 else "dni") if documento else "dni",
+                # Reservo por la web, todavia no vino: la ficha existe para sostener
+                # la cita, pero no cuenta como paciente hasta que inicie proceso.
+                provisional=True)
             lead.paciente = paciente
             lead.save(update_fields=["paciente"])
             Cita.objects.create(

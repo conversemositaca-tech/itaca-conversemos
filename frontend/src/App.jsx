@@ -581,6 +581,9 @@ export default function ClinicaApp() {
   const [filterProf, setFilterProf] = useState("");
   const [filterFrec, setFilterFrec] = useState("");
   const [soloSinProxima, setSoloSinProxima] = useState(false);
+  // Ver las fichas provisionales (consulta agendada, proceso no iniciado). Fuera
+  // de este chip no aparecen: no son pacientes todavia.
+  const [verConsultas, setVerConsultas] = useState(false);
   const [selectedId, setSelectedId] = useState(null);
   // Detalle completo del paciente abierto (historial, citas, adjuntos, paquetes…).
   // La LISTA trae solo lo liviano; el detalle se carga al abrir la ficha.
@@ -702,22 +705,28 @@ export default function ClinicaApp() {
     (detalle && detalle.id === selectedId)
       ? detalle
       : (pacientes.find((p) => p.id === selectedId) || null);
+  // Pacientes de verdad vs. fichas abiertas solo para sostener la cita de una
+  // consulta agendada. El listado y el contador muestran los primeros.
+  const pacientesReales = useMemo(() => pacientes.filter((p) => !p.provisional), [pacientes]);
+  const consultasAgendadas = useMemo(() => pacientes.filter((p) => p.provisional), [pacientes]);
+  const basePacientes = verConsultas ? consultasAgendadas : pacientesReales;
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return pacientes.filter((p) =>
+    return basePacientes.filter((p) =>
       (!q || p.nombre.toLowerCase().includes(q) || (p.tel || "").toLowerCase().includes(q) || (p.numero_documento || "").toLowerCase().includes(q)) &&
       (!filterEsp || p.especialidad === filterEsp) &&
       (!filterSede || p.sede === filterSede) &&
       (!filterProf || p.profesional_nombre === filterProf) &&
       (!filterFrec || p.frecuencia === filterFrec) &&
       (!soloSinProxima || !p.proxima));
-  }, [pacientes, query, filterEsp, filterSede, filterProf, filterFrec, soloSinProxima]);
+  }, [basePacientes, query, filterEsp, filterSede, filterProf, filterFrec, soloSinProxima]);
 
   // Psicólogos presentes en la lista de pacientes (para el filtro).
   // Psicólogos del filtro: solo los que tienen pacientes en la sede elegida.
   const profsEnPacientes = useMemo(
-    () => [...new Set(pacientes.filter((p) => !filterSede || p.sede === filterSede).map((p) => p.profesional_nombre).filter(Boolean))].sort(),
-    [pacientes, filterSede]
+    () => [...new Set(basePacientes.filter((p) => !filterSede || p.sede === filterSede).map((p) => p.profesional_nombre).filter(Boolean))].sort(),
+    [basePacientes, filterSede]
   );
 
   const nav = [
@@ -1535,7 +1544,7 @@ export default function ClinicaApp() {
             <div className="ca-tophead">
               <div>
                 <h1 className="ca-h1">Pacientes</h1>
-                <div className="ca-sub">{filtered.length === pacientes.length ? `${pacientes.length} en total` : `${filtered.length} de ${pacientes.length}`}</div>
+                <div className="ca-sub">{filtered.length === basePacientes.length ? `${basePacientes.length} en total` : `${filtered.length} de ${basePacientes.length}`}</div>
               </div>
               <div style={{ display: "flex", gap: 9, alignItems: "center" }}>
                 {usuario?.rol !== "medico" && <ExportBtns nombre="pacientes" titulo="Pacientes" disabled={filtered.length === 0}
@@ -1572,9 +1581,16 @@ export default function ClinicaApp() {
               </select>
               <button className={`ca-fchip ${soloSinProxima ? "on" : ""}`} onClick={() => setSoloSinProxima((v) => !v)}
                 style={{ marginLeft: 6, color: soloSinProxima ? undefined : "#B0822F" }}>⏰ Sin próxima sesión</button>
+              {consultasAgendadas.length > 0 && (
+                <button className={`ca-fchip ${verConsultas ? "on" : ""}`} onClick={() => setVerConsultas((v) => !v)}
+                  title="Fichas abiertas por una consulta agendada. Todavia no son pacientes: lo seran cuando el lead inicie proceso."
+                  style={{ marginLeft: 6 }}>📅 Consultas agendadas ({consultasAgendadas.length})</button>
+              )}
             </div>
             {filtered.length === 0 ? (
-              <div className="ca-empty">No encontramos a nadie con ese filtro. Prueba con otro o agrégalo arriba.</div>
+              <div className="ca-empty">{verConsultas
+                ? "No hay consultas agendadas pendientes de iniciar proceso."
+                : "No encontramos a nadie con ese filtro. Prueba con otro o agrégalo arriba."}</div>
             ) : (
               filtered.map((p) => {
                 const meta = p.proceso === "consulta"
@@ -1587,6 +1603,7 @@ export default function ClinicaApp() {
                       <div className="ca-pname">{p.nombre}</div>
                       <div className="ca-pmeta">{p.profesional_nombre ? `${p.profesional_nombre} · ` : ""}{meta || `última visita ${p.ultima}`}</div>
                     </div>
+                    {p.provisional && <Tag colors={{ bg: "#FCF3D4", fg: "#8A6D14" }}>Consulta agendada</Tag>}
                     {p.cuenta?.pendiente > 0 && <Tag colors={ESTADO_COBRO_COLOR.pendiente}>Debe {money(p.cuenta.pendiente)}</Tag>}
                     {p.frecuencia_label && <Tag colors={p.frecuencia === "alta" ? { bg: "#E7EEF6", fg: "#3D5C82" } : p.frecuencia === "en_pausa" ? { bg: "#FCF3D4", fg: "#8A6D14" } : { bg: "#E4F3E8", fg: "#1E7D45" }}>{p.frecuencia_label}</Tag>}
                     {p.modalidad_label && <Tag colors={{ bg: "#EFEDE8", fg: "#7C7870" }}>{p.modalidad_label}</Tag>}
@@ -6615,11 +6632,15 @@ function Marketing({ showToast, onConvertir, esAdmin, sedePropia = "" }) {
               style={{ fontWeight: 600, background: (LEAD_ESTADO_COLOR[lead.estado] || {}).bg, color: (LEAD_ESTADO_COLOR[lead.estado] || {}).fg }}>
               {LEAD_ESTADOS.map((s) => <option key={s.v} value={s.v}>{s.l}</option>)}
             </select>
-            {!lead.paciente_nombre && (
+            {lead.estado !== "ganado" && (
               <button className="ca-mini wa" title="Registrar seguimiento" onClick={() => seguimientoLead(lead)}><MessageCircle size={13} strokeWidth={2} /> Seguimiento</button>
             )}
             <button className="ca-iconbtn" title="Editar lead" onClick={() => setEditandoLead(lead)}><Pencil size={14} strokeWidth={2} /></button>
-            {lead.paciente_nombre ? (
+            {/* "Ya es paciente" lo decide el ESTADO del lead, no el tener ficha:
+                agendar la consulta abre una ficha provisional para colgar la cita,
+                y eso hacia que un lead PERDIDO se mostrara igual como paciente,
+                sin forma de quitarle la etiqueta. Paciente = inicio proceso. */}
+            {lead.estado === "ganado" ? (
               <Tag colors={LEAD_ESTADO_COLOR.ganado}>Ya es paciente</Tag>
             ) : (
               <button className="ca-mini" onClick={() => convertir(lead)}>
