@@ -88,7 +88,8 @@ class MiPanelView(APIView):
         cierre = _pct(len(ganados), len(con_consulta))
 
         # --- LTV: promedio de N° de sesión de sus pacientes con sesiones ---
-        mis_pacientes = Paciente.objects.filter(clinica=clinica, profesional=ficha) if ficha else Paciente.objects.none()
+        mis_pacientes = (Paciente.objects.filter(clinica=clinica, profesional=ficha, provisional=False)
+                         if ficha else Paciente.objects.none())
         total_pac = mis_pacientes.count()
         ltv = mis_pacientes.filter(n_sesion__gt=0).aggregate(a=Avg("n_sesion"))["a"]
 

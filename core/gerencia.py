@@ -153,7 +153,9 @@ class HoyResumenView(APIView):
         leads_nuevos = Lead.objects.del_tenant_actual().filter(estado=Lead.Estado.NUEVO).count()
         leads_hoy = Lead.objects.del_tenant_actual().filter(creado_en__gte=ini, creado_en__lt=fin).count()
 
-        total_pac = Paciente.objects.del_tenant_actual().count()
+        # Sin las fichas provisionales: agendar una consulta abre una ficha para
+        # colgar la cita, pero esa persona todavía no es paciente.
+        total_pac = Paciente.objects.del_tenant_actual().filter(provisional=False).count()
         con_futura = set(
             Cita.objects.del_tenant_actual().filter(inicio__gte=timezone.now())
             .exclude(estado=Cita.Estado.CANCELADA).values_list("paciente_id", flat=True)
@@ -429,8 +431,11 @@ class GerenciaResumenView(APIView):
         }
 
         # --- Pacientes ---
-        total_pac = fsede(Paciente.objects.del_tenant_actual()).count()
-        nuevos_pac = fsede(Paciente.objects.del_tenant_actual().filter(creado_en__gte=ini, creado_en__lt=fin)).count()
+        # Solo pacientes de verdad: las fichas provisionales (consulta agendada,
+        # proceso no iniciado) no cuentan ni en el total ni en la demografía.
+        reales = Paciente.objects.del_tenant_actual().filter(provisional=False)
+        total_pac = fsede(reales).count()
+        nuevos_pac = fsede(reales.filter(creado_en__gte=ini, creado_en__lt=fin)).count()
         con_futura = set(
             fpac(Cita.objects.del_tenant_actual()
                  .filter(inicio__gte=timezone.now())
@@ -446,7 +451,7 @@ class GerenciaResumenView(APIView):
         # --- Demografía (sobre toda la base de pacientes) ---
         gen = {"femenino": 0, "masculino": 0, "otro": 0, "sin": 0}
         ed = {"0-24": 0, "25-35": 0, "36-45": 0, "46-55": 0, "+56": 0, "sin": 0}
-        for p in fsede(Paciente.objects.del_tenant_actual()).only("genero", "fecha_nacimiento"):
+        for p in fsede(reales).only("genero", "fecha_nacimiento"):
             gen[p.genero if p.genero in gen else "sin"] += 1
             e = p.edad
             if e is None:

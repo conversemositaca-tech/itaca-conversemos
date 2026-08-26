@@ -245,7 +245,7 @@ def _responder_consulta(psico, pregunta):
     datos reales: pacientes activos, su agenda (hoy, mañana, un día concreto o la
     semana), pacientes sin próxima cita. Todo acotado a su clínica."""
     t = (pregunta or "").lower()
-    mis_pac = Paciente.objects.filter(clinica=psico.clinica, profesional__usuario=psico)
+    mis_pac = Paciente.objects.filter(clinica=psico.clinica, profesional__usuario=psico, provisional=False)
 
     # 1) Pacientes sin próxima cita (para reactivar) — antes que la agenda, porque
     #    "sin cita" contiene la palabra "cita".

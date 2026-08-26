@@ -223,6 +223,82 @@ class LeadCreaLaCitaTests(TestCase):
         self.assertEqual(Lead.objects.get().estado, Lead.Estado.AGENDADO)
 
 
+class AgendarNoEsSerPacienteTests(TestCase):
+    """Agendar la consulta abría la ficha y la persona salía como paciente.
+
+    Reportado por las dos sedes: leads en "Perdido" mostraban igual la etiqueta
+    verde "Ya es paciente", y nadie podía quitarla. La ficha se crea igual —la
+    cita tiene que colgar de alguien— pero nace `provisional`: paciente es quien
+    inicia proceso, no quien reserva la primera consulta.
+    """
+
+    def setUp(self):
+        self.clinica = Clinica.objects.create(nombre="Conversemos", slug="conversemos-prov")
+        self.coord = Usuario.objects.create_user(
+            email="coord4@test.pe", password="x", clinica=self.clinica, rol=Usuario.Rol.ASISTENTE,
+        )
+        self.psico = Usuario.objects.create_user(
+            email="p4@test.pe", password="x", clinica=self.clinica, rol=Usuario.Rol.MEDICO,
+        )
+        self.manana = timezone.localdate() + timedelta(days=1)
+        self.client.force_login(self.coord)
+
+    def _agendar(self, **extra):
+        datos = {
+            "nombre": "Sebastián Gamboa", "telefono": "987654321", "sede": "piura",
+            "fuente": "whatsapp", "estado": "agendado", "agendo_consulta": True,
+            "fecha_consulta": self.manana.isoformat(), "hora_consulta": "10:00",
+            "medico": self.psico.id, "especialidad": "Terapia individual",
+            **extra,
+        }
+        r = self.client.post("/api/leads/", datos, content_type="application/json")
+        self.assertEqual(r.status_code, 201)
+        return Lead.objects.get()
+
+    def test_la_ficha_que_deja_la_consulta_nace_provisional(self):
+        lead = self._agendar()
+        self.assertIsNotNone(lead.paciente_id)          # la cita necesita la ficha
+        self.assertTrue(lead.paciente.provisional)      # pero no es paciente aún
+
+    def test_el_lead_perdido_no_queda_contado_como_paciente(self):
+        """El caso de la captura: agendó, no vino, lo pasan a Perdido."""
+        lead = self._agendar()
+        r = self.client.patch(f"/api/leads/{lead.id}/", {"estado": "perdido"},
+                              content_type="application/json")
+        self.assertEqual(r.status_code, 200)
+        lead.refresh_from_db()
+        self.assertEqual(lead.estado, Lead.Estado.PERDIDO)
+        self.assertTrue(lead.paciente.provisional)
+        self.assertEqual(Paciente.objects.filter(provisional=False).count(), 0)
+
+    def test_iniciar_proceso_asciende_la_ficha(self):
+        lead = self._agendar()
+        r = self.client.patch(f"/api/leads/{lead.id}/", {"estado": "ganado"},
+                              content_type="application/json")
+        self.assertEqual(r.status_code, 200)
+        lead.refresh_from_db()
+        lead.paciente.refresh_from_db()
+        self.assertFalse(lead.paciente.provisional)
+        self.assertEqual(Paciente.objects.filter(provisional=False).count(), 1)
+
+    def test_el_boton_convertir_no_se_bloquea_por_la_ficha_provisional(self):
+        """Antes devolvía "ya es paciente" y no hacía nada: el lead se quedaba
+        agendado para siempre y sin forma de cerrarlo desde la lista."""
+        lead = self._agendar()
+        r = self.client.post(f"/api/leads/{lead.id}/convertir/", content_type="application/json")
+        self.assertEqual(r.status_code, 201)
+        lead.refresh_from_db()
+        lead.paciente.refresh_from_db()
+        self.assertEqual(lead.estado, Lead.Estado.GANADO)
+        self.assertFalse(lead.paciente.provisional)
+        self.assertEqual(Paciente.objects.count(), 1)   # no creó una segunda ficha
+
+    def test_la_fila_que_entra_ya_como_proceso_es_paciente_de_una(self):
+        """El avance de etapa se registra como fila NUEVA, no editando la anterior."""
+        lead = self._agendar(estado="ganado")
+        self.assertFalse(lead.paciente.provisional)
+
+
 class ServicioDeLaConsultaTests(TestCase):
     """La cita que nace de un lead es una CONSULTA, no una sesión de terapia.
 

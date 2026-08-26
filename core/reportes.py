@@ -138,7 +138,8 @@ class ReporteSemanalViewSet(viewsets.ModelViewSet):
         procesos = personas_unicas(list(
             leads.filter(estado=Lead.Estado.GANADO, fecha_cierre__gte=desde, fecha_cierre__lte=hasta)
         ))
-        pac = Paciente.objects.filter(clinica=clinica)
+        # Sin fichas provisionales (consulta agendada que aún no inició proceso).
+        pac = Paciente.objects.filter(clinica=clinica, provisional=False)
 
         # --- Facturación REAL del mes (cobros pagados), atribuida por la sede del paciente ---
         mes_desde = hasta.replace(day=1)

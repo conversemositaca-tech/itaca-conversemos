@@ -106,6 +106,7 @@ class PacienteSerializer(serializers.ModelSerializer):
             "tutor_nombre", "tutor_parentesco", "tutor_telefono", "tutor_documento",
             "sede", "sede_label", "profesional", "profesional_nombre", "codigo",
             "n_sesion", "sesiones_proceso", "proceso", "proceso_label", "seguimiento",
+            "provisional",
             "frecuencia", "frecuencia_label", "modalidad", "modalidad_label",
             "especialidad", "alergias", "antecedentes",
             "antecedentes_medicos", "antecedentes_familiares", "antecedentes_otros",

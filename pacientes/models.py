@@ -49,6 +49,13 @@ class Paciente(ModeloTenant):
         max_length=24, blank=True, default="",
         help_text="Etapa del proceso: consulta, primero, segundo, … o quincenal.",
     )
+    # Ficha abierta SOLO para sostener la cita de una consulta agendada desde
+    # Marketing: agendar no es ser paciente. Se limpia cuando el lead inicia
+    # proceso. Sin esta marca, cada consulta agendada sumaba un paciente al
+    # listado y a los conteos de gerencia.
+    provisional = models.BooleanField(
+        "ficha provisional (solo consulta agendada)", default=False,
+    )
 
     class Frecuencia(models.TextChoices):
         SEMANAL = "semanal", "Semanal"

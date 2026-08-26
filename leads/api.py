@@ -35,6 +35,10 @@ def _paciente_del_lead(lead):
     """El paciente de este lead: el enlazado, uno que ya exista con su teléfono, o
     uno nuevo. NO toca el estado del lead (agendar una consulta no es cerrarla).
 
+    La ficha que se crea aquí nace `provisional`: existe para que la cita cuelgue
+    de alguien, pero la persona todavía no es paciente y no debe contarse como
+    tal. Deja de serlo cuando el lead inicia proceso.
+
     El match por teléfono es el mismo criterio que usa la reserva web: sin él, la
     coordinadora terminaba creando un paciente repetido cada vez que registraba
     la cita a mano, y eso descuadraba los conteos.
@@ -66,6 +70,7 @@ def _paciente_del_lead(lead):
         clinica=lead.clinica, nombre=lead.nombre, telefono=lead.telefono,
         email=lead.email or "", sede=lead.sede or "", profesional=ficha,
         especialidad_habitual=lead.especialidad or lead.get_tipo_servicio_display() or "",
+        provisional=True,
     )
     lead.paciente = paciente
     lead.save(update_fields=["paciente"])
@@ -197,9 +202,20 @@ def sincronizar_cita_del_lead(lead):
 
 def convertir_lead_en_paciente(lead):
     """Crea el Paciente desde el Lead (si aún no existe) y los enlaza. Copia sede,
-    teléfono y enlaza al psicólogo (su ficha del directorio). Idempotente."""
+    teléfono y enlaza al psicólogo (su ficha del directorio). Idempotente.
+
+    Este es el ÚNICO punto donde alguien pasa a ser paciente. Si ya tenía ficha
+    provisional —la que dejó la consulta agendada—, aquí deja de serlo: recién
+    ahora inició proceso."""
     if lead.paciente_id:
-        return lead.paciente
+        paciente = lead.paciente
+        if paciente.provisional:
+            paciente.provisional = False
+            paciente.save(update_fields=["provisional"])
+        if lead.estado != Lead.Estado.GANADO:
+            lead.estado = Lead.Estado.GANADO
+            lead.save(update_fields=["estado"])
+        return paciente
     from usuarios.models import Profesional
 
     ficha = Profesional.objects.filter(usuario=lead.medico).first() if lead.medico_id else None
@@ -301,12 +317,21 @@ class LeadViewSet(viewsets.ModelViewSet):
         # Si trae consulta agendada, la cita queda creada en la agenda: antes había
         # que registrarla otra vez a mano y de ahí salían los pacientes duplicados.
         _cita, self._aviso_cita = sincronizar_cita_del_lead(lead)
+        # La fila puede entrar ya como "Inició proceso": el avance de etapa se
+        # registra como fila NUEVA, no editando la anterior. En ese caso la ficha
+        # que dejó la cita no debe quedarse provisional.
+        if lead.estado == Lead.Estado.GANADO:
+            convertir_lead_en_paciente(lead)
 
     def perform_update(self, serializer):
         lead = serializer.save()
         self._aplicar_fecha_llegada(lead)
-        # Al marcar "Inició proceso" (ganado), se convierte en paciente automáticamente.
-        if lead.estado == Lead.Estado.GANADO and not lead.paciente_id:
+        # Al marcar "Inició proceso" (ganado) recién ahora es paciente: se le crea
+        # la ficha, o la provisional que dejó la consulta agendada deja de serlo.
+        # Se llama SIEMPRE que el estado sea ganado (la función es idempotente):
+        # si solo se llamara cuando no hay ficha, el lead que ya tenía una
+        # provisional se quedaba con ella para siempre y nunca entraba al listado.
+        if lead.estado == Lead.Estado.GANADO:
             convertir_lead_en_paciente(lead)
         _cita, self._aviso_cita = sincronizar_cita_del_lead(lead)
 
@@ -321,9 +346,12 @@ class LeadViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["post"])
     def convertir(self, request, pk=None):
-        """Convierte el lead en paciente (crea el paciente y marca el cierre)."""
+        """Convierte el lead en paciente (crea el paciente y marca el cierre).
+
+        Tener ficha provisional (por la consulta agendada) no bloquea el botón:
+        justamente esto es lo que la asciende a paciente de verdad."""
         lead = self.get_object()
-        if lead.paciente_id:
+        if lead.paciente_id and lead.estado == Lead.Estado.GANADO and not lead.paciente.provisional:
             return Response({"detail": "Este lead ya es paciente.", "paciente_id": lead.paciente_id})
         paciente = convertir_lead_en_paciente(lead)
         return Response({"paciente_id": paciente.id, "lead": LeadSerializer(lead).data},
