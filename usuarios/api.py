@@ -1,4 +1,6 @@
 from django.contrib.auth import authenticate, login, logout
+from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.http import FileResponse
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import ensure_csrf_cookie
@@ -7,12 +9,28 @@ from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.permissions import AllowAny, BasePermission, IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.throttling import SimpleRateThrottle
 from rest_framework.views import APIView
 
 from core.tenant import get_clinica_actual
 
 from .models import DocumentoLegal, Profesional, Usuario
 from .serializers import DocumentoLegalSerializer, ProfesionalSerializer, UsuarioSerializer
+
+
+def revisar_password(nueva, usuario=None):
+    """Devuelve el motivo por el que la contraseña no sirve, o None si está bien.
+
+    El sistema ya declaraba AUTH_PASSWORD_VALIDATORS, pero estas vistas no los
+    llamaban: solo miraban el largo. Así pasaban contraseñas como "123456".
+    """
+    if len(nueva) < 8:
+        return "La contraseña debe tener al menos 8 caracteres."
+    try:
+        validate_password(nueva, user=usuario)
+    except DjangoValidationError as e:
+        return " ".join(e.messages)
+    return None
 
 
 class EsAdmin(BasePermission):
@@ -42,8 +60,34 @@ def datos_usuario(user):
     }
 
 
+class LoginPorIP(SimpleRateThrottle):
+    """Frena a quien prueba contraseñas desde una misma conexión."""
+    scope = "login_ip"
+
+    def get_cache_key(self, request, view):
+        return self.cache_format % {"scope": self.scope, "ident": self.get_ident(request)}
+
+
+class LoginPorCuenta(SimpleRateThrottle):
+    """Frena los intentos contra UNA cuenta, vengan de donde vengan.
+
+    Es el que de verdad protege: quien ataca puede cambiar de IP, pero no puede
+    cambiar el correo de la persona a la que le quiere entrar.
+    """
+    scope = "login_cuenta"
+
+    def get_cache_key(self, request, view):
+        email = (request.data.get("email") or "").strip().lower()
+        if not email:
+            return None
+        return self.cache_format % {"scope": self.scope, "ident": email}
+
+
 class LoginView(APIView):
     permission_classes = [AllowAny]
+    # Sin esto, el login aceptaba intentos ilimitados: probar contraseñas hasta
+    # acertar era solo cuestión de tiempo.
+    throttle_classes = [LoginPorIP, LoginPorCuenta]
 
     def post(self, request):
         email = (request.data.get("email") or "").strip().lower()
@@ -125,8 +169,9 @@ class UsuarioViewSet(viewsets.ModelViewSet):
         if Usuario.objects.filter(email=email).exists():
             return Response({"detail": "Ya existe un usuario con ese correo."}, status=status.HTTP_400_BAD_REQUEST)
         password = d.get("password") or ""
-        if len(password) < 6:
-            return Response({"detail": "La contraseña debe tener al menos 6 caracteres."}, status=status.HTTP_400_BAD_REQUEST)
+        malo = revisar_password(password)
+        if malo:
+            return Response({"detail": malo}, status=status.HTTP_400_BAD_REQUEST)
         rol = d.get("rol") if d.get("rol") in dict(Usuario.Rol.choices) else Usuario.Rol.ASISTENTE
         sede = d.get("sede") if d.get("sede") in dict(Usuario.Sede.choices) else ""
         user = Usuario.objects.create_user(
@@ -158,8 +203,9 @@ class UsuarioViewSet(viewsets.ModelViewSet):
     def password(self, request, pk=None):
         user = self.get_object()
         nueva = request.data.get("password") or ""
-        if len(nueva) < 6:
-            return Response({"detail": "La contraseña debe tener al menos 6 caracteres."}, status=status.HTTP_400_BAD_REQUEST)
+        malo = revisar_password(nueva, user)
+        if malo:
+            return Response({"detail": malo}, status=status.HTTP_400_BAD_REQUEST)
         user.set_password(nueva)
         user.save(update_fields=["password"])
         return Response({"ok": True})
@@ -175,8 +221,9 @@ class CambiarPasswordView(APIView):
         nueva = request.data.get("nueva") or ""
         if not request.user.check_password(actual):
             return Response({"detail": "Tu contraseña actual no es correcta."}, status=status.HTTP_400_BAD_REQUEST)
-        if len(nueva) < 6:
-            return Response({"detail": "La nueva contraseña debe tener al menos 6 caracteres."}, status=status.HTTP_400_BAD_REQUEST)
+        malo = revisar_password(nueva, request.user)
+        if malo:
+            return Response({"detail": malo}, status=status.HTTP_400_BAD_REQUEST)
         request.user.set_password(nueva)
         request.user.save(update_fields=["password"])
         # Mantener la sesión viva tras cambiar la contraseña.
