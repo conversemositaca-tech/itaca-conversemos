@@ -8,7 +8,7 @@ import {
   Paperclip, Trash2, Activity, Pill, HeartPulse, Copy, BarChart3, UserCog, KeyRound, MapPin,
   Mic, FolderOpen, Lightbulb, ExternalLink, Bell, GraduationCap,
   Building2, DoorOpen, ChevronRight, Compass, Send,
-  Shield, Target, Heart, Leaf, Trophy, Award, Sparkles, Landmark,
+  Shield, Target, Heart, Leaf, Trophy, Award, Sparkles, Landmark, Info,
 } from "lucide-react";
 import { api } from "./api";
 import Login from "./Login";
@@ -1249,6 +1249,16 @@ export default function ClinicaApp() {
         @media (max-width:900px) { .ca-asist { grid-template-columns:1fr; }
           .ca-asist-meses { grid-template-columns:1fr; } .ca-asist-m2 { display:none; } }
         .ca-card .ca-card { box-shadow:none; border-color:var(--line); border-radius:12px; }
+        /* Burbuja de ayuda "bonita" (reemplaza el title= nativo del navegador, que
+           es chico y fácil de no ver). Hover en mouse, foco en teclado/touch. */
+        .ca-tip { position:relative; display:inline-flex; cursor:help; }
+        .ca-tip .bubble { position:absolute; bottom:calc(100% + 9px); left:50%; transform:translateX(-50%);
+          background:var(--ink); color:#fff; font-size:12px; line-height:1.45; padding:8px 12px; border-radius:9px;
+          box-shadow:0 6px 20px rgba(31,42,38,.20); width:max-content; max-width:230px; text-align:left;
+          opacity:0; visibility:hidden; pointer-events:none; transition:opacity .12s; z-index:30; }
+        .ca-tip .bubble::after { content:""; position:absolute; top:100%; left:50%; transform:translateX(-50%);
+          border:5px solid transparent; border-top-color:var(--ink); }
+        .ca-tip:hover .bubble, .ca-tip:focus-visible .bubble { opacity:1; visibility:visible; }
         /* Si la tarjeta además es un botón (el aviso de Legal, por ejemplo), responde
            al mouse igual que los accesos de arriba. */
         button.ca-card { transition:transform .14s, box-shadow .14s; }
@@ -1756,6 +1766,16 @@ function BarrasH({ data, color = "var(--accent)", colorPor }) {
         </div>
       ))}
     </div>
+  );
+}
+
+// Ícono (i) con burbuja de explicación al pasar el cursor o dar foco (teclado/touch).
+function InfoTip({ texto }) {
+  return (
+    <span className="ca-tip" tabIndex={0} aria-label={texto}>
+      <Info size={13} strokeWidth={2} style={{ color: "var(--muted)" }} />
+      <span className="bubble">{texto}</span>
+    </span>
   );
 }
 
@@ -3241,25 +3261,37 @@ function MetaComercialBar({ m }) {
           <TrendingUp size={15} strokeWidth={2} style={{ color: "var(--accent)" }} /> Meta comercial del mes
           {sedeLbl && <span style={{ marginLeft: 8, fontSize: 11.5, fontWeight: 600, padding: "1px 9px", borderRadius: 999, background: "#EEF2EC", color: "#4B6B4E", textTransform: "capitalize" }}>{sedeLbl}</span>}
         </div>
-        <div style={{ fontSize: 12.5, fontWeight: 600, color: m.en_ritmo ? "#2F6B4F" : "#B0822F" }}>
+        <div style={{ fontSize: 12.5, fontWeight: 600, color: m.en_ritmo ? "#2F6B4F" : "#B0822F", display: "flex", alignItems: "center", gap: 5 }}>
           {m.en_ritmo ? "✓ En ritmo" : `${money(falta)} por debajo del ritmo`}
+          <InfoTip texto={`"Ritmo" es cuánto deberías llevar generado HOY (día ${m.dia} de ${m.dias_mes}) para terminar el mes en la meta mínima. Hoy te tocaría llevar ${money(m.esperado_hoy)}; llevas ${money(m.generado)}.`} />
         </div>
       </div>
       <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
         <span style={{ fontSize: 24, fontWeight: 700 }}>{money(m.generado)}</span>
         <span style={{ fontSize: 12.5, color: "var(--muted)" }}>generado · día {m.dia} de {m.dias_mes}</span>
-        <span style={{ marginLeft: "auto", fontSize: 13.5, fontWeight: 600, color: m.pct_min >= 100 ? "#2F6B4F" : "var(--ink)" }}>
+        <span style={{ marginLeft: "auto", fontSize: 13.5, fontWeight: 600, color: m.pct_min >= 100 ? "#2F6B4F" : "var(--ink)", display: "flex", alignItems: "center", gap: 5 }}>
           {m.pct_min}% de la meta mínima
+          <InfoTip texto={`El % y la barra se miden contra la meta IDEAL (${money(m.meta_ideal)}) — por eso la barra llega solo hasta ahí. "% de la meta mínima" es otro cálculo aparte: cuánto llevas contra el piso (${money(m.meta_min)}).`} />
         </span>
       </div>
       <div style={{ position: "relative", height: 12, borderRadius: 999, background: "var(--line)", overflow: "hidden" }}>
         <div style={{ width: pos(m.generado), height: "100%", background: m.pct_min >= 100 ? "#2F6B4F" : "var(--accent)", transition: "width .3s" }} />
-        <div title={`Meta mínima ${money(m.meta_min)}`} style={{ position: "absolute", left: pos(m.meta_min), top: 0, width: 2, height: "100%", background: "#8A8378" }} />
-        <div title={`Ritmo esperado a hoy: ${money(m.esperado_hoy)}`} style={{ position: "absolute", left: pos(m.esperado_hoy), top: 0, width: 2, height: "100%", background: "#B0822F", opacity: 0.85 }} />
+      </div>
+      <div style={{ position: "relative", height: 0 }}>
+        <span className="ca-tip" tabIndex={0} aria-label={`Meta mínima ${money(m.meta_min)}`}
+          style={{ position: "absolute", left: pos(m.meta_min), top: -12, transform: "translateX(-50%)", width: 16, height: 12, justifyContent: "center" }}>
+          <span style={{ width: 2, height: 12, background: "#8A8378" }} />
+          <span className="bubble">Meta mínima: {money(m.meta_min)}. Por debajo de esto, el mes se considera flojo.</span>
+        </span>
+        <span className="ca-tip" tabIndex={0} aria-label={`Ritmo esperado a hoy ${money(m.esperado_hoy)}`}
+          style={{ position: "absolute", left: pos(m.esperado_hoy), top: -12, transform: "translateX(-50%)", width: 16, height: 12, justifyContent: "center" }}>
+          <span style={{ width: 2, height: 12, background: "#B0822F", opacity: 0.85 }} />
+          <span className="bubble">Ritmo esperado a hoy: {money(m.esperado_hoy)}. Es la meta mínima repartida proporcional a los días que ya pasaron del mes.</span>
+        </span>
       </div>
       <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11.5, color: "var(--muted)", marginTop: 6 }}>
         <span>Mínima {money(m.meta_min)}</span>
-        <span title="Lo que deberías llevar hoy para ir en ritmo">Ritmo hoy {money(m.esperado_hoy)}</span>
+        <span>Ritmo hoy {money(m.esperado_hoy)}</span>
         <span>Ideal {money(m.meta_ideal)}</span>
       </div>
     </div>
