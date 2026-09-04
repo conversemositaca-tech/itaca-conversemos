@@ -9,8 +9,10 @@ import {
   Mic, FolderOpen, Lightbulb, ExternalLink, Bell, GraduationCap,
   Building2, DoorOpen, ChevronRight, Compass, Send,
   Shield, Target, Heart, Leaf, Trophy, Award, Sparkles, Landmark,
+  FileSpreadsheet, Presentation, FileDown,
 } from "lucide-react";
 import { api } from "./api";
+import { modeloReporte, exportarExcel, exportarWord, exportarPowerPoint, exportarPDF, exportarCSV } from "./exportGerencia";
 import Login from "./Login";
 
 const TIPOS_DOC = [
@@ -1249,6 +1251,12 @@ export default function ClinicaApp() {
         @media (max-width:900px) { .ca-asist { grid-template-columns:1fr; }
           .ca-asist-meses { grid-template-columns:1fr; } .ca-asist-m2 { display:none; } }
         .ca-card .ca-card { box-shadow:none; border-color:var(--line); border-radius:12px; }
+        /* Opciones del menú desplegable de exportación. */
+        .ca-menu-item { display:flex; gap:10px; align-items:center; width:100%; text-align:left; background:none;
+          border:none; padding:9px 10px; border-radius:8px; cursor:pointer; color:var(--ink); font:inherit; }
+        .ca-menu-item:hover { background:var(--hover); } .ca-menu-item:disabled { opacity:.6; cursor:default; }
+        .ca-menu-item b { display:block; font-weight:600; font-size:13.5px; }
+        .ca-menu-item small { display:block; color:var(--muted); font-size:11.5px; }
         /* Si la tarjeta además es un botón (el aviso de Legal, por ejemplo), responde
            al mouse igual que los accesos de arriba. */
         button.ca-card { transition:transform .14s, box-shadow .14s; }
@@ -1636,7 +1644,7 @@ export default function ClinicaApp() {
             onEliminarAdjunto={eliminarAdjunto} puedeEliminar={usuario?.rol === "medico" || usuario?.rol === "admin"} showToast={showToast} onRefrescar={refrescarPacientes} />
         )}
 
-        {view === "gerencia" && <Gerencia showToast={showToast} />}
+        {view === "gerencia" && <Gerencia showToast={showToast} clinica={usuario?.clinica?.nombre} />}
 
         {view === "historico" && <Historico showToast={showToast} esAdmin={usuario?.rol === "admin"} />}
 
@@ -2089,7 +2097,52 @@ function GamificacionEditor({ inicial, showToast, onClose, onSaved }) {
   );
 }
 
-function Gerencia({ showToast }) {
+// Centro de exportación de Gerencia: un botón desplegable con Excel, PDF
+// ejecutivo, Word y PowerPoint (+ CSV crudo). Los cuatro salen del MISMO
+// modelo que pinta la pantalla (exportGerencia.js), así dicen lo mismo.
+function ExportCenter({ modelo, nombre, disabled, onError }) {
+  const [abierto, setAbierto] = useState(false);
+  const [ocupado, setOcupado] = useState("");
+  const ref = React.useRef(null);
+  useEffect(() => {
+    if (!abierto) return;
+    const h = (e) => { if (ref.current && !ref.current.contains(e.target)) setAbierto(false); };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, [abierto]);
+  async function correr(k, fn) {
+    setOcupado(k);
+    try { await fn(); setAbierto(false); }
+    catch (e) { onError && onError("No se pudo exportar: " + e.message); }
+    finally { setOcupado(""); }
+  }
+  const opciones = [
+    { k: "xlsx", Icon: FileSpreadsheet, label: "Excel (.xlsx)", desc: "Tablas con fórmulas, editable", run: () => exportarExcel(modelo, nombre) },
+    { k: "pdf", Icon: FileDown, label: "PDF ejecutivo", desc: "Tarjetas y gráficos como en pantalla", run: () => exportarPDF(modelo) },
+    { k: "docx", Icon: FileText, label: "Word (.docx)", desc: "Tablas + espacio para redactar el análisis", run: () => exportarWord(modelo, nombre) },
+    { k: "pptx", Icon: Presentation, label: "PowerPoint (.pptx)", desc: "Una diapositiva por sección, gráficos editables", run: () => exportarPowerPoint(modelo, nombre) },
+    { k: "csv", Icon: Download, label: "CSV (datos crudos)", desc: "Solo los indicadores, para análisis", run: () => exportarCSV(modelo, nombre) },
+  ];
+  return (
+    <div ref={ref} style={{ position: "relative", display: "inline-block" }}>
+      <button className="ca-btn ghost" disabled={disabled || !modelo} onClick={() => setAbierto((o) => !o)}>
+        <Download size={15} strokeWidth={2} /> Exportar <ChevronDown size={14} strokeWidth={2} />
+      </button>
+      {abierto && (
+        <div className="ca-card" style={{ position: "absolute", right: 0, top: "calc(100% + 6px)", zIndex: 40, minWidth: 290, padding: 6 }}>
+          {opciones.map(({ k, Icon, label, desc, run }) => (
+            <button key={k} className="ca-menu-item" disabled={!!ocupado} onClick={() => correr(k, run)}>
+              <Icon size={17} strokeWidth={1.8} style={{ color: "var(--accent)", flexShrink: 0 }} />
+              <span><b>{label}</b><small>{ocupado === k ? "Generando…" : desc}</small></span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Gerencia({ showToast, clinica }) {
   const [periodo, setPeriodo] = useState("mes");
   const [sede, setSede] = useState("");
   const [data, setData] = useState(null);
@@ -2106,45 +2159,7 @@ function Gerencia({ showToast }) {
   }, [periodo, sede]);
 
   const op = data?.operacion, cap = data?.captacion, pac = data?.pacientes;
-
-  // Indicadores del tablero como pares Indicador/Valor para exportar.
-  const indicadores = data ? [
-    ["Período", data.periodo.label],
-    ["Sede", data.sede ? (data.sede === "lima" ? "Lima" : "Piura") : "Total"],
-    ["Sesiones en el período", op.citas],
-    ["Atendidas", op.atendidas],
-    ["% Asistencia", `${op.asistencia_pct}%`],
-    ["% Cancelación", `${op.cancelacion_pct}%`],
-    ["Recordatorios enviados", op.recordatorios],
-    ["Leads recibidos", cap.recibidos],
-    ["% de pauta", `${cap.pauta_pct}%`],
-    ["Cierres (iniciaron)", cap.cierres],
-    ["Tasa de cierre", `${cap.tasa_cierre}%`],
-    ["Mejor fuente", cap.top_fuente],
-    ["Mejor campaña", cap.top_campania],
-    ["Pacientes totales", pac.total],
-    ["Nuevos en el período", pac.nuevos],
-    ["Sin próxima sesión", pac.sin_proxima],
-    ...(data.retencion && data.retencion.con_sesiones > 0 ? [
-      ["Retención · en ritmo (<8d)", data.retencion.verde],
-      ["Retención · alerta (8–15d)", data.retencion.amarillo],
-      ["Retención · abandono (>15d)", data.retencion.rojo],
-      ["Retención · % abandono", `${data.retencion.rojo_pct}%`],
-    ] : []),
-    ["Ingresos (cobrado)", data.finanzas?.cobrado || 0],
-    ...(data.finanzas?.egresos != null ? [["Egresos (gastos)", data.finanzas.egresos]] : []),
-    ...(data.finanzas?.utilidad != null ? [["Utilidad (neto)", data.finanzas.utilidad]] : []),
-    ["Pendiente por cobrar", data.finanzas?.pendiente || 0],
-    ...(data.diagnostico ? [
-      ["Leads resueltos (ganado o perdido)", `${data.diagnostico.embudo.resueltos_pct}%`],
-      ["Leads marcados perdidos", data.diagnostico.embudo.perdidos],
-      ["Leads en curso sin cerrar", data.diagnostico.embudo.en_curso],
-      ["Abandono en sesión 1-2 (histórico)", `${data.diagnostico.continuidad.abandono_1_2_pct}%`],
-      ["Cobros sin medio de pago registrado", `${data.diagnostico.medio_pago.sin_medio_pct}%`],
-      ["Sesiones con motivo de cierre registrado", `${data.diagnostico.decision.pct}%`],
-    ] : []),
-  ] : [];
-  const tituloGer = `Gerencia${data ? " · " + data.periodo.label : ""}${sede ? " · " + (sede === "lima" ? "Lima" : "Piura") : ""}`;
+  const modelo = data ? modeloReporte(data, { clinica }) : null;
 
   return (
     <div>
@@ -2156,8 +2171,7 @@ function Gerencia({ showToast }) {
           </div>
         </div>
         <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-          <ExportBtns nombre={`gerencia_${periodo}${sede ? "_" + sede : ""}`} titulo={tituloGer}
-            headers={["Indicador", "Valor"]} filas={indicadores} disabled={!data} />
+          <ExportCenter modelo={modelo} nombre="gerencia" disabled={!data} onError={showToast} />
           <div className="ca-seg">
             {[["", "Total"], ["lima", "Lima"], ["piura", "Piura"]].map(([v, l]) => (
               <button key={v || "total"} className={sede === v ? "on" : ""} onClick={() => setSede(v)}>{l}</button>
