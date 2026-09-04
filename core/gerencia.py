@@ -9,7 +9,7 @@ from calendar import monthrange
 from datetime import datetime, time, timedelta
 from decimal import Decimal, InvalidOperation
 
-from django.db.models import Max, Sum
+from django.db.models import Count, Max, Sum
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.response import Response
@@ -31,6 +31,10 @@ def _rango(periodo):
         desde = hoy.replace(day=1)
         prox = desde.replace(year=desde.year + 1, month=1) if desde.month == 12 else desde.replace(month=desde.month + 1)
         return desde, prox - timedelta(days=1), "Este mes"
+    if periodo == "7d":
+        return hoy - timedelta(days=6), hoy, "Últimos 7 días"
+    if periodo == "30d":
+        return hoy - timedelta(days=29), hoy, "Últimos 30 días"
     return hoy, hoy, "Hoy"
 
 
@@ -351,7 +355,7 @@ class EliminacionesRevisarTodasView(APIView):
 
 
 class GerenciaResumenView(APIView):
-    """GET /api/gerencia/resumen/?periodo=hoy|semana|mes — resumen del negocio."""
+    """GET /api/gerencia/resumen/?periodo=hoy|7d|semana|30d|mes — resumen del negocio."""
 
     def get(self, request):
         from usuarios.models import Usuario
@@ -429,6 +433,11 @@ class GerenciaResumenView(APIView):
             "top_fuente": fuente_label.get(top_fuente, "—") if top_fuente else "—",
             "top_campania": top_campania or "—",
         }
+        leads_dia = {}
+        for l in leads:
+            k = timezone.localtime(l.creado_en).date().isoformat()
+            leads_dia[k] = leads_dia.get(k, 0) + 1
+        captacion["por_dia"] = [{"fecha": k, "leads": v} for k, v in sorted(leads_dia.items())]
 
         # --- Pacientes ---
         # Solo pacientes de verdad: las fichas provisionales (consulta agendada,
@@ -545,6 +554,93 @@ class GerenciaResumenView(APIView):
                 "egresos": float(egresos),
                 "utilidad": float(cobrado) - float(egresos),
             }
+        cobrado_dia = {}
+        for c in cobros.filter(estado=Cobro.Estado.PAGADO).only("fecha", "monto"):
+            k = timezone.localtime(c.fecha).date().isoformat()
+            cobrado_dia[k] = cobrado_dia.get(k, 0) + float(c.monto)
+        finanzas["por_dia"] = [{"fecha": k, "monto": v} for k, v in sorted(cobrado_dia.items())]
+
+        # --- Diagnóstico: ¿se está USANDO lo que el sistema ya tiene para decidir? ---
+        # No repite los bloques de arriba: mide adopción de proceso (motivo de
+        # cierre, leads resueltos, medio de pago) y dónde se concentra el abandono
+        # temprano. Son las brechas que un tablero de "cuánto entra/sale" no muestra.
+        estado_label = dict(Lead.Estado.choices)
+        por_estado = {}
+        for l in leads:
+            por_estado[l.estado] = por_estado.get(l.estado, 0) + 1
+        ganados = por_estado.get(LE.GANADO, 0)
+        perdidos = por_estado.get(LE.PERDIDO, 0)
+        resueltos_n = ganados + perdidos
+        embudo = {
+            "total": recibidos,
+            "ganados": ganados,
+            "perdidos": perdidos,
+            "resueltos": resueltos_n,
+            "en_curso": recibidos - resueltos_n,
+            "resueltos_pct": round(resueltos_n / recibidos * 100) if recibidos else 0,
+            "por_estado": [
+                {"label": estado_label.get(k, k), "valor": v}
+                for k, v in sorted(por_estado.items(), key=lambda kv: -kv[1])
+            ],
+        }
+
+        # Curva de continuidad: de TODOS los pacientes con historia clínica (no
+        # depende del período elegido, igual que Retención más arriba), cuántas
+        # atenciones acumula cada uno. Muestra dónde se concentra el abandono.
+        conteo_atenciones = (
+            fpac(Atencion.objects.del_tenant_actual())
+            .values("paciente_id").annotate(n=Count("id"))
+        )
+        buckets = {"1": 0, "2": 0, "3": 0, "4": 0, "5+": 0}
+        for row in conteo_atenciones:
+            clave = str(row["n"]) if row["n"] <= 4 else "5+"
+            buckets[clave] += 1
+        con_historia = sum(buckets.values())
+        continuidad_curva = {
+            "con_historia": con_historia,
+            "por_sesiones": [{"label": k, "valor": v} for k, v in buckets.items()],
+            "abandono_1_2_pct": round((buckets["1"] + buckets["2"]) / con_historia * 100) if con_historia else 0,
+        }
+
+        # Adopción del motivo de cierre (Cita.decision): de las citas del período
+        # que ya tuvieron un desenlace, ¿cuántas quedaron con el motivo registrado?
+        # Sin este dato nadie puede saber DESPUÉS por qué se perdió a un paciente.
+        TERMINALES = {E.ATENDIDA, E.ASISTIO, E.NO_ASISTIO, E.CANCELADA}
+        citas_terminales = [c for c in citas if c.estado in TERMINALES]
+        con_decision = sum(1 for c in citas_terminales if c.decision)
+        decision_adopcion = {
+            "citas_terminadas": len(citas_terminales),
+            "con_motivo": con_decision,
+            "pct": round(con_decision / len(citas_terminales) * 100) if citas_terminales else 0,
+        }
+
+        # Medio de pago: cuánto de lo cobrado queda sin trazabilidad de cómo llegó
+        # (control de caja).
+        medio_label = dict(Cobro.Medio.choices)
+        medio_rows = list(
+            cobros.filter(estado=Cobro.Estado.PAGADO).values("medio_pago").annotate(s=Sum("monto"))
+        )
+        total_medio = sum(float(r["s"] or 0) for r in medio_rows)
+        sin_medio = sum(float(r["s"] or 0) for r in medio_rows if not r["medio_pago"])
+        medio_pago = {
+            "total": total_medio,
+            "sin_medio": sin_medio,
+            "sin_medio_pct": round(sin_medio / total_medio * 100) if total_medio else 0,
+            "por_medio": [
+                {
+                    "label": medio_label.get(r["medio_pago"], "Sin registrar") if r["medio_pago"] else "Sin registrar",
+                    "valor": float(r["s"] or 0),
+                }
+                for r in sorted(medio_rows, key=lambda r: -(float(r["s"] or 0)))
+            ],
+        }
+
+        diagnostico = {
+            "embudo": embudo,
+            "continuidad": continuidad_curva,
+            "decision": decision_adopcion,
+            "medio_pago": medio_pago,
+        }
 
         # --- Comparativa con el período anterior (tendencias) ---
         a_desde, a_hasta = _rango_anterior(periodo, desde, hasta)
@@ -572,5 +668,6 @@ class GerenciaResumenView(APIView):
             "productividad": productividad,
             "finanzas": finanzas,
             "finanzas_activas": True,
+            "diagnostico": diagnostico,
             "anterior": anterior,
         })
