@@ -6,19 +6,37 @@
 // los archivos dicen exactamente lo que dice la pantalla y no se desfasan
 // entre sí. Las librerías pesadas se cargan solo al exportar (import dinámico).
 //
+// Identidad visual: sigue el Manual de Identidad Corporativa de Itaca
+// Conversemos (Agencia Deb) — paleta de 4 colores + blanco en gama
+// monocromática del celeste, tipografía Montserrat, y el logotipo oficial
+// (versión principal y horizontal, en frontend/public). No se agregan colores
+// fuera de la paleta: los "tintes" son mezclas del celeste con blanco.
+//
 // Este archivo no usa JSX ni React a propósito: se puede ejecutar en Node para
 // probar los archivos generados sin levantar el navegador.
 
-const COLOR = {
-  verde: "#4F8A77", azul: "#6E86A8", ambar: "#C9923A", rojo: "#B4564E",
-  ink: "#32302C", inkSoft: "#6B6760", muted: "#9B968D", line: "#ECE8E1", bg: "#FBFAF8",
-  cabecera: "#EDE7F6", cabeceraTexto: "#3A2F46",
+export const MARCA = {
+  celeste: "#00B8D8",       // CELESTE 1 · primario (títulos, barras, acentos)
+  celesteClaro: "#D7F4FA",  // CELESTE 2 · cabeceras de tabla, tarjetas
+  gris: "#6E6E6E",          // GRIS · texto secundario (el wordmark "ITACA" es de este gris)
+  negro: "#343434",         // NEGRO · texto principal
+  blanco: "#FFFFFF",
+  // Tintes del celeste (misma gama; no son colores nuevos de paleta):
+  celesteMedio: "#66D4E8",  // segunda serie en gráficos
+  celesteFondo: "#F1FBFD",  // fondo muy suave de tarjetas
+  linea: "#DCEFF4",         // líneas y pistas de gráfico
+  fuente: "Montserrat",
+  fuenteFallback: '"Century Gothic", "Segoe UI", Arial, sans-serif',
+  tagline: "Te cambia la vida",
+  logo: { v: { archivo: "itaca-logo-v.png", w: 539, h: 417 }, h: { archivo: "itaca-logo-h.png", w: 620, h: 224 } },
 };
 const hex = (c) => c.replace("#", "");
 const MESES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "set", "oct", "nov", "dic"];
 
 export const soles = (n) => "S/ " + Math.round(Number(n || 0)).toLocaleString("es-PE");
 const fDia = (iso) => { const [, m, d] = iso.split("-").map(Number); return `${d} ${MESES[m - 1]}`; };
+// Fecha real para Excel (ordenable y filtrable). En UTC para que exceljs no la corra un día.
+const fechaExcel = (iso) => { const [y, m, d] = iso.split("-").map(Number); return new Date(Date.UTC(y, m - 1, d)); };
 const fRango = (a, b) => {
   const [y1, m1, d1] = a.split("-").map(Number);
   const [y2, m2, d2] = b.split("-").map(Number);
@@ -38,6 +56,31 @@ const fmtValor = (v, fmt) => (fmt === "soles" ? soles(v) : Number(v || 0).toLoca
 const pctDe = (v, total) => (total ? Math.round((v / total) * 100) : 0);
 
 // ---------------------------------------------------------------------------
+// Logotipo oficial (frontend/public). En el navegador se trae por fetch una
+// sola vez; en Node (pruebas) se pasa por opts.logos. Cada logo: {b64, bytes, w, h}.
+// ---------------------------------------------------------------------------
+let _logos = null;
+export async function cargarLogos(opts = {}) {
+  if (opts.logos) return opts.logos;
+  if (_logos) return _logos;
+  if (typeof fetch === "undefined" || typeof document === "undefined") return null;
+  const base = (typeof import.meta !== "undefined" && import.meta.env && import.meta.env.BASE_URL) || "/";
+  const leer = async (k) => {
+    const meta = MARCA.logo[k];
+    try {
+      const r = await fetch(base + meta.archivo);
+      if (!r.ok) return null;
+      const bytes = new Uint8Array(await r.arrayBuffer());
+      let s = "";
+      for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+      return { b64: btoa(s), bytes, w: meta.w, h: meta.h };
+    } catch { return null; }
+  };
+  _logos = { v: await leer("v"), h: await leer("h") };
+  return _logos;
+}
+
+// ---------------------------------------------------------------------------
 // Modelo de reporte
 // ---------------------------------------------------------------------------
 export function modeloReporte(data, opts = {}) {
@@ -45,7 +88,7 @@ export function modeloReporte(data, opts = {}) {
   const fin = data.finanzas || {}, dg = data.diagnostico, ret = data.retencion;
   const ant = data.anterior || {}, demo = data.demografia;
   const sedeLbl = data.sede === "lima" ? "Lima" : data.sede === "piura" ? "Piura" : "Todas las sedes";
-  const clinica = opts.clinica || "Conversemos";
+  const clinica = opts.clinica || "Itaca Conversemos";
   const pctS = (n) => `${Math.round(n ?? 0)}%`;
   const kpi = (label, valor, extra = {}) => ({ label, valor, ...extra });
   const serieDia = (id, titulo, arr, key, color, fmt) =>
@@ -62,7 +105,7 @@ export function modeloReporte(data, opts = {}) {
       kpi("% Asistencia", pctS(op.asistencia_pct), { num: (op.asistencia_pct ?? 0) / 100, fmt: "pct", sub: `${op.cancelacion_pct ?? 0}% canceladas` }),
       kpi("Recordatorios enviados", op.recordatorios ?? 0, { num: op.recordatorios ?? 0 }),
     ],
-    series: serieDia("sesiones_dia", "Sesiones por día", op.por_dia, "citas", COLOR.azul),
+    series: serieDia("sesiones_dia", "Sesiones por día", op.por_dia, "citas", MARCA.celeste),
     tablas: [], notas: [],
   });
   secciones.push({
@@ -73,7 +116,7 @@ export function modeloReporte(data, opts = {}) {
       kpi("Tasa de cierre", pctS(cap.tasa_cierre), { num: (cap.tasa_cierre ?? 0) / 100, fmt: "pct" }),
       kpi("Mejor fuente", cap.top_fuente || "—"),
     ],
-    series: serieDia("leads_dia", "Leads por día", cap.por_dia, "leads", COLOR.ambar),
+    series: serieDia("leads_dia", "Leads por día", cap.por_dia, "leads", MARCA.celesteMedio),
     tablas: [], notas: [`Mejor campaña del período: ${cap.top_campania || "—"}.`],
   });
   const pacSec = {
@@ -87,8 +130,8 @@ export function modeloReporte(data, opts = {}) {
   };
   if (demo) {
     pacSec.series.push(
-      { id: "genero", titulo: "Pacientes por género", tipo: "barras", datos: (demo.genero || []).filter((x) => x.valor > 0), color: COLOR.verde },
-      { id: "edad", titulo: "Pacientes por edad", tipo: "barras", datos: demo.edad || [], color: COLOR.azul },
+      { id: "genero", titulo: "Pacientes por género", tipo: "barras", datos: (demo.genero || []).filter((x) => x.valor > 0), color: MARCA.celeste },
+      { id: "edad", titulo: "Pacientes por edad", tipo: "barras", datos: demo.edad || [], color: MARCA.celesteMedio },
     );
   }
   secciones.push(pacSec);
@@ -108,7 +151,7 @@ export function modeloReporte(data, opts = {}) {
   const dinero = {
     id: "dinero", titulo: `Dinero${data.sede ? " · " + sedeLbl : ""}`,
     kpis: [kpi("Ingresos (cobrado)", soles(fin.cobrado), { num: fin.cobrado ?? 0, fmt: "soles", sub: deltaTxt(fin.cobrado, ant.cobrado) })],
-    series: serieDia("cobros_dia", "Cobros por día", fin.por_dia, "monto", COLOR.verde, "soles"),
+    series: serieDia("cobros_dia", "Cobros por día", fin.por_dia, "monto", MARCA.celeste, "soles"),
     tablas: [], notas: [],
   };
   if (fin.egresos != null) dinero.kpis.push(kpi("Egresos (gastos)", soles(fin.egresos), { num: fin.egresos, fmt: "soles" }));
@@ -128,8 +171,8 @@ export function modeloReporte(data, opts = {}) {
         kpi("Sesiones con motivo de cierre", pctS(dc.pct), { num: (dc.pct ?? 0) / 100, fmt: "pct", sub: `${dc.con_motivo} de ${dc.citas_terminadas} terminadas` }),
       ],
       series: [
-        { id: "continuidad", titulo: "Continuidad · sesiones por paciente", tipo: "barras", datos: c.por_sesiones || [], color: COLOR.azul },
-        { id: "medio_pago", titulo: "Ingresos por medio de pago", tipo: "barras", datos: mp.por_medio || [], color: COLOR.verde, fmt: "soles" },
+        { id: "continuidad", titulo: "Continuidad · sesiones por paciente", tipo: "barras", datos: c.por_sesiones || [], color: MARCA.celeste },
+        { id: "medio_pago", titulo: "Ingresos por medio de pago", tipo: "barras", datos: mp.por_medio || [], color: MARCA.celesteMedio, fmt: "soles" },
       ],
       tablas: [],
       notas: [
@@ -193,9 +236,10 @@ export function exportarCSV(modelo, base) {
 // ---------------------------------------------------------------------------
 const FMT = { pct: "0%", soles: '"S/ "#,##0', int: "#,##0" };
 
-export async function construirExcel(modelo) {
+export async function construirExcel(modelo, opts = {}) {
   const m = await import("exceljs");
   const ExcelJS = m.default || m;
+  const logos = await cargarLogos(opts);
   const wb = new ExcelJS.Workbook();
   wb.creator = modelo.clinica;
   wb.created = new Date();
@@ -205,27 +249,34 @@ export async function construirExcel(modelo) {
   const dg = d.diagnostico, ret = d.retencion, demo = d.demografia;
 
   const argb = (h) => "FF" + hex(h).toUpperCase();
+  const F = MARCA.fuente;
   function hoja(nombre, titulo) {
-    const ws = wb.addWorksheet(nombre, { views: [{ showGridLines: false }] });
+    const ws = wb.addWorksheet(nombre, { views: [{ showGridLines: false, state: "frozen", ySplit: 4 }] });
+    ws.properties.tabColor = { argb: argb(nombre === "Resumen" ? MARCA.celeste : MARCA.celesteClaro) };
+    // Pie de impresión como el del manual: texto gris a la izquierda, número en celeste negrita a la derecha.
+    ws.headerFooter = { oddFooter: `&L&"${F}"&8&K${hex(MARCA.gris)}${modelo.clinica} · ${modelo.titulo}&R&"${F},Bold"&10&K${hex(MARCA.celeste)}&P` };
     ws.columns = [{ width: 36 }, { width: 16 }, { width: 14 }, { width: 14 }, { width: 14 }, { width: 14 }];
     ws.getCell("A1").value = titulo;
-    ws.getCell("A1").font = { bold: true, size: 14, color: { argb: argb(COLOR.ink) } };
+    ws.getCell("A1").font = { name: F, bold: true, size: 15, color: { argb: argb(MARCA.celeste) } };
     ws.getCell("A2").value = `${modelo.subtitulo} · generado ${modelo.generadoEn}`;
-    ws.getCell("A2").font = { size: 10, color: { argb: argb(COLOR.muted) } };
+    ws.getCell("A2").font = { name: F, size: 9, color: { argb: argb(MARCA.gris) } };
+    ws.getRow(1).height = 24;
     return ws;
   }
   function cabecera(ws, r, cols) {
     cols.forEach((t, i) => {
       const c = ws.getRow(r).getCell(i + 1);
-      c.value = t;
-      c.font = { bold: true, color: { argb: argb(COLOR.cabeceraTexto) } };
-      c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: argb(COLOR.cabecera) } };
-      c.alignment = { horizontal: i === 0 ? "left" : "right" };
+      // Cabecera como en los formatos impresos de la clínica: celeste sólido, texto blanco en mayúsculas.
+      c.value = String(t).toUpperCase();
+      c.font = { name: F, bold: true, size: 9.5, color: { argb: argb(MARCA.blanco) } };
+      c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: argb(MARCA.celeste) } };
+      c.alignment = { horizontal: i === 0 ? "left" : "right", vertical: "middle" };
     });
+    ws.getRow(r).height = 21;
     return r + 1;
   }
   // Escribe una fila. Cada celda: número, texto, o {f:"fórmula", v:resultado, fmt}.
-  function fila(ws, r, celdas, opts = {}) {
+  function fila(ws, r, celdas, o = {}) {
     celdas.forEach((v, i) => {
       const c = ws.getRow(r).getCell(i + 1);
       if (v && typeof v === "object" && "f" in v) {
@@ -233,11 +284,13 @@ export async function construirExcel(modelo) {
         if (v.fmt) c.numFmt = FMT[v.fmt] || v.fmt;
       } else {
         c.value = v;
-        if (typeof v === "number") c.numFmt = (opts.fmts && opts.fmts[i] && FMT[opts.fmts[i]]) || FMT.int;
+        if (typeof v === "number") c.numFmt = (o.fmts && o.fmts[i] && FMT[o.fmts[i]]) || FMT.int;
+        if (v instanceof Date) c.numFmt = "dd/mm/yyyy";
       }
+      c.font = { name: F, size: 10, bold: !!o.bold, color: { argb: argb(i === 0 && !o.bold ? MARCA.gris : MARCA.negro) } };
       if (i > 0) c.alignment = { horizontal: "right" };
-      if (opts.bold) c.font = { bold: true };
-      if (opts.linea) c.border = { top: { style: "thin", color: { argb: argb(COLOR.line) } } };
+      c.border = { bottom: { style: "hair", color: { argb: argb(MARCA.linea) } } };
+      if (o.linea) c.border = { top: { style: "thin", color: { argb: argb(MARCA.celeste) } } };
     });
     return r + 1;
   }
@@ -247,17 +300,25 @@ export async function construirExcel(modelo) {
   // --- Resumen ---
   {
     const ws = hoja("Resumen", modelo.titulo);
+    ws.columns = [{ width: 22 }, { width: 58 }, { width: 14 }, { width: 22 }];
+    if (logos && logos.h) {
+      const id = wb.addImage({ base64: logos.h.b64, extension: "png" });
+      ws.addImage(id, { tl: { col: 3, row: 0 }, ext: { width: 120, height: 43 } });
+    }
     let r = cabecera(ws, 4, ["Sección", "Indicador", "Valor"]);
-    ws.columns = [{ width: 26 }, { width: 38 }, { width: 16 }];
     modelo.secciones.forEach((s) => s.kpis.forEach((k) => {
-      ws.getRow(r).getCell(1).value = s.titulo;
-      ws.getRow(r).getCell(2).value = k.label + (k.sub ? ` (${k.sub})` : "");
-      const c = ws.getRow(r).getCell(3);
-      c.value = k.num != null ? k.num : k.valor;
-      if (k.num != null) c.numFmt = FMT[k.fmt] || FMT.int;
-      c.alignment = { horizontal: "right" };
+      const c1 = ws.getRow(r).getCell(1), c2 = ws.getRow(r).getCell(2), c3 = ws.getRow(r).getCell(3);
+      c1.value = s.titulo.replace(/\s*\(.*\)$/, ""); c1.font = { name: F, size: 10, color: { argb: argb(MARCA.gris) } };
+      c2.value = k.label + (k.sub ? ` (${k.sub})` : ""); c2.font = { name: F, size: 10, color: { argb: argb(MARCA.negro) } };
+      c3.value = k.num != null ? k.num : k.valor;
+      if (k.num != null) c3.numFmt = FMT[k.fmt] || FMT.int;
+      c3.font = { name: F, size: 10, bold: true, color: { argb: argb(MARCA.negro) } };
+      c3.alignment = { horizontal: "right" };
+      [c1, c2, c3].forEach((c) => { c.border = { bottom: { style: "hair", color: { argb: argb(MARCA.linea) } } }; });
       r += 1;
     }));
+    // El logo (columna D) entra en la impresión y la hoja cabe a lo ancho en una página.
+    ws.pageSetup = { printArea: `A1:D${r}`, orientation: "portrait", fitToPage: true, fitToWidth: 1, fitToHeight: 0 };
   }
   // --- Operación ---
   {
@@ -274,7 +335,7 @@ export async function construirExcel(modelo) {
     if (op.por_dia && op.por_dia.length) {
       r += 1; r = cabecera(ws, r, ["Sesiones por día", "Sesiones"]);
       const ini = r;
-      op.por_dia.forEach((x) => { r = fila(ws, r, [x.fecha, x.citas]); });
+      op.por_dia.forEach((x) => { r = fila(ws, r, [fechaExcel(x.fecha), x.citas]); });
       r = fila(ws, r, ["Total", sumF("B", ini, r - 1, op.citas)], { bold: true, linea: true });
     }
   }
@@ -292,7 +353,7 @@ export async function construirExcel(modelo) {
     if (cap.por_dia && cap.por_dia.length) {
       r += 1; r = cabecera(ws, r, ["Leads por día", "Leads"]);
       const ini = r;
-      cap.por_dia.forEach((x) => { r = fila(ws, r, [x.fecha, x.leads]); });
+      cap.por_dia.forEach((x) => { r = fila(ws, r, [fechaExcel(x.fecha), x.leads]); });
       r = fila(ws, r, ["Total", sumF("B", ini, r - 1, cap.recibidos)], { bold: true, linea: true });
     }
     if (dg && dg.embudo.por_estado && dg.embudo.por_estado.length) {
@@ -346,7 +407,7 @@ export async function construirExcel(modelo) {
     if (fin.por_dia && fin.por_dia.length) {
       r += 1; r = cabecera(ws, r, ["Cobros por día", "Monto"]);
       const ini = r;
-      fin.por_dia.forEach((x) => { r = fila(ws, r, [x.fecha, x.monto], { fmts: [null, "soles"] }); });
+      fin.por_dia.forEach((x) => { r = fila(ws, r, [fechaExcel(x.fecha), x.monto], { fmts: [null, "soles"] }); });
       r = fila(ws, r, ["Total", { ...sumF("B", ini, r - 1, fin.cobrado), fmt: "soles" }], { bold: true, linea: true });
     }
   }
@@ -403,42 +464,58 @@ export async function exportarExcel(modelo, base) {
 
 // ---------------------------------------------------------------------------
 // Word (.docx): tablas de cada sección + espacio para redactar el análisis.
+// Estilos de Word propios (Título, Título 1, Título 2) con la marca, para que
+// al editar el documento se mantenga la identidad.
 // ---------------------------------------------------------------------------
-export async function construirWord(modelo, { node = false } = {}) {
+export async function construirWord(modelo, opts = {}) {
+  const { node = false } = opts;
   const m = await import("docx");
   const D = m.default && m.default.Document ? m.default : m;
-  const { Document, Packer, Paragraph, TextRun, HeadingLevel, Table, TableRow, TableCell, WidthType, AlignmentType, BorderStyle, ShadingType, PageNumber, Footer } = D;
+  const { Document, Packer, Paragraph, TextRun, HeadingLevel, Table, TableRow, TableCell, WidthType, AlignmentType, BorderStyle, ShadingType, PageNumber, Footer, Header, ImageRun } = D;
+  const logos = await cargarLogos(opts);
+  const F = MARCA.fuente;
 
-  const borde = { style: BorderStyle.SINGLE, size: 4, color: hex(COLOR.line) };
+  const borde = { style: BorderStyle.SINGLE, size: 4, color: hex(MARCA.linea) };
   const bordes = { top: borde, bottom: borde, left: borde, right: borde };
-  const celda = (texto, { bold = false, ancho, cabecera = false, derecha = false, color } = {}) => new TableCell({
+  // Cabecera celeste sólido con texto blanco (como los formatos impresos de la
+  // clínica); filas alternas con un tinte muy suave del celeste.
+  const celda = (texto, { bold = false, ancho, cabecera = false, derecha = false, zebra = false } = {}) => new TableCell({
     borders: bordes,
     width: ancho ? { size: ancho, type: WidthType.PERCENTAGE } : undefined,
-    shading: cabecera ? { type: ShadingType.CLEAR, fill: hex(COLOR.cabecera), color: "auto" } : undefined,
-    margins: { top: 60, bottom: 60, left: 100, right: 100 },
+    shading: cabecera
+      ? { type: ShadingType.CLEAR, fill: hex(MARCA.celeste), color: "auto" }
+      : (zebra ? { type: ShadingType.CLEAR, fill: hex(MARCA.celesteFondo), color: "auto" } : undefined),
+    margins: { top: 70, bottom: 70, left: 110, right: 110 },
     children: [new Paragraph({
       alignment: derecha ? AlignmentType.RIGHT : AlignmentType.LEFT,
-      children: [new TextRun({ text: String(texto ?? ""), bold: bold || cabecera, color: color || (cabecera ? hex(COLOR.cabeceraTexto) : hex(COLOR.ink)), size: 20 })],
+      children: [new TextRun({ text: cabecera ? String(texto ?? "").toUpperCase() : String(texto ?? ""), bold: bold || cabecera, font: F, color: hex(cabecera ? MARCA.blanco : MARCA.negro), size: cabecera ? 17 : 19 })],
     })],
   });
   const tabla = (columnas, filas, anchos, numericas = []) => new Table({
     width: { size: 100, type: WidthType.PERCENTAGE },
     rows: [
       new TableRow({ tableHeader: true, children: columnas.map((c, i) => celda(c, { cabecera: true, ancho: anchos[i], derecha: numericas.includes(i) })) }),
-      ...filas.map((f) => new TableRow({ children: f.map((v, i) => celda(v, { ancho: anchos[i], derecha: numericas.includes(i) })) })),
+      ...filas.map((f, idx) => new TableRow({ children: f.map((v, i) => celda(v, { ancho: anchos[i], derecha: numericas.includes(i), zebra: idx % 2 === 1 })) })),
     ],
   });
-  const p = (texto, { size = 22, color = hex(COLOR.ink), italics = false, bold = false, after = 120 } = {}) =>
-    new Paragraph({ spacing: { after }, children: [new TextRun({ text: texto, size, color, italics, bold })] });
-  const h2 = (texto) => new Paragraph({ heading: HeadingLevel.HEADING_2, spacing: { before: 240, after: 100 }, children: [new TextRun({ text: texto, color: hex(COLOR.inkSoft) })] });
+  const p = (texto, { size = 21, color = hex(MARCA.negro), italics = false, bold = false, after = 120, align } = {}) =>
+    new Paragraph({ spacing: { after }, alignment: align, children: [new TextRun({ text: texto, size, color, italics, bold, font: F })] });
+  const h1 = (texto, saltar) => new Paragraph({ heading: HeadingLevel.HEADING_1, pageBreakBefore: saltar, children: [new TextRun({ text: texto, font: F })] });
+  const h2 = (texto) => new Paragraph({ heading: HeadingLevel.HEADING_2, children: [new TextRun({ text: texto, font: F })] });
 
-  const hijos = [
-    new Paragraph({ heading: HeadingLevel.TITLE, children: [new TextRun({ text: modelo.titulo, color: hex(COLOR.ink) })] }),
-    p(modelo.subtitulo, { size: 20, color: hex(COLOR.inkSoft) }),
-    p(`Generado el ${modelo.generadoEn}. Todos los números son reales del período seleccionado.`, { size: 18, color: hex(COLOR.muted), after: 240 }),
-  ];
+  const hijos = [];
+  if (logos && logos.v) {
+    hijos.push(new Paragraph({ alignment: AlignmentType.LEFT, spacing: { after: 200 }, children: [
+      new ImageRun({ type: "png", data: logos.v.bytes, transformation: { width: 120, height: Math.round(120 * logos.v.h / logos.v.w) } }),
+    ] }));
+  }
+  hijos.push(
+    new Paragraph({ heading: HeadingLevel.TITLE, children: [new TextRun({ text: modelo.titulo, font: F })] }),
+    p(modelo.subtitulo, { size: 21, color: hex(MARCA.gris) }),
+    p(`Generado el ${modelo.generadoEn}. Todos los números son reales del período seleccionado.`, { size: 17, color: hex(MARCA.gris), after: 280 }),
+  );
   modelo.secciones.forEach((s, i) => {
-    hijos.push(new Paragraph({ heading: HeadingLevel.HEADING_1, pageBreakBefore: i > 0, spacing: { after: 120 }, children: [new TextRun({ text: s.titulo, color: hex(COLOR.verde) })] }));
+    hijos.push(h1(s.titulo, i > 0));
     if (s.kpis.length) {
       hijos.push(tabla(["Indicador", "Valor", "Detalle"], s.kpis.map((k) => [k.label, typeof k.valor === "number" ? k.valor.toLocaleString("es-PE") : k.valor, k.sub || ""]), [46, 22, 32], [1]));
     }
@@ -450,23 +527,44 @@ export async function construirWord(modelo, { node = false } = {}) {
     });
     s.tablas.forEach((t) => {
       if (t.titulo) hijos.push(h2(t.titulo));
-      const anchos = t.columnas.map((_, i) => (i === 0 ? 40 : Math.floor(60 / (t.columnas.length - 1))));
+      const anchos = t.columnas.map((_, j) => (j === 0 ? 40 : Math.floor(60 / (t.columnas.length - 1))));
       hijos.push(tabla(t.columnas, t.filas.length ? t.filas.map((f) => f.map((v) => (typeof v === "number" ? v.toLocaleString("es-PE") : v))) : [["Sin actividad en el período.", ...t.columnas.slice(1).map(() => "")]], anchos, t.numericas));
     });
-    s.notas.forEach((n) => hijos.push(p(n, { size: 19, color: hex(COLOR.inkSoft) })));
+    s.notas.forEach((n) => hijos.push(p(n, { size: 18, color: hex(MARCA.gris) })));
     hijos.push(h2("Análisis y conclusiones"));
-    hijos.push(p("Escribe aquí el análisis de esta sección: qué está pasando, por qué, y qué se decide.", { italics: true, color: hex(COLOR.muted) }));
+    hijos.push(p("Escribe aquí el análisis de esta sección: qué está pasando, por qué, y qué se decide.", { italics: true, color: hex(MARCA.gris) }));
     hijos.push(p(""), p(""), p(""));
   });
 
+  const encabezado = logos && logos.h
+    ? new Header({ children: [new Paragraph({ alignment: AlignmentType.RIGHT, children: [
+        new ImageRun({ type: "png", data: logos.h.bytes, transformation: { width: 96, height: Math.round(96 * logos.h.h / logos.h.w) } }),
+      ] })] })
+    : new Header({ children: [new Paragraph({ alignment: AlignmentType.RIGHT, children: [new TextRun({ text: modelo.clinica, size: 16, color: hex(MARCA.gris), font: F })] })] });
+
   const doc = new Document({
     creator: modelo.clinica, title: modelo.titulo,
-    styles: { default: { document: { run: { font: "Calibri", size: 22 } } } },
+    styles: {
+      default: { document: { run: { font: F, size: 21, color: hex(MARCA.negro) } } },
+      paragraphStyles: [
+        { id: "Title", name: "Title", basedOn: "Normal", next: "Normal", quickFormat: true,
+          run: { font: F, size: 48, bold: true, color: hex(MARCA.celeste) }, paragraph: { spacing: { after: 80 } } },
+        // Barra vertical celeste a la izquierda del título de sección (acento del manual).
+        { id: "Heading1", name: "Heading 1", basedOn: "Normal", next: "Normal", quickFormat: true,
+          run: { font: F, size: 30, bold: true, color: hex(MARCA.celeste) },
+          paragraph: { spacing: { before: 240, after: 140 }, border: { left: { style: BorderStyle.SINGLE, size: 18, color: hex(MARCA.celeste), space: 8 } }, indent: { left: 140 } } },
+        { id: "Heading2", name: "Heading 2", basedOn: "Normal", next: "Normal", quickFormat: true,
+          run: { font: F, size: 22, bold: true, color: hex(MARCA.gris) }, paragraph: { spacing: { before: 220, after: 100 } } },
+      ],
+    },
     sections: [{
-      properties: { page: { margin: { top: 1000, bottom: 1000, left: 1100, right: 1100 } } },
+      // La portada lleva el logo principal grande; el logo horizontal va en el
+      // encabezado de las páginas siguientes (no los dos en la misma página).
+      properties: { titlePage: true, page: { margin: { top: 1100, bottom: 1000, left: 1100, right: 1100 } } },
+      headers: { default: encabezado, first: new Header({ children: [new Paragraph({ children: [] })] }) },
       footers: { default: new Footer({ children: [new Paragraph({ alignment: AlignmentType.RIGHT, children: [
-        new TextRun({ text: `${modelo.clinica} · ${modelo.titulo} · pág. `, size: 16, color: hex(COLOR.muted) }),
-        new TextRun({ children: [PageNumber.CURRENT], size: 16, color: hex(COLOR.muted) }),
+        new TextRun({ text: `${modelo.clinica} · ${modelo.titulo}   `, size: 15, color: hex(MARCA.gris), font: F }),
+        new TextRun({ children: [PageNumber.CURRENT], size: 20, bold: true, color: hex(MARCA.celeste), font: F }),
       ] })] }) },
       children: hijos,
     }],
@@ -479,88 +577,107 @@ export async function exportarWord(modelo, base) {
 }
 
 // ---------------------------------------------------------------------------
-// PowerPoint (.pptx): portada + una diapositiva por sección, con tarjetas de
-// KPI y gráficos NATIVOS de PowerPoint (editables, no imágenes).
+// PowerPoint (.pptx): portada + una diapositiva por sección + cierre, con
+// tarjetas de KPI y gráficos NATIVOS de PowerPoint (editables, no imágenes).
+// Sigue el patrón del deck real de la clínica: fondo blanco, títulos en
+// celeste negrita, logo principal en la portada y horizontal en cada lámina.
 // ---------------------------------------------------------------------------
-export async function construirPowerPoint(modelo, { node = false } = {}) {
+export async function construirPowerPoint(modelo, opts = {}) {
+  const { node = false } = opts;
   const m = await import("pptxgenjs");
   const PptxGenJS = m.default || m;
+  const logos = await cargarLogos(opts);
   const pptx = new PptxGenJS();
   pptx.layout = "LAYOUT_16x9"; // 10 x 5.625 pulgadas
   pptx.author = modelo.clinica; pptx.title = modelo.titulo;
-  const FONT = "Calibri";
+  const F = MARCA.fuente;
+  const C = { celeste: hex(MARCA.celeste), claro: hex(MARCA.celesteClaro), gris: hex(MARCA.gris), negro: hex(MARCA.negro), linea: hex(MARCA.linea), fondo: hex(MARCA.celesteFondo) };
+  const logoData = (k) => (logos && logos[k] ? `image/png;base64,${logos[k].b64}` : null);
+
+  const objetosBase = [
+    { text: { text: `${modelo.clinica} · ${modelo.titulo} · ${modelo.sedeLbl}`, options: { x: 0.4, y: 5.22, w: 7, h: 0.28, fontSize: 8.5, color: C.gris, fontFace: F } } },
+  ];
+  if (logoData("h")) objetosBase.unshift({ image: { data: logoData("h"), x: 0.4, y: 0.28, w: 1.55, h: 1.55 * MARCA.logo.h.h / MARCA.logo.h.w } });
+  else objetosBase.unshift({ text: { text: modelo.clinica, options: { x: 0.4, y: 0.28, w: 3, h: 0.4, fontSize: 11, bold: true, color: C.gris, fontFace: F } } });
   pptx.defineSlideMaster({
-    title: "BASE", background: { color: "FFFFFF" },
-    objects: [
-      { rect: { x: 0, y: 0, w: "100%", h: 0.12, fill: { color: hex(COLOR.verde) } } },
-      { text: { text: `${modelo.clinica} · ${modelo.titulo} · ${modelo.sedeLbl}`, options: { x: 0.4, y: 5.18, w: 7, h: 0.3, fontSize: 9, color: hex(COLOR.muted), fontFace: FONT } } },
-    ],
-    slideNumber: { x: 9.1, y: 5.18, w: 0.6, h: 0.3, fontSize: 9, color: hex(COLOR.muted), fontFace: FONT },
+    title: "BASE", background: { color: "FFFFFF" }, objects: objetosBase,
+    slideNumber: { x: 9.1, y: 5.2, w: 0.6, h: 0.3, fontSize: 10, bold: true, color: C.celeste, fontFace: F, align: "right" },
   });
 
-  // Portada
+  // Portada (como la del deck: logo principal centrado, título celeste, subtítulo gris)
   {
     const s = pptx.addSlide();
-    s.background = { color: hex(COLOR.bg) };
-    s.addShape(pptx.ShapeType.rect, { x: 0, y: 0, w: 0.35, h: 5.625, fill: { color: hex(COLOR.verde) }, line: { color: hex(COLOR.verde) } });
-    s.addText(modelo.clinica.toUpperCase(), { x: 0.9, y: 1.4, w: 8.5, h: 0.4, fontSize: 12, color: hex(COLOR.muted), fontFace: FONT, charSpacing: 3 });
-    s.addText(modelo.titulo, { x: 0.9, y: 1.9, w: 8.5, h: 1.0, fontSize: 34, bold: true, color: hex(COLOR.ink), fontFace: FONT });
-    s.addText(modelo.subtitulo.replace(`${modelo.clinica} · `, ""), { x: 0.9, y: 2.95, w: 8.5, h: 0.5, fontSize: 16, color: hex(COLOR.inkSoft), fontFace: FONT });
-    s.addText(`Generado el ${modelo.generadoEn} · datos reales del período`, { x: 0.9, y: 4.6, w: 8.5, h: 0.4, fontSize: 10, color: hex(COLOR.muted), fontFace: FONT });
+    s.background = { color: "FFFFFF" };
+    if (logoData("v")) s.addImage({ data: logoData("v"), x: 3.95, y: 0.7, w: 2.1, h: 2.1 * MARCA.logo.v.h / MARCA.logo.v.w });
+    s.addText(modelo.titulo, { x: 0.6, y: 2.55, w: 8.8, h: 0.9, fontSize: 32, bold: true, color: C.celeste, fontFace: F, align: "center", valign: "middle" });
+    s.addText(modelo.subtitulo.replace(`${modelo.clinica} · `, ""), { x: 0.6, y: 3.45, w: 8.8, h: 0.5, fontSize: 15, color: C.gris, fontFace: F, align: "center" });
+    s.addText(`Generado el ${modelo.generadoEn} · datos reales del período`, { x: 0.6, y: 4.75, w: 8.8, h: 0.35, fontSize: 9.5, color: C.gris, fontFace: F, align: "center" });
   }
 
-  const titulo = (s, texto) => s.addText(texto, { x: 0.4, y: 0.3, w: 9.2, h: 0.55, fontSize: 22, bold: true, color: hex(COLOR.ink), fontFace: FONT });
+  // Título de lámina con la barra vertical celeste del manual a su izquierda.
+  const titulo = (s, texto) => {
+    s.addShape(pptx.ShapeType.rect, { x: 0.4, y: 1.03, w: 0.06, h: 0.4, fill: { color: C.celeste }, line: { color: C.celeste, width: 0 } });
+    s.addText(texto, { x: 0.56, y: 0.95, w: 9.0, h: 0.55, fontSize: 22, bold: true, color: C.celeste, fontFace: F, valign: "middle" });
+  };
   const kpis = (s, lista, y) => {
     const n = lista.length; if (!n) return y;
-    const gap = 0.15, w = (9.2 - gap * (n - 1)) / n, h = 1.0;
+    const gap = 0.14, w = (9.2 - gap * (n - 1)) / n, h = 0.95;
     lista.forEach((k, i) => {
       const x = 0.4 + i * (w + gap);
-      s.addShape(pptx.ShapeType.roundRect, { x, y, w, h, fill: { color: hex(COLOR.bg) }, line: { color: hex(COLOR.line), width: 0.75 }, rectRadius: 0.08 });
-      s.addText(String(k.valor), { x: x + 0.12, y: y + 0.08, w: w - 0.24, h: 0.48, fontSize: n > 4 ? 18 : 22, bold: true, color: hex(COLOR.ink), fontFace: FONT, valign: "middle" });
-      s.addText(k.label + (k.sub ? `\n${k.sub}` : ""), { x: x + 0.12, y: y + 0.52, w: w - 0.24, h: 0.44, fontSize: n > 4 ? 8 : 9, color: hex(COLOR.inkSoft), fontFace: FONT, valign: "top" });
+      s.addShape(pptx.ShapeType.roundRect, { x, y, w, h, fill: { color: C.claro }, line: { color: C.claro, width: 0 }, rectRadius: 0.07 });
+      s.addText(String(k.valor), { x: x + 0.12, y: y + 0.07, w: w - 0.24, h: 0.46, fontSize: n > 4 ? 17 : 21, bold: true, color: C.negro, fontFace: F, valign: "middle" });
+      s.addText(k.label + (k.sub ? `\n${k.sub}` : ""), { x: x + 0.12, y: y + 0.5, w: w - 0.24, h: 0.42, fontSize: n > 4 ? 7.5 : 8.5, color: C.gris, fontFace: F, valign: "top" });
     });
-    return y + h + 0.2;
+    return y + h + 0.18;
   };
   const grafico = (s, se, x, y, w, h) => {
-    if (!se.datos.length) { s.addText(`${se.titulo}: sin datos.`, { x, y, w, h: 0.4, fontSize: 10, color: hex(COLOR.muted), fontFace: FONT }); return; }
+    if (!se.datos.length) { s.addText(`${se.titulo}: sin datos.`, { x, y, w, h: 0.4, fontSize: 10, color: C.gris, fontFace: F }); return; }
     s.addChart(pptx.ChartType.bar, [{ name: se.titulo, labels: se.datos.map((d) => String(d.label)), values: se.datos.map((d) => Number(d.valor || 0)) }], {
       x, y, w, h,
       barDir: se.tipo === "columnas" ? "col" : "bar",
-      chartColors: [hex(se.color || COLOR.verde)],
-      showTitle: true, title: se.titulo, titleFontSize: 11, titleColor: hex(COLOR.inkSoft), titleFontFace: FONT,
+      chartColors: [hex(se.color || MARCA.celeste)],
+      showTitle: true, title: se.titulo, titleFontSize: 10.5, titleColor: C.gris, titleFontFace: F,
       showLegend: false, showValue: true,
-      dataLabelFontSize: 8, dataLabelColor: hex(COLOR.inkSoft), dataLabelFormatCode: se.fmt === "soles" ? '"S/ "#,##0' : "#,##0",
-      catAxisLabelFontSize: 8, catAxisLabelColor: hex(COLOR.inkSoft), catAxisLabelFontFace: FONT,
+      dataLabelFontSize: 8, dataLabelColor: C.negro, dataLabelFontFace: F, dataLabelFormatCode: se.fmt === "soles" ? '"S/ "#,##0' : "#,##0",
+      catAxisLabelFontSize: 8, catAxisLabelColor: C.gris, catAxisLabelFontFace: F,
       valAxisHidden: true, valGridLine: { style: "none" }, catGridLine: { style: "none" },
       barGapWidthPct: se.tipo === "columnas" ? 60 : 40,
     });
   };
-  const notas = (s, lista, y) => { if (lista.length) s.addText(lista.join("  ·  "), { x: 0.4, y, w: 9.2, h: 0.35, fontSize: 9, color: hex(COLOR.inkSoft), fontFace: FONT, italic: true }); };
+  const notas = (s, lista, y) => { if (lista.length) s.addText(lista.join("  ·  "), { x: 0.4, y, w: 9.2, h: 0.3, fontSize: 8.5, color: C.gris, fontFace: F, italic: true }); };
 
   modelo.secciones.forEach((sec) => {
     if (sec.kpis.length || sec.series.length) {
       const s = pptx.addSlide({ masterName: "BASE" });
       titulo(s, sec.titulo);
-      let y = kpis(s, sec.kpis, 1.0);
-      const alto = Math.max(4.75 - y, 1.6);
+      let y = kpis(s, sec.kpis, 1.6);
+      const alto = Math.max(4.85 - y, 1.5);
       if (sec.series.length === 1) grafico(s, sec.series[0], 0.4, y, 9.2, alto);
       else if (sec.series.length >= 2) { grafico(s, sec.series[0], 0.4, y, 4.5, alto); grafico(s, sec.series[1], 5.1, y, 4.5, alto); }
-      notas(s, sec.notas, 4.8);
+      notas(s, sec.notas, 4.9);
     }
     sec.tablas.forEach((t) => {
       const filas = t.filas.length ? t.filas : [["Sin actividad en el período.", ...t.columnas.slice(1).map(() => "")]];
-      const porPagina = 12;
+      const porPagina = 11;
       for (let i = 0; i < filas.length; i += porPagina) {
         const s = pptx.addSlide({ masterName: "BASE" });
         titulo(s, sec.titulo + (filas.length > porPagina ? ` (${Math.floor(i / porPagina) + 1}/${Math.ceil(filas.length / porPagina)})` : ""));
-        const head = t.columnas.map((c) => ({ text: c, options: { bold: true, fill: { color: hex(COLOR.cabecera) }, color: hex(COLOR.cabeceraTexto), align: "left" } }));
-        const body = filas.slice(i, i + porPagina).map((f) => f.map((v, j) => ({ text: typeof v === "number" ? v.toLocaleString("es-PE") : String(v ?? ""), options: { align: t.numericas.includes(j) ? "right" : "left", color: hex(COLOR.ink) } })));
+        const head = t.columnas.map((c, j) => ({ text: c.toUpperCase(), options: { bold: true, fill: { color: C.celeste }, color: "FFFFFF", align: t.numericas.includes(j) ? "right" : "left", fontFace: F, fontSize: 9 } }));
+        const body = filas.slice(i, i + porPagina).map((f) => f.map((v, j) => ({ text: typeof v === "number" ? v.toLocaleString("es-PE") : String(v ?? ""), options: { align: t.numericas.includes(j) ? "right" : "left", color: C.negro, fontFace: F } })));
         const colW = t.columnas.map((_, j) => (j === 0 ? 3.6 : (9.2 - 3.6) / (t.columnas.length - 1)));
-        s.addTable([head, ...body], { x: 0.4, y: 1.0, w: 9.2, colW, fontSize: 10, fontFace: FONT, border: { type: "solid", pt: 0.5, color: hex(COLOR.line) }, rowH: 0.3, autoPage: false });
-        if (!sec.kpis.length && !sec.series.length) notas(s, sec.notas, 4.8);
+        s.addTable([head, ...body], { x: 0.4, y: 1.6, w: 9.2, colW, fontSize: 10, fontFace: F, border: { type: "solid", pt: 0.5, color: C.linea }, rowH: 0.3, autoPage: false });
+        if (!sec.kpis.length && !sec.series.length) notas(s, sec.notas, 4.9);
       }
     });
   });
+
+  // Cierre (como el deck: logo principal centrado y la frase de marca)
+  {
+    const s = pptx.addSlide();
+    s.background = { color: "FFFFFF" };
+    if (logoData("v")) s.addImage({ data: logoData("v"), x: 3.7, y: 1.35, w: 2.6, h: 2.6 * MARCA.logo.v.h / MARCA.logo.v.w });
+    s.addText(MARCA.tagline.toUpperCase(), { x: 0.6, y: 3.6, w: 8.8, h: 0.5, fontSize: 14, bold: true, charSpacing: 6, color: C.gris, fontFace: F, align: "center" });
+  }
   return await pptx.write({ outputType: node ? "nodebuffer" : "blob" });
 }
 export async function exportarPowerPoint(modelo, base) {
@@ -573,8 +690,10 @@ export async function exportarPowerPoint(modelo, base) {
 // pantalla) preparada para A4, sin cortes raros, que se guarda como PDF desde
 // el diálogo de impresión del navegador.
 // ---------------------------------------------------------------------------
-export function htmlReporte(modelo, { autoImprimir = true } = {}) {
+export function htmlReporte(modelo, { autoImprimir = true, logos = null } = {}) {
   const esc = (v) => String(v ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const M = MARCA;
+  const logoH = logos && logos.h ? `<img class="logo" src="data:image/png;base64,${logos.h.b64}" alt="${esc(modelo.clinica)}">` : `<div class="k">${esc(modelo.clinica)}</div>`;
   const kpiHtml = (k) => `<div class="kpi"><div class="n">${esc(k.valor)}</div><div class="l">${esc(k.label)}</div>${k.sub ? `<div class="s">${esc(k.sub)}</div>` : ""}</div>`;
   const serieHtml = (se) => {
     if (!se.datos.length) return `<div class="chart"><div class="t">${esc(se.titulo)}</div><div class="note">Sin datos.</div></div>`;
@@ -599,50 +718,58 @@ export function htmlReporte(modelo, { autoImprimir = true } = {}) {
   </section>`;
 
   return `<!doctype html><html lang="es"><head><meta charset="utf-8"><title>${esc(modelo.titulo)}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <style>
-  @page { size: A4; margin: 13mm 12mm 16mm; }
+  @page { size: A4; margin: 13mm 12mm 18mm;
+    @bottom-right { content: counter(page); font-family: ${M.fuente}, ${M.fuenteFallback}; font-size: 10px; font-weight: 700; color: ${M.celeste}; } }
   html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  body { font-family: Inter, "Segoe UI", Arial, sans-serif; color: ${COLOR.ink}; margin: 0; background: #fff; padding: 24px; }
-  .cover { border-bottom: 3px solid ${COLOR.verde}; padding-bottom: 10px; margin-bottom: 18px; display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; }
-  .cover .k { font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: ${COLOR.muted}; margin-bottom: 4px; }
-  h1 { font-size: 22px; margin: 0; } .sub { color: ${COLOR.inkSoft}; font-size: 12px; margin-top: 4px; }
-  .gen { font-size: 10px; color: ${COLOR.muted}; text-align: right; }
+  body { font-family: ${M.fuente}, ${M.fuenteFallback}; color: ${M.negro}; margin: 0; background: #fff; padding: 24px; }
+  .cover { border-bottom: 3px solid ${M.celeste}; padding-bottom: 12px; margin-bottom: 18px; display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; }
+  .cover .logo { height: 44px; width: auto; display: block; margin-bottom: 10px; }
+  .cover .k { font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: ${M.gris}; margin-bottom: 6px; }
+  h1 { font-size: 22px; margin: 0; color: ${M.celeste}; font-weight: 700; } .sub { color: ${M.gris}; font-size: 12px; margin-top: 4px; }
+  .gen { font-size: 10px; color: ${M.gris}; text-align: right; line-height: 1.5; }
   .sec { break-inside: avoid; page-break-inside: avoid; margin: 0 0 18px; }
-  h2 { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: ${COLOR.inkSoft}; margin: 0 0 8px; }
+  h2 { font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: ${M.celeste}; font-weight: 700; margin: 0 0 8px; border-left: 3px solid ${M.celeste}; padding-left: 8px; line-height: 1.2; }
   .kpis { display: grid; gap: 8px; margin-bottom: 10px; } .kpis.n1, .kpis.n2, .kpis.n3 { grid-template-columns: repeat(3, 1fr); } .kpis.n4 { grid-template-columns: repeat(4, 1fr); } .kpis.n5 { grid-template-columns: repeat(5, 1fr); }
-  .kpi { border: 1px solid ${COLOR.line}; border-radius: 10px; padding: 10px 12px; background: ${COLOR.bg}; }
-  .kpi .n { font-size: 20px; font-weight: 700; } .kpi .l { font-size: 10.5px; color: ${COLOR.inkSoft}; margin-top: 2px; } .kpi .s { font-size: 9.5px; color: ${COLOR.muted}; margin-top: 1px; }
+  .kpi { border-radius: 10px; padding: 10px 12px; background: ${M.celesteClaro}; }
+  .kpi .n { font-size: 20px; font-weight: 700; color: ${M.negro}; } .kpi .l { font-size: 10.5px; color: ${M.gris}; margin-top: 2px; } .kpi .s { font-size: 9.5px; color: ${M.gris}; margin-top: 1px; }
   .charts { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; } .charts.uno { grid-template-columns: 1fr; }
-  .chart { border: 1px solid ${COLOR.line}; border-radius: 10px; padding: 10px 12px; break-inside: avoid; }
-  .chart .t { font-size: 11px; color: ${COLOR.inkSoft}; margin-bottom: 8px; }
-  .hbar { display: flex; align-items: center; gap: 8px; margin: 5px 0; font-size: 11px; } .hbar .lb { width: 92px; color: ${COLOR.inkSoft}; flex-shrink: 0; }
-  .hbar .tr { flex: 1; height: 10px; background: ${COLOR.line}; border-radius: 99px; overflow: hidden; } .hbar .f { height: 100%; border-radius: 99px; }
-  .hbar .v { width: 92px; text-align: right; font-variant-numeric: tabular-nums; flex-shrink: 0; } .hbar .v span { color: ${COLOR.muted}; font-size: 10px; }
+  .chart { border: 1px solid ${M.linea}; border-radius: 10px; padding: 10px 12px; break-inside: avoid; }
+  .chart .t { font-size: 11px; color: ${M.gris}; margin-bottom: 8px; font-weight: 600; }
+  .hbar { display: flex; align-items: center; gap: 8px; margin: 5px 0; font-size: 11px; } .hbar .lb { width: 92px; color: ${M.gris}; flex-shrink: 0; }
+  .hbar .tr { flex: 1; height: 10px; background: ${M.linea}; border-radius: 99px; overflow: hidden; } .hbar .f { height: 100%; border-radius: 99px; }
+  .hbar .v { width: 92px; text-align: right; font-variant-numeric: tabular-nums; flex-shrink: 0; } .hbar .v span { color: ${M.gris}; font-size: 10px; }
   .cols { display: flex; align-items: flex-end; gap: 4px; height: 118px; } .col { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 3px; min-width: 0; height: 100%; }
-  .col .b { width: 100%; max-width: 26px; border-radius: 3px 3px 0 0; } .col .x, .col .v { font-size: 8px; color: ${COLOR.muted}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+  .col .b { width: 100%; max-width: 26px; border-radius: 3px 3px 0 0; } .col .x, .col .v { font-size: 8px; color: ${M.gris}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
   table { width: 100%; border-collapse: collapse; font-size: 11px; }
-  th { text-align: left; font-size: 9.5px; text-transform: uppercase; letter-spacing: .04em; color: ${COLOR.inkSoft}; border-bottom: 1px solid ${COLOR.line}; padding: 6px 8px; }
-  td { padding: 6px 8px; border-bottom: 1px solid #F3F1EC; } td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
-  .note { font-size: 10.5px; color: ${COLOR.inkSoft}; margin-top: 6px; }
+  th { text-align: left; font-size: 9.5px; text-transform: uppercase; letter-spacing: .05em; color: #fff; background: ${M.celeste}; padding: 7px 8px; }
+  td { padding: 6px 8px; border-bottom: 1px solid ${M.linea}; } td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  tbody tr:nth-child(even) td { background: ${M.celesteFondo}; }
+  .note { font-size: 10.5px; color: ${M.gris}; margin-top: 6px; }
   .foot { display: none; }
-  .noprint { position: sticky; top: 0; background: #fff; padding: 8px 0 12px; margin-bottom: 8px; border-bottom: 1px solid ${COLOR.line}; display: flex; gap: 10px; align-items: center; z-index: 5; }
-  .noprint button { padding: 9px 16px; border: none; border-radius: 8px; background: ${COLOR.verde}; color: #fff; font-size: 14px; cursor: pointer; }
-  .noprint span { font-size: 12px; color: ${COLOR.inkSoft}; }
+  .noprint { position: sticky; top: 0; background: #fff; padding: 8px 0 12px; margin-bottom: 8px; border-bottom: 1px solid ${M.linea}; display: flex; gap: 10px; align-items: center; z-index: 5; }
+  .noprint button { padding: 9px 16px; border: none; border-radius: 8px; background: ${M.celeste}; color: #fff; font-size: 14px; cursor: pointer; font-family: inherit; font-weight: 600; }
+  .noprint span { font-size: 12px; color: ${M.gris}; }
   @media print {
     body { padding: 0; } .noprint { display: none; }
-    .foot { display: flex; position: fixed; bottom: 0; left: 0; right: 0; justify-content: space-between; font-size: 9px; color: ${COLOR.muted}; }
+    .foot { display: flex; position: fixed; bottom: 0; left: 0; right: 0; justify-content: space-between; font-size: 9px; color: ${M.gris}; border-top: 0.5pt solid ${M.gris}; padding-top: 4px; }
   }
 </style></head><body>
 <div class="noprint"><button onclick="window.print()">Guardar como PDF</button><span>Se abre el diálogo de impresión: elige "Guardar como PDF". Los colores y gráficos se conservan.</span></div>
-<div class="cover"><div><div class="k">${esc(modelo.clinica)} · Panel de Gerencia</div><h1>${esc(modelo.titulo)}</h1><div class="sub">${esc(modelo.subtitulo)}</div></div><div class="gen">Generado el ${esc(modelo.generadoEn)}<br>Datos reales del período</div></div>
+<div class="cover"><div>${logoH}<h1>${esc(modelo.titulo)}</h1><div class="sub">${esc(modelo.subtitulo)}</div></div><div class="gen">Generado el ${esc(modelo.generadoEn)}<br>Datos reales del período</div></div>
 ${modelo.secciones.map(secHtml).join("\n")}
-<div class="foot"><span>${esc(modelo.clinica)} · ${esc(modelo.titulo)} · ${esc(modelo.sedeLbl)}</span><span>Generado el ${esc(modelo.generadoEn)}</span></div>
-${autoImprimir ? `<script>window.addEventListener("load",function(){setTimeout(function(){window.print()},500)});</script>` : ""}
+<div class="foot"><span>${esc(modelo.clinica)} · ${esc(modelo.titulo)} · ${esc(modelo.sedeLbl)}</span><span>${esc(M.tagline)} · generado el ${esc(modelo.generadoEn)}</span></div>
+${autoImprimir ? `<script>window.addEventListener("load",function(){setTimeout(function(){window.print()},700)});</script>` : ""}
 </body></html>`;
 }
-export function exportarPDF(modelo) {
+export async function exportarPDF(modelo) {
+  // La ventana se abre ANTES de cualquier await: si no, el bloqueador de
+  // ventanas emergentes la frena porque ya no cuenta como clic del usuario.
   const w = window.open("", "_blank", "width=1000,height=900");
   if (!w) throw new Error("Permite las ventanas emergentes para generar el PDF.");
-  w.document.write(htmlReporte(modelo));
+  const logos = await cargarLogos();
+  w.document.write(htmlReporte(modelo, { logos }));
   w.document.close();
 }
