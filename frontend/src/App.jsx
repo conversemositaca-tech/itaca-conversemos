@@ -457,6 +457,7 @@ function descargarPDF(titulo, headers, filas) {
   const tr = filas.map((f) => `<tr>${f.map((c) => `<td>${esc(c)}</td>`).join("")}</tr>`).join("");
   w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${esc(titulo)}</title>
     <style>
+      html{-webkit-print-color-adjust:exact;print-color-adjust:exact}
       body{font-family:Inter,Arial,sans-serif;color:#32302C;margin:24px}
       .head{display:flex;justify-content:space-between;align-items:baseline;border-bottom:2px solid #4F8A77;padding-bottom:8px;margin-bottom:14px}
       h1{font-size:18px;margin:0} .sub{color:#888;font-size:12px}
@@ -503,6 +504,7 @@ function imprimirHistoria(p, clinica) {
   }).join("");
   w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Historia clínica · ${esc(p.nombre)}</title>
     <style>
+      html{-webkit-print-color-adjust:exact;print-color-adjust:exact}
       body{font-family:Inter,Arial,sans-serif;color:#32302C;max-width:720px;margin:28px auto;padding:0 16px;line-height:1.5}
       .head{display:flex;justify-content:space-between;align-items:baseline;border-bottom:2px solid #4F8A77;padding-bottom:8px;margin-bottom:16px}
       h1{font-size:20px;margin:0} .sub{color:#777;font-size:13px;margin-bottom:18px}
