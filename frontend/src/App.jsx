@@ -2133,6 +2133,14 @@ function Gerencia({ showToast }) {
     ...(data.finanzas?.egresos != null ? [["Egresos (gastos)", data.finanzas.egresos]] : []),
     ...(data.finanzas?.utilidad != null ? [["Utilidad (neto)", data.finanzas.utilidad]] : []),
     ["Pendiente por cobrar", data.finanzas?.pendiente || 0],
+    ...(data.diagnostico ? [
+      ["Leads resueltos (ganado o perdido)", `${data.diagnostico.embudo.resueltos_pct}%`],
+      ["Leads marcados perdidos", data.diagnostico.embudo.perdidos],
+      ["Leads en curso sin cerrar", data.diagnostico.embudo.en_curso],
+      ["Abandono en sesión 1-2 (histórico)", `${data.diagnostico.continuidad.abandono_1_2_pct}%`],
+      ["Cobros sin medio de pago registrado", `${data.diagnostico.medio_pago.sin_medio_pct}%`],
+      ["Sesiones con motivo de cierre registrado", `${data.diagnostico.decision.pct}%`],
+    ] : []),
   ] : [];
   const tituloGer = `Gerencia${data ? " · " + data.periodo.label : ""}${sede ? " · " + (sede === "lima" ? "Lima" : "Piura") : ""}`;
 
@@ -2154,7 +2162,7 @@ function Gerencia({ showToast }) {
             ))}
           </div>
           <div className="ca-seg">
-            {[["hoy", "Hoy"], ["semana", "Semana"], ["mes", "Mes"]].map(([v, l]) => (
+            {[["hoy", "Hoy"], ["7d", "7 días"], ["semana", "Semana"], ["30d", "30 días"], ["mes", "Mes"]].map(([v, l]) => (
               <button key={v} className={periodo === v ? "on" : ""} onClick={() => setPeriodo(v)}>{l}</button>
             ))}
           </div>
@@ -2191,6 +2199,13 @@ function Gerencia({ showToast }) {
           <div style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 6 }}>
             Mejor campaña del período: <strong>{cap.top_campania}</strong>.
           </div>
+          {cap.por_dia && cap.por_dia.length > 1 && (
+            <div className="ca-card" style={{ marginTop: 14 }}>
+              <div className="ca-label" style={{ marginBottom: 10 }}>Leads por día</div>
+              <MiniBars data={cap.por_dia} valor={(d) => d.leads} etiqueta={(d) => dDeISO(d.fecha).getDate()}
+                color="#C9923A" fmt={(n) => `${n} ${n === 1 ? "lead" : "leads"}`} />
+            </div>
+          )}
 
           <h2 className="ca-secth" style={{ marginTop: 28 }}>Pacientes</h2>
           <div className="ca-stats">
@@ -2244,6 +2259,65 @@ function Gerencia({ showToast }) {
             <div style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 6 }}>
               Egresos y utilidad solo en la vista <strong>Total</strong> (no se registran por sede).
             </div>
+          )}
+          {data.finanzas?.por_dia && data.finanzas.por_dia.length > 1 && (
+            <div className="ca-card" style={{ marginTop: 14 }}>
+              <div className="ca-label" style={{ marginBottom: 10 }}>Cobros por día</div>
+              <MiniBars data={data.finanzas.por_dia} valor={(d) => d.monto} etiqueta={(d) => dDeISO(d.fecha).getDate()} color="#4F8A77" />
+            </div>
+          )}
+
+          {data.diagnostico && (
+            <>
+              <h2 className="ca-secth" style={{ marginTop: 28 }}>Diagnóstico</h2>
+              <div style={{ fontSize: 12.5, color: "var(--muted)", marginTop: -6, marginBottom: 14 }}>
+                No es cuánto entra o sale: es si el equipo está usando lo que el sistema ya tiene para decidir a tiempo.
+              </div>
+
+              <div className="ca-label" style={{ marginBottom: 8 }}>Leads sin resolver</div>
+              <div className="ca-stats">
+                <StatCard label="Resueltos" valor={`${data.diagnostico.embudo.resueltos_pct}%`}
+                  sub={`${data.diagnostico.embudo.resueltos} de ${data.diagnostico.embudo.total}`}
+                  color={data.diagnostico.embudo.resueltos_pct >= 60 ? "#4F8A77" : "#B4564E"} />
+                <StatCard label="Ganados (iniciaron)" valor={data.diagnostico.embudo.ganados} color="#4F8A77" />
+                <StatCard label="Marcados perdidos" valor={data.diagnostico.embudo.perdidos}
+                  sub={data.diagnostico.embudo.perdidos === 0 && data.diagnostico.embudo.total > 0 ? "nadie cierra los que no compran" : undefined}
+                  color={data.diagnostico.embudo.perdidos === 0 && data.diagnostico.embudo.total > 0 ? "#B4564E" : "#4F8A77"} />
+                <StatCard label="En curso (sin cerrar)" valor={data.diagnostico.embudo.en_curso} color="#C9923A" />
+              </div>
+
+              <div className="ca-demo" style={{ marginTop: 20 }}>
+                <div>
+                  <div className="ca-label" style={{ marginBottom: 8 }}>Continuidad · sesiones por paciente</div>
+                  <div className="ca-card"><BarrasH data={data.diagnostico.continuidad.por_sesiones} color="#6E86A8" /></div>
+                  <div style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 6 }}>
+                    Sobre {data.diagnostico.continuidad.con_historia} pacientes con historia clínica.{" "}
+                    <strong style={{ color: data.diagnostico.continuidad.abandono_1_2_pct >= 40 ? "#B4564E" : "inherit" }}>
+                      {data.diagnostico.continuidad.abandono_1_2_pct}%
+                    </strong> no pasa de la sesión 2.
+                  </div>
+                </div>
+                <div>
+                  <div className="ca-label" style={{ marginBottom: 8 }}>Ingresos por medio de pago</div>
+                  <div className="ca-card"><BarrasH data={data.diagnostico.medio_pago.por_medio} color="#4F8A77" /></div>
+                  <div style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 6 }}>
+                    {data.diagnostico.medio_pago.total > 0 ? (
+                      <>
+                        <strong style={{ color: data.diagnostico.medio_pago.sin_medio_pct >= 20 ? "#B4564E" : "inherit" }}>
+                          {data.diagnostico.medio_pago.sin_medio_pct}%
+                        </strong> de lo cobrado no tiene medio de pago registrado.
+                      </>
+                    ) : "Sin cobros en el período."}
+                  </div>
+                </div>
+              </div>
+
+              <div className="ca-stats" style={{ marginTop: 20 }}>
+                <StatCard label="Sesiones con motivo de cierre registrado" valor={`${data.diagnostico.decision.pct}%`}
+                  sub={`${data.diagnostico.decision.con_motivo} de ${data.diagnostico.decision.citas_terminadas} sesiones terminadas`}
+                  color={data.diagnostico.decision.pct >= 60 ? "#4F8A77" : "#B4564E"} />
+              </div>
+            </>
           )}
 
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 28, gap: 10, flexWrap: "wrap" }}>
