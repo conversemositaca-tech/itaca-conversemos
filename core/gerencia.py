@@ -234,6 +234,33 @@ class HoyResumenView(APIView):
         out["riesgo_abandono"] = riesgo_abandono[:30]
         out["riesgo_abandono_total"] = len(riesgo_abandono)
 
+        # --- Historias clínicas pendientes de llenar ---
+        # El equipo prefiere registrar la historia inicial ellos mismos (no hay
+        # automatización de ficha), pero se van acumulando sin que nadie se
+        # entere. Pendiente = ya tuvo su sesión 1 (n_sesion >= 1) y todavía no
+        # existe su historia inicial (Atencion.Tipo.HISTORIA). Mismo scope por
+        # rol/sede que la continuidad, arriba.
+        pac_hist = Paciente.objects.del_tenant_actual().filter(provisional=False)
+        if rol == "medico":
+            pac_hist = pac_hist.filter(profesional=ficha) if ficha else pac_hist.none()
+        elif rol == "comercial":
+            pac_hist = pac_hist.none()
+        elif rol == "asistente":
+            sede_usuario = getattr(request.user, "sede", "") or ""
+            if sede_usuario:
+                pac_hist = pac_hist.filter(sede=sede_usuario)
+        con_historia_ids = set(
+            Atencion.objects.del_tenant_actual()
+            .filter(tipo=Atencion.Tipo.HISTORIA, paciente__in=pac_hist)
+            .values_list("paciente_id", flat=True)
+        )
+        historias_pendientes = list(
+            pac_hist.filter(n_sesion__gte=1).exclude(id__in=con_historia_ids)
+            .values("id", "nombre").order_by("nombre")
+        )
+        out["historias_pendientes"] = historias_pendientes[:30]
+        out["historias_pendientes_total"] = len(historias_pendientes)
+
         # --- NPS (satisfacción del paciente) de los últimos 90 días ---
         # Promedio + índice NPS estándar (% promotores − % detractores).
         from pacientes.models import RespuestaNPS

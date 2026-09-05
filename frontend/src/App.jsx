@@ -3364,6 +3364,25 @@ function Hoy({ proximas, citasHoy, porConfirmar, atendidas, onOpen, onGo, onRete
         </div>
       )}
 
+      {r && r.riesgo_abandono && r.riesgo_abandono.length > 0 && (
+        <div className="ca-card" style={{ marginTop: 14, borderColor: "#F0CACA", background: "#FDF4F4" }}>
+          <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 10, display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap" }}>
+            <AlertTriangle size={15} strokeWidth={2} style={{ color: "#B23A3A" }} /> Riesgo de abandono
+            <span style={{ fontWeight: 400, color: "var(--muted)", fontSize: 12.5 }}>· {r.riesgo_abandono_total} paciente{r.riesgo_abandono_total !== 1 ? "s" : ""} en sesión 3 sin próxima cita agendada</span>
+          </div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+            {r.riesgo_abandono.map((p) => (
+              <button key={p.id} className="ca-mini" onClick={() => onOpen(p.id)}>
+                {p.nombre} <span style={{ color: "var(--muted)" }}>· sesión {p.n_sesion}</span>
+              </button>
+            ))}
+          </div>
+          {r.riesgo_abandono_total > r.riesgo_abandono.length && (
+            <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 8 }}>y {r.riesgo_abandono_total - r.riesgo_abandono.length} más…</div>
+          )}
+        </div>
+      )}
+
       {r && r.por_continuidad && r.por_continuidad.length > 0 && (
         <div className="ca-card" style={{ marginTop: 14, borderColor: "#CDE8F0", background: "#F4FBFD" }}>
           <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 10, display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap" }}>
@@ -3379,6 +3398,23 @@ function Hoy({ proximas, citasHoy, porConfirmar, atendidas, onOpen, onGo, onRete
           </div>
           {r.por_continuidad_total > r.por_continuidad.length && (
             <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 8 }}>y {r.por_continuidad_total - r.por_continuidad.length} más…</div>
+          )}
+        </div>
+      )}
+
+      {r && r.historias_pendientes && r.historias_pendientes.length > 0 && (
+        <div className="ca-card" style={{ marginTop: 14, borderColor: "#F0E0C0", background: "#FDFAF3" }}>
+          <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 10, display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap" }}>
+            <ClipboardList size={15} strokeWidth={2} style={{ color: "#9A6B1E" }} /> Historias clínicas por llenar
+            <span style={{ fontWeight: 400, color: "var(--muted)", fontSize: 12.5 }}>· {r.historias_pendientes_total} paciente{r.historias_pendientes_total !== 1 ? "s" : ""} con sesión registrada y sin historia inicial</span>
+          </div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+            {r.historias_pendientes.map((p) => (
+              <button key={p.id} className="ca-mini" onClick={() => onOpen(p.id)}>{p.nombre}</button>
+            ))}
+          </div>
+          {r.historias_pendientes_total > r.historias_pendientes.length && (
+            <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 8 }}>y {r.historias_pendientes_total - r.historias_pendientes.length} más…</div>
           )}
         </div>
       )}

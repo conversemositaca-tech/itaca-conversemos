@@ -13,7 +13,7 @@ from core.continuidad import (
     FIN_BLOQUE_SIN_DECISION, RIESGO_ABANDONO_S3, evaluar, proxima_meta,
 )
 from core.models import Clinica
-from pacientes.models import Cita, Paciente
+from pacientes.models import Atencion, Cita, Paciente
 from usuarios.models import Usuario
 
 
@@ -145,3 +145,19 @@ class HoyContinuidadViewTests(TestCase):
         nombres = [x["nombre"] for x in datos["riesgo_abandono"]]
         self.assertIn(de_lima.nombre, nombres)
         self.assertIn(de_piura.nombre, nombres)
+
+    def test_historia_pendiente_si_tuvo_sesion_y_no_tiene_historia(self):
+        p = self._paciente("Sin historia registrada", "lima", n_sesion=1)
+        datos = self._hoy(self.coord_lima)
+        self.assertIn(p.nombre, [x["nombre"] for x in datos["historias_pendientes"]])
+
+    def test_sin_sesion_todavia_no_aparece_como_pendiente(self):
+        p = self._paciente("Recién agendado", "lima", n_sesion=0)
+        datos = self._hoy(self.coord_lima)
+        self.assertNotIn(p.nombre, [x["nombre"] for x in datos["historias_pendientes"]])
+
+    def test_con_historia_ya_registrada_no_aparece(self):
+        p = self._paciente("Con historia al día", "lima", n_sesion=1)
+        Atencion.objects.create(clinica=self.clinica, paciente=p, tipo=Atencion.Tipo.HISTORIA)
+        datos = self._hoy(self.coord_lima)
+        self.assertNotIn(p.nombre, [x["nombre"] for x in datos["historias_pendientes"]])
