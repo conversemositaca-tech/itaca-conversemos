@@ -193,3 +193,37 @@ class DescuentoDePaqueteTests(TestCase):
         self.assertIsNone(otra.paquete_id)           # esa cita se cobra aparte
         self.paquete.refresh_from_db()
         self.assertEqual(self.paquete.estado, Paquete.Estado.AGOTADO)
+
+
+class MarcarPagadoFechaTests(TestCase):
+    """`Cobro.fecha` debe reflejar cuándo se CONFIRMA el pago, no cuándo se creó
+    como pendiente — si no, un cobro atendido hoy y pagado mañana nunca aparece
+    en los ingresos del día en que realmente se cobró (decidido con Gabriela)."""
+
+    def setUp(self):
+        self.clinica = Clinica.objects.create(nombre="Conversemos", slug="conversemos-fecha-pago")
+        self.coord = Usuario.objects.create_user(
+            email="coordfp@test.pe", password="x", clinica=self.clinica, rol=Usuario.Rol.ASISTENTE,
+        )
+        self.paciente = Paciente.objects.create(clinica=self.clinica, nombre="Deudor de prueba")
+        self.cobro = Cobro.objects.create(
+            clinica=self.clinica, paciente=self.paciente, concepto="Sesión de ayer",
+            monto=Decimal("120"), estado=Cobro.Estado.PENDIENTE,
+            fecha=timezone.now() - timedelta(days=1),
+        )
+        self.client.force_login(self.coord)
+
+    def test_marcar_pagado_actualiza_la_fecha_a_hoy(self):
+        fecha_original = self.cobro.fecha
+        r = self.client.post(f"/api/cobros/{self.cobro.id}/marcar_pagado/", {"medio_pago": "yape"})
+        self.assertEqual(r.status_code, 200)
+        self.cobro.refresh_from_db()
+        self.assertGreater(self.cobro.fecha, fecha_original)
+        self.assertEqual(timezone.localdate(self.cobro.fecha), timezone.localdate())
+
+    def test_el_cobro_aparece_en_el_resumen_del_dia_en_que_se_pago(self):
+        """Antes del fix, este cobro se quedaba contabilizado bajo AYER."""
+        self.client.post(f"/api/cobros/{self.cobro.id}/marcar_pagado/", {"medio_pago": "efectivo"})
+        r = self.client.get("/api/cobros/resumen/", {"periodo": "hoy"})
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.json()["cobrado"], 120.0)

@@ -189,6 +189,14 @@ class CobroViewSet(viewsets.ModelViewSet):
         cobro.estado = Cobro.Estado.PAGADO
         cobro.medio_pago = medio
         campos = ["estado", "medio_pago"]
+        # `fecha` es la que usan TODOS los reportes por día/mes (Finanzas,
+        # meta comercial de "Hoy"). Si se deja la fecha de cuando se creó como
+        # "pendiente", un cobro atendido hoy y pagado mañana nunca aparece en
+        # los ingresos del día en que realmente se cobró — se actualiza al
+        # momento real del pago (decidido con Gabriela: la fecha refleja el
+        # ingreso real de caja, no cuándo se generó el cargo).
+        cobro.fecha = timezone.now()
+        campos.append("fecha")
         comp = request.data.get("comprobante_tipo")
         if comp in dict(Cobro.Comprobante.choices):
             cobro.comprobante_tipo = comp
