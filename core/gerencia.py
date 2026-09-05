@@ -15,6 +15,7 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from core import continuidad as continuidad_mod
 from core.tenant import get_clinica_actual
 from finanzas.models import Cobro, Egreso
 from leads.models import Lead
@@ -172,9 +173,9 @@ class HoyResumenView(APIView):
             "sin_proxima": sin_proxima, "es_admin": es_admin,
         }
 
-        # --- Pacientes por evaluar continuidad (por terminar su proceso) ---
-        # "Le toca su sesión 6, 12…" o está a 1 de su total de sesiones del proceso.
-        # El psicólogo ve solo SUS pacientes; admin/asistente, todos.
+        # --- Continuidad terapéutica: riesgo de abandono (S3) y fin de bloque
+        # sin decisión registrada. El psicólogo ve solo SUS pacientes; la
+        # coordinadora (asistente) solo los de SU sede; admin, todos.
         rol = getattr(request.user, "rol", None)
         ficha = None
         if rol == "medico":
@@ -185,22 +186,53 @@ class HoyResumenView(APIView):
             pac_cont = pac_cont.filter(profesional=ficha) if ficha else pac_cont.none()
         elif rol == "comercial":
             pac_cont = pac_cont.none()
-        continuidad = []
-        for r in (pac_cont.filter(n_sesion__gt=0)
-                  .exclude(frecuencia__in=["alta", "en_pausa"])
-                  .values("id", "nombre", "n_sesion", "sesiones_proceso")):
+        elif rol == "asistente":
+            # Antes veía pacientes de TODAS las sedes en esta tarjeta (Yazmín en
+            # Piura veía también los de Lima, y viceversa con Ayvi) aunque el
+            # resto del panel (la meta comercial, más abajo) ya escopa por sede.
+            sede_usuario = getattr(request.user, "sede", "") or ""
+            if sede_usuario:
+                pac_cont = pac_cont.filter(sede=sede_usuario)
+
+        filas = list(pac_cont.filter(n_sesion__gt=0)
+                     .exclude(frecuencia__in=["alta", "en_pausa"])
+                     .values("id", "nombre", "n_sesion", "sesiones_proceso"))
+        ids = [r["id"] for r in filas]
+
+        con_futura_ids = set(
+            Cita.objects.del_tenant_actual().filter(paciente_id__in=ids, inicio__gte=timezone.now())
+            .exclude(estado=Cita.Estado.CANCELADA).values_list("paciente_id", flat=True)
+        )
+        # Última decisión (DP-08..DP-12) registrada en una cita ya realizada de
+        # cada paciente — para no avisar de un fin de bloque que coordinación
+        # ya resolvió.
+        ultima_decision = {}
+        citas_realizadas = (
+            Cita.objects.del_tenant_actual()
+            .filter(paciente_id__in=ids, estado__in=[Cita.Estado.ATENDIDA, Cita.Estado.ASISTIO])
+            .order_by("paciente_id", "-inicio").values("paciente_id", "decision")
+        )
+        for c in citas_realizadas:
+            ultima_decision.setdefault(c["paciente_id"], c["decision"])  # la 1ra por paciente = la más reciente
+
+        continuidad, riesgo_abandono = [], []
+        for r in filas:
             n = r["n_sesion"] or 0
-            total = r["sesiones_proceso"] or 0
-            if total and total - 1 <= n <= total:
-                meta = total
-            elif not total and (n + 1) % 6 == 0:  # bloque recomendado de 6
-                meta = n + 1
-            else:
-                continue
-            continuidad.append({"id": r["id"], "nombre": r["nombre"], "n_sesion": n, "meta": meta})
+            alertas = continuidad_mod.evaluar(
+                n, r["sesiones_proceso"] or 0, r["id"] in con_futura_ids,
+                ultima_decision.get(r["id"], ""), None,  # frecuencia ya excluida en el queryset
+            )
+            if continuidad_mod.RIESGO_ABANDONO_S3 in alertas:
+                riesgo_abandono.append({"id": r["id"], "nombre": r["nombre"], "n_sesion": n})
+            if continuidad_mod.FIN_BLOQUE_SIN_DECISION in alertas:
+                meta = continuidad_mod.proxima_meta(n, r["sesiones_proceso"] or 0)
+                continuidad.append({"id": r["id"], "nombre": r["nombre"], "n_sesion": n, "meta": meta})
         continuidad.sort(key=lambda x: (x["meta"] - x["n_sesion"], x["nombre"]))
+        riesgo_abandono.sort(key=lambda x: x["nombre"])
         out["por_continuidad"] = continuidad[:30]
         out["por_continuidad_total"] = len(continuidad)
+        out["riesgo_abandono"] = riesgo_abandono[:30]
+        out["riesgo_abandono_total"] = len(riesgo_abandono)
 
         # --- NPS (satisfacción del paciente) de los últimos 90 días ---
         # Promedio + índice NPS estándar (% promotores − % detractores).

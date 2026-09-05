@@ -391,3 +391,35 @@ class EliminarPacienteTests(TestCase):
         self.assertEqual(reg.tipo, RegistroEliminacion.Tipo.PACIENTE)
         self.assertEqual(reg.paciente_nombre, "Ana Pérez")
         self.assertEqual(reg.usuario, self.admin)
+
+
+class AlertasContinuidadEnListaTests(TestCase):
+    """El filtro "Riesgo S3" / "Fin de bloque" de la pantalla Pacientes se apoya
+    en `alertas_continuidad`, que debe viajar en /api/pacientes/ (la lista) y
+    no solo en el detalle de la ficha."""
+
+    def setUp(self):
+        self.clinica = Clinica.objects.create(nombre="Conversemos", slug="conversemos-alertas")
+        self.admin = Usuario.objects.create_user(
+            email="gerencia2@test.pe", password="x", clinica=self.clinica, rol=Usuario.Rol.ADMIN,
+        )
+        self.client.force_login(self.admin)
+
+    def _lista(self):
+        r = self.client.get("/api/pacientes/")
+        self.assertEqual(r.status_code, 200)
+        return {p["nombre"]: p for p in r.json()}
+
+    def test_paciente_en_riesgo_s3_trae_la_alerta_en_la_lista(self):
+        Paciente.objects.create(
+            clinica=self.clinica, nombre="En riesgo", n_sesion=3, frecuencia="semanal",
+        )
+        fila = self._lista()["En riesgo"]
+        self.assertIn("riesgo_abandono_s3", fila["alertas_continuidad"])
+
+    def test_paciente_sin_alerta_trae_lista_vacia(self):
+        Paciente.objects.create(
+            clinica=self.clinica, nombre="Sin alerta", n_sesion=1, frecuencia="semanal",
+        )
+        fila = self._lista()["Sin alerta"]
+        self.assertEqual(fila["alertas_continuidad"], [])

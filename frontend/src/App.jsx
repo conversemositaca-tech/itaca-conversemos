@@ -585,6 +585,8 @@ export default function ClinicaApp() {
   const [filterProf, setFilterProf] = useState("");
   const [filterFrec, setFilterFrec] = useState("");
   const [soloSinProxima, setSoloSinProxima] = useState(false);
+  const [filtroRiesgoS3, setFiltroRiesgoS3] = useState(false);
+  const [filtroFinBloque, setFiltroFinBloque] = useState(false);
   // Ver las fichas provisionales (consulta agendada, proceso no iniciado). Fuera
   // de este chip no aparecen: no son pacientes todavia.
   const [verConsultas, setVerConsultas] = useState(false);
@@ -723,8 +725,10 @@ export default function ClinicaApp() {
       (!filterSede || p.sede === filterSede) &&
       (!filterProf || p.profesional_nombre === filterProf) &&
       (!filterFrec || p.frecuencia === filterFrec) &&
-      (!soloSinProxima || !p.proxima));
-  }, [basePacientes, query, filterEsp, filterSede, filterProf, filterFrec, soloSinProxima]);
+      (!soloSinProxima || !p.proxima) &&
+      (!filtroRiesgoS3 || p.alertas_continuidad?.includes("riesgo_abandono_s3")) &&
+      (!filtroFinBloque || p.alertas_continuidad?.includes("fin_bloque_sin_decision")));
+  }, [basePacientes, query, filterEsp, filterSede, filterProf, filterFrec, soloSinProxima, filtroRiesgoS3, filtroFinBloque]);
 
   // Psicólogos presentes en la lista de pacientes (para el filtro).
   // Psicólogos del filtro: solo los que tienen pacientes en la sede elegida.
@@ -1591,6 +1595,12 @@ export default function ClinicaApp() {
               </select>
               <button className={`ca-fchip ${soloSinProxima ? "on" : ""}`} onClick={() => setSoloSinProxima((v) => !v)}
                 style={{ marginLeft: 6, color: soloSinProxima ? undefined : "#B0822F" }}>⏰ Sin próxima sesión</button>
+              <button className={`ca-fchip ${filtroRiesgoS3 ? "on" : ""}`} onClick={() => setFiltroRiesgoS3((v) => !v)}
+                title="Sesión 3 sin próxima cita agendada: riesgo de abandono."
+                style={{ marginLeft: 6, color: filtroRiesgoS3 ? undefined : "#B23A3A" }}>🚩 Riesgo S3</button>
+              <button className={`ca-fchip ${filtroFinBloque ? "on" : ""}`} onClick={() => setFiltroFinBloque((v) => !v)}
+                title="Cierra su bloque de sesiones y aún no hay Alta/Continuidad/Derivación registrada."
+                style={{ marginLeft: 6, color: filtroFinBloque ? undefined : "#8A6D14" }}>🔔 Fin de bloque sin decisión</button>
               {consultasAgendadas.length > 0 && (
                 <button className={`ca-fchip ${verConsultas ? "on" : ""}`} onClick={() => setVerConsultas((v) => !v)}
                   title="Fichas abiertas por una consulta agendada. Todavia no son pacientes: lo seran cuando el lead inicie proceso."
@@ -1614,6 +1624,8 @@ export default function ClinicaApp() {
                       <div className="ca-pmeta">{p.profesional_nombre ? `${p.profesional_nombre} · ` : ""}{meta || `última visita ${p.ultima}`}</div>
                     </div>
                     {p.provisional && <Tag colors={{ bg: "#FCF3D4", fg: "#8A6D14" }}>Consulta agendada</Tag>}
+                    {p.alertas_continuidad?.includes("riesgo_abandono_s3") && <Tag colors={{ bg: "#FBE1E1", fg: "#B23A3A" }}>🚩 Riesgo S3</Tag>}
+                    {p.alertas_continuidad?.includes("fin_bloque_sin_decision") && <Tag colors={{ bg: "#FCF3D4", fg: "#8A6D14" }}>🔔 Fin de bloque</Tag>}
                     {p.cuenta?.pendiente > 0 && <Tag colors={ESTADO_COBRO_COLOR.pendiente}>Debe {money(p.cuenta.pendiente)}</Tag>}
                     {p.frecuencia_label && <Tag colors={p.frecuencia === "alta" ? { bg: "#E7EEF6", fg: "#3D5C82" } : p.frecuencia === "en_pausa" ? { bg: "#FCF3D4", fg: "#8A6D14" } : { bg: "#E4F3E8", fg: "#1E7D45" }}>{p.frecuencia_label}</Tag>}
                     {p.modalidad_label && <Tag colors={{ bg: "#EFEDE8", fg: "#7C7870" }}>{p.modalidad_label}</Tag>}

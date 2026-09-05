@@ -229,7 +229,7 @@ class PacienteViewSet(viewsets.ModelViewSet):
                     Prefetch("atenciones", queryset=Atencion.objects.only(
                         "id", "paciente_id", "fecha")),
                     Prefetch("citas", queryset=Cita.objects.only(
-                        "id", "paciente_id", "inicio", "estado", "especialidad")),
+                        "id", "paciente_id", "inicio", "estado", "especialidad", "decision")),
                     "cobros",
                 )
             )

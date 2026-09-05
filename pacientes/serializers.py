@@ -5,6 +5,7 @@ from django.core.validators import URLValidator
 from django.utils import timezone
 from rest_framework import serializers
 
+from core import continuidad
 from core.utils import fecha_corta
 
 from usuarios.models import Usuario
@@ -91,6 +92,7 @@ class PacienteSerializer(serializers.ModelSerializer):
     seguimiento = serializers.SerializerMethodField()
     ultima = serializers.SerializerMethodField()
     proxima = serializers.SerializerMethodField()
+    alertas_continuidad = serializers.SerializerMethodField()
     historial = serializers.SerializerMethodField()
     adjuntos = serializers.SerializerMethodField()
     cuenta = serializers.SerializerMethodField()
@@ -115,7 +117,7 @@ class PacienteSerializer(serializers.ModelSerializer):
             "alertas", "notas_internas",
             "brujula_motivo", "brujula_hipotesis", "brujula_objetivos", "brujula_fortalezas",
             "brujula_factores_protectores", "brujula_factores_riesgo", "brujula_barreras", "brujula_plan",
-            "ultima", "proxima", "historial", "adjuntos", "cuenta", "paquetes", "citas",
+            "ultima", "proxima", "alertas_continuidad", "historial", "adjuntos", "cuenta", "paquetes", "citas",
         ]
 
     def to_representation(self, instance):
@@ -159,6 +161,23 @@ class PacienteSerializer(serializers.ModelSerializer):
             return None
         loc = timezone.localtime(prox.inicio)
         return {"fecha": fecha_corta(loc), "hora": loc.strftime("%H:%M"), "especialidad": prox.especialidad}
+
+    def get_alertas_continuidad(self, obj):
+        # Sobre las citas ya prefetcheadas (evita una query por paciente, igual
+        # que get_proxima). Ver core.continuidad para el criterio.
+        ahora = timezone.now()
+        citas = list(obj.citas.all())
+        tiene_proxima = any(
+            c.inicio and c.inicio >= ahora and c.estado != Cita.Estado.CANCELADA for c in citas
+        )
+        realizadas = sorted(
+            (c for c in citas if c.estado in (Cita.Estado.ATENDIDA, Cita.Estado.ASISTIO)),
+            key=lambda c: c.inicio, reverse=True,
+        )
+        ultima_decision = realizadas[0].decision if realizadas else ""
+        return continuidad.evaluar(
+            obj.n_sesion, obj.sesiones_proceso, tiene_proxima, ultima_decision, obj.frecuencia
+        )
 
     def get_cuenta(self, obj):
         cobros = [c for c in obj.cobros.all() if c.estado != "anulado"]
