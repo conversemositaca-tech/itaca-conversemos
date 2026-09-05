@@ -288,7 +288,7 @@ export async function construirExcel(modelo, opts = {}) {
         if (v instanceof Date) c.numFmt = "dd/mm/yyyy";
       }
       c.font = { name: F, size: 10, bold: !!o.bold, color: { argb: argb(i === 0 && !o.bold ? MARCA.gris : MARCA.negro) } };
-      if (i > 0) c.alignment = { horizontal: "right" };
+      c.alignment = { horizontal: i > 0 && !(v instanceof Date) ? "right" : "left" };
       c.border = { bottom: { style: "hair", color: { argb: argb(MARCA.linea) } } };
       if (o.linea) c.border = { top: { style: "thin", color: { argb: argb(MARCA.celeste) } } };
     });
