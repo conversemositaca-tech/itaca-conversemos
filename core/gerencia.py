@@ -16,6 +16,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from core import continuidad as continuidad_mod
+from core.permisos import es_solo_lectura, ve_finanzas
 from core.tenant import get_clinica_actual
 from finanzas.models import Cobro, Egreso
 from leads.models import Lead
@@ -168,14 +169,22 @@ class HoyResumenView(APIView):
         sin_proxima = max(total_pac - len(con_futura), 0)
 
         es_admin = getattr(request.user, "rol", None) == "admin"
+        # Ve las cifras de dinero del día (gerencia y la analista); distinto de
+        # es_admin, que además da la bandeja de eliminaciones (auditoría).
+        ve_dinero = ve_finanzas(request.user)
         out = {
             "leads_nuevos": leads_nuevos, "leads_hoy": leads_hoy,
-            "sin_proxima": sin_proxima, "es_admin": es_admin,
+            "sin_proxima": sin_proxima, "es_admin": es_admin, "ve_dinero": ve_dinero,
+            # El frontend ajusta textos que sugieren acciones (p. ej. "mándalos a
+            # mano desde la agenda") que el rol de solo lectura no tiene.
+            "solo_lectura": es_solo_lectura(request.user),
         }
 
         # --- Continuidad terapéutica: riesgo de abandono (S3) y fin de bloque
         # sin decisión registrada. El psicólogo ve solo SUS pacientes; la
-        # coordinadora (asistente) solo los de SU sede; admin, todos.
+        # coordinadora (asistente) solo los de SU sede; admin y analista
+        # (Dirección Clínica), todos los de ambas sedes — ojo: caen en el
+        # "else" implícito de la cadena de abajo, no en una rama propia.
         rol = getattr(request.user, "rol", None)
         ficha = None
         if rol == "medico":
@@ -260,7 +269,7 @@ class HoyResumenView(APIView):
         # --- Meta comercial del mes (la ve gerencia y coordinación) ---
         # Gaby: "que les salga a diario cuánto vienen generando y el % de meta,
         # para que tengan presente cobrar y cerrar procesos".
-        if rol in ("admin", "asistente"):
+        if rol in ("admin", "asistente", "analista"):
             clinica = get_clinica_actual()
             mes_ini = hoy.replace(day=1)
             dias_mes = monthrange(hoy.year, hoy.month)[1]
@@ -298,6 +307,10 @@ class HoyResumenView(APIView):
             if rol == "asistente":
                 # La coordinadora ve SOLO la meta de su sede (o el total si no tiene sede).
                 out["meta"] = _meta_de(getattr(request.user, "sede", "") or "")
+            elif rol == "analista":
+                # Dirección Clínica ve la meta TOTAL de la clínica (ambas sedes
+                # sumadas): su trabajo es el gap global, no el de un local.
+                out["meta"] = _meta_de("")
             else:
                 # Gerencia: una meta POR SEDE (no sumadas), cada una hacia su objetivo.
                 out["metas"] = [_meta_de(s) for s, _ in Paciente.Sede.choices]
@@ -307,7 +320,7 @@ class HoyResumenView(APIView):
         # nadie se entera hasta que un paciente no llega. Esto lo pone a la vista de
         # coordinación, pero solo a media mañana: antes de las 9 es normal que aún no
         # hayan salido y avisar sería ruido.
-        if rol in ("admin", "asistente"):
+        if rol in ("admin", "asistente", "analista"):
             pendientes = (
                 Cita.objects.del_tenant_actual()
                 .filter(inicio__gte=ini, inicio__lt=fin, recordatorio_enviado=False)
@@ -320,12 +333,15 @@ class HoyResumenView(APIView):
                 "avisar": pendientes > 0 and timezone.localtime().hour >= 9,
             }
 
-        if es_admin:
+        if ve_dinero:
             cobros = Cobro.objects.del_tenant_actual().filter(fecha__gte=ini, fecha__lt=fin)
             out["ingresos_hoy"] = float(cobros.filter(estado=Cobro.Estado.PAGADO).aggregate(s=Sum("monto"))["s"] or 0)
             out["pendiente_hoy"] = float(cobros.filter(estado=Cobro.Estado.PENDIENTE).aggregate(s=Sum("monto"))["s"] or 0)
 
-            # Eliminaciones recientes (citas/pagos) — la gerencia se entera.
+        if es_admin:
+            # Eliminaciones recientes (citas/pagos) — solo gerencia: es auditoría
+            # con nombre de paciente y de quién borró. La analista NO la recibe
+            # aunque sí vea el dinero del día (por eso este `if` va aparte).
             from pacientes.models import RegistroEliminacion
             elim_qs = (RegistroEliminacion.objects.del_tenant_actual()
                        .filter(revisado=False,
@@ -392,8 +408,10 @@ class GerenciaResumenView(APIView):
     def get(self, request):
         from usuarios.models import Usuario
 
-        if getattr(request.user, "rol", None) != Usuario.Rol.ADMIN:
-            return Response({"detail": "Solo el gerente (admin) puede ver este panel."},
+        # Gerencia y la analista (Dirección Clínica): son sus indicadores. Es
+        # solo lectura, así que abrirlo no da ningún poder de edición.
+        if getattr(request.user, "rol", None) not in (Usuario.Rol.ADMIN, Usuario.Rol.ANALISTA):
+            return Response({"detail": "Solo gerencia y Dirección Clínica pueden ver este panel."},
                             status=status.HTTP_403_FORBIDDEN)
         if get_clinica_actual() is None:
             return Response({"detail": "Sin clínica en contexto."}, status=status.HTTP_400_BAD_REQUEST)

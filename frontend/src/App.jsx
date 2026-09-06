@@ -737,29 +737,37 @@ export default function ClinicaApp() {
     [basePacientes, filterSede]
   );
 
+  // Rol de solo lectura (Dirección Clínica): ve indicadores y pacientes de ambas
+  // sedes, no escribe nada y no ve contacto de pacientes. El backend es la
+  // seguridad real (core/permisos.py); aquí solo se ocultan menús y botones.
+  const esAnalista = usuario?.rol === "analista";
+  const soloLectura = esAnalista;
+  const ocultaContacto = usuario?.rol === "medico" || esAnalista;
+  const veDinero = usuario?.rol === "admin" || esAnalista;
+
   const nav = [
     { id: "hoy", label: "Hoy", icon: Home },
     // Mentalidad Ítaca: cultura y funciones. La ve todo el equipo.
     { id: "mentalidad", label: "Mentalidad Ítaca", icon: Compass },
-    // El panel de Gerencia lo ve solo el dueño/admin.
-    ...(usuario?.rol === "admin" ? [{ id: "gerencia", label: "Gerencia", icon: BarChart3 }] : []),
-    ...(usuario?.rol === "admin" ? [{ id: "historico", label: "Histórico", icon: Activity }] : []),
-    ...(usuario?.rol === "admin" ? [{ id: "reporte", label: "Reporte", icon: FileText }] : []),
-    ...(usuario?.rol === "admin" ? [{ id: "ocupacion", label: "Ocupación", icon: Clock }] : []),
+    // Indicadores (Gerencia, Histórico, Reporte, Ocupación): gerencia y la analista (lectura).
+    ...((usuario?.rol === "admin" || esAnalista) ? [{ id: "gerencia", label: "Gerencia", icon: BarChart3 }] : []),
+    ...((usuario?.rol === "admin" || esAnalista) ? [{ id: "historico", label: "Histórico", icon: Activity }] : []),
+    ...((usuario?.rol === "admin" || esAnalista) ? [{ id: "reporte", label: "Reporte", icon: FileText }] : []),
+    ...((usuario?.rol === "admin" || esAnalista) ? [{ id: "ocupacion", label: "Ocupación", icon: Clock }] : []),
     // Clínico (Agenda, Pacientes, Profesionales): gerencia, coordinación y psicólogo (no comercial).
     ...(usuario?.rol !== "comercial" ? [{ id: "agenda", label: "Agenda", icon: Calendar }] : []),
     ...(usuario?.rol !== "comercial" ? [{ id: "pacientes", label: "Pacientes", icon: Users }] : []),
     // Profesionales (directorio): gerencia y coordinación; el psicólogo no lo ve.
-    ...((usuario?.rol !== "comercial" && usuario?.rol !== "medico") ? [{ id: "profesionales", label: "Profesionales", icon: BookUser }] : []),
+    ...((usuario?.rol !== "comercial" && usuario?.rol !== "medico" && !esAnalista) ? [{ id: "profesionales", label: "Profesionales", icon: BookUser }] : []),
     // Herramientas (materiales para pacientes + tips): equipo clínico (no comercial).
     // Para el psicólogo reemplaza el acceso a Profesionales.
     ...(usuario?.rol !== "comercial" ? [{ id: "herramientas", label: "Herramientas", icon: FolderOpen }] : []),
-    // Mensajes: gerencia, coordinación y comercial (no psicólogo).
-    ...(usuario?.rol !== "medico" ? [{ id: "mensajes", label: "Mensajes", icon: MessageCircle }] : []),
-    // Marketing / Leads: gerencia, comercial y coordinación (asistente).
-    ...((usuario?.rol === "admin" || usuario?.rol === "comercial" || usuario?.rol === "asistente") ? [{ id: "marketing", label: "Marketing", icon: Megaphone }] : []),
-    // Finanzas: solo gerencia.
-    ...(usuario?.rol === "admin" ? [{ id: "finanzas", label: "Finanzas", icon: TrendingUp }] : []),
+    // Mensajes: gerencia, coordinación y comercial (no psicólogo ni analista: trae teléfonos).
+    ...((usuario?.rol !== "medico" && !esAnalista) ? [{ id: "mensajes", label: "Mensajes", icon: MessageCircle }] : []),
+    // Marketing / Leads: gerencia, comercial, coordinación (asistente) y la analista (solo lectura).
+    ...((usuario?.rol === "admin" || usuario?.rol === "comercial" || usuario?.rol === "asistente" || esAnalista) ? [{ id: "marketing", label: "Marketing", icon: Megaphone }] : []),
+    // Finanzas: gerencia (edita) y la analista (solo lectura).
+    ...((usuario?.rol === "admin" || esAnalista) ? [{ id: "finanzas", label: "Finanzas", icon: TrendingUp }] : []),
     ...(usuario?.rol === "admin" ? [{ id: "liquidacion", label: "Liquidación", icon: Receipt }] : []),
     // Espacios profesionales (alquiler de consultorios): solo gerencia.
     ...(usuario?.rol === "admin" ? [{ id: "espacios", label: "Espacios", icon: Building2 }] : []),
@@ -768,7 +776,8 @@ export default function ClinicaApp() {
     ...(usuario?.rol === "admin" ? [{ id: "whatsapp", label: "Conexión WhatsApp", icon: MessageCircle }] : []),
     ...(usuario?.rol === "admin" ? [{ id: "hojas", label: "Editar (Excel)", icon: Pencil }] : []),
     // El buzón de sugerencias lo ve todo el equipo (dejar sugerencia); gerencia además ve la bandeja.
-    { id: "buzon", label: "Buzón", icon: MessageCircle },
+    // El rol de solo lectura no escribe (tampoco sugerencias), así que no lo ve.
+    ...(esAnalista ? [] : [{ id: "buzon", label: "Buzón", icon: MessageCircle }]),
   ];
 
   const citasHoy = citas.filter((c) => c.fecha === HOY_ISO && c.estado !== "cancelada");
@@ -1540,15 +1549,15 @@ export default function ClinicaApp() {
         {view === "agenda" && (
           <Agenda
             citas={citas} bloqueos={bloqueos} fecha={agendaFecha} setFecha={setAgendaFecha}
-            vista={agendaVista} setVista={setAgendaVista} esAsistente={esAsistente} esMedico={usuario?.rol === "medico"}
+            vista={agendaVista} setVista={setAgendaVista} esAsistente={esAsistente} esMedico={usuario?.rol === "medico"} soloLectura={soloLectura}
             onBloquear={() => setBloqueando({})} onBorrarBloqueo={borrarBloqueo} onVenta={() => setCobrando({})}
             onAgendar={(precarga) => setAdding(precarga && precarga.fecha ? precarga : {})} onAtender={setAtender} onRecordar={setRecordar}
             onReagendar={setReagendar} onCancelar={setCancelando} openFicha={openFicha}
             onConfirmar={confirmarCita} onSetEstado={setEstadoCita} onAbrirCita={setCitaDetalle}
             onMensaje={(c) => { const p = pacientes.find((x) => x.id === c.pacienteId); if (p) { setWaPaciente(p); setWaCita(c); } else showToast("No se encontró el paciente"); }}
             onCobrar={(c) => setCobrando({ pacienteId: c.pacienteId, paciente: c.paciente, citaId: c.id, especialidad: c.especialidad })}
-            onEditarNota={setNotaCita}
-            onSetDecision={usuario?.rol === "medico" ? undefined : setDecisionCita}
+            onEditarNota={soloLectura ? undefined : setNotaCita}
+            onSetDecision={(usuario?.rol === "medico" || soloLectura) ? undefined : setDecisionCita}
             onEliminarCita={(usuario?.rol === "asistente" || usuario?.rol === "admin") ? eliminarCita : undefined}
           />
         )}
@@ -1561,10 +1570,10 @@ export default function ClinicaApp() {
                 <div className="ca-sub">{filtered.length === basePacientes.length ? `${basePacientes.length} en total` : `${filtered.length} de ${basePacientes.length}`}</div>
               </div>
               <div style={{ display: "flex", gap: 9, alignItems: "center" }}>
-                {usuario?.rol !== "medico" && <ExportBtns nombre="pacientes" titulo="Pacientes" disabled={filtered.length === 0}
+                {!ocultaContacto && <ExportBtns nombre="pacientes" titulo="Pacientes" disabled={filtered.length === 0}
                   headers={["Nombre", "Documento", "Numero", "Edad", "Genero", "Telefono", "Direccion", "Especialidad", "Ultima visita", "Proxima sesion", "Pendiente S/"]}
                   filas={filtered.map((p) => [p.nombre, p.tipo_documento_label || "", p.numero_documento || "", p.edad ?? "", p.genero_label || "", p.tel, p.direccion || "", p.especialidad, p.ultima, p.proxima ? `${p.proxima.fecha} ${p.proxima.hora}` : "", p.cuenta?.pendiente || 0])} />}
-                {usuario?.rol !== "medico" && (
+                {usuario?.rol !== "medico" && !soloLectura && (
                   <button className="ca-btn" onClick={() => setEditingPaciente({ new: true })}>
                     <UserPlus size={16} strokeWidth={2.1} /> Nuevo paciente
                   </button>
@@ -1641,7 +1650,7 @@ export default function ClinicaApp() {
             liviana (no trae los campos clínicos) y el formulario guarda todo lo que
             tiene, así que abrirlo con la fila de la lista borraría lo que faltara. */}
         {view === "pacientes" && selected && (
-          <Ficha p={selected} esMedico={usuario?.rol === "medico"} onBack={() => setSelectedId(null)}
+          <Ficha p={selected} esMedico={usuario?.rol === "medico"} soloLectura={soloLectura} ocultaContacto={ocultaContacto} onBack={() => setSelectedId(null)}
             onEdit={() => {
               if (detalle && detalle.id === selectedId) return setEditingPaciente(detalle);
               showToast("Un segundo, terminando de cargar la ficha…");
@@ -1676,14 +1685,14 @@ export default function ClinicaApp() {
 
         {view === "profesionales" && <Profesionales showToast={showToast} esAdmin={usuario?.rol === "admin"} />}
 
-        {view === "herramientas" && <Recursos showToast={showToast} esAdmin={usuario?.rol === "admin"} esMedico={usuario?.rol === "medico"} />}
+        {view === "herramientas" && <Recursos showToast={showToast} esAdmin={usuario?.rol === "admin"} esMedico={usuario?.rol === "medico"} soloLectura={soloLectura} />}
         {view === "mentalidad" && <MentalidadItaca rol={usuario?.rol} esAdmin={usuario?.rol === "admin"} showToast={showToast} />}
 
         {view === "mensajes" && <Mensajes mensajes={mensajes} puedeEditar={usuario?.rol === "admin" || usuario?.rol === "asistente"} showToast={showToast} />}
 
-        {view === "marketing" && <Marketing showToast={showToast} onConvertir={refrescarPacientes} esAdmin={usuario?.rol === "admin"} sedePropia={usuario?.sede || ""} />}
+        {view === "marketing" && <Marketing showToast={showToast} onConvertir={refrescarPacientes} esAdmin={usuario?.rol === "admin"} sedePropia={usuario?.sede || ""} soloLectura={soloLectura} />}
 
-        {view === "finanzas" && <Finanzas showToast={showToast} esAdmin={usuario?.rol === "admin"} />}
+        {view === "finanzas" && <Finanzas showToast={showToast} esAdmin={usuario?.rol === "admin"} puedeVerCaja={veDinero} />}
 
         {view === "liquidacion" && <Liquidacion showToast={showToast} />}
 
@@ -1712,12 +1721,12 @@ export default function ClinicaApp() {
         )}
         {cobrando && <CobroModal prefill={cobrando} pacientes={pacientes} servicios={servicios} onClose={() => setCobrando(null)} onSave={guardarCobro} />}
         {citaDetalle && (
-          <CitaDetalleModal cita={citaDetalle} esMedico={usuario?.rol === "medico"} esAsistente={esAsistente}
+          <CitaDetalleModal cita={citaDetalle} esMedico={usuario?.rol === "medico"} esAsistente={esAsistente} soloLectura={soloLectura}
             onClose={() => setCitaDetalle(null)} onSetEstado={setEstadoCita} openFicha={openFicha}
             onAtender={setAtender} onReagendar={setReagendar} onCancelar={setCancelando}
             onMensaje={(c) => { const p = pacientes.find((x) => x.id === c.pacienteId); if (p) { setWaPaciente(p); setWaCita(c); } else showToast("No se encontró el paciente"); }}
             onCobrar={(c) => setCobrando({ pacienteId: c.pacienteId, paciente: c.paciente, citaId: c.id, especialidad: c.especialidad })}
-            medicos={medicosDir} servicios={servicios} onGuardar={usuario?.rol === "medico" ? undefined : editarCita} />
+            medicos={medicosDir} servicios={servicios} onGuardar={(usuario?.rol === "medico" || soloLectura) ? undefined : editarCita} />
         )}
         {bloqueando && <BloqueoModal fechaInicial={agendaFecha} onClose={() => setBloqueando(null)} onSave={guardarBloqueo} />}
         {cancelando && (
@@ -3392,7 +3401,9 @@ function Hoy({ proximas, citasHoy, porConfirmar, atendidas, onOpen, onGo, onRete
             {r.recordatorios.pendientes} {r.recordatorios.pendientes === 1 ? "cita de hoy sigue" : "citas de hoy siguen"} sin recordatorio
           </span>
           <span style={{ fontSize: 12.5, color: "var(--muted)" }}>
-            Si a esta hora no salieron solos, revisa que el envío automático esté corriendo. Puedes mandarlos a mano desde la agenda, con «Mensaje».
+            {r.solo_lectura
+              ? "Si a esta hora no salieron solos, avisa a coordinación para que revise el envío automático o los mande a mano."
+              : "Si a esta hora no salieron solos, revisa que el envío automático esté corriendo. Puedes mandarlos a mano desde la agenda, con «Mensaje»."}
           </span>
         </div>
       )}
@@ -3450,7 +3461,7 @@ function Hoy({ proximas, citasHoy, porConfirmar, atendidas, onOpen, onGo, onRete
             <div className="ca-gsub">{r ? `nuevos sin contactar · ${r.leads_hoy} hoy` : "cargando…"}</div>
           </button>
         )}
-        {esAdmin ? (
+        {(esAdmin || r?.ve_dinero) ? (
           <button className="ca-gcard" onClick={() => onGo("finanzas")}>
             <div className="ca-ghead"><TrendingUp size={14} strokeWidth={2} /> Ingresos hoy</div>
             <div className="ca-gmain">{r && r.ingresos_hoy != null ? money(r.ingresos_hoy) : "…"}</div>
@@ -4387,7 +4398,7 @@ function CalendarioAsistencia({ citas }) {
   );
 }
 
-function Ficha({ p, onBack, onEdit, onWhatsApp, onSubirAdjunto, onEliminarAdjunto, puedeEliminar, clinica, onAgendar, onRegistrarSesion, puedeRegistrar, onVenderPaquete, puedeVenderPaquete, onRegistrarPago, puedeCobrar, esMedico, showToast, onRefrescar }) {
+function Ficha({ p, onBack, onEdit, onWhatsApp, onSubirAdjunto, onEliminarAdjunto, puedeEliminar, clinica, onAgendar, onRegistrarSesion, puedeRegistrar, onVenderPaquete, puedeVenderPaquete, onRegistrarPago, puedeCobrar, esMedico, soloLectura = false, ocultaContacto = false, showToast, onRefrescar }) {
   const alertas = (p.alertas || "").split(",").map((s) => s.trim()).filter(Boolean);
   const ultimaEvo = (p.historial || [])[0];
   return (
@@ -4413,10 +4424,10 @@ function Ficha({ p, onBack, onEdit, onWhatsApp, onSubirAdjunto, onEliminarAdjunt
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           {/* El psicólogo solo edita la ficha/historia: sin registrar sesión, agendar, WhatsApp ni imprimir. */}
           {puedeRegistrar && !esMedico && <button className="ca-mini" onClick={onRegistrarSesion}><Activity size={13} strokeWidth={2} /> Registrar sesión</button>}
-          {!esMedico && <button className="ca-mini" onClick={onAgendar}><Calendar size={13} strokeWidth={2} /> Agendar</button>}
-          {!esMedico && <button className="ca-mini wa" onClick={onWhatsApp}><MessageCircle size={13} strokeWidth={2} /> WhatsApp</button>}
+          {!esMedico && !soloLectura && <button className="ca-mini" onClick={onAgendar}><Calendar size={13} strokeWidth={2} /> Agendar</button>}
+          {!esMedico && !soloLectura && <button className="ca-mini wa" onClick={onWhatsApp}><MessageCircle size={13} strokeWidth={2} /> WhatsApp</button>}
           {!esMedico && <button className="ca-mini" onClick={() => imprimirHistoria(p, clinica)}><FileText size={13} strokeWidth={2} /> Imprimir</button>}
-          <button className="ca-mini" onClick={onEdit}><Pencil size={13} strokeWidth={2} /> Editar</button>
+          {!soloLectura && <button className="ca-mini" onClick={onEdit}><Pencil size={13} strokeWidth={2} /> Editar</button>}
         </div>
       </div>
 
@@ -4479,7 +4490,7 @@ function Ficha({ p, onBack, onEdit, onWhatsApp, onSubirAdjunto, onEliminarAdjunt
         </FichaCard>
       </div>
 
-      {(!esMedico && (p.numero_documento || p.tel || p.direccion || p.tutor_nombre)) && (
+      {(!ocultaContacto && (p.numero_documento || p.tel || p.direccion || p.tutor_nombre)) && (
         <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 22 }}>
           {p.numero_documento && <div className="ca-field"><FileText size={15} strokeWidth={1.9} style={{ color: "var(--muted)" }} /> {p.tipo_documento_label} {p.numero_documento}</div>}
           {p.tel && <div className="ca-field"><Phone size={15} strokeWidth={1.9} style={{ color: "var(--muted)" }} /> {p.tel}</div>}
@@ -4544,7 +4555,7 @@ function Ficha({ p, onBack, onEdit, onWhatsApp, onSubirAdjunto, onEliminarAdjunt
 
       <RedProfesionalesPaciente pacienteId={p.id} puede={puedeRegistrar} showToast={showToast} />
 
-      <ConsentimientoPaciente pacienteId={p.id} showToast={showToast} />
+      {!soloLectura && <ConsentimientoPaciente pacienteId={p.id} showToast={showToast} />}
 
       {/* Pagos y estado de cuenta: NO para el psicólogo. */}
       {!esMedico && (p.cuenta || puedeCobrar) && (
@@ -4698,7 +4709,7 @@ function Ficha({ p, onBack, onEdit, onWhatsApp, onSubirAdjunto, onEliminarAdjunt
 
       <h2 className="ca-secth" style={{ marginTop: 28 }}>Archivos adjuntos</h2>
       <div className="ca-card">
-        <UploaderAdjunto onSubir={onSubirAdjunto} />
+        {!soloLectura && <UploaderAdjunto onSubir={onSubirAdjunto} />}
         <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 9 }}>Laboratorios, ecografías, PDFs o imágenes. Máx. 25 MB. Descarga protegida (solo personal de la clínica).</div>
         {p.adjuntos === undefined ? (
           <div style={{ color: "var(--muted)", fontSize: 14, marginTop: 14 }}>Cargando archivos…</div>
@@ -5052,7 +5063,7 @@ function NotaCitaModal({ cita, onClose, onSaved, showToast }) {
   );
 }
 
-function CitaRow({ c, esAsistente, esMedico, onAtender, onRecordar, onReagendar, onCancelar, onConfirmar, onCobrar, onSetEstado, onMensaje, openFicha, onEditarNota, onEliminarCita, onSetDecision }) {
+function CitaRow({ c, esAsistente, esMedico, soloLectura = false, onAtender, onRecordar, onReagendar, onCancelar, onConfirmar, onCobrar, onSetEstado, onMensaje, openFicha, onEditarNota, onEliminarCita, onSetDecision }) {
   const activa = c.estado !== "atendida" && c.estado !== "cancelada";
   const col = STATUS[c.estado] || {};
   const cc = colorCita(c);
@@ -5068,7 +5079,7 @@ function CitaRow({ c, esAsistente, esMedico, onAtender, onRecordar, onReagendar,
         </div>
       </div>
       <SpecialtyTag name={c.especialidad} />
-      {esMedico ? (
+      {(esMedico || soloLectura) ? (
         <Tag colors={STATUS[c.estado]}>{c.estado_label}</Tag>
       ) : (
         <select className="ca-input" title="Cambiar estado de la cita"
@@ -5081,23 +5092,24 @@ function CitaRow({ c, esAsistente, esMedico, onAtender, onRecordar, onReagendar,
       <div className="ca-actions">
         {/* Estado (confirmar/asistió/cancelar…) se maneja con el desplegable de arriba.
             Aquí solo acciones que NO son estado: mensaje, atender, cobrar, mover. */}
-        {!esMedico && (
+        {!esMedico && !soloLectura && (
           <button className="ca-mini wa" onClick={() => onMensaje(c)} title="Enviar mensaje (recordatorio y demás plantillas)"><MessageCircle size={13} strokeWidth={2} /> Mensaje{c.recordado ? " ✓" : ""}</button>
         )}
-        {activa && !esAsistente && (
+        {activa && !esAsistente && !soloLectura && (
           <button className="ca-mini" onClick={() => onAtender(c)}><HeartHandshake size={13} strokeWidth={2} /> {esMedico ? "Registrar sesión" : "Atender"}</button>
         )}
         {esMedico && (
           <button className="ca-mini" onClick={() => openFicha(c.pacienteId)} title="Historia clínica"><FileText size={13} strokeWidth={2} /> Historia</button>
         )}
-        {!esMedico && c.estado === "atendida" && (c.cobrada ? (
+        {!esMedico && !soloLectura && c.estado === "atendida" && (c.cobrada ? (
           <span className="ca-mini done"><Check size={13} strokeWidth={2.4} /> Cobrada</span>
         ) : (
           <button className="ca-mini" onClick={() => onCobrar(c)} title="Registrar cobro"><Receipt size={13} strokeWidth={2} /> Cobrar</button>
         ))}
         {/* Qué pasó con la sesión (código DP). Solo coordinación/gerencia; el
             psicólogo no lo ve. Va junto a la nota libre, no la reemplaza. */}
-        {!esMedico && onSetDecision && (
+        {soloLectura && c.decision_label && <span className="ca-mini done" title="Qué pasó con la sesión">{c.decision_label}</span>}
+        {!esMedico && !soloLectura && onSetDecision && (
           <select className="ca-input" title={c.decision_label || "Anotar qué pasó con la sesión"}
             style={{ width: "auto", maxWidth: 190, padding: "5px 9px", fontSize: 12.5, borderRadius: 999, cursor: "pointer" }}
             value={c.decision || ""} onChange={(e) => onSetDecision(c, e.target.value)}>
@@ -5114,7 +5126,7 @@ function CitaRow({ c, esAsistente, esMedico, onAtender, onRecordar, onReagendar,
             <Pencil size={13} strokeWidth={2} /> Nota{c.notas ? " ✓" : ""}
           </button>
         )}
-        {activa && !esMedico && (
+        {activa && !esMedico && !soloLectura && (
           <button className="ca-mini" onClick={() => onReagendar(c)} title="Reagendar (cambiar fecha/hora)"><Calendar size={13} strokeWidth={2} /> Mover</button>
         )}
         {onEliminarCita && (
@@ -5216,7 +5228,7 @@ function TerapeutasGrid({ citas, terapeutas, horarios = {}, fecha, onAbrirCita, 
   );
 }
 
-function Agenda({ citas, bloqueos = [], fecha, setFecha, vista, setVista, esAsistente, esMedico, onAgendar, onBloquear, onBorrarBloqueo, onVenta, onAtender, onRecordar, onReagendar, onCancelar, onConfirmar, onCobrar, onSetEstado, onAbrirCita, onMensaje, openFicha, onEditarNota, onEliminarCita, onSetDecision }) {
+function Agenda({ citas, bloqueos = [], fecha, setFecha, vista, setVista, esAsistente, esMedico, soloLectura = false, onAgendar, onBloquear, onBorrarBloqueo, onVenta, onAtender, onRecordar, onReagendar, onCancelar, onConfirmar, onCobrar, onSetEstado, onAbrirCita, onMensaje, openFicha, onEditarNota, onEliminarCita, onSetDecision }) {
   const [filtroMedico, setFiltroMedico] = useState("");
   const [filtroSede, setFiltroSede] = useState("");
   const [filtroEstado, setFiltroEstado] = useState("");
@@ -5289,9 +5301,9 @@ function Agenda({ citas, bloqueos = [], fecha, setFecha, vista, setVista, esAsis
           {!esMedico && <ExportBtns nombre="agenda" titulo="Agenda" disabled={activas.length === 0}
             headers={["Fecha", "Hora", "Paciente", "Psicologo", "Especialidad", "N° sesion", "Sede", "Modalidad", "Estado", "Que paso"]}
             filas={activas.map((c) => [c.fecha, c.hora, c.paciente, c.medico, c.especialidad, c.n_sesion_efectivo || "", c.sede_label || "", c.modalidad === "virtual" ? "Virtual" : "Presencial", c.estado_label, c.decision_label || ""])} />}
-          {!esMedico && <button className="ca-btn ghost" onClick={onVenta}><Receipt size={15} strokeWidth={2} /> Venta</button>}
-          {!esMedico && <button className="ca-btn ghost" onClick={onBloquear}><Clock size={15} strokeWidth={2} /> Bloquear horario</button>}
-          {!esMedico && <button className="ca-btn" onClick={onAgendar}><Plus size={16} strokeWidth={2.2} /> Agendar sesión</button>}
+          {!esMedico && !soloLectura && <button className="ca-btn ghost" onClick={onVenta}><Receipt size={15} strokeWidth={2} /> Venta</button>}
+          {!esMedico && !soloLectura && <button className="ca-btn ghost" onClick={onBloquear}><Clock size={15} strokeWidth={2} /> Bloquear horario</button>}
+          {!esMedico && !soloLectura && <button className="ca-btn" onClick={onAgendar}><Plus size={16} strokeWidth={2.2} /> Agendar sesión</button>}
         </div>
       </div>
 
@@ -5419,14 +5431,14 @@ function Agenda({ citas, bloqueos = [], fecha, setFecha, vista, setVista, esAsis
               <Clock size={14} strokeWidth={2} />
               <span style={{ fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>{b.hora_inicio}–{b.hora_fin}</span>
               <span style={{ flex: 1 }}>🚫 {b.motivo || "No disponible"}{b.medico_nombre ? ` · ${b.medico_nombre}` : b.sede_label ? ` · ${b.sede_label}` : ""}</span>
-              {!esMedico && <button className="ca-iconbtn" title="Quitar bloqueo" onClick={() => onBorrarBloqueo(b)}><X size={14} strokeWidth={2} /></button>}
+              {!esMedico && !soloLectura && <button className="ca-iconbtn" title="Quitar bloqueo" onClick={() => onBorrarBloqueo(b)}><X size={14} strokeWidth={2} /></button>}
             </div>
           ))}
           {filtEstado(delDia(fecha)).length === 0 ? (
             bloqueosDia.length === 0 && <div className="ca-empty">{filtroEstado ? "No hay citas con ese estado en este día." : "No hay sesiones para este día. Usa «Agendar sesión» para reservar una."}</div>
           ) : (
             filtEstado(delDia(fecha)).map((c) => (
-              <CitaRow key={c.id} c={c} esAsistente={esAsistente} esMedico={esMedico}
+              <CitaRow key={c.id} c={c} esAsistente={esAsistente} esMedico={esMedico} soloLectura={soloLectura}
                 onAtender={onAtender} onRecordar={onRecordar} onReagendar={onReagendar}
                 onCancelar={onCancelar} onConfirmar={onConfirmar} onCobrar={onCobrar}
                 onSetEstado={onSetEstado} onMensaje={onMensaje} openFicha={openFicha} onEditarNota={onEditarNota} onEliminarCita={onEliminarCita}
@@ -5436,7 +5448,7 @@ function Agenda({ citas, bloqueos = [], fecha, setFecha, vista, setVista, esAsis
         </div>
       ) : vista === "terapeutas" ? (
         <TerapeutasGrid citas={filtEstado(delDia(fecha))} terapeutas={filtroMedico ? [filtroMedico] : medicos} horarios={horariosPorNombre} fecha={fecha} onAbrirCita={onAbrirCita} bloqueos={bloqueosDia}
-          onAgendarEn={esMedico ? undefined : (nombre, hora) => onAgendar({ fecha, hora, medicoId: idPorNombre[nombre] })} />
+          onAgendarEn={(esMedico || soloLectura) ? undefined : (nombre, hora) => onAgendar({ fecha, hora, medicoId: idPorNombre[nombre] })} />
       ) : vista === "mes" ? (
         <div className="ca-mes">
           <div className="ca-mes-hd">
@@ -5489,7 +5501,7 @@ function Agenda({ citas, bloqueos = [], fecha, setFecha, vista, setVista, esAsis
                 })
               )}
               {/* Agendar en ese día sin salir de la semana. */}
-              {!esMedico && (
+              {!esMedico && !soloLectura && (
                 <button className="ca-wkadd" title={`Agendar el ${labelLargo(iso)}`}
                   onClick={() => onAgendar({ fecha: iso })}>
                   <Plus size={12} strokeWidth={2.4} /> Agendar
@@ -5503,7 +5515,7 @@ function Agenda({ citas, bloqueos = [], fecha, setFecha, vista, setVista, esAsis
   );
 }
 
-function CitaDetalleModal({ cita, esMedico, esAsistente, onClose, onSetEstado, openFicha, onAtender, onCobrar, onReagendar, onCancelar, onMensaje, onGuardar, medicos = [], servicios = [] }) {
+function CitaDetalleModal({ cita, esMedico, esAsistente, soloLectura = false, onClose, onSetEstado, openFicha, onAtender, onCobrar, onReagendar, onCancelar, onMensaje, onGuardar, medicos = [], servicios = [] }) {
   const [estado, setEstado] = useState(cita.estado);
   // `medico` viene como nombre; para el selector se busca su id en el directorio.
   const [medicoId, setMedicoId] = useState(
@@ -5534,7 +5546,7 @@ function CitaDetalleModal({ cita, esMedico, esAsistente, onClose, onSetEstado, o
           {cita.notas ? <><br /><span style={{ fontStyle: "italic" }}>{cita.notas}</span></> : null}
         </div>
 
-        {!esMedico && (
+        {!esMedico && !soloLectura && (
           <div style={{ margin: "16px 0" }}>
             <div className="ca-label">Estado</div>
             <select className="ca-input" value={ESTADOS_CITA.some((e) => e.v === estado) ? estado : "agendada"}
@@ -5547,7 +5559,7 @@ function CitaDetalleModal({ cita, esMedico, esAsistente, onClose, onSetEstado, o
 
         {/* Reasignar y numerar la sesión sin borrar la cita y volver a crearla
             (pedido de las coordinadoras). Solo coordinación y gerencia. */}
-        {!esMedico && onGuardar && (
+        {!esMedico && !soloLectura && onGuardar && (
           <div style={{ display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap", margin: "4px 0 14px" }}>
             <div style={{ flex: 2, minWidth: 150 }}>
               <div className="ca-label">Psicólogo</div>
@@ -5585,11 +5597,11 @@ function CitaDetalleModal({ cita, esMedico, esAsistente, onClose, onSetEstado, o
 
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }}>
           <button className="ca-mini" onClick={() => { onClose(); openFicha(cita.pacienteId); }}><FileText size={13} strokeWidth={2} /> Ficha / pagos</button>
-          {!esMedico && <button className="ca-mini wa" onClick={() => { onClose(); onMensaje(cita); }}><MessageCircle size={13} strokeWidth={2} /> Mensaje</button>}
-          {activa && !esAsistente && <button className="ca-mini" onClick={() => { onClose(); onAtender(cita); }}><HeartHandshake size={13} strokeWidth={2} /> {esMedico ? "Registrar sesión" : "Atender"}</button>}
-          {!esMedico && <button className="ca-mini" onClick={() => { onClose(); onCobrar(cita); }}><Receipt size={13} strokeWidth={2} /> Cobrar</button>}
-          {activa && !esMedico && <button className="ca-mini" onClick={() => { onClose(); onReagendar(cita); }}><Calendar size={13} strokeWidth={2} /> Mover</button>}
-          {activa && <button className="ca-mini" style={{ color: "#B4564E" }} onClick={() => { onClose(); onCancelar(cita); }}><X size={13} strokeWidth={2} /> Cancelar</button>}
+          {!esMedico && !soloLectura && <button className="ca-mini wa" onClick={() => { onClose(); onMensaje(cita); }}><MessageCircle size={13} strokeWidth={2} /> Mensaje</button>}
+          {activa && !esAsistente && !soloLectura && <button className="ca-mini" onClick={() => { onClose(); onAtender(cita); }}><HeartHandshake size={13} strokeWidth={2} /> {esMedico ? "Registrar sesión" : "Atender"}</button>}
+          {!esMedico && !soloLectura && <button className="ca-mini" onClick={() => { onClose(); onCobrar(cita); }}><Receipt size={13} strokeWidth={2} /> Cobrar</button>}
+          {activa && !esMedico && !soloLectura && <button className="ca-mini" onClick={() => { onClose(); onReagendar(cita); }}><Calendar size={13} strokeWidth={2} /> Mover</button>}
+          {activa && !soloLectura && <button className="ca-mini" style={{ color: "#B4564E" }} onClick={() => { onClose(); onCancelar(cita); }}><X size={13} strokeWidth={2} /> Cancelar</button>}
         </div>
       </div>
     </div>
@@ -6187,7 +6199,7 @@ function waLinkTel(telefono) {
   return `https://wa.me/${d.length === 9 && d.startsWith("9") ? "51" + d : d}`;
 }
 
-function SolicitudesWhatsapp({ leads, onSeguimiento, onEditar, showToast }) {
+function SolicitudesWhatsapp({ leads, onSeguimiento, onEditar, showToast, soloLectura = false }) {
   const [verTodas, setVerTodas] = useState(false);
   const [prueba, setPrueba] = useState({ abierto: false, texto: "", data: null, cargando: false });
   const pendientes = useMemo(
@@ -6221,9 +6233,11 @@ function SolicitudesWhatsapp({ leads, onSeguimiento, onEditar, showToast }) {
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
           {conCita > 0 && <span style={{ ...WA_PILL, background: "#E1F2E8", color: "#2E7D52" }}>📅 {conCita} piden cita</span>}
           {demoradas > 0 && <span style={{ ...WA_PILL, background: "#F7E5E5", color: "#B4564E" }}>⏰ {demoradas} esperan 2+ días</span>}
-          <button className="ca-link" onClick={() => setPrueba((p) => ({ ...p, abierto: !p.abierto }))}>
-            {prueba.abierto ? "Ocultar prueba" : "Probar respuesta automática"}
-          </button>
+          {!soloLectura && (
+            <button className="ca-link" onClick={() => setPrueba((p) => ({ ...p, abierto: !p.abierto }))}>
+              {prueba.abierto ? "Ocultar prueba" : "Probar respuesta automática"}
+            </button>
+          )}
         </div>
       </div>
 
@@ -6299,12 +6313,16 @@ function SolicitudesWhatsapp({ leads, onSeguimiento, onEditar, showToast }) {
                   <MessageCircle size={13} strokeWidth={2} /> Responder
                 </a>
               )}
-              <button className="ca-mini" onClick={() => onSeguimiento(lead)} title="Registrar que ya lo atendiste (sale de esta bandeja)">
-                <Check size={13} strokeWidth={2.2} /> Atendido
-              </button>
-              <button className="ca-iconbtn" title="Editar lead (agendar, asignar psicólogo…)" onClick={() => onEditar(lead)}>
-                <Pencil size={14} strokeWidth={2} />
-              </button>
+              {!soloLectura && (
+                <button className="ca-mini" onClick={() => onSeguimiento(lead)} title="Registrar que ya lo atendiste (sale de esta bandeja)">
+                  <Check size={13} strokeWidth={2.2} /> Atendido
+                </button>
+              )}
+              {!soloLectura && (
+                <button className="ca-iconbtn" title="Editar lead (agendar, asignar psicólogo…)" onClick={() => onEditar(lead)}>
+                  <Pencil size={14} strokeWidth={2} />
+                </button>
+              )}
             </div>
           ))}
           {pendientes.length > visibles.length && (
@@ -6318,7 +6336,7 @@ function SolicitudesWhatsapp({ leads, onSeguimiento, onEditar, showToast }) {
   );
 }
 
-function Marketing({ showToast, onConvertir, esAdmin, sedePropia = "" }) {
+function Marketing({ showToast, onConvertir, esAdmin, sedePropia = "", soloLectura = false }) {
   const [leads, setLeads] = useState([]);
   const [rep, setRep] = useState(null);
   const [medicos, setMedicos] = useState([]);
@@ -6354,8 +6372,12 @@ function Marketing({ showToast, onConvertir, esAdmin, sedePropia = "" }) {
   const origen = window.location.origin;
 
   async function cargar() {
+    // La config de captación (token secreto) no se le entrega al rol de solo
+    // lectura (403): se pide aparte para que un rechazo no vacíe toda la pantalla.
     const [l, r, m, c, an] = await Promise.all([
-      api.leads(), api.reportesLeads(), api.medicos(), api.captacionConfig(), api.anuncios(),
+      api.leads(), api.reportesLeads(), api.medicos(),
+      soloLectura ? Promise.resolve(null) : api.captacionConfig().catch(() => null),
+      api.anuncios(),
     ]);
     setLeads(l); setRep(r); setMedicos(m); setCfg(c); setAnuncios(an);
   }
@@ -6476,13 +6498,15 @@ function Marketing({ showToast, onConvertir, esAdmin, sedePropia = "" }) {
           <ExportBtns nombre="leads" titulo="Captación · Leads" disabled={leads.length === 0}
             headers={["Nombre", "Telefono", "Fuente", "Subfuente", "Pauta", "Campaña", "Especialidad", "Psicologo", "Estado", "Creado"]}
             filas={leads.map((l) => [l.nombre, l.telefono, l.fuente_label, l.subfuente || "", l.es_pauta ? "Si" : "No", l.campania, l.especialidad, l.medico_nombre, l.estado_label, l.creado])} />
-          <button className="ca-btn" onClick={() => setCreando(true)}>
-            <Plus size={16} strokeWidth={2.2} /> Captar lead
-          </button>
+          {!soloLectura && (
+            <button className="ca-btn" onClick={() => setCreando(true)}>
+              <Plus size={16} strokeWidth={2.2} /> Captar lead
+            </button>
+          )}
         </div>
       </div>
 
-      <SolicitudesWhatsapp leads={leads} showToast={showToast}
+      <SolicitudesWhatsapp leads={leads} showToast={showToast} soloLectura={soloLectura}
         onSeguimiento={seguimientoLead} onEditar={setEditandoLead} />
 
       <ReporteCierreMkt showToast={showToast} />
@@ -6539,9 +6563,11 @@ function Marketing({ showToast, onConvertir, esAdmin, sedePropia = "" }) {
               Todo queda arriba, en <strong>Solicitudes por WhatsApp</strong>.
             </div>
             <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center", marginTop: 14 }}>
-              <button className="ca-btn ghost" onClick={probar} style={{ opacity: probando ? 0.6 : 1, pointerEvents: probando ? "none" : "auto" }}>
-                <Plus size={14} strokeWidth={2.2} /> {probando ? "Enviando…" : "Probar con un lead de ejemplo"}
-              </button>
+              {!soloLectura && (
+                <button className="ca-btn ghost" onClick={probar} style={{ opacity: probando ? 0.6 : 1, pointerEvents: probando ? "none" : "auto" }}>
+                  <Plus size={14} strokeWidth={2.2} /> {probando ? "Enviando…" : "Probar con un lead de ejemplo"}
+                </button>
+              )}
               {esAdmin && <button className="ca-link" onClick={regenerar}>Regenerar token</button>}
             </div>
             <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 12, lineHeight: 1.5 }}>
@@ -6640,8 +6666,10 @@ function Marketing({ showToast, onConvertir, esAdmin, sedePropia = "" }) {
 
       <h2 className="ca-secth" style={{ marginTop: 30 }}>Anuncios de pauta ({anuncios.length})</h2>
       <div className="ca-card">
-        <AnuncioForm onSave={anuncioEdit ? editarAnuncio : agregarAnuncio}
-          anuncio={anuncioEdit} onCancelar={() => setAnuncioEdit(null)} />
+        {!soloLectura && (
+          <AnuncioForm onSave={anuncioEdit ? editarAnuncio : agregarAnuncio}
+            anuncio={anuncioEdit} onCancelar={() => setAnuncioEdit(null)} />
+        )}
         {anuncios.length > 0 && (
           <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 9 }}>
             {anuncios.map((a) => (
@@ -6656,14 +6684,18 @@ function Marketing({ showToast, onConvertir, esAdmin, sedePropia = "" }) {
                     {a.link && <a href={a.link} target="_blank" rel="noreferrer" style={{ color: "var(--accent)", fontSize: 12.5, fontWeight: 600, display: "inline-flex", alignItems: "center", gap: 3 }}><ExternalLink size={12} strokeWidth={2} /> ver anuncio</a>}
                   </div>
                 </div>
-                <button className="ca-mini" onClick={() => alternarAnuncio(a)}
-                  title={a.activo ? "Pausar: deja de ofrecerse al registrar leads" : "Volver a ofrecerlo al registrar leads"}>
-                  {a.activo ? "Pausar" : "Activar"}
-                </button>
-                <button className="ca-mini" onClick={() => setAnuncioEdit(a)} title="Editar este anuncio">
-                  <Pencil size={13} strokeWidth={2} /> Editar
-                </button>
-                <button className="ca-iconbtn" title="Eliminar anuncio" onClick={() => quitarAnuncio(a.id)}><Trash2 size={14} strokeWidth={2} /></button>
+                {!soloLectura && (
+                  <button className="ca-mini" onClick={() => alternarAnuncio(a)}
+                    title={a.activo ? "Pausar: deja de ofrecerse al registrar leads" : "Volver a ofrecerlo al registrar leads"}>
+                    {a.activo ? "Pausar" : "Activar"}
+                  </button>
+                )}
+                {!soloLectura && (
+                  <button className="ca-mini" onClick={() => setAnuncioEdit(a)} title="Editar este anuncio">
+                    <Pencil size={13} strokeWidth={2} /> Editar
+                  </button>
+                )}
+                {!soloLectura && <button className="ca-iconbtn" title="Eliminar anuncio" onClick={() => quitarAnuncio(a.id)}><Trash2 size={14} strokeWidth={2} /></button>}
               </div>
             ))}
           </div>
@@ -6730,21 +6762,25 @@ function Marketing({ showToast, onConvertir, esAdmin, sedePropia = "" }) {
                 {lead.sede_label ? `${lead.sede_label} · ` : ""}{lead.fuente_label}{lead.subfuente ? ` › ${lead.subfuente}` : ""}{lead.tipo_servicio_label ? ` · ${lead.tipo_servicio_label}` : ""}{lead.anuncio_nombre ? ` · 📣 ${lead.anuncio_nombre.length > 32 ? lead.anuncio_nombre.slice(0, 32).trim() + "…" : lead.anuncio_nombre}` : ""}{lead.medico_nombre ? ` · ${lead.medico_nombre}` : ""}
               </div>
             </div>
-            <select className="ca-tplsel" value={lead.estado} onChange={(ev) => moverEstado(lead, ev.target.value)}
-              style={{ fontWeight: 600, background: (LEAD_ESTADO_COLOR[lead.estado] || {}).bg, color: (LEAD_ESTADO_COLOR[lead.estado] || {}).fg }}>
-              {LEAD_ESTADOS.map((s) => <option key={s.v} value={s.v}>{s.l}</option>)}
-            </select>
-            {lead.estado !== "ganado" && (
+            {soloLectura ? (
+              <Tag colors={LEAD_ESTADO_COLOR[lead.estado] || {}}>{lead.estado_label}</Tag>
+            ) : (
+              <select className="ca-tplsel" value={lead.estado} onChange={(ev) => moverEstado(lead, ev.target.value)}
+                style={{ fontWeight: 600, background: (LEAD_ESTADO_COLOR[lead.estado] || {}).bg, color: (LEAD_ESTADO_COLOR[lead.estado] || {}).fg }}>
+                {LEAD_ESTADOS.map((s) => <option key={s.v} value={s.v}>{s.l}</option>)}
+              </select>
+            )}
+            {!soloLectura && lead.estado !== "ganado" && (
               <button className="ca-mini wa" title="Registrar seguimiento" onClick={() => seguimientoLead(lead)}><MessageCircle size={13} strokeWidth={2} /> Seguimiento</button>
             )}
-            <button className="ca-iconbtn" title="Editar lead" onClick={() => setEditandoLead(lead)}><Pencil size={14} strokeWidth={2} /></button>
+            {!soloLectura && <button className="ca-iconbtn" title="Editar lead" onClick={() => setEditandoLead(lead)}><Pencil size={14} strokeWidth={2} /></button>}
             {/* "Ya es paciente" lo decide el ESTADO del lead, no el tener ficha:
                 agendar la consulta abre una ficha provisional para colgar la cita,
                 y eso hacia que un lead PERDIDO se mostrara igual como paciente,
                 sin forma de quitarle la etiqueta. Paciente = inicio proceso. */}
             {lead.estado === "ganado" ? (
               <Tag colors={LEAD_ESTADO_COLOR.ganado}>Ya es paciente</Tag>
-            ) : (
+            ) : soloLectura ? null : (
               <button className="ca-mini" onClick={() => convertir(lead)}>
                 <UserPlus size={13} strokeWidth={2} /> Convertir
               </button>
@@ -7245,7 +7281,7 @@ const RECURSO_TABS = [
   { v: "recordatorio", l: "Recordatorios del equipo", icon: Bell, hint: "Avisos de gerencia (capacitación, supervisión, NPS…) que salen en el inicio del equipo.", soloAdmin: true },
 ];
 
-function Recursos({ showToast, esAdmin, esMedico }) {
+function Recursos({ showToast, esAdmin, esMedico, soloLectura = false }) {
   const tabs = RECURSO_TABS.filter((t) => !t.soloAdmin || esAdmin);
   const [tipo, setTipo] = useState("herramienta");
   const [lista, setLista] = useState(null);
@@ -7337,7 +7373,7 @@ function Recursos({ showToast, esAdmin, esMedico }) {
                 {r.descripcion && <div style={{ fontSize: 13, color: "var(--ink-soft)", whiteSpace: "pre-wrap", lineHeight: 1.5 }}>{r.descripcion}</div>}
                 <div style={{ display: "flex", gap: 8, marginTop: "auto", paddingTop: 6, flexWrap: "wrap" }}>
                   {r.link && <a className="ca-mini" href={r.link} target="_blank" rel="noreferrer"><ExternalLink size={13} strokeWidth={2} /> Abrir</a>}
-                  {!esMedico && (tipo === "herramienta" || tipo === "terapeuta") && r.link && <button className="ca-mini" style={{ color: "#1E7E5A" }} onClick={() => setEnviarRec(r)}><Send size={13} strokeWidth={2} /> Enviar por WhatsApp</button>}
+                  {!esMedico && !soloLectura && (tipo === "herramienta" || tipo === "terapeuta") && r.link && <button className="ca-mini" style={{ color: "#1E7E5A" }} onClick={() => setEnviarRec(r)}><Send size={13} strokeWidth={2} /> Enviar por WhatsApp</button>}
                   {esAdmin && <button className="ca-mini" onClick={() => setEditando(r)}><Pencil size={13} strokeWidth={2} /> Editar</button>}
                   {esAdmin && <button className="ca-mini" onClick={() => toggleActivo(r)}>{r.activo ? "Ocultar" : "Mostrar"}</button>}
                   {esAdmin && <button className="ca-mini danger" onClick={() => borrar(r)}><Trash2 size={13} strokeWidth={2} /></button>}
@@ -8954,7 +8990,9 @@ function Liquidacion({ showToast }) {
   );
 }
 
-function Finanzas({ showToast, esAdmin }) {
+function Finanzas({ showToast, esAdmin, puedeVerCaja = false }) {
+  // Caja, egresos y utilidad los VE gerencia y la analista; los EDITA solo gerencia.
+  const veCaja = esAdmin || puedeVerCaja;
   const [periodo, setPeriodo] = useState("mes");
   const [sede, setSede] = useState("");
   const [desde, setDesde] = useState("");
@@ -8976,10 +9014,10 @@ function Finanzas({ showToast, esAdmin }) {
 
   async function cargar() {
     const base = [api.resumenFinanzas(filtro), api.cobros(filtro), api.servicios(), api.pacientes()];
-    const extra = esAdmin ? [api.cajaFinanzas(filtro), api.egresos(filtro)] : [];
+    const extra = veCaja ? [api.cajaFinanzas(filtro), api.egresos(filtro)] : [];
     const [r, c, s, p, cj, eg] = await Promise.all([...base, ...extra]);
     setRes(r); setCobros(c); setServicios(s); setPacientes(p);
-    if (esAdmin) { setCaja(cj); setEgresos(eg); }
+    if (veCaja) { setCaja(cj); setEgresos(eg); }
   }
   useEffect(() => {
     setCargando(true);
@@ -9015,7 +9053,7 @@ function Finanzas({ showToast, esAdmin }) {
             headers={["Fecha", "Paciente", "Concepto", "Monto", "Estado", "Medio"]}
             filas={cobros.map((c) => [c.fecha_label, c.paciente_nombre, c.concepto, c.monto, c.estado_label, c.medio_label])} />
           {esAdmin && <button className="ca-btn ghost" onClick={() => setPrecios(true)}>Precios</button>}
-          <button className="ca-btn" onClick={() => setNuevo({})}><Plus size={16} strokeWidth={2.2} /> Registrar cobro</button>
+          {esAdmin && <button className="ca-btn" onClick={() => setNuevo({})}><Plus size={16} strokeWidth={2.2} /> Registrar cobro</button>}
         </div>
       </div>
 
@@ -9045,7 +9083,7 @@ function Finanzas({ showToast, esAdmin }) {
         <div className="ca-empty">{cargando ? "Cargando…" : "Sin datos."}</div>
       ) : (
         <div style={{ opacity: cargando ? 0.5 : 1, transition: "opacity .15s" }}>
-          {esAdmin && caja && (
+          {veCaja && caja && (
             <>
               <h2 className="ca-secth" style={{ marginTop: 16 }}>Caja del período{caja.sede ? ` · ${caja.sede === "lima" ? "Lima" : "Piura"}` : ""}</h2>
               <div className="ca-stats">
@@ -9068,9 +9106,9 @@ function Finanzas({ showToast, esAdmin }) {
             </>
           )}
 
-          <div className="ca-stats" style={{ marginTop: esAdmin && caja ? 22 : 16 }}>
-            {!(esAdmin && caja) && <StatCard label="Cobrado en el período" valor={money(res.cobrado)} color="#4F8A77" />}
-            {!(esAdmin && caja) && <StatCard label="Pendiente por cobrar" valor={money(res.pendiente)} sub={`${res.n_pendientes} cobros`} color={res.pendiente > 0 ? "#C9923A" : "#7C7870"} />}
+          <div className="ca-stats" style={{ marginTop: veCaja && caja ? 22 : 16 }}>
+            {!(veCaja && caja) && <StatCard label="Cobrado en el período" valor={money(res.cobrado)} color="#4F8A77" />}
+            {!(veCaja && caja) && <StatCard label="Pendiente por cobrar" valor={money(res.pendiente)} sub={`${res.n_pendientes} cobros`} color={res.pendiente > 0 ? "#C9923A" : "#7C7870"} />}
             <StatCard label="Cobros pagados" valor={res.n_cobros} />
             <StatCard label="Ticket promedio" valor={money(res.ticket_promedio)} />
           </div>
@@ -9083,7 +9121,7 @@ function Finanzas({ showToast, esAdmin }) {
             </div>
           )}
 
-          {!(esAdmin && caja) && res.por_dia && res.por_dia.length > 1 && (
+          {!(veCaja && caja) && res.por_dia && res.por_dia.length > 1 && (
             <>
               <h2 className="ca-secth" style={{ marginTop: 26 }}>Ingresos por día</h2>
               <div className="ca-card">
@@ -9092,7 +9130,7 @@ function Finanzas({ showToast, esAdmin }) {
             </>
           )}
 
-          {esAdmin && caja && caja.por_dia && caja.por_dia.length > 1 && (
+          {veCaja && caja && caja.por_dia && caja.por_dia.length > 1 && (
             <>
               <h2 className="ca-secth" style={{ marginTop: 26 }}>Flujo de caja (ingresos vs egresos)</h2>
               <div className="ca-card">
@@ -9102,11 +9140,11 @@ function Finanzas({ showToast, esAdmin }) {
             </>
           )}
 
-          {esAdmin && (
+          {veCaja && (
             <>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 30, marginBottom: 12 }}>
                 <h2 className="ca-secth" style={{ margin: 0 }}>Egresos del período ({egresos.length})</h2>
-                <button className="ca-mini" onClick={() => setNuevoEgreso(true)}><Plus size={13} strokeWidth={2.2} /> Agregar egreso</button>
+                {esAdmin && <button className="ca-mini" onClick={() => setNuevoEgreso(true)}><Plus size={13} strokeWidth={2.2} /> Agregar egreso</button>}
               </div>
               {egresos.length === 0 ? (
                 <div className="ca-empty" style={{ padding: "26px 20px" }}>Aún no hay gastos registrados en este período.</div>
@@ -9120,7 +9158,7 @@ function Finanzas({ showToast, esAdmin }) {
                         <td style={{ fontWeight: 500 }}>{e.concepto}{e.proveedor ? <span style={{ color: "var(--muted)", fontWeight: 400 }}> · {e.proveedor}</span> : ""}</td>
                         <td>{e.categoria_label}</td>
                         <td className="num" style={{ color: "#B4564E" }}>{money(e.monto)}</td>
-                        <td className="num"><button className="ca-iconbtn" title="Eliminar egreso" onClick={() => borrarEgreso(e)}><Trash2 size={14} strokeWidth={2} /></button></td>
+                        <td className="num">{esAdmin && <button className="ca-iconbtn" title="Eliminar egreso" onClick={() => borrarEgreso(e)}><Trash2 size={14} strokeWidth={2} /></button>}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -9177,7 +9215,7 @@ function Finanzas({ showToast, esAdmin }) {
                     <td className="num">{money(c.monto)}</td>
                     <td><Tag colors={ESTADO_COBRO_COLOR[c.estado]}>{c.estado_label}{c.estado === "pagado" && c.medio_label ? ` · ${c.medio_label}` : ""}</Tag></td>
                     <td className="num">
-                      {c.estado === "pendiente" && (
+                      {esAdmin && c.estado === "pendiente" && (
                         <button className="ca-mini" onClick={() => setPagando(c)}><Check size={13} strokeWidth={2.2} /> Marcar pagado</button>
                       )}
                     </td>
@@ -9632,6 +9670,7 @@ const ROLES = [
   { v: "medico", l: "Psicólogo/a" },
   { v: "asistente", l: "Asistente (coordinación)" },
   { v: "comercial", l: "Comercial" },
+  { v: "analista", l: "Analista (Dirección Clínica · solo lectura)" },
   { v: "admin", l: "Administrador (gerencia)" },
 ];
 const ROL_COLOR = {
@@ -9639,6 +9678,7 @@ const ROL_COLOR = {
   medico: { bg: "#E3F0E8", fg: "#2F6B4F" },
   asistente: { bg: "#E2ECF5", fg: "#2E5C86" },
   comercial: { bg: "#F7ECDD", fg: "#9C6B2E" },
+  analista: { bg: "#E6F1F3", fg: "#1F6B78" },
 };
 
 const SEDES = [{ v: "piura", l: "Piura" }, { v: "lima", l: "Lima" }];
@@ -10607,7 +10647,8 @@ function CambiarPasswordModal({ onClose, onSave }) {
 
 const FILTROS_ROL = [
   { v: null, l: "Todos" }, { v: "medico", l: "Psicólogos" },
-  { v: "asistente", l: "Asistentes" }, { v: "admin", l: "Administradores" },
+  { v: "asistente", l: "Asistentes" }, { v: "comercial", l: "Comercial" },
+  { v: "analista", l: "Analistas" }, { v: "admin", l: "Administradores" },
   { v: "inactivos", l: "Inactivos" },
 ];
 
@@ -10669,6 +10710,7 @@ function Equipo({ showToast, miId }) {
           <div><Tag colors={ROL_COLOR.medico}>Psicólogo/a</Tag> <span style={{ marginLeft: 4 }}>Solo lo clínico: su agenda, sus pacientes asignados, historia clínica y sesiones. No ve finanzas ni comercial.</span></div>
           <div><Tag colors={ROL_COLOR.asistente}>Asistente (coordinación)</Tag> <span style={{ marginLeft: 4 }}>Agenda, pacientes y seguimiento clínico + mensajes. No ve marketing ni finanzas.</span></div>
           <div><Tag colors={ROL_COLOR.comercial}>Comercial</Tag> <span style={{ marginLeft: 4 }}>Leads, seguimientos, marketing y conversión + mensajes. No ve datos clínicos ni finanzas.</span></div>
+          <div><Tag colors={ROL_COLOR.analista}>Analista (Dirección Clínica)</Tag> <span style={{ marginLeft: 4 }}>Solo lectura: ve pacientes y alertas de ambas sedes, Gerencia, Ocupación, Finanzas y captación. No edita nada, no envía mensajes y no ve teléfonos ni documentos de pacientes.</span></div>
         </div>
       </div>
 
@@ -10771,7 +10813,7 @@ function UsuarioModal({ usuario, onClose, onSave }) {
           </div>
         </div>
         <div style={{ fontSize: 12, color: "var(--muted)", marginTop: -4, marginBottom: 13 }}>
-          La sede define de qué local ve la información (meta comercial, etc.). «Todas» = ve la clínica completa (gerencia).
+          La sede define de qué local ve la información (meta comercial, etc.). «Todas» = ve la clínica completa (gerencia y analista).
         </div>
         <div style={{ marginBottom: 20 }}>
           <div className="ca-label">{esNuevo ? "Contraseña" : "Nueva contraseña (opcional)"}</div>

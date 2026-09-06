@@ -69,6 +69,28 @@ class ProfesionalSerializer(serializers.ModelSerializer):
     def get_documentos(self, obj):
         return DocumentoLegalSerializer(obj.documentos_legales.all(), many=True).data
 
+    # Datos laborales y legales del psicólogo (DNI, contrato, % de honorarios,
+    # documentos). El rol de solo lectura (Dirección Clínica) no gestiona al
+    # equipo: se le entrega solo la parte pública del directorio. Sin esto, el
+    # `.none()` de DocumentoLegalViewSet se rodeaba por aquí.
+    CAMPOS_LABORALES = (
+        "dni", "fecha_nacimiento", "fecha_ingreso", "contrato_vencimiento",
+        "contrato_ultima_firma", "contrato_estado", "contrato_estado_label",
+        "porcentaje_liquidacion",
+    )
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        from core.permisos import es_solo_lectura
+        req = self.context.get("request")
+        if req is not None and es_solo_lectura(req.user):
+            for k in self.CAMPOS_LABORALES:
+                if k in data:
+                    data[k] = None
+            if "documentos" in data:
+                data["documentos"] = []
+        return data
+
 
 class DocumentoLegalSerializer(serializers.ModelSerializer):
     tipo_label = serializers.CharField(source="get_tipo_display", read_only=True)

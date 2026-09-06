@@ -255,6 +255,12 @@ class DocumentoLegalViewSet(viewsets.ModelViewSet):
             raise PermissionDenied("Solo el gerente (admin) puede gestionar documentos legales.")
 
     def get_queryset(self):
+        from core.permisos import es_solo_lectura
+
+        # Contratos y adendas del equipo: el rol de solo lectura (Dirección
+        # Clínica) no los necesita y no los ve.
+        if es_solo_lectura(self.request.user):
+            return DocumentoLegal.objects.none()
         qs = DocumentoLegal.objects.del_tenant_actual().order_by("-fecha", "-id")
         prof = self.request.query_params.get("profesional")
         if prof:

@@ -263,10 +263,22 @@ class LeadViewSet(viewsets.ModelViewSet):
         # Buscador (por nombre o número), p. ej. para ver si un número ya está registrado.
         q = (self.request.query_params.get("q") or "").strip()
         if q:
-            digitos = "".join(c for c in q if c.isdigit())
-            filtro = Q(nombre__icontains=q) | Q(email__icontains=q)
-            if digitos:
-                filtro |= Q(telefono__icontains=digitos)
+            from core.permisos import es_solo_lectura
+
+            if es_solo_lectura(self.request.user):
+                # A este rol se le enmascaran teléfono y correo: buscar por ellos
+                # sería un oráculo para reconstruirlos dígito a dígito. Y como
+                # los leads de WhatsApp sin nombre de perfil se guardan como
+                # "WhatsApp <número>", una búsqueda con dígitos tampoco puede
+                # tocar el nombre: solo se busca por texto sin números.
+                if any(c.isdigit() for c in q):
+                    return qs.none()
+                filtro = Q(nombre__icontains=q)
+            else:
+                digitos = "".join(c for c in q if c.isdigit())
+                filtro = Q(nombre__icontains=q) | Q(email__icontains=q)
+                if digitos:
+                    filtro |= Q(telefono__icontains=digitos)
             qs = qs.filter(filtro)
         return qs
 

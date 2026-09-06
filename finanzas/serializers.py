@@ -11,6 +11,17 @@ class ServicioSerializer(serializers.ModelSerializer):
         model = Servicio
         fields = ["id", "nombre", "especialidad", "precio", "monto_terapeuta", "activo", "reservable_web"]
 
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        # `monto_terapeuta` es lo que se le paga al psicólogo por sesión: con
+        # él y la ocupación se reconstruye la liquidación de honorarios, que el
+        # rol de solo lectura no debe ver. El catálogo que necesita es el precio.
+        from core.permisos import es_solo_lectura
+        req = self.context.get("request")
+        if req is not None and es_solo_lectura(req.user):
+            data["monto_terapeuta"] = None
+        return data
+
 
 class PaqueteSerializer(serializers.ModelSerializer):
     paciente_nombre = serializers.CharField(source="paciente.nombre", read_only=True)
