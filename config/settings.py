@@ -169,6 +169,8 @@ REST_FRAMEWORK = {
     ],
     "DEFAULT_PERMISSION_CLASSES": [
         "rest_framework.permissions.IsAuthenticated",
+        # El rol de solo lectura (analista) no puede escribir en ningún endpoint.
+        "core.permisos.BloqueoEscrituraAnalista",
     ],
     # Límite de los endpoints públicos de captación (anti-abuso). Solo aplica a las
     # vistas que declaran throttle_scope="captacion".

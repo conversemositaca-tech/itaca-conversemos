@@ -53,6 +53,25 @@ class LeadSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ["paciente", "cita", "auto_respondido_en"]
 
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        # El rol de solo lectura (analista) ve el embudo de captación pero no el
+        # contacto del lead: mismo criterio que con los pacientes. Solo ese rol:
+        # el psicólogo no entra a captación, y cambiarle los datos sería un
+        # efecto colateral que nadie pidió.
+        import re
+        from core.permisos import es_solo_lectura
+        req = self.context.get("request")
+        if req is not None and es_solo_lectura(req.user):
+            for k in ("telefono", "email", "ubicacion"):
+                if k in data:
+                    data[k] = ""
+            # Los leads que entran por WhatsApp sin nombre de perfil se guardan
+            # como "WhatsApp <número>": el teléfono se colaba por el nombre.
+            if re.match(r"^WhatsApp\s+\d{6,}$", data.get("nombre") or ""):
+                data["nombre"] = "Lead de WhatsApp"
+        return data
+
     def get_fuente_label(self, obj):
         # Si el origen es Otro/Convenio/Alianza y se especificó, muestra ese texto.
         if obj.fuente in (Lead.Fuente.OTRO, Lead.Fuente.CONVENIO, Lead.Fuente.ALIANZA) and obj.fuente_otro:
