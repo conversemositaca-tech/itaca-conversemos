@@ -20,7 +20,7 @@ from django.utils import timezone
 
 from core.models import Clinica
 from pacientes.models import Cita, Paciente, Tarea
-from usuarios.models import Usuario
+from usuarios.models import Profesional, Usuario
 
 
 class AgendarCitaTests(TestCase):
@@ -391,3 +391,65 @@ class EliminarPacienteTests(TestCase):
         self.assertEqual(reg.tipo, RegistroEliminacion.Tipo.PACIENTE)
         self.assertEqual(reg.paciente_nombre, "Ana Pérez")
         self.assertEqual(reg.usuario, self.admin)
+
+
+class SincronizarProfesionalAlReasignarCitaTests(TestCase):
+    """Al reasignar una cita a otro psicólogo (p. ej. para cubrir una ausencia),
+    el paciente debe pasar a figurar a su cargo (Paciente.profesional). Antes
+    no se tocaba ese campo: el paciente seguía apareciendo bajo el psicólogo
+    anterior y desaparecía del filtro por psicólogo de quien en la práctica lo
+    estaba atendiendo (caso real reportado: "Ángelo" psicólogo, no le
+    aparecía uno de sus pacientes al filtrar)."""
+
+    def setUp(self):
+        self.clinica = Clinica.objects.create(nombre="Conversemos", slug="conversemos-sync-prof")
+        self.coord = Usuario.objects.create_user(
+            email="coordsp@test.pe", password="x", clinica=self.clinica, rol=Usuario.Rol.ASISTENTE,
+        )
+        self.usuario_titular = Usuario.objects.create_user(
+            email="titular@test.pe", password="x", clinica=self.clinica, rol=Usuario.Rol.MEDICO,
+        )
+        self.usuario_cobertura = Usuario.objects.create_user(
+            email="cobertura@test.pe", password="x", clinica=self.clinica, rol=Usuario.Rol.MEDICO,
+        )
+        self.ficha_titular = Profesional.objects.create(
+            clinica=self.clinica, nombre="Titular", usuario=self.usuario_titular,
+        )
+        self.ficha_cobertura = Profesional.objects.create(
+            clinica=self.clinica, nombre="Ángelo Villa", usuario=self.usuario_cobertura,
+        )
+        self.paciente = Paciente.objects.create(
+            clinica=self.clinica, nombre="Paciente cubierto", profesional=self.ficha_titular,
+        )
+        self.cita = Cita.objects.create(
+            clinica=self.clinica, paciente=self.paciente, medico=self.usuario_titular,
+            inicio=timezone.now() + timedelta(days=1), estado=Cita.Estado.AGENDADA,
+        )
+        self.client.force_login(self.coord)
+
+    def _reasignar(self):
+        return self.client.patch(
+            f"/api/citas/{self.cita.id}/", {"medicoId": self.usuario_cobertura.id},
+            content_type="application/json",
+        )
+
+    def test_reasignar_la_cita_actualiza_el_profesional_a_cargo(self):
+        r = self._reasignar()
+        self.assertEqual(r.status_code, 200)
+        self.paciente.refresh_from_db()
+        self.assertEqual(self.paciente.profesional_id, self.ficha_cobertura.id)
+
+    def test_el_paciente_aparece_al_filtrar_por_el_nuevo_profesional(self):
+        self._reasignar()
+        r = self.client.get("/api/pacientes/", {"profesional": self.ficha_cobertura.id})
+        self.assertEqual(r.status_code, 200)
+        self.assertIn("Paciente cubierto", [p["nombre"] for p in r.json()])
+
+    def test_sin_reasignar_el_profesional_no_cambia(self):
+        r = self.client.patch(
+            f"/api/citas/{self.cita.id}/", {"notas": "sin cambio de psicólogo"},
+            content_type="application/json",
+        )
+        self.assertEqual(r.status_code, 200)
+        self.paciente.refresh_from_db()
+        self.assertEqual(self.paciente.profesional_id, self.ficha_titular.id)

@@ -443,6 +443,18 @@ class CitaViewSet(viewsets.ModelViewSet):
             if choque and not self.request.data.get("forzar"):
                 raise ChoqueDeHorario(_detalle_choque(nuevo, choque))
         serializer.save()
+        # Reasignar la cita a otro psicólogo (p. ej. para cubrir una ausencia)
+        # dejaba a la ficha del paciente apuntando al psicólogo anterior en
+        # Paciente.profesional —el campo que usa el filtro por psicólogo de la
+        # pantalla Pacientes—, aunque ya no fuera quien lo atendía: el paciente
+        # "desaparecía" del filtro de quien en la práctica lo estaba viendo.
+        # Se sincroniza con quien quedó a cargo de esta cita.
+        if nuevo:
+            ficha_nueva = getattr(nuevo, "ficha", None)
+            paciente = serializer.instance.paciente
+            if ficha_nueva and paciente.profesional_id != ficha_nueva.id:
+                paciente.profesional = ficha_nueva
+                paciente.save(update_fields=["profesional"])
 
     def destroy(self, request, *args, **kwargs):
         """Elimina una cita (coordinación/admin) y deja constancia para gerencia."""
