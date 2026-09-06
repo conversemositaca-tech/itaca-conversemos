@@ -59,6 +59,21 @@ class ConsentimientoSerializer(serializers.ModelSerializer):
     def get_registrado_por_nombre(self, obj):
         return str(obj.registrado_por) if obj.registrado_por_id else ""
 
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        # Mismo criterio que la ficha del paciente: los roles que no ven contacto
+        # (psicólogo, analista) tampoco ven aquí el documento del firmante — si
+        # no, este endpoint era la vía alterna para leerlo. El `token`/`url` es
+        # la credencial de firma: con él el endpoint público devuelve el
+        # documento en claro, así que tampoco viaja para estos roles.
+        from core.permisos import oculta_contacto
+        req = self.context.get("request")
+        if req is not None and oculta_contacto(req.user):
+            for k in ("firmante_documento", "token", "url"):
+                if k in data:
+                    data[k] = ""
+        return data
+
 
 class ConsentimientoViewSet(viewsets.ModelViewSet):
     """Genera/lista consentimientos de la clínica activa. ?paciente=<id> filtra.
@@ -68,6 +83,14 @@ class ConsentimientoViewSet(viewsets.ModelViewSet):
     serializer_class = ConsentimientoSerializer
 
     def get_queryset(self):
+        from core.permisos import es_solo_lectura
+
+        # El rol de solo lectura no gestiona consentimientos. Además, cada fila
+        # trae el `token` de firma: con él se lee el documento del paciente por
+        # el endpoint público y hasta se puede aceptar el consentimiento en su
+        # nombre. No se le entrega ninguno.
+        if es_solo_lectura(self.request.user):
+            return Consentimiento.objects.none()
         qs = Consentimiento.objects.del_tenant_actual().select_related("paciente").order_by("-creado_en")
         pid = self.request.query_params.get("paciente")
         if pid:

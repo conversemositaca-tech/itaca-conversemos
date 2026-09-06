@@ -14,6 +14,12 @@ class MensajeViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
     serializer_class = MensajeSerializer
 
     def get_queryset(self):
+        from core.permisos import es_solo_lectura
+
+        # La bitácora trae el teléfono del paciente en claro: el rol de solo
+        # lectura (que no ve contacto de pacientes) no la recibe.
+        if es_solo_lectura(self.request.user):
+            return Mensaje.objects.none()
         return (
             Mensaje.objects.del_tenant_actual()
             .select_related("paciente", "enviado_por")

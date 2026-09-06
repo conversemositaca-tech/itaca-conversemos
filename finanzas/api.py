@@ -10,7 +10,10 @@ from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from rest_framework.permissions import SAFE_METHODS
+
 from core import soto
+from core.permisos import ve_finanzas
 from core.tenant import get_clinica_actual
 from pacientes.models import Atencion, Cita, Paciente
 
@@ -318,7 +321,12 @@ class EgresoViewSet(viewsets.ModelViewSet):
 
     def initial(self, request, *args, **kwargs):
         super().initial(request, *args, **kwargs)
-        if not _es_admin(request.user):
+        # Leerlos: gerencia y la analista (los egresos son uno de sus
+        # indicadores). Registrarlos, editarlos o borrarlos: solo gerencia.
+        if request.method in SAFE_METHODS:
+            if not ve_finanzas(request.user):
+                raise PermissionDenied("Solo gerencia y Dirección Clínica pueden ver los egresos.")
+        elif not _es_admin(request.user):
             raise PermissionDenied("Solo el gerente (admin) puede gestionar los egresos.")
 
     def get_queryset(self):
@@ -359,8 +367,8 @@ class CajaView(APIView):
     """GET /api/finanzas/caja/?periodo= — Ingresos - Egresos = Utilidad (solo admin)."""
 
     def get(self, request):
-        if not _es_admin(request.user):
-            return Response({"detail": "Solo el gerente (admin) puede ver la caja."}, status=status.HTTP_403_FORBIDDEN)
+        if not ve_finanzas(request.user):
+            return Response({"detail": "Solo gerencia y Dirección Clínica pueden ver la caja."}, status=status.HTTP_403_FORBIDDEN)
         if get_clinica_actual() is None:
             return Response({"detail": "Sin clínica en contexto."}, status=status.HTTP_400_BAD_REQUEST)
 

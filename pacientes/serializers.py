@@ -6,6 +6,7 @@ from django.utils import timezone
 from rest_framework import serializers
 
 from core import continuidad
+from core.permisos import oculta_contacto
 from core.utils import fecha_corta
 
 from usuarios.models import Usuario
@@ -122,12 +123,14 @@ class PacienteSerializer(serializers.ModelSerializer):
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
-        # El psicólogo NO ve los datos de contacto del paciente (correo, teléfono,
-        # dirección, documento) ni el contacto del tutor: solo lo clínico y su
-        # estado. Privacidad (Ley 29733). El nombre/parentesco del tutor sí queda
-        # (es contexto clínico), pero su teléfono y documento no.
+        # El psicólogo y la analista NO ven los datos de contacto del paciente
+        # (correo, teléfono, dirección, documento) ni el contacto del tutor: solo
+        # lo clínico y su estado. Privacidad (Ley 29733); la analista además
+        # nunca contacta pacientes (todo pasa por coordinación). El nombre y
+        # parentesco del tutor sí quedan (es contexto clínico), pero su teléfono
+        # y documento no. Lista de roles en core/permisos.py.
         req = self.context.get("request")
-        if req is not None and getattr(req.user, "rol", None) == "medico":
+        if req is not None and oculta_contacto(req.user):
             for k in ("tel", "email", "direccion", "numero_documento",
                       "tutor_telefono", "tutor_documento"):
                 if k in data:

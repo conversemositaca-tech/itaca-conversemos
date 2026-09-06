@@ -91,6 +91,13 @@ class CaptacionConfigView(APIView):
     """Devuelve el token y las rutas para conectar la web / Evolution."""
 
     def get(self, request):
+        from core.permisos import es_solo_lectura
+
+        # Es un GET pero entrega el token secreto de captación (y lo crea si no
+        # existía). El rol de solo lectura no tiene por qué verlo.
+        if es_solo_lectura(request.user):
+            return Response({"detail": "Tu perfil no tiene acceso a la configuración de captación."},
+                            status=status.HTTP_403_FORBIDDEN)
         clinica = get_clinica_actual()
         if clinica is None:
             return Response({"detail": "Sin clínica en contexto."}, status=status.HTTP_400_BAD_REQUEST)
