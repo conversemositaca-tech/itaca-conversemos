@@ -53,6 +53,9 @@ const deltaTxt = (cur, prev) => {
   return `${d > 0 ? "▲" : "▼"} ${Math.abs(d)}% vs anterior`;
 };
 const fmtValor = (v, fmt) => (fmt === "soles" ? soles(v) : Number(v || 0).toLocaleString("es-PE"));
+// Pie de página / cinta inferior: los listados no tienen sede, así que no debe
+// quedar un " · " colgando.
+const pieDoc = (m) => [m.clinica, m.titulo, m.sedeLbl].filter(Boolean).join(" · ");
 const pctDe = (v, total) => (total ? Math.round((v / total) * 100) : 0);
 
 // ---------------------------------------------------------------------------
@@ -203,6 +206,44 @@ export function modeloReporte(data, opts = {}) {
 }
 
 // ---------------------------------------------------------------------------
+// Modelo de LISTADO: cualquier tabla del sistema (Pacientes, Agenda, Leads,
+// Liquidación, Ocupación…) con el mismo formato de reporte que Gerencia. Es el
+// que usa el botón "Exportar" de esas pantallas; Word/PowerPoint/PDF/CSV ya
+// trabajan sobre el modelo, así que solo hace falta armarlo bien.
+// ---------------------------------------------------------------------------
+// Columnas que NO se suman aunque sean números: edades, porcentajes, promedios,
+// precios unitarios, años/meses y códigos. Sumar "Edad" o "% Ocupación" da un
+// número sin sentido, así que la fila de totales las deja en blanco.
+const NO_SUMABLE = /edad|%|porcentaje|tasa|promedio|conversi[oó]n|cac|costo|precio|pago x|x sesi[oó]n|a[ñn]o|mes$|n[°º]|numero|n[uú]mero|documento|dni|colegiatura|hora(?!s)/i;
+
+export function modeloTabla({
+  titulo, columnas = [], filas = [], clinica = "Itaca Conversemos",
+  contexto = "", kpis = [], notas = [], numericas, fmts, sumar, seccion,
+}) {
+  // Una columna es numérica si TODOS sus valores presentes son números (así una
+  // columna de texto con algún número suelto no se suma ni se alinea a la derecha).
+  const nums = numericas || columnas.map((_, i) => i).filter(
+    (i) => i > 0
+      && filas.some((f) => typeof f[i] === "number")
+      && filas.every((f) => f[i] == null || f[i] === "" || typeof f[i] === "number"),
+  );
+  // Las columnas de dinero se muestran como soles en Excel (el resto, enteros).
+  const fmt = fmts || columnas.map((c, i) => (nums.includes(i) && /monto|pendiente|cobrad|pagad|precio|honorar|ingreso|egreso|utilidad|invertido|subtotal|s\/|soles/i.test(String(c)) ? "soles" : null));
+  const tot = sumar || nums.filter((i) => !NO_SUMABLE.test(String(columnas[i] || "")));
+  const n = filas.length;
+  return {
+    titulo,
+    subtitulo: [clinica, contexto, `${n} ${n === 1 ? "registro" : "registros"}`].filter(Boolean).join(" · "),
+    clinica, sedeLbl: contexto || "", periodo: null, sede: "", generadoEn: ahora(),
+    secciones: [{
+      id: "datos", titulo: seccion || titulo, kpis, series: [],
+      tablas: [{ id: "datos", titulo: "", columnas, numericas: nums, sumar: tot, fmts: fmt, filas }],
+      notas,
+    }],
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Descarga (solo navegador)
 // ---------------------------------------------------------------------------
 function descargarBlob(nombre, blob) {
@@ -212,17 +253,31 @@ function descargarBlob(nombre, blob) {
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1500);
 }
+const hoyISO = () => new Date().toISOString().slice(0, 10);
 const nombreArchivo = (modelo, base, ext) => {
   const sede = modelo.sede ? "_" + modelo.sede : "";
-  return `${base || "gerencia"}_${modelo.periodo.clave}${sede}_${modelo.periodo.hasta}.${ext}`;
+  // Los reportes de período llevan su clave y su fecha de corte; los listados
+  // (Pacientes, Agenda, Leads…) no tienen período: van con la fecha del día.
+  const p = modelo.periodo;
+  const cola = p ? `_${p.clave}${sede}_${p.hasta}` : `${sede}_${hoyISO()}`;
+  return `${(base || "reporte").replace(/\.(csv|xlsx?|pdf|docx|pptx)$/i, "")}${cola}.${ext}`;
 };
 
 // ---------------------------------------------------------------------------
 // CSV (datos crudos)
 // ---------------------------------------------------------------------------
 export function construirCSV(modelo) {
-  const filas = [["Sección", "Indicador", "Valor"]];
-  modelo.secciones.forEach((s) => s.kpis.forEach((k) => filas.push([s.titulo, k.label, k.num != null ? k.num : k.valor])));
+  const filas = [];
+  const kpis = modelo.secciones.flatMap((s) => s.kpis.map((k) => [s.titulo, k.label, k.num != null ? k.num : k.valor]));
+  if (kpis.length) filas.push(["Sección", "Indicador", "Valor"], ...kpis);
+  // Además de los indicadores, las tablas completas: en los listados (Pacientes,
+  // Agenda, Leads…) la tabla ES el dato que se quiere analizar aparte.
+  modelo.secciones.forEach((s) => s.tablas.forEach((t) => {
+    if (!t.columnas || !t.columnas.length) return;
+    if (filas.length) filas.push([]);
+    if (t.titulo || modelo.secciones.length > 1) filas.push([t.titulo || s.titulo]);
+    filas.push(t.columnas, ...t.filas);
+  }));
   const esc = (c) => `"${String(c ?? "").replace(/"/g, '""')}"`;
   return "﻿" + filas.map((r) => r.map(esc).join(",")).join("\r\n");
 }
@@ -236,7 +291,10 @@ export function exportarCSV(modelo, base) {
 // ---------------------------------------------------------------------------
 const FMT = { pct: "0%", soles: '"S/ "#,##0', int: "#,##0" };
 
-export async function construirExcel(modelo, opts = {}) {
+// Libro con la identidad de la marca y los ayudantes de escritura. Lo comparten
+// el Excel de Gerencia (hecho a mano, con fórmulas por sección) y el genérico
+// de cualquier listado del sistema.
+async function crearLibro(modelo, opts = {}) {
   const m = await import("exceljs");
   const ExcelJS = m.default || m;
   const logos = await cargarLogos(opts);
@@ -244,9 +302,6 @@ export async function construirExcel(modelo, opts = {}) {
   wb.creator = modelo.clinica;
   wb.created = new Date();
   wb.calcProperties.fullCalcOnLoad = true;
-  const d = modelo.raw;
-  const op = d.operacion || {}, cap = d.captacion || {}, pac = d.pacientes || {}, fin = d.finanzas || {};
-  const dg = d.diagnostico, ret = d.retencion, demo = d.demografia;
 
   const argb = (h) => "FF" + hex(h).toUpperCase();
   const F = MARCA.fuente;
@@ -297,29 +352,93 @@ export async function construirExcel(modelo, opts = {}) {
   const pctF = (num, den, v) => ({ f: `IF(${den}=0,0,${num}/${den})`, v: v ?? 0, fmt: "pct" });
   const sumF = (col, a, b, v) => ({ f: `SUM(${col}${a}:${col}${b})`, v: v ?? 0 });
 
-  // --- Resumen ---
-  {
-    const ws = hoja("Resumen", modelo.titulo);
-    ws.columns = [{ width: 22 }, { width: 58 }, { width: 14 }, { width: 22 }];
-    if (logos && logos.h) {
-      const id = wb.addImage({ base64: logos.h.b64, extension: "png" });
-      ws.addImage(id, { tl: { col: 3, row: 0 }, ext: { width: 120, height: 43 } });
-    }
-    let r = cabecera(ws, 4, ["Sección", "Indicador", "Valor"]);
-    modelo.secciones.forEach((s) => s.kpis.forEach((k) => {
-      const c1 = ws.getRow(r).getCell(1), c2 = ws.getRow(r).getCell(2), c3 = ws.getRow(r).getCell(3);
-      c1.value = s.titulo.replace(/\s*\(.*\)$/, ""); c1.font = { name: F, size: 10, color: { argb: argb(MARCA.gris) } };
-      c2.value = k.label + (k.sub ? ` (${k.sub})` : ""); c2.font = { name: F, size: 10, color: { argb: argb(MARCA.negro) } };
-      c3.value = k.num != null ? k.num : k.valor;
-      if (k.num != null) c3.numFmt = FMT[k.fmt] || FMT.int;
-      c3.font = { name: F, size: 10, bold: true, color: { argb: argb(MARCA.negro) } };
-      c3.alignment = { horizontal: "right" };
-      [c1, c2, c3].forEach((c) => { c.border = { bottom: { style: "hair", color: { argb: argb(MARCA.linea) } } }; });
-      r += 1;
-    }));
-    // El logo (columna D) entra en la impresión y la hoja cabe a lo ancho en una página.
-    ws.pageSetup = { printArea: `A1:D${r}`, orientation: "portrait", fitToPage: true, fitToWidth: 1, fitToHeight: 0 };
+  return { wb, logos, argb, F, hoja, cabecera, fila, pctF, sumF };
+}
+
+// Hoja de indicadores (la misma en Gerencia y en los listados que traen KPIs).
+function hojaResumen(modelo, L) {
+  const { wb, logos, argb, F, hoja, cabecera } = L;
+  const ws = hoja("Resumen", modelo.titulo);
+  ws.columns = [{ width: 22 }, { width: 58 }, { width: 14 }, { width: 22 }];
+  if (logos && logos.h) {
+    const id = wb.addImage({ base64: logos.h.b64, extension: "png" });
+    ws.addImage(id, { tl: { col: 3, row: 0 }, ext: { width: 120, height: 43 } });
   }
+  let r = cabecera(ws, 4, ["Sección", "Indicador", "Valor"]);
+  modelo.secciones.forEach((s) => s.kpis.forEach((k) => {
+    const c1 = ws.getRow(r).getCell(1), c2 = ws.getRow(r).getCell(2), c3 = ws.getRow(r).getCell(3);
+    c1.value = s.titulo.replace(/\s*\(.*\)$/, ""); c1.font = { name: F, size: 10, color: { argb: argb(MARCA.gris) } };
+    c2.value = k.label + (k.sub ? ` (${k.sub})` : ""); c2.font = { name: F, size: 10, color: { argb: argb(MARCA.negro) } };
+    c3.value = k.num != null ? k.num : k.valor;
+    if (k.num != null) c3.numFmt = FMT[k.fmt] || FMT.int;
+    c3.font = { name: F, size: 10, bold: true, color: { argb: argb(MARCA.negro) } };
+    c3.alignment = { horizontal: "right" };
+    [c1, c2, c3].forEach((c) => { c.border = { bottom: { style: "hair", color: { argb: argb(MARCA.linea) } } }; });
+    r += 1;
+  }));
+  // El logo (columna D) entra en la impresión y la hoja cabe a lo ancho en una página.
+  ws.pageSetup = { printArea: `A1:D${r}`, orientation: "portrait", fitToPage: true, fitToWidth: 1, fitToHeight: 0 };
+  return ws;
+}
+
+// Excel de cualquier listado: una hoja por tabla, con filtro, fila de totales
+// (fórmula SUM real) y la misma identidad. No sabe nada de Gerencia.
+const LETRA = (i) => String.fromCharCode(65 + i);
+function nombreHoja(txt, usados) {
+  let base = String(txt || "Datos").replace(/[[\]:*?/\\]/g, " ").trim().slice(0, 28) || "Datos";
+  let n = base, i = 2;
+  while (usados.has(n)) { n = `${base.slice(0, 26)} ${i}`; i += 1; }
+  usados.add(n);
+  return n;
+}
+function excelTablas(modelo, L) {
+  const { hoja, cabecera, fila, sumF } = L;
+  if (modelo.secciones.some((s) => s.kpis.length)) hojaResumen(modelo, L);
+  const usados = new Set(["Resumen"]);
+  modelo.secciones.forEach((s) => s.tablas.forEach((t) => {
+    if (!t.columnas || !t.columnas.length) return;
+    const titulo = t.titulo || s.titulo || modelo.titulo;
+    const ws = hoja(nombreHoja(titulo, usados), titulo);
+    ws.columns = t.columnas.map((c, i) => ({ width: i === 0 ? 34 : Math.max(12, Math.min(30, String(c).length + 6)) }));
+    const fmts = t.fmts || [];
+    let r = cabecera(ws, 4, t.columnas);
+    const ini = r;
+    t.filas.forEach((f) => { r = fila(ws, r, f, { fmts }); });
+    // Totales solo de las columnas que de verdad se suman (no edades ni %).
+    const sumables = t.sumar || t.numericas || [];
+    if (t.filas.length > 1 && sumables.length) {
+      const celdas = t.columnas.map((_, i) => {
+        if (i === 0) return "Total";
+        if (!sumables.includes(i)) return "";
+        const suma = t.filas.reduce((a, f) => a + (typeof f[i] === "number" ? f[i] : 0), 0);
+        return { ...sumF(LETRA(i), ini, r - 1, suma), fmt: fmts[i] };
+      });
+      r = fila(ws, r, celdas, { bold: true, linea: true });
+    }
+    if (t.filas.length) ws.autoFilter = { from: { row: 4, column: 1 }, to: { row: 4, column: t.columnas.length } };
+    ws.views = [{ showGridLines: false, state: "frozen", ySplit: 4 }];
+    ws.pageSetup = { orientation: t.columnas.length > 5 ? "landscape" : "portrait", fitToPage: true, fitToWidth: 1, fitToHeight: 0 };
+    s.notas.forEach((n, i) => { ws.getCell(`A${r + 1 + i}`).value = n; });
+  }));
+}
+
+export async function construirExcel(modelo, opts = {}) {
+  const L = await crearLibro(modelo, opts);
+  // Gerencia trae `raw` (la respuesta cruda del panel) y se escribe a mano, con
+  // fórmulas por sección; cualquier otro modelo se arma desde sus tablas.
+  if (modelo.raw) excelGerencia(modelo, L);
+  else excelTablas(modelo, L);
+  return await L.wb.xlsx.writeBuffer();
+}
+
+function excelGerencia(modelo, L) {
+  const { hoja, cabecera, fila, pctF, sumF } = L;
+  const d = modelo.raw;
+  const op = d.operacion || {}, cap = d.captacion || {}, pac = d.pacientes || {}, fin = d.finanzas || {};
+  const dg = d.diagnostico, ret = d.retencion, demo = d.demografia;
+
+  // --- Resumen ---
+  hojaResumen(modelo, L);
   // --- Operación ---
   {
     const ws = hoja("Operación", "Operación");
@@ -455,7 +574,6 @@ export async function construirExcel(modelo, opts = {}) {
       fila(ws, r, ["Sin actividad en el período."]);
     }
   }
-  return await wb.xlsx.writeBuffer();
 }
 export async function exportarExcel(modelo, base) {
   const buf = await construirExcel(modelo);
@@ -528,7 +646,8 @@ export async function construirWord(modelo, opts = {}) {
     s.tablas.forEach((t) => {
       if (t.titulo) hijos.push(h2(t.titulo));
       const anchos = t.columnas.map((_, j) => (j === 0 ? 40 : Math.floor(60 / (t.columnas.length - 1))));
-      hijos.push(tabla(t.columnas, t.filas.length ? t.filas.map((f) => f.map((v) => (typeof v === "number" ? v.toLocaleString("es-PE") : v))) : [["Sin actividad en el período.", ...t.columnas.slice(1).map(() => "")]], anchos, t.numericas));
+      const txt = (v, i) => (typeof v === "number" ? (t.fmts && t.fmts[i] === "soles" ? soles(v) : v.toLocaleString("es-PE")) : v);
+      hijos.push(tabla(t.columnas, t.filas.length ? t.filas.map((f) => f.map(txt)) : [["Sin datos para exportar.", ...t.columnas.slice(1).map(() => "")]], anchos, t.numericas));
     });
     s.notas.forEach((n) => hijos.push(p(n, { size: 18, color: hex(MARCA.gris) })));
     hijos.push(h2("Análisis y conclusiones"));
@@ -595,7 +714,7 @@ export async function construirPowerPoint(modelo, opts = {}) {
   const logoData = (k) => (logos && logos[k] ? `image/png;base64,${logos[k].b64}` : null);
 
   const objetosBase = [
-    { text: { text: `${modelo.clinica} · ${modelo.titulo} · ${modelo.sedeLbl}`, options: { x: 0.4, y: 5.22, w: 7, h: 0.28, fontSize: 8.5, color: C.gris, fontFace: F } } },
+    { text: { text: pieDoc(modelo), options: { x: 0.4, y: 5.22, w: 7, h: 0.28, fontSize: 8.5, color: C.gris, fontFace: F } } },
   ];
   if (logoData("h")) objetosBase.unshift({ image: { data: logoData("h"), x: 0.4, y: 0.28, w: 1.55, h: 1.55 * MARCA.logo.h.h / MARCA.logo.h.w } });
   else objetosBase.unshift({ text: { text: modelo.clinica, options: { x: 0.4, y: 0.28, w: 3, h: 0.4, fontSize: 11, bold: true, color: C.gris, fontFace: F } } });
@@ -663,7 +782,10 @@ export async function construirPowerPoint(modelo, opts = {}) {
         const s = pptx.addSlide({ masterName: "BASE" });
         titulo(s, sec.titulo + (filas.length > porPagina ? ` (${Math.floor(i / porPagina) + 1}/${Math.ceil(filas.length / porPagina)})` : ""));
         const head = t.columnas.map((c, j) => ({ text: c.toUpperCase(), options: { bold: true, fill: { color: C.celeste }, color: "FFFFFF", align: t.numericas.includes(j) ? "right" : "left", fontFace: F, fontSize: 9 } }));
-        const body = filas.slice(i, i + porPagina).map((f) => f.map((v, j) => ({ text: typeof v === "number" ? v.toLocaleString("es-PE") : String(v ?? ""), options: { align: t.numericas.includes(j) ? "right" : "left", color: C.negro, fontFace: F } })));
+        const body = filas.slice(i, i + porPagina).map((f) => f.map((v, j) => ({
+          text: typeof v === "number" ? (t.fmts && t.fmts[j] === "soles" ? soles(v) : v.toLocaleString("es-PE")) : String(v ?? ""),
+          options: { align: t.numericas.includes(j) ? "right" : "left", color: C.negro, fontFace: F },
+        })));
         const colW = t.columnas.map((_, j) => (j === 0 ? 3.6 : (9.2 - 3.6) / (t.columnas.length - 1)));
         s.addTable([head, ...body], { x: 0.4, y: 1.6, w: 9.2, colW, fontSize: 10, fontFace: F, border: { type: "solid", pt: 0.5, color: C.linea }, rowH: 0.3, autoPage: false });
         if (!sec.kpis.length && !sec.series.length) notas(s, sec.notas, 4.9);
@@ -706,8 +828,12 @@ export function htmlReporte(modelo, { autoImprimir = true, logos = null } = {}) 
     return `<div class="chart"><div class="t">${esc(se.titulo)}</div>${se.datos.map((d) => `
       <div class="hbar"><div class="lb">${esc(d.label)}</div><div class="tr"><div class="f" style="width:${Math.round(((d.valor || 0) / max) * 100)}%;background:${se.color}"></div></div><div class="v">${esc(fmtValor(d.valor, se.fmt))} <span>${pctDe(d.valor, total)}%</span></div></div>`).join("")}</div>`;
   };
+  // Las columnas de dinero se muestran con "S/" también fuera de Excel.
+  const celdaTxt = (v, t, i) => (typeof v === "number"
+    ? (t.fmts && t.fmts[i] === "soles" ? soles(v) : v.toLocaleString("es-PE"))
+    : v);
   const tablaHtml = (t) => `<table><thead><tr>${t.columnas.map((c, i) => `<th class="${t.numericas.includes(i) ? "num" : ""}">${esc(c)}</th>`).join("")}</tr></thead><tbody>${
-    t.filas.length ? t.filas.map((f) => `<tr>${f.map((v, i) => `<td class="${t.numericas.includes(i) ? "num" : ""}">${esc(typeof v === "number" ? v.toLocaleString("es-PE") : v)}</td>`).join("")}</tr>`).join("")
+    t.filas.length ? t.filas.map((f) => `<tr>${f.map((v, i) => `<td class="${t.numericas.includes(i) ? "num" : ""}">${esc(celdaTxt(v, t, i))}</td>`).join("")}</tr>`).join("")
       : `<tr><td colspan="${t.columnas.length}" class="note">Sin actividad en el período.</td></tr>`}</tbody></table>`;
   const secHtml = (s) => `<section class="sec">
     <h2>${esc(s.titulo)}</h2>
@@ -760,7 +886,7 @@ export function htmlReporte(modelo, { autoImprimir = true, logos = null } = {}) 
 <div class="noprint"><button onclick="window.print()">Guardar como PDF</button><span>Se abre el diálogo de impresión: elige "Guardar como PDF". Los colores y gráficos se conservan.</span></div>
 <div class="cover"><div>${logoH}<h1>${esc(modelo.titulo)}</h1><div class="sub">${esc(modelo.subtitulo)}</div></div><div class="gen">Generado el ${esc(modelo.generadoEn)}<br>Datos reales del período</div></div>
 ${modelo.secciones.map(secHtml).join("\n")}
-<div class="foot"><span>${esc(modelo.clinica)} · ${esc(modelo.titulo)} · ${esc(modelo.sedeLbl)}</span><span>${esc(M.tagline)} · generado el ${esc(modelo.generadoEn)}</span></div>
+<div class="foot"><span>${esc(pieDoc(modelo))}</span><span>${esc(M.tagline)} · generado el ${esc(modelo.generadoEn)}</span></div>
 ${autoImprimir ? `<script>window.addEventListener("load",function(){setTimeout(function(){window.print()},700)});</script>` : ""}
 </body></html>`;
 }
