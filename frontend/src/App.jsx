@@ -12,7 +12,7 @@ import {
   FileSpreadsheet, Presentation, FileDown,
 } from "lucide-react";
 import { api } from "./api";
-import { modeloReporte, exportarExcel, exportarWord, exportarPowerPoint, exportarPDF, exportarCSV } from "./exportGerencia";
+import { modeloReporte, modeloTabla, exportarExcel, exportarWord, exportarPowerPoint, exportarPDF, exportarCSV } from "./exportGerencia";
 import Login from "./Login";
 
 const TIPOS_DOC = [
@@ -426,55 +426,6 @@ const ESTADO_ALIANZA = {
 const semColor = (pct) => (pct >= 0.7 ? "#4F8A77" : pct >= 0.4 ? "#C9923A" : "#B4564E");
 const money = (n) => "S/ " + Math.round(n).toLocaleString("es-PE");
 
-// Exporta filas a un CSV descargable (con BOM para que Excel lea bien las tildes).
-function descargarCSV(nombre, headers, filas) {
-  const esc = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
-  const csv = [headers.map(esc).join(","), ...filas.map((f) => f.map(esc).join(","))].join("\r\n");
-  const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url; a.download = nombre; a.click();
-  URL.revokeObjectURL(url);
-}
-
-// Exporta a un archivo .xls que abre Excel (sin librerías: tabla HTML con el mime de Excel).
-function descargarExcel(nombre, headers, filas) {
-  const esc = (v) => String(v ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  const th = headers.map((h) => `<th style="background:#EDE7F6;border:1px solid #ccc;padding:4px 8px;text-align:left">${esc(h)}</th>`).join("");
-  const tr = filas.map((f) => `<tr>${f.map((c) => `<td style="border:1px solid #ccc;padding:4px 8px">${esc(c)}</td>`).join("")}</tr>`).join("");
-  const html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40"><head><meta charset="utf-8"></head><body><table><thead><tr>${th}</tr></thead><tbody>${tr}</tbody></table></body></html>`;
-  const blob = new Blob(["﻿" + html], { type: "application/vnd.ms-excel;charset=utf-8;" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url; a.download = nombre; a.click();
-  URL.revokeObjectURL(url);
-}
-
-// Abre una ventana con la tabla formateada para imprimir o guardar como PDF (igual que la historia clínica).
-function descargarPDF(titulo, headers, filas) {
-  const w = window.open("", "_blank", "width=1000,height=800");
-  if (!w) { alert("Permite las ventanas emergentes para descargar el PDF."); return; }
-  const esc = (v) => String(v ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  const th = headers.map((h) => `<th>${esc(h)}</th>`).join("");
-  const tr = filas.map((f) => `<tr>${f.map((c) => `<td>${esc(c)}</td>`).join("")}</tr>`).join("");
-  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${esc(titulo)}</title>
-    <style>
-      html{-webkit-print-color-adjust:exact;print-color-adjust:exact}
-      body{font-family:Inter,Arial,sans-serif;color:#32302C;margin:24px}
-      .head{display:flex;justify-content:space-between;align-items:baseline;border-bottom:2px solid #4F8A77;padding-bottom:8px;margin-bottom:14px}
-      h1{font-size:18px;margin:0} .sub{color:#888;font-size:12px}
-      table{border-collapse:collapse;width:100%;font-size:11px}
-      th,td{border:1px solid #ddd;padding:5px 7px;text-align:left;vertical-align:top}
-      th{background:#EDE7F6;color:#3A2F46} tr:nth-child(even) td{background:#FAF8FD}
-      @media print{body{margin:8mm} .noprint{display:none}}
-    </style></head><body>
-    <div class="head"><h1>${esc(titulo)}</h1><div class="sub">${filas.length} registro(s)</div></div>
-    <table><thead><tr>${th}</tr></thead><tbody>${tr || `<tr><td colspan="${headers.length}">Sin datos.</td></tr>`}</tbody></table>
-    <button class="noprint" onclick="window.print()" style="margin-top:16px;padding:9px 16px;border:none;border-radius:7px;background:#4F8A77;color:#fff;font-size:14px;cursor:pointer">Imprimir / Guardar PDF</button>
-    </body></html>`);
-  w.document.close();
-}
-
 // Abre una ventana con la historia clínica formateada para imprimir o guardar en PDF.
 function imprimirHistoria(p, clinica) {
   const w = window.open("", "_blank", "width=840,height=920");
@@ -531,26 +482,22 @@ function imprimirHistoria(p, clinica) {
   w.document.close();
 }
 
-// Grupo de botones de descarga (CSV / Excel / PDF) reutilizable en cada tabla.
-function ExportBtns({ nombre, titulo, headers, filas, disabled }) {
+// Nombre de la clínica para los documentos exportados. Vive fuera de React
+// porque ExportBtns se usa dentro de pantallas que no reciben el usuario.
+const DOC = { clinica: "Itaca Conversemos" };
+
+// Botón "Exportar" de cualquier tabla del sistema: los mismos cinco formatos
+// con la identidad de la marca que el panel de Gerencia (Excel con fórmulas,
+// PDF ejecutivo, Word, PowerPoint y CSV crudo). El modelo se arma al hacer
+// clic, no en cada render: en Pacientes son ~1.400 filas.
+function ExportBtns({ nombre, titulo, headers, filas, disabled, contexto = "", kpis, notas, showToast }) {
   const off = disabled || !filas || filas.length === 0;
   const base = String(nombre || "datos").replace(/\.(csv|xlsx?|pdf)$/i, "");
-  return (
-    <div style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
-      <button className="ca-btn ghost" disabled={off} title="Descargar CSV"
-        onClick={() => descargarCSV(base + ".csv", headers, filas)}>
-        <Download size={15} strokeWidth={2} /> CSV
-      </button>
-      <button className="ca-btn ghost" disabled={off} title="Descargar Excel"
-        onClick={() => descargarExcel(base + ".xls", headers, filas)}>
-        <Download size={15} strokeWidth={2} /> Excel
-      </button>
-      <button className="ca-btn ghost" disabled={off} title="Descargar PDF"
-        onClick={() => descargarPDF(titulo || base, headers, filas)}>
-        <Download size={15} strokeWidth={2} /> PDF
-      </button>
-    </div>
-  );
+  const armar = () => modeloTabla({
+    titulo: titulo || base, columnas: headers || [], filas: filas || [],
+    clinica: DOC.clinica, contexto, kpis, notas,
+  });
+  return <ExportCenter modelo={off ? null : armar} nombre={base} disabled={off} onError={showToast} />;
 }
 
 function Tag({ children, colors }) {
@@ -1082,6 +1029,9 @@ export default function ClinicaApp() {
   const nombreClinica = usuario?.clinica?.nombre || "Clínica";
   const ciudadClinica = usuario?.clinica?.ciudad || "";
   const esAsistente = usuario?.rol === "asistente";
+  // Los documentos exportados llevan el nombre real de la clínica en portada,
+  // encabezado y pie (ExportBtns no recibe el usuario, ver DOC arriba).
+  useEffect(() => { DOC.clinica = nombreClinica; }, [nombreClinica]);
 
   if (iniciando) {
     return (
@@ -1571,6 +1521,8 @@ export default function ClinicaApp() {
               </div>
               <div style={{ display: "flex", gap: 9, alignItems: "center" }}>
                 {!ocultaContacto && <ExportBtns nombre="pacientes" titulo="Pacientes" disabled={filtered.length === 0}
+                  showToast={showToast}
+                  contexto={[filterSede === "piura" ? "Piura" : filterSede === "lima" ? "Lima" : "Todas las sedes", filterProf, filterFrec && `Estado: ${filterFrec}`].filter(Boolean).join(" · ")}
                   headers={["Nombre", "Documento", "Numero", "Edad", "Genero", "Telefono", "Direccion", "Especialidad", "Ultima visita", "Proxima sesion", "Pendiente S/"]}
                   filas={filtered.map((p) => [p.nombre, p.tipo_documento_label || "", p.numero_documento || "", p.edad ?? "", p.genero_label || "", p.tel, p.direccion || "", p.especialidad, p.ultima, p.proxima ? `${p.proxima.fecha} ${p.proxima.hora}` : "", p.cuenta?.pendiente || 0])} />}
                 {usuario?.rol !== "medico" && !soloLectura && (
@@ -2118,12 +2070,14 @@ function GamificacionEditor({ inicial, showToast, onClose, onSaved }) {
   );
 }
 
-// Centro de exportación de Gerencia: un botón desplegable con Excel, PDF
-// ejecutivo, Word y PowerPoint (+ CSV crudo). Los cuatro salen del MISMO
-// modelo que pinta la pantalla (exportGerencia.js), así dicen lo mismo.
+// Centro de exportación: un botón desplegable con Excel, PDF ejecutivo, Word y
+// PowerPoint (+ CSV crudo). Los cinco salen del MISMO modelo que pinta la
+// pantalla (exportGerencia.js), así dicen lo mismo. Lo usan tanto el panel de
+// Gerencia como el botón Exportar de cada tabla (ExportBtns).
 function ExportCenter({ modelo, nombre, disabled, onError }) {
   const [abierto, setAbierto] = useState(false);
   const [ocupado, setOcupado] = useState("");
+  const [error, setError] = useState("");
   const ref = React.useRef(null);
   useEffect(() => {
     if (!abierto) return;
@@ -2132,17 +2086,26 @@ function ExportCenter({ modelo, nombre, disabled, onError }) {
     return () => document.removeEventListener("mousedown", h);
   }, [abierto]);
   async function correr(k, fn) {
-    setOcupado(k);
-    try { await fn(); setAbierto(false); }
-    catch (e) { onError && onError("No se pudo exportar: " + e.message); }
-    finally { setOcupado(""); }
+    setOcupado(k); setError("");
+    try {
+      // `modelo` puede venir como función: los listados grandes lo arman recién
+      // al exportar, no en cada render.
+      const m = typeof modelo === "function" ? modelo() : modelo;
+      if (!m) throw new Error("No hay datos para exportar.");
+      await fn(m);
+      setAbierto(false);
+    } catch (e) {
+      const msg = "No se pudo exportar: " + e.message;
+      setError(msg);
+      onError && onError(msg);
+    } finally { setOcupado(""); }
   }
   const opciones = [
-    { k: "xlsx", Icon: FileSpreadsheet, label: "Excel (.xlsx)", desc: "Tablas con fórmulas, editable", run: () => exportarExcel(modelo, nombre) },
-    { k: "pdf", Icon: FileDown, label: "PDF ejecutivo", desc: "Tarjetas y gráficos como en pantalla", run: () => exportarPDF(modelo) },
-    { k: "docx", Icon: FileText, label: "Word (.docx)", desc: "Tablas + espacio para redactar el análisis", run: () => exportarWord(modelo, nombre) },
-    { k: "pptx", Icon: Presentation, label: "PowerPoint (.pptx)", desc: "Una diapositiva por sección, gráficos editables", run: () => exportarPowerPoint(modelo, nombre) },
-    { k: "csv", Icon: Download, label: "CSV (datos crudos)", desc: "Solo los indicadores, para análisis", run: () => exportarCSV(modelo, nombre) },
+    { k: "xlsx", Icon: FileSpreadsheet, label: "Excel (.xlsx)", desc: "Tablas con fórmulas, editable", run: (m) => exportarExcel(m, nombre) },
+    { k: "pdf", Icon: FileDown, label: "PDF ejecutivo", desc: "Tarjetas y gráficos como en pantalla", run: (m) => exportarPDF(m) },
+    { k: "docx", Icon: FileText, label: "Word (.docx)", desc: "Tablas + espacio para redactar el análisis", run: (m) => exportarWord(m, nombre) },
+    { k: "pptx", Icon: Presentation, label: "PowerPoint (.pptx)", desc: "Una diapositiva por sección, gráficos editables", run: (m) => exportarPowerPoint(m, nombre) },
+    { k: "csv", Icon: Download, label: "CSV (datos crudos)", desc: "La tabla completa, para analizar aparte", run: (m) => exportarCSV(m, nombre) },
   ];
   return (
     <div ref={ref} style={{ position: "relative", display: "inline-block" }}>
@@ -2157,6 +2120,7 @@ function ExportCenter({ modelo, nombre, disabled, onError }) {
               <span><b>{label}</b><small>{ocupado === k ? "Generando…" : desc}</small></span>
             </button>
           ))}
+          {error && <div style={{ fontSize: 12, color: "#B4564E", padding: "6px 10px 4px", lineHeight: 1.4 }}>{error}</div>}
         </div>
       )}
     </div>
@@ -2360,6 +2324,7 @@ function Gerencia({ showToast, clinica }) {
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 28, gap: 10, flexWrap: "wrap" }}>
             <h2 className="ca-secth" style={{ margin: 0 }}>Productividad por psicólogo</h2>
             <ExportBtns nombre={`productividad_${periodo}${sede ? "_" + sede : ""}`} titulo={`Productividad por psicólogo${data ? " · " + data.periodo.label : ""}`}
+              showToast={showToast} contexto={sede === "lima" ? "Lima" : sede === "piura" ? "Piura" : "Todas las sedes"}
               headers={["Psicologo", "Sesiones", "Atenciones", "Leads", "Cierres"]}
               filas={data.productividad.map((m) => [m.medico, m.citas, m.atenciones, m.leads, m.cierres])}
               disabled={data.productividad.length === 0} />
@@ -5298,7 +5263,7 @@ function Agenda({ citas, bloqueos = [], fecha, setFecha, vista, setVista, esAsis
           <div className="ca-sub">{subt} · {activas.length} {activas.length === 1 ? "sesión" : "sesiones"}</div>
         </div>
         <div style={{ display: "flex", gap: 9, alignItems: "center" }}>
-          {!esMedico && <ExportBtns nombre="agenda" titulo="Agenda" disabled={activas.length === 0}
+          {!esMedico && <ExportBtns nombre="agenda" titulo="Agenda" disabled={activas.length === 0} contexto={subt}
             headers={["Fecha", "Hora", "Paciente", "Psicologo", "Especialidad", "N° sesion", "Sede", "Modalidad", "Estado", "Que paso"]}
             filas={activas.map((c) => [c.fecha, c.hora, c.paciente, c.medico, c.especialidad, c.n_sesion_efectivo || "", c.sede_label || "", c.modalidad === "virtual" ? "Virtual" : "Presencial", c.estado_label, c.decision_label || ""])} />}
           {!esMedico && !soloLectura && <button className="ca-btn ghost" onClick={onVenta}><Receipt size={15} strokeWidth={2} /> Venta</button>}
@@ -9050,6 +9015,8 @@ function Finanzas({ showToast, esAdmin, puedeVerCaja = false }) {
         </div>
         <div style={{ display: "flex", gap: 9, alignItems: "center" }}>
           <ExportBtns nombre={`cobros_${rangoActivo ? `${desde}_a_${hasta}` : periodo}${sede ? "_" + sede : ""}`} titulo="Finanzas · Cobros" disabled={cobros.length === 0}
+            showToast={showToast}
+            contexto={[sede === "lima" ? "Lima" : sede === "piura" ? "Piura" : "Todas las sedes", rangoActivo ? `${desde} a ${hasta}` : { hoy: "Hoy", semana: "Esta semana", mes: "Este mes" }[periodo] || periodo].filter(Boolean).join(" · ")}
             headers={["Fecha", "Paciente", "Concepto", "Monto", "Estado", "Medio"]}
             filas={cobros.map((c) => [c.fecha_label, c.paciente_nombre, c.concepto, c.monto, c.estado_label, c.medio_label])} />
           {esAdmin && <button className="ca-btn ghost" onClick={() => setPrecios(true)}>Precios</button>}
