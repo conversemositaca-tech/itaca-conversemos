@@ -15,32 +15,21 @@ HTTPS y debe quedar en un bucket PRIVADO, nunca público.
 import gzip
 import io
 
+from django.apps import apps
 from django.core import serializers
 from django.utils import timezone
 
-from finanzas.models import Cobro, Egreso, Paquete, Servicio
-from leads.models import Anuncio, Lead
-from mensajes.models import Mensaje, PlantillaMensaje
-from pacientes.models import (
-    Adjunto, Atencion, BloqueoAgenda, Cita, Consentimiento, ObjetivoTerapeutico,
-    Paciente, SeguimientoSesion,
-)
-from usuarios.models import DocumentoLegal, Profesional, Usuario
-from espacios.models import (
-    Consultorio, ContratoAlquiler, InteresadoAlquiler, PagoAlquiler, ReservaEspacio,
-)
-from core.models import Clinica
+# Apps del negocio, de padres a hijos: Clinica (core) y Usuario (usuarios) van
+# antes que todo lo que apunta a ellos. Lo que no está aquí —sesiones, permisos,
+# logs del admin, contenttypes— se regenera solo y solo abultaría el archivo.
+APPS = ["core", "usuarios", "pacientes", "finanzas", "leads", "mensajes", "espacios"]
 
-# Lo que hay que poder recuperar. No incluye sesiones, logs ni tablas de Django:
-# eso se regenera solo y solo abultaría el archivo.
-MODELOS = [
-    Clinica, Usuario, Profesional, DocumentoLegal,
-    Paciente, Cita, Atencion, SeguimientoSesion, ObjetivoTerapeutico,
-    Consentimiento, Adjunto, BloqueoAgenda,
-    Servicio, Cobro, Paquete, Egreso,
-    Lead, Anuncio, Mensaje, PlantillaMensaje,
-    Consultorio, InteresadoAlquiler, ContratoAlquiler, PagoAlquiler, ReservaEspacio,
-]
+
+def modelos_a_respaldar():
+    """Todos los modelos de las apps del negocio, sin lista escrita a mano: una
+    tabla nueva entra al respaldo el mismo día que se crea. (La lista a mano
+    dejó fuera once tablas creadas entre agosto y septiembre de 2026.)"""
+    return [m for app in APPS for m in apps.get_app_config(app).get_models()]
 
 
 def armar_respaldo():
@@ -48,7 +37,7 @@ def armar_respaldo():
     para poder comprobar de un vistazo que el respaldo no salió vacío."""
     resumen = {}
     objetos = []
-    for modelo in MODELOS:
+    for modelo in modelos_a_respaldar():
         filas = list(modelo.objects.all())
         resumen[modelo.__name__] = len(filas)
         objetos.extend(filas)

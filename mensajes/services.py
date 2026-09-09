@@ -7,6 +7,10 @@ Orden de envío:
 3. Enlace wa.me de respaldo (lo arma quien recibe el resultado) cuando ninguno
    envió de forma automática.
 """
+from rest_framework.exceptions import PermissionDenied
+
+from core.permisos import es_solo_lectura
+
 from . import cloud_api
 from .evolution import enviar_texto as enviar_evolution, wa_link
 from .models import Mensaje, PlantillaMensaje, params_plantilla
@@ -39,6 +43,12 @@ def registrar_y_enviar(clinica, *, telefono, texto, tipo, paciente=None, cita=No
     `sede` solo hace falta cuando no hay paciente ni cita de dónde sacarla (por
     ejemplo al responderle a un lead): elige el número de esa sede para enviar.
     """
+    # Defensa en profundidad: este es el cuello de botella de TODOS los envíos
+    # (recordatorios, NPS, mensajes libres, respuestas a leads). El rol de solo
+    # lectura nunca contacta pacientes, aunque mañana alguien agregue un
+    # llamador nuevo sin chequeo de rol.
+    if usuario is not None and es_solo_lectura(usuario):
+        raise PermissionDenied("Tu perfil es de solo lectura: no puede enviar mensajes.")
     sede = sede or _sede_de(paciente, cita)
     if cloud_api.esta_configurado(clinica, sede):
         if plantilla is not None and plantilla.wa_template_nombre:

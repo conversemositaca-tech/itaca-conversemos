@@ -58,9 +58,12 @@ Estos vienen después. El prototipo los muestra solo como referencia de a dónde
   La API exige usuario autenticado (`IsAuthenticated`); el tenant sale del usuario.
 - El frontend envía el token **CSRF** (`X-CSRFToken`) en las peticiones que modifican
   datos. `CSRF_TRUSTED_ORIGINS` incluye el origen de Vite (5173).
-- Roles: `admin` · `medico` · `asistente`. Regla aplicada: **solo médico/admin
-  registran atenciones** (la asistente agenda y gestiona pacientes, pero no escribe
-  en la historia clínica). Ampliar reglas de rol según haga falta.
+- Roles: `admin` · `medico` · `asistente` · `comercial` · `analista`. Regla aplicada:
+  **solo médico/admin registran atenciones** (la asistente agenda y gestiona
+  pacientes, pero no escribe en la historia clínica). `analista` (Dirección
+  Clínica) es **solo lectura**: `core/permisos.py` bloquea toda escritura desde
+  `DEFAULT_PERMISSION_CLASSES`, ve ambas sedes (sede vacía), indicadores y
+  finanzas en lectura, y no ve contacto de pacientes (como el médico).
 - Cuentas demo (contraseña `demo1234`): `castro@sanrafael.pe` (médico),
   `admin@sanrafael.pe` (admin), `asistente@sanrafael.pe` (asistente).
 

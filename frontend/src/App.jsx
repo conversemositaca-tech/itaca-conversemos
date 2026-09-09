@@ -9,8 +9,10 @@ import {
   Mic, FolderOpen, Lightbulb, ExternalLink, Bell, GraduationCap,
   Building2, DoorOpen, ChevronRight, Compass, Send,
   Shield, Target, Heart, Leaf, Trophy, Award, Sparkles, Landmark,
+  FileSpreadsheet, Presentation, FileDown,
 } from "lucide-react";
 import { api } from "./api";
+import { modeloReporte, modeloTabla, exportarExcel, exportarWord, exportarPowerPoint, exportarPDF, exportarCSV } from "./exportGerencia";
 import Login from "./Login";
 
 const TIPOS_DOC = [
@@ -424,54 +426,6 @@ const ESTADO_ALIANZA = {
 const semColor = (pct) => (pct >= 0.7 ? "#4F8A77" : pct >= 0.4 ? "#C9923A" : "#B4564E");
 const money = (n) => "S/ " + Math.round(n).toLocaleString("es-PE");
 
-// Exporta filas a un CSV descargable (con BOM para que Excel lea bien las tildes).
-function descargarCSV(nombre, headers, filas) {
-  const esc = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
-  const csv = [headers.map(esc).join(","), ...filas.map((f) => f.map(esc).join(","))].join("\r\n");
-  const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url; a.download = nombre; a.click();
-  URL.revokeObjectURL(url);
-}
-
-// Exporta a un archivo .xls que abre Excel (sin librerías: tabla HTML con el mime de Excel).
-function descargarExcel(nombre, headers, filas) {
-  const esc = (v) => String(v ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  const th = headers.map((h) => `<th style="background:#EDE7F6;border:1px solid #ccc;padding:4px 8px;text-align:left">${esc(h)}</th>`).join("");
-  const tr = filas.map((f) => `<tr>${f.map((c) => `<td style="border:1px solid #ccc;padding:4px 8px">${esc(c)}</td>`).join("")}</tr>`).join("");
-  const html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40"><head><meta charset="utf-8"></head><body><table><thead><tr>${th}</tr></thead><tbody>${tr}</tbody></table></body></html>`;
-  const blob = new Blob(["﻿" + html], { type: "application/vnd.ms-excel;charset=utf-8;" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url; a.download = nombre; a.click();
-  URL.revokeObjectURL(url);
-}
-
-// Abre una ventana con la tabla formateada para imprimir o guardar como PDF (igual que la historia clínica).
-function descargarPDF(titulo, headers, filas) {
-  const w = window.open("", "_blank", "width=1000,height=800");
-  if (!w) { alert("Permite las ventanas emergentes para descargar el PDF."); return; }
-  const esc = (v) => String(v ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  const th = headers.map((h) => `<th>${esc(h)}</th>`).join("");
-  const tr = filas.map((f) => `<tr>${f.map((c) => `<td>${esc(c)}</td>`).join("")}</tr>`).join("");
-  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${esc(titulo)}</title>
-    <style>
-      body{font-family:Inter,Arial,sans-serif;color:#32302C;margin:24px}
-      .head{display:flex;justify-content:space-between;align-items:baseline;border-bottom:2px solid #4F8A77;padding-bottom:8px;margin-bottom:14px}
-      h1{font-size:18px;margin:0} .sub{color:#888;font-size:12px}
-      table{border-collapse:collapse;width:100%;font-size:11px}
-      th,td{border:1px solid #ddd;padding:5px 7px;text-align:left;vertical-align:top}
-      th{background:#EDE7F6;color:#3A2F46} tr:nth-child(even) td{background:#FAF8FD}
-      @media print{body{margin:8mm} .noprint{display:none}}
-    </style></head><body>
-    <div class="head"><h1>${esc(titulo)}</h1><div class="sub">${filas.length} registro(s)</div></div>
-    <table><thead><tr>${th}</tr></thead><tbody>${tr || `<tr><td colspan="${headers.length}">Sin datos.</td></tr>`}</tbody></table>
-    <button class="noprint" onclick="window.print()" style="margin-top:16px;padding:9px 16px;border:none;border-radius:7px;background:#4F8A77;color:#fff;font-size:14px;cursor:pointer">Imprimir / Guardar PDF</button>
-    </body></html>`);
-  w.document.close();
-}
-
 // Abre una ventana con la historia clínica formateada para imprimir o guardar en PDF.
 function imprimirHistoria(p, clinica) {
   const w = window.open("", "_blank", "width=840,height=920");
@@ -503,6 +457,7 @@ function imprimirHistoria(p, clinica) {
   }).join("");
   w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Historia clínica · ${esc(p.nombre)}</title>
     <style>
+      html{-webkit-print-color-adjust:exact;print-color-adjust:exact}
       body{font-family:Inter,Arial,sans-serif;color:#32302C;max-width:720px;margin:28px auto;padding:0 16px;line-height:1.5}
       .head{display:flex;justify-content:space-between;align-items:baseline;border-bottom:2px solid #4F8A77;padding-bottom:8px;margin-bottom:16px}
       h1{font-size:20px;margin:0} .sub{color:#777;font-size:13px;margin-bottom:18px}
@@ -527,26 +482,22 @@ function imprimirHistoria(p, clinica) {
   w.document.close();
 }
 
-// Grupo de botones de descarga (CSV / Excel / PDF) reutilizable en cada tabla.
-function ExportBtns({ nombre, titulo, headers, filas, disabled }) {
+// Nombre de la clínica para los documentos exportados. Vive fuera de React
+// porque ExportBtns se usa dentro de pantallas que no reciben el usuario.
+const DOC = { clinica: "Itaca Conversemos" };
+
+// Botón "Exportar" de cualquier tabla del sistema: los mismos cinco formatos
+// con la identidad de la marca que el panel de Gerencia (Excel con fórmulas,
+// PDF ejecutivo, Word, PowerPoint y CSV crudo). El modelo se arma al hacer
+// clic, no en cada render: en Pacientes son ~1.400 filas.
+function ExportBtns({ nombre, titulo, headers, filas, disabled, contexto = "", kpis, notas, showToast }) {
   const off = disabled || !filas || filas.length === 0;
   const base = String(nombre || "datos").replace(/\.(csv|xlsx?|pdf)$/i, "");
-  return (
-    <div style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
-      <button className="ca-btn ghost" disabled={off} title="Descargar CSV"
-        onClick={() => descargarCSV(base + ".csv", headers, filas)}>
-        <Download size={15} strokeWidth={2} /> CSV
-      </button>
-      <button className="ca-btn ghost" disabled={off} title="Descargar Excel"
-        onClick={() => descargarExcel(base + ".xls", headers, filas)}>
-        <Download size={15} strokeWidth={2} /> Excel
-      </button>
-      <button className="ca-btn ghost" disabled={off} title="Descargar PDF"
-        onClick={() => descargarPDF(titulo || base, headers, filas)}>
-        <Download size={15} strokeWidth={2} /> PDF
-      </button>
-    </div>
-  );
+  const armar = () => modeloTabla({
+    titulo: titulo || base, columnas: headers || [], filas: filas || [],
+    clinica: DOC.clinica, contexto, kpis, notas,
+  });
+  return <ExportCenter modelo={off ? null : armar} nombre={base} disabled={off} onError={showToast} />;
 }
 
 function Tag({ children, colors }) {
@@ -563,6 +514,43 @@ function SpecialtyTag({ name }) {
   return (<Tag colors={c}><span style={{ fontSize: 11 }}>{c.dot}</span>{name}</Tag>);
 }
 const iniciales = (n) => (n || "").split(" ").map((w) => w[0]).slice(0, 2).join("");
+
+// Búsqueda de nombres tolerante: sin importar mayúsculas, tildes, orden de las
+// palabras (nombre, apellido o solo el segundo apellido) ni uno o dos errores
+// de tipeo. Usada para buscar pacientes al agendar, cobrar, y en el listado.
+const normalizarTexto = (s) =>
+  String(s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").trim();
+
+function distanciaEdicion(a, b) {
+  const m = a.length, n = b.length;
+  if (!m) return n;
+  if (!n) return m;
+  const fila = Array.from({ length: n + 1 }, (_, j) => j);
+  for (let i = 1; i <= m; i++) {
+    let diagonal = fila[0];
+    fila[0] = i;
+    for (let j = 1; j <= n; j++) {
+      const temp = fila[j];
+      fila[j] = a[i - 1] === b[j - 1] ? diagonal : 1 + Math.min(diagonal, fila[j], fila[j - 1]);
+      diagonal = temp;
+    }
+  }
+  return fila[n];
+}
+
+function coincideBusqueda(texto, busqueda) {
+  const objetivo = normalizarTexto(texto);
+  const palabrasBusqueda = normalizarTexto(busqueda).split(/\s+/).filter(Boolean);
+  if (!palabrasBusqueda.length) return true;
+  const palabrasObjetivo = objetivo.split(/\s+/).filter(Boolean);
+  return palabrasBusqueda.every((qw) => {
+    if (objetivo.includes(qw)) return true; // substring directo, en cualquier orden
+    const tolerancia = qw.length <= 4 ? 1 : 2; // más margen cuanto más larga la palabra
+    return palabrasObjetivo.some(
+      (ow) => Math.abs(ow.length - qw.length) <= tolerancia && distanciaEdicion(qw, ow) <= tolerancia
+    );
+  });
+}
 
 export default function ClinicaApp() {
   const [view, setView] = useState("hoy");
@@ -581,6 +569,11 @@ export default function ClinicaApp() {
   const [filterProf, setFilterProf] = useState("");
   const [filterFrec, setFilterFrec] = useState("");
   const [soloSinProxima, setSoloSinProxima] = useState(false);
+  const [filtroRiesgoS3, setFiltroRiesgoS3] = useState(false);
+  const [filtroFinBloque, setFiltroFinBloque] = useState(false);
+  // Ver las fichas provisionales (consulta agendada, proceso no iniciado). Fuera
+  // de este chip no aparecen: no son pacientes todavia.
+  const [verConsultas, setVerConsultas] = useState(false);
   const [selectedId, setSelectedId] = useState(null);
   // Detalle completo del paciente abierto (historial, citas, adjuntos, paquetes…).
   // La LISTA trae solo lo liviano; el detalle se carga al abrir la ficha.
@@ -702,47 +695,63 @@ export default function ClinicaApp() {
     (detalle && detalle.id === selectedId)
       ? detalle
       : (pacientes.find((p) => p.id === selectedId) || null);
+  // Pacientes de verdad vs. fichas abiertas solo para sostener la cita de una
+  // consulta agendada. El listado y el contador muestran los primeros.
+  const pacientesReales = useMemo(() => pacientes.filter((p) => !p.provisional), [pacientes]);
+  const consultasAgendadas = useMemo(() => pacientes.filter((p) => p.provisional), [pacientes]);
+  const basePacientes = verConsultas ? consultasAgendadas : pacientesReales;
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return pacientes.filter((p) =>
-      (!q || p.nombre.toLowerCase().includes(q) || (p.tel || "").toLowerCase().includes(q) || (p.numero_documento || "").toLowerCase().includes(q)) &&
+    return basePacientes.filter((p) =>
+      (!q || coincideBusqueda(p.nombre, query) || (p.tel || "").toLowerCase().includes(q) || (p.numero_documento || "").toLowerCase().includes(q)) &&
       (!filterEsp || p.especialidad === filterEsp) &&
       (!filterSede || p.sede === filterSede) &&
       (!filterProf || p.profesional_nombre === filterProf) &&
       (!filterFrec || p.frecuencia === filterFrec) &&
-      (!soloSinProxima || !p.proxima));
-  }, [pacientes, query, filterEsp, filterSede, filterProf, filterFrec, soloSinProxima]);
+      (!soloSinProxima || !p.proxima) &&
+      (!filtroRiesgoS3 || p.alertas_continuidad?.includes("riesgo_abandono_s3")) &&
+      (!filtroFinBloque || p.alertas_continuidad?.includes("fin_bloque_sin_decision")));
+  }, [basePacientes, query, filterEsp, filterSede, filterProf, filterFrec, soloSinProxima, filtroRiesgoS3, filtroFinBloque]);
 
   // Psicólogos presentes en la lista de pacientes (para el filtro).
   // Psicólogos del filtro: solo los que tienen pacientes en la sede elegida.
   const profsEnPacientes = useMemo(
-    () => [...new Set(pacientes.filter((p) => !filterSede || p.sede === filterSede).map((p) => p.profesional_nombre).filter(Boolean))].sort(),
-    [pacientes, filterSede]
+    () => [...new Set(basePacientes.filter((p) => !filterSede || p.sede === filterSede).map((p) => p.profesional_nombre).filter(Boolean))].sort(),
+    [basePacientes, filterSede]
   );
+
+  // Rol de solo lectura (Dirección Clínica): ve indicadores y pacientes de ambas
+  // sedes, no escribe nada y no ve contacto de pacientes. El backend es la
+  // seguridad real (core/permisos.py); aquí solo se ocultan menús y botones.
+  const esAnalista = usuario?.rol === "analista";
+  const soloLectura = esAnalista;
+  const ocultaContacto = usuario?.rol === "medico" || esAnalista;
+  const veDinero = usuario?.rol === "admin" || esAnalista;
 
   const nav = [
     { id: "hoy", label: "Hoy", icon: Home },
     // Mentalidad Ítaca: cultura y funciones. La ve todo el equipo.
     { id: "mentalidad", label: "Mentalidad Ítaca", icon: Compass },
-    // El panel de Gerencia lo ve solo el dueño/admin.
-    ...(usuario?.rol === "admin" ? [{ id: "gerencia", label: "Gerencia", icon: BarChart3 }] : []),
-    ...(usuario?.rol === "admin" ? [{ id: "historico", label: "Histórico", icon: Activity }] : []),
-    ...(usuario?.rol === "admin" ? [{ id: "reporte", label: "Reporte", icon: FileText }] : []),
-    ...(usuario?.rol === "admin" ? [{ id: "ocupacion", label: "Ocupación", icon: Clock }] : []),
+    // Indicadores (Gerencia, Histórico, Reporte, Ocupación): gerencia y la analista (lectura).
+    ...((usuario?.rol === "admin" || esAnalista) ? [{ id: "gerencia", label: "Gerencia", icon: BarChart3 }] : []),
+    ...((usuario?.rol === "admin" || esAnalista) ? [{ id: "historico", label: "Histórico", icon: Activity }] : []),
+    ...((usuario?.rol === "admin" || esAnalista) ? [{ id: "reporte", label: "Reporte", icon: FileText }] : []),
+    ...((usuario?.rol === "admin" || esAnalista) ? [{ id: "ocupacion", label: "Ocupación", icon: Clock }] : []),
     // Clínico (Agenda, Pacientes, Profesionales): gerencia, coordinación y psicólogo (no comercial).
     ...(usuario?.rol !== "comercial" ? [{ id: "agenda", label: "Agenda", icon: Calendar }] : []),
     ...(usuario?.rol !== "comercial" ? [{ id: "pacientes", label: "Pacientes", icon: Users }] : []),
     // Profesionales (directorio): gerencia y coordinación; el psicólogo no lo ve.
-    ...((usuario?.rol !== "comercial" && usuario?.rol !== "medico") ? [{ id: "profesionales", label: "Profesionales", icon: BookUser }] : []),
+    ...((usuario?.rol !== "comercial" && usuario?.rol !== "medico" && !esAnalista) ? [{ id: "profesionales", label: "Profesionales", icon: BookUser }] : []),
     // Herramientas (materiales para pacientes + tips): equipo clínico (no comercial).
     // Para el psicólogo reemplaza el acceso a Profesionales.
     ...(usuario?.rol !== "comercial" ? [{ id: "herramientas", label: "Herramientas", icon: FolderOpen }] : []),
-    // Mensajes: gerencia, coordinación y comercial (no psicólogo).
-    ...(usuario?.rol !== "medico" ? [{ id: "mensajes", label: "Mensajes", icon: MessageCircle }] : []),
-    // Marketing / Leads: gerencia, comercial y coordinación (asistente).
-    ...((usuario?.rol === "admin" || usuario?.rol === "comercial" || usuario?.rol === "asistente") ? [{ id: "marketing", label: "Marketing", icon: Megaphone }] : []),
-    // Finanzas: solo gerencia.
-    ...(usuario?.rol === "admin" ? [{ id: "finanzas", label: "Finanzas", icon: TrendingUp }] : []),
+    // Mensajes: gerencia, coordinación y comercial (no psicólogo ni analista: trae teléfonos).
+    ...((usuario?.rol !== "medico" && !esAnalista) ? [{ id: "mensajes", label: "Mensajes", icon: MessageCircle }] : []),
+    // Marketing / Leads: gerencia, comercial, coordinación (asistente) y la analista (solo lectura).
+    ...((usuario?.rol === "admin" || usuario?.rol === "comercial" || usuario?.rol === "asistente" || esAnalista) ? [{ id: "marketing", label: "Marketing", icon: Megaphone }] : []),
+    // Finanzas: gerencia (edita) y la analista (solo lectura).
+    ...((usuario?.rol === "admin" || esAnalista) ? [{ id: "finanzas", label: "Finanzas", icon: TrendingUp }] : []),
     ...(usuario?.rol === "admin" ? [{ id: "liquidacion", label: "Liquidación", icon: Receipt }] : []),
     // Espacios profesionales (alquiler de consultorios): solo gerencia.
     ...(usuario?.rol === "admin" ? [{ id: "espacios", label: "Espacios", icon: Building2 }] : []),
@@ -751,7 +760,8 @@ export default function ClinicaApp() {
     ...(usuario?.rol === "admin" ? [{ id: "whatsapp", label: "Conexión WhatsApp", icon: MessageCircle }] : []),
     ...(usuario?.rol === "admin" ? [{ id: "hojas", label: "Editar (Excel)", icon: Pencil }] : []),
     // El buzón de sugerencias lo ve todo el equipo (dejar sugerencia); gerencia además ve la bandeja.
-    { id: "buzon", label: "Buzón", icon: MessageCircle },
+    // El rol de solo lectura no escribe (tampoco sugerencias), así que no lo ve.
+    ...(esAnalista ? [] : [{ id: "buzon", label: "Buzón", icon: MessageCircle }]),
   ];
 
   const citasHoy = citas.filter((c) => c.fecha === HOY_ISO && c.estado !== "cancelada");
@@ -945,6 +955,22 @@ export default function ClinicaApp() {
     } catch (e) { showToast("Error: " + e.message); }
   }
 
+  // Duplicar: precarga el mismo formulario de "Nueva sesión" con los datos de una
+  // cita existente (paciente, psicólogo, servicio, sede, modalidad), sugiriendo la
+  // fecha 7 días después a la misma hora. Crea una cita NUEVA — no toca la original.
+  function duplicarCita(c) {
+    const medico = medicosDir.find((m) => m.nombre === c.medico);
+    setAdding({
+      fecha: sumarDias(c.fecha, 7), hora: c.hora, medicoId: medico ? medico.id : null,
+      duplicarDe: {
+        paciente: { id: c.pacienteId, nombre: c.paciente },
+        especialidad: c.especialidad, categoria: c.categoria || "",
+        sede: c.sede || "", modalidad: c.modalidad || "presencial",
+        n_sesion: c.n_sesion_efectivo ?? c.n_sesion ?? null,
+      },
+    });
+  }
+
   async function moverCita(cita, fecha, hora) {
     try {
       try {
@@ -1056,6 +1082,9 @@ export default function ClinicaApp() {
   const nombreClinica = usuario?.clinica?.nombre || "Clínica";
   const ciudadClinica = usuario?.clinica?.ciudad || "";
   const esAsistente = usuario?.rol === "asistente";
+  // Los documentos exportados llevan el nombre real de la clínica en portada,
+  // encabezado y pie (ExportBtns no recibe el usuario, ver DOC arriba).
+  useEffect(() => { DOC.clinica = nombreClinica; }, [nombreClinica]);
 
   if (iniciando) {
     return (
@@ -1217,7 +1246,33 @@ export default function ClinicaApp() {
           box-shadow:0 1px 2px rgba(31,42,38,.04), 0 4px 16px rgba(31,42,38,.05); }
         /* Tarjeta dentro de tarjeta: la de adentro vuelve a ser plana, si no se
            acumulan sombras y se ve sucio. */
+        .ca-asist { margin-bottom:26px; display:grid; gap:28px; align-items:start;
+          grid-template-columns:1fr 236px; }
+        .ca-asist-nav { display:flex; justify-content:flex-end; gap:4px; margin-bottom:10px; }
+        .ca-asist-nav .ca-mini { padding:4px 7px; }
+        .ca-asist-meses { display:grid; grid-template-columns:repeat(3, 1fr); gap:22px; }
+        .ca-asist-rot { font-size:13px; font-weight:600; margin-bottom:10px; }
+        .ca-asist-grid { display:grid; grid-template-columns:repeat(7, 1fr); gap:3px; text-align:center; }
+        .ca-asist-dia { font-size:10.5px; color:var(--muted); font-weight:600; padding-bottom:4px; }
+        .ca-asist-celda { height:29px; display:flex; align-items:center; justify-content:center;
+          font-size:12.5px; border-radius:7px; font-variant-numeric:tabular-nums; }
+        .ca-asist-cifras { display:flex; flex-wrap:wrap; gap:16px; margin-bottom:14px; }
+        .ca-asist-leyenda { display:flex; flex-wrap:wrap; gap:10px; margin-top:16px;
+          font-size:11.5px; color:var(--muted); }
+        .ca-asist-leyenda span { display:inline-flex; align-items:center; gap:5px; }
+        .ca-asist-pto { width:12px; height:12px; border-radius:4px; }
+        /* Se oculta primero el mes MÁS VIEJO: lo reciente siempre queda a la vista. */
+        @media (max-width:1240px) { .ca-asist-meses { grid-template-columns:repeat(2, 1fr); }
+          .ca-asist-m1 { display:none; } }
+        @media (max-width:900px) { .ca-asist { grid-template-columns:1fr; }
+          .ca-asist-meses { grid-template-columns:1fr; } .ca-asist-m2 { display:none; } }
         .ca-card .ca-card { box-shadow:none; border-color:var(--line); border-radius:12px; }
+        /* Opciones del menú desplegable de exportación. */
+        .ca-menu-item { display:flex; gap:10px; align-items:center; width:100%; text-align:left; background:none;
+          border:none; padding:9px 10px; border-radius:8px; cursor:pointer; color:var(--ink); font:inherit; }
+        .ca-menu-item:hover { background:var(--hover); } .ca-menu-item:disabled { opacity:.6; cursor:default; }
+        .ca-menu-item b { display:block; font-weight:600; font-size:13.5px; }
+        .ca-menu-item small { display:block; color:var(--muted); font-size:11.5px; }
         /* Si la tarjeta además es un botón (el aviso de Legal, por ejemplo), responde
            al mouse igual que los accesos de arriba. */
         button.ca-card { transition:transform .14s, box-shadow .14s; }
@@ -1497,15 +1552,15 @@ export default function ClinicaApp() {
         {view === "agenda" && (
           <Agenda
             citas={citas} bloqueos={bloqueos} fecha={agendaFecha} setFecha={setAgendaFecha}
-            vista={agendaVista} setVista={setAgendaVista} esAsistente={esAsistente} esMedico={usuario?.rol === "medico"}
+            vista={agendaVista} setVista={setAgendaVista} esAsistente={esAsistente} esMedico={usuario?.rol === "medico"} soloLectura={soloLectura}
             onBloquear={() => setBloqueando({})} onBorrarBloqueo={borrarBloqueo} onVenta={() => setCobrando({})}
             onAgendar={(precarga) => setAdding(precarga && precarga.fecha ? precarga : {})} onAtender={setAtender} onRecordar={setRecordar}
-            onReagendar={setReagendar} onCancelar={setCancelando} openFicha={openFicha}
+            onReagendar={setReagendar} onDuplicar={duplicarCita} onCancelar={setCancelando} openFicha={openFicha}
             onConfirmar={confirmarCita} onSetEstado={setEstadoCita} onAbrirCita={setCitaDetalle}
             onMensaje={(c) => { const p = pacientes.find((x) => x.id === c.pacienteId); if (p) { setWaPaciente(p); setWaCita(c); } else showToast("No se encontró el paciente"); }}
             onCobrar={(c) => setCobrando({ pacienteId: c.pacienteId, paciente: c.paciente, citaId: c.id, especialidad: c.especialidad })}
-            onEditarNota={setNotaCita}
-            onSetDecision={usuario?.rol === "medico" ? undefined : setDecisionCita}
+            onEditarNota={soloLectura ? undefined : setNotaCita}
+            onSetDecision={(usuario?.rol === "medico" || soloLectura) ? undefined : setDecisionCita}
             onEliminarCita={(usuario?.rol === "asistente" || usuario?.rol === "admin") ? eliminarCita : undefined}
           />
         )}
@@ -1515,13 +1570,15 @@ export default function ClinicaApp() {
             <div className="ca-tophead">
               <div>
                 <h1 className="ca-h1">Pacientes</h1>
-                <div className="ca-sub">{filtered.length === pacientes.length ? `${pacientes.length} en total` : `${filtered.length} de ${pacientes.length}`}</div>
+                <div className="ca-sub">{filtered.length === basePacientes.length ? `${basePacientes.length} en total` : `${filtered.length} de ${basePacientes.length}`}</div>
               </div>
               <div style={{ display: "flex", gap: 9, alignItems: "center" }}>
-                {usuario?.rol !== "medico" && <ExportBtns nombre="pacientes" titulo="Pacientes" disabled={filtered.length === 0}
+                {!ocultaContacto && <ExportBtns nombre="pacientes" titulo="Pacientes" disabled={filtered.length === 0}
+                  showToast={showToast}
+                  contexto={[filterSede === "piura" ? "Piura" : filterSede === "lima" ? "Lima" : "Todas las sedes", filterProf, filterFrec && `Estado: ${filterFrec}`].filter(Boolean).join(" · ")}
                   headers={["Nombre", "Documento", "Numero", "Edad", "Genero", "Telefono", "Direccion", "Especialidad", "Ultima visita", "Proxima sesion", "Pendiente S/"]}
                   filas={filtered.map((p) => [p.nombre, p.tipo_documento_label || "", p.numero_documento || "", p.edad ?? "", p.genero_label || "", p.tel, p.direccion || "", p.especialidad, p.ultima, p.proxima ? `${p.proxima.fecha} ${p.proxima.hora}` : "", p.cuenta?.pendiente || 0])} />}
-                {usuario?.rol !== "medico" && (
+                {usuario?.rol !== "medico" && !soloLectura && (
                   <button className="ca-btn" onClick={() => setEditingPaciente({ new: true })}>
                     <UserPlus size={16} strokeWidth={2.1} /> Nuevo paciente
                   </button>
@@ -1552,14 +1609,27 @@ export default function ClinicaApp() {
               </select>
               <button className={`ca-fchip ${soloSinProxima ? "on" : ""}`} onClick={() => setSoloSinProxima((v) => !v)}
                 style={{ marginLeft: 6, color: soloSinProxima ? undefined : "#B0822F" }}>⏰ Sin próxima sesión</button>
+              <button className={`ca-fchip ${filtroRiesgoS3 ? "on" : ""}`} onClick={() => setFiltroRiesgoS3((v) => !v)}
+                title="Sesión 3 sin próxima cita agendada: riesgo de abandono."
+                style={{ marginLeft: 6, color: filtroRiesgoS3 ? undefined : "#B23A3A" }}>🚩 Riesgo S3</button>
+              <button className={`ca-fchip ${filtroFinBloque ? "on" : ""}`} onClick={() => setFiltroFinBloque((v) => !v)}
+                title="Cierra su bloque de sesiones y aún no hay Alta/Continuidad/Derivación registrada."
+                style={{ marginLeft: 6, color: filtroFinBloque ? undefined : "#8A6D14" }}>🔔 Fin de bloque sin decisión</button>
+              {consultasAgendadas.length > 0 && (
+                <button className={`ca-fchip ${verConsultas ? "on" : ""}`} onClick={() => setVerConsultas((v) => !v)}
+                  title="Fichas abiertas por una consulta agendada. Todavia no son pacientes: lo seran cuando el lead inicie proceso."
+                  style={{ marginLeft: 6 }}>📅 Consultas agendadas ({consultasAgendadas.length})</button>
+              )}
             </div>
             {filtered.length === 0 ? (
-              <div className="ca-empty">No encontramos a nadie con ese filtro. Prueba con otro o agrégalo arriba.</div>
+              <div className="ca-empty">{verConsultas
+                ? "No hay consultas agendadas pendientes de iniciar proceso."
+                : "No encontramos a nadie con ese filtro. Prueba con otro o agrégalo arriba."}</div>
             ) : (
               filtered.map((p) => {
                 const meta = p.proceso === "consulta"
                   ? "Consulta inicial"
-                  : `${p.n_sesion ? `Sesión ${p.n_sesion}` : ""}${p.n_sesion && p.proceso_label ? " · " : ""}${p.proceso_label || ""}`;
+                  : `${p.sesion_real ? `Sesión ${p.sesion_real}` : ""}${p.sesion_real && p.proceso_label ? " · " : ""}${p.proceso_label || ""}`;
                 return (
                   <div key={p.id} className="ca-row click" onClick={() => openFicha(p.id)}>
                     <div className="ca-avatar">{iniciales(p.nombre)}</div>
@@ -1567,6 +1637,9 @@ export default function ClinicaApp() {
                       <div className="ca-pname">{p.nombre}</div>
                       <div className="ca-pmeta">{p.profesional_nombre ? `${p.profesional_nombre} · ` : ""}{meta || `última visita ${p.ultima}`}</div>
                     </div>
+                    {p.provisional && <Tag colors={{ bg: "#FCF3D4", fg: "#8A6D14" }}>Consulta agendada</Tag>}
+                    {p.alertas_continuidad?.includes("riesgo_abandono_s3") && <Tag colors={{ bg: "#FBE1E1", fg: "#B23A3A" }}>🚩 Riesgo S3</Tag>}
+                    {p.alertas_continuidad?.includes("fin_bloque_sin_decision") && <Tag colors={{ bg: "#FCF3D4", fg: "#8A6D14" }}>🔔 Fin de bloque</Tag>}
                     {p.cuenta?.pendiente > 0 && <Tag colors={ESTADO_COBRO_COLOR.pendiente}>Debe {money(p.cuenta.pendiente)}</Tag>}
                     {p.frecuencia_label && <Tag colors={p.frecuencia === "alta" ? { bg: "#E7EEF6", fg: "#3D5C82" } : p.frecuencia === "en_pausa" ? { bg: "#FCF3D4", fg: "#8A6D14" } : { bg: "#E4F3E8", fg: "#1E7D45" }}>{p.frecuencia_label}</Tag>}
                     {p.modalidad_label && <Tag colors={{ bg: "#EFEDE8", fg: "#7C7870" }}>{p.modalidad_label}</Tag>}
@@ -1582,7 +1655,7 @@ export default function ClinicaApp() {
             liviana (no trae los campos clínicos) y el formulario guarda todo lo que
             tiene, así que abrirlo con la fila de la lista borraría lo que faltara. */}
         {view === "pacientes" && selected && (
-          <Ficha p={selected} esMedico={usuario?.rol === "medico"} onBack={() => setSelectedId(null)}
+          <Ficha p={selected} esMedico={usuario?.rol === "medico"} soloLectura={soloLectura} ocultaContacto={ocultaContacto} onBack={() => setSelectedId(null)}
             onEdit={() => {
               if (detalle && detalle.id === selectedId) return setEditingPaciente(detalle);
               showToast("Un segundo, terminando de cargar la ficha…");
@@ -1597,7 +1670,7 @@ export default function ClinicaApp() {
             onEliminarAdjunto={eliminarAdjunto} puedeEliminar={usuario?.rol === "medico" || usuario?.rol === "admin"} showToast={showToast} onRefrescar={refrescarPacientes} />
         )}
 
-        {view === "gerencia" && <Gerencia showToast={showToast} />}
+        {view === "gerencia" && <Gerencia showToast={showToast} clinica={usuario?.clinica?.nombre} />}
 
         {view === "historico" && <Historico showToast={showToast} esAdmin={usuario?.rol === "admin"} />}
 
@@ -1617,14 +1690,14 @@ export default function ClinicaApp() {
 
         {view === "profesionales" && <Profesionales showToast={showToast} esAdmin={usuario?.rol === "admin"} />}
 
-        {view === "herramientas" && <Recursos showToast={showToast} esAdmin={usuario?.rol === "admin"} esMedico={usuario?.rol === "medico"} />}
+        {view === "herramientas" && <Recursos showToast={showToast} esAdmin={usuario?.rol === "admin"} esMedico={usuario?.rol === "medico"} soloLectura={soloLectura} />}
         {view === "mentalidad" && <MentalidadItaca rol={usuario?.rol} esAdmin={usuario?.rol === "admin"} showToast={showToast} />}
 
         {view === "mensajes" && <Mensajes mensajes={mensajes} puedeEditar={usuario?.rol === "admin" || usuario?.rol === "asistente"} showToast={showToast} />}
 
-        {view === "marketing" && <Marketing showToast={showToast} onConvertir={refrescarPacientes} esAdmin={usuario?.rol === "admin"} sedePropia={usuario?.sede || ""} />}
+        {view === "marketing" && <Marketing showToast={showToast} onConvertir={refrescarPacientes} esAdmin={usuario?.rol === "admin"} sedePropia={usuario?.sede || ""} soloLectura={soloLectura} />}
 
-        {view === "finanzas" && <Finanzas showToast={showToast} esAdmin={usuario?.rol === "admin"} />}
+        {view === "finanzas" && <Finanzas showToast={showToast} esAdmin={usuario?.rol === "admin"} puedeVerCaja={veDinero} />}
 
         {view === "liquidacion" && <Liquidacion showToast={showToast} />}
 
@@ -1632,12 +1705,12 @@ export default function ClinicaApp() {
 
         {adding && (
           <AgendarModal pacientes={pacientes} fechaInicial={adding.fecha || agendaFecha}
-            horaInicial={adding.hora} medicoInicial={adding.medicoId}
+            horaInicial={adding.hora} medicoInicial={adding.medicoId} duplicarDe={adding.duplicarDe || null}
             onClose={() => setAdding(false)} onSave={agendarCita} />
         )}
         {agendarPara && (
           <AgendarModal pacientes={pacientes} fechaInicial={agendaFecha}
-            pacienteFijo={{ id: agendarPara.id, nombre: agendarPara.nombre, especialidad: agendarPara.especialidad, sede: agendarPara.sede, n_sesion: agendarPara.n_sesion }}
+            pacienteFijo={{ id: agendarPara.id, nombre: agendarPara.nombre, especialidad: agendarPara.especialidad, sede: agendarPara.sede, n_sesion: agendarPara.sesion_real }}
             onClose={() => setAgendarPara(null)} onSave={async (d) => { await agendarCita(d); setAgendarPara(null); }} />
         )}
         {vendiendoPaquete && (
@@ -1653,12 +1726,12 @@ export default function ClinicaApp() {
         )}
         {cobrando && <CobroModal prefill={cobrando} pacientes={pacientes} servicios={servicios} onClose={() => setCobrando(null)} onSave={guardarCobro} />}
         {citaDetalle && (
-          <CitaDetalleModal cita={citaDetalle} esMedico={usuario?.rol === "medico"} esAsistente={esAsistente}
+          <CitaDetalleModal cita={citaDetalle} esMedico={usuario?.rol === "medico"} esAsistente={esAsistente} soloLectura={soloLectura}
             onClose={() => setCitaDetalle(null)} onSetEstado={setEstadoCita} openFicha={openFicha}
-            onAtender={setAtender} onReagendar={setReagendar} onCancelar={setCancelando}
+            onAtender={setAtender} onReagendar={setReagendar} onDuplicar={duplicarCita} onCancelar={setCancelando}
             onMensaje={(c) => { const p = pacientes.find((x) => x.id === c.pacienteId); if (p) { setWaPaciente(p); setWaCita(c); } else showToast("No se encontró el paciente"); }}
             onCobrar={(c) => setCobrando({ pacienteId: c.pacienteId, paciente: c.paciente, citaId: c.id, especialidad: c.especialidad })}
-            medicos={medicosDir} servicios={servicios} onGuardar={usuario?.rol === "medico" ? undefined : editarCita} />
+            medicos={medicosDir} servicios={servicios} onGuardar={(usuario?.rol === "medico" || soloLectura) ? undefined : editarCita} />
         )}
         {bloqueando && <BloqueoModal fechaInicial={agendaFecha} onClose={() => setBloqueando(null)} onSave={guardarBloqueo} />}
         {cancelando && (
@@ -2050,7 +2123,64 @@ function GamificacionEditor({ inicial, showToast, onClose, onSaved }) {
   );
 }
 
-function Gerencia({ showToast }) {
+// Centro de exportación: un botón desplegable con Excel, PDF ejecutivo, Word y
+// PowerPoint (+ CSV crudo). Los cinco salen del MISMO modelo que pinta la
+// pantalla (exportGerencia.js), así dicen lo mismo. Lo usan tanto el panel de
+// Gerencia como el botón Exportar de cada tabla (ExportBtns).
+function ExportCenter({ modelo, nombre, disabled, onError }) {
+  const [abierto, setAbierto] = useState(false);
+  const [ocupado, setOcupado] = useState("");
+  const [error, setError] = useState("");
+  const ref = React.useRef(null);
+  useEffect(() => {
+    if (!abierto) return;
+    const h = (e) => { if (ref.current && !ref.current.contains(e.target)) setAbierto(false); };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, [abierto]);
+  async function correr(k, fn) {
+    setOcupado(k); setError("");
+    try {
+      // `modelo` puede venir como función: los listados grandes lo arman recién
+      // al exportar, no en cada render.
+      const m = typeof modelo === "function" ? modelo() : modelo;
+      if (!m) throw new Error("No hay datos para exportar.");
+      await fn(m);
+      setAbierto(false);
+    } catch (e) {
+      const msg = "No se pudo exportar: " + e.message;
+      setError(msg);
+      onError && onError(msg);
+    } finally { setOcupado(""); }
+  }
+  const opciones = [
+    { k: "xlsx", Icon: FileSpreadsheet, label: "Excel (.xlsx)", desc: "Tablas con fórmulas, editable", run: (m) => exportarExcel(m, nombre) },
+    { k: "pdf", Icon: FileDown, label: "PDF ejecutivo", desc: "Tarjetas y gráficos como en pantalla", run: (m) => exportarPDF(m) },
+    { k: "docx", Icon: FileText, label: "Word (.docx)", desc: "Tablas + espacio para redactar el análisis", run: (m) => exportarWord(m, nombre) },
+    { k: "pptx", Icon: Presentation, label: "PowerPoint (.pptx)", desc: "Una diapositiva por sección, gráficos editables", run: (m) => exportarPowerPoint(m, nombre) },
+    { k: "csv", Icon: Download, label: "CSV (datos crudos)", desc: "La tabla completa, para analizar aparte", run: (m) => exportarCSV(m, nombre) },
+  ];
+  return (
+    <div ref={ref} style={{ position: "relative", display: "inline-block" }}>
+      <button className="ca-btn ghost" disabled={disabled || !modelo} onClick={() => setAbierto((o) => !o)}>
+        <Download size={15} strokeWidth={2} /> Exportar <ChevronDown size={14} strokeWidth={2} />
+      </button>
+      {abierto && (
+        <div className="ca-card" style={{ position: "absolute", right: 0, top: "calc(100% + 6px)", zIndex: 40, minWidth: 290, padding: 6 }}>
+          {opciones.map(({ k, Icon, label, desc, run }) => (
+            <button key={k} className="ca-menu-item" disabled={!!ocupado} onClick={() => correr(k, run)}>
+              <Icon size={17} strokeWidth={1.8} style={{ color: "var(--accent)", flexShrink: 0 }} />
+              <span><b>{label}</b><small>{ocupado === k ? "Generando…" : desc}</small></span>
+            </button>
+          ))}
+          {error && <div style={{ fontSize: 12, color: "#B4564E", padding: "6px 10px 4px", lineHeight: 1.4 }}>{error}</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Gerencia({ showToast, clinica }) {
   const [periodo, setPeriodo] = useState("mes");
   const [sede, setSede] = useState("");
   const [data, setData] = useState(null);
@@ -2067,37 +2197,7 @@ function Gerencia({ showToast }) {
   }, [periodo, sede]);
 
   const op = data?.operacion, cap = data?.captacion, pac = data?.pacientes;
-
-  // Indicadores del tablero como pares Indicador/Valor para exportar.
-  const indicadores = data ? [
-    ["Período", data.periodo.label],
-    ["Sede", data.sede ? (data.sede === "lima" ? "Lima" : "Piura") : "Total"],
-    ["Sesiones en el período", op.citas],
-    ["Atendidas", op.atendidas],
-    ["% Asistencia", `${op.asistencia_pct}%`],
-    ["% Cancelación", `${op.cancelacion_pct}%`],
-    ["Recordatorios enviados", op.recordatorios],
-    ["Leads recibidos", cap.recibidos],
-    ["% de pauta", `${cap.pauta_pct}%`],
-    ["Cierres (iniciaron)", cap.cierres],
-    ["Tasa de cierre", `${cap.tasa_cierre}%`],
-    ["Mejor fuente", cap.top_fuente],
-    ["Mejor campaña", cap.top_campania],
-    ["Pacientes totales", pac.total],
-    ["Nuevos en el período", pac.nuevos],
-    ["Sin próxima sesión", pac.sin_proxima],
-    ...(data.retencion && data.retencion.con_sesiones > 0 ? [
-      ["Retención · en ritmo (<8d)", data.retencion.verde],
-      ["Retención · alerta (8–15d)", data.retencion.amarillo],
-      ["Retención · abandono (>15d)", data.retencion.rojo],
-      ["Retención · % abandono", `${data.retencion.rojo_pct}%`],
-    ] : []),
-    ["Ingresos (cobrado)", data.finanzas?.cobrado || 0],
-    ...(data.finanzas?.egresos != null ? [["Egresos (gastos)", data.finanzas.egresos]] : []),
-    ...(data.finanzas?.utilidad != null ? [["Utilidad (neto)", data.finanzas.utilidad]] : []),
-    ["Pendiente por cobrar", data.finanzas?.pendiente || 0],
-  ] : [];
-  const tituloGer = `Gerencia${data ? " · " + data.periodo.label : ""}${sede ? " · " + (sede === "lima" ? "Lima" : "Piura") : ""}`;
+  const modelo = data ? modeloReporte(data, { clinica }) : null;
 
   return (
     <div>
@@ -2109,15 +2209,14 @@ function Gerencia({ showToast }) {
           </div>
         </div>
         <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-          <ExportBtns nombre={`gerencia_${periodo}${sede ? "_" + sede : ""}`} titulo={tituloGer}
-            headers={["Indicador", "Valor"]} filas={indicadores} disabled={!data} />
+          <ExportCenter modelo={modelo} nombre="gerencia" disabled={!data} onError={showToast} />
           <div className="ca-seg">
             {[["", "Total"], ["lima", "Lima"], ["piura", "Piura"]].map(([v, l]) => (
               <button key={v || "total"} className={sede === v ? "on" : ""} onClick={() => setSede(v)}>{l}</button>
             ))}
           </div>
           <div className="ca-seg">
-            {[["hoy", "Hoy"], ["semana", "Semana"], ["mes", "Mes"]].map(([v, l]) => (
+            {[["hoy", "Hoy"], ["7d", "7 días"], ["semana", "Semana"], ["30d", "30 días"], ["mes", "Mes"]].map(([v, l]) => (
               <button key={v} className={periodo === v ? "on" : ""} onClick={() => setPeriodo(v)}>{l}</button>
             ))}
           </div>
@@ -2154,6 +2253,13 @@ function Gerencia({ showToast }) {
           <div style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 6 }}>
             Mejor campaña del período: <strong>{cap.top_campania}</strong>.
           </div>
+          {cap.por_dia && cap.por_dia.length > 1 && (
+            <div className="ca-card" style={{ marginTop: 14 }}>
+              <div className="ca-label" style={{ marginBottom: 10 }}>Leads por día</div>
+              <MiniBars data={cap.por_dia} valor={(d) => d.leads} etiqueta={(d) => dDeISO(d.fecha).getDate()}
+                color="#C9923A" fmt={(n) => `${n} ${n === 1 ? "lead" : "leads"}`} />
+            </div>
+          )}
 
           <h2 className="ca-secth" style={{ marginTop: 28 }}>Pacientes</h2>
           <div className="ca-stats">
@@ -2208,10 +2314,70 @@ function Gerencia({ showToast }) {
               Egresos y utilidad solo en la vista <strong>Total</strong> (no se registran por sede).
             </div>
           )}
+          {data.finanzas?.por_dia && data.finanzas.por_dia.length > 1 && (
+            <div className="ca-card" style={{ marginTop: 14 }}>
+              <div className="ca-label" style={{ marginBottom: 10 }}>Cobros por día</div>
+              <MiniBars data={data.finanzas.por_dia} valor={(d) => d.monto} etiqueta={(d) => dDeISO(d.fecha).getDate()} color="#4F8A77" />
+            </div>
+          )}
+
+          {data.diagnostico && (
+            <>
+              <h2 className="ca-secth" style={{ marginTop: 28 }}>Diagnóstico</h2>
+              <div style={{ fontSize: 12.5, color: "var(--muted)", marginTop: -6, marginBottom: 14 }}>
+                No es cuánto entra o sale: es si el equipo está usando lo que el sistema ya tiene para decidir a tiempo.
+              </div>
+
+              <div className="ca-label" style={{ marginBottom: 8 }}>Leads sin resolver</div>
+              <div className="ca-stats">
+                <StatCard label="Resueltos" valor={`${data.diagnostico.embudo.resueltos_pct}%`}
+                  sub={`${data.diagnostico.embudo.resueltos} de ${data.diagnostico.embudo.total}`}
+                  color={data.diagnostico.embudo.resueltos_pct >= 60 ? "#4F8A77" : "#B4564E"} />
+                <StatCard label="Ganados (iniciaron)" valor={data.diagnostico.embudo.ganados} color="#4F8A77" />
+                <StatCard label="Marcados perdidos" valor={data.diagnostico.embudo.perdidos}
+                  sub={data.diagnostico.embudo.perdidos === 0 && data.diagnostico.embudo.total > 0 ? "nadie cierra los que no compran" : undefined}
+                  color={data.diagnostico.embudo.perdidos === 0 && data.diagnostico.embudo.total > 0 ? "#B4564E" : "#4F8A77"} />
+                <StatCard label="En curso (sin cerrar)" valor={data.diagnostico.embudo.en_curso} color="#C9923A" />
+              </div>
+
+              <div className="ca-demo" style={{ marginTop: 20 }}>
+                <div>
+                  <div className="ca-label" style={{ marginBottom: 8 }}>Continuidad · sesiones por paciente</div>
+                  <div className="ca-card"><BarrasH data={data.diagnostico.continuidad.por_sesiones} color="#6E86A8" /></div>
+                  <div style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 6 }}>
+                    Sobre {data.diagnostico.continuidad.con_historia} pacientes con historia clínica.{" "}
+                    <strong style={{ color: data.diagnostico.continuidad.abandono_1_2_pct >= 40 ? "#B4564E" : "inherit" }}>
+                      {data.diagnostico.continuidad.abandono_1_2_pct}%
+                    </strong> no pasa de la sesión 2.
+                  </div>
+                </div>
+                <div>
+                  <div className="ca-label" style={{ marginBottom: 8 }}>Ingresos por medio de pago</div>
+                  <div className="ca-card"><BarrasH data={data.diagnostico.medio_pago.por_medio} color="#4F8A77" /></div>
+                  <div style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 6 }}>
+                    {data.diagnostico.medio_pago.total > 0 ? (
+                      <>
+                        <strong style={{ color: data.diagnostico.medio_pago.sin_medio_pct >= 20 ? "#B4564E" : "inherit" }}>
+                          {data.diagnostico.medio_pago.sin_medio_pct}%
+                        </strong> de lo cobrado no tiene medio de pago registrado.
+                      </>
+                    ) : "Sin cobros en el período."}
+                  </div>
+                </div>
+              </div>
+
+              <div className="ca-stats" style={{ marginTop: 20 }}>
+                <StatCard label="Sesiones con motivo de cierre registrado" valor={`${data.diagnostico.decision.pct}%`}
+                  sub={`${data.diagnostico.decision.con_motivo} de ${data.diagnostico.decision.citas_terminadas} sesiones terminadas`}
+                  color={data.diagnostico.decision.pct >= 60 ? "#4F8A77" : "#B4564E"} />
+              </div>
+            </>
+          )}
 
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 28, gap: 10, flexWrap: "wrap" }}>
             <h2 className="ca-secth" style={{ margin: 0 }}>Productividad por psicólogo</h2>
             <ExportBtns nombre={`productividad_${periodo}${sede ? "_" + sede : ""}`} titulo={`Productividad por psicólogo${data ? " · " + data.periodo.label : ""}`}
+              showToast={showToast} contexto={sede === "lima" ? "Lima" : sede === "piura" ? "Piura" : "Todas las sedes"}
               headers={["Psicologo", "Sesiones", "Atenciones", "Leads", "Cierres"]}
               filas={data.productividad.map((m) => [m.medico, m.citas, m.atenciones, m.leads, m.cierres])}
               disabled={data.productividad.length === 0} />
@@ -3253,7 +3419,9 @@ function Hoy({ proximas, citasHoy, porConfirmar, atendidas, onOpen, onGo, onRete
             {r.recordatorios.pendientes} {r.recordatorios.pendientes === 1 ? "cita de hoy sigue" : "citas de hoy siguen"} sin recordatorio
           </span>
           <span style={{ fontSize: 12.5, color: "var(--muted)" }}>
-            Si a esta hora no salieron solos, revisa que el envío automático esté corriendo. Puedes mandarlos a mano desde la agenda, con «Mensaje».
+            {r.solo_lectura
+              ? "Si a esta hora no salieron solos, avisa a coordinación para que revise el envío automático o los mande a mano."
+              : "Si a esta hora no salieron solos, revisa que el envío automático esté corriendo. Puedes mandarlos a mano desde la agenda, con «Mensaje»."}
           </span>
         </div>
       )}
@@ -3311,7 +3479,7 @@ function Hoy({ proximas, citasHoy, porConfirmar, atendidas, onOpen, onGo, onRete
             <div className="ca-gsub">{r ? `nuevos sin contactar · ${r.leads_hoy} hoy` : "cargando…"}</div>
           </button>
         )}
-        {esAdmin ? (
+        {(esAdmin || r?.ve_dinero) ? (
           <button className="ca-gcard" onClick={() => onGo("finanzas")}>
             <div className="ca-ghead"><TrendingUp size={14} strokeWidth={2} /> Ingresos hoy</div>
             <div className="ca-gmain">{r && r.ingresos_hoy != null ? money(r.ingresos_hoy) : "…"}</div>
@@ -3781,10 +3949,25 @@ function BrujulaClinica({ p, puede, onRefrescar, showToast }) {
 }
 
 function LineaTiempoProceso({ p }) {
+  // De las CITAS asistidas, no de las fichas clínicas escritas: la mayoría de
+  // las sesiones se cierran sin dejar ficha (ver "las dos puertas"), así que
+  // usar el historial de fichas dejaba esto vacío o con muchas menos sesiones
+  // de las reales. Se prioriza el N° de sesión que ya trae la cita; si ninguna
+  // lo trae, se numera por posición (de la más antigua a la más reciente).
   const puntos = useMemo(() => {
-    const hist = [...(p.historial || [])].reverse(); // de la más antigua a la más reciente
-    return hist.map((h, i) => ({ n: i + 1, fecha: h.fecha }));
-  }, [p.historial]);
+    const asistidas = (p.citas || [])
+      .filter((c) => c.estado === "asistio" || c.estado === "atendida")
+      .slice()
+      .sort((a, b) => (a.fecha_iso < b.fecha_iso ? -1 : a.fecha_iso > b.fecha_iso ? 1 : 0));
+    // La primera asistida sin N° es la consulta inicial; las demás usan su N° o,
+    // si no lo traen, su posición (sin contar la consulta). Así la consulta y la
+    // sesión 1 no salen las dos como "Consulta".
+    return asistidas.map((c, i) => {
+      const esConsulta = i === 0 && c.n_sesion == null;
+      const n = c.n_sesion != null ? c.n_sesion : (i === 0 ? 1 : i);
+      return { n, fecha: c.fecha, etiqueta: esConsulta ? "Consulta" : `Sesión ${n}` };
+    });
+  }, [p.citas]);
   const total = p.sesiones_proceso || 0;
   if (puntos.length === 0) return null;
   const proyectada = total > puntos.length;
@@ -3801,7 +3984,7 @@ function LineaTiempoProceso({ p }) {
                   <div style={{ width: 26, height: 26, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11.5, fontWeight: 700, background: actual ? "var(--accent)" : "#E3F0E8", color: actual ? "#fff" : "#2F6B4F" }}>
                     {actual ? pt.n : <Check size={13} strokeWidth={2.5} />}
                   </div>
-                  <div style={{ fontSize: 11.5, fontWeight: 600, marginTop: 6, textAlign: "center" }}>{pt.n === 1 ? "Consulta" : `Sesión ${pt.n}`}</div>
+                  <div style={{ fontSize: 11.5, fontWeight: 600, marginTop: 6, textAlign: "center" }}>{pt.etiqueta}</div>
                   <div style={{ fontSize: 11, color: "var(--muted)", textAlign: "center" }}>{pt.fecha}</div>
                 </div>
                 {(i < puntos.length - 1 || proyectada) && <div style={{ height: 2, width: 30, background: "var(--line)", marginTop: 12 }} />}
@@ -4075,7 +4258,180 @@ function FichaCard({ label, children, style }) {
   );
 }
 
-function Ficha({ p, onBack, onEdit, onWhatsApp, onSubirAdjunto, onEliminarAdjunto, puedeEliminar, clinica, onAgendar, onRegistrarSesion, puedeRegistrar, onVenderPaquete, puedeVenderPaquete, onRegistrarPago, puedeCobrar, esMedico, showToast, onRefrescar }) {
+// ---- Calendario de asistencia del paciente -------------------------------
+// El historial de citas es una lista, y una lista no deja ver PATRONES: que
+// alguien venía semanal y pasó a quincenal, que faltó tres veces seguidas, que
+// hay un hueco de un mes. En un calendario eso se ve de un golpe, y es lo que
+// avisa que un paciente se está yendo antes de que se vaya.
+const ASIST = {
+  atendida: { color: "#0A7D92", fondo: "#D7F4FA", label: "Asistió" },
+  asistio: { color: "#0A7D92", fondo: "#D7F4FA", label: "Asistió" },
+  no_asistio: { color: "#B4564E", fondo: "#FDE9E7", label: "No asistió" },
+  cancelada: { color: "#8A8A8A", fondo: "#EFEFEF", label: "Cancelada" },
+  reprogramada: { color: "#9C6B2E", fondo: "#FFF1DA", label: "Reprogramada" },
+};
+const ASIST_FUTURA = { color: "#6E6E6E", fondo: "transparent", label: "Agendada" };
+const VINO = new Set(["atendida", "asistio"]);
+const DIAS_INI = ["L", "M", "M", "J", "V", "S", "D"];
+
+// Un mes de la cuadrícula. Se dibujan varios seguidos: el ritmo de un paciente
+// no se lee en 30 días, se lee comparando meses.
+function MesAsistencia({ anio, mes, porFecha }) {
+  const celdas = useMemo(() => {
+    const primero = new Date(anio, mes, 1);
+    const desfase = (primero.getDay() + 6) % 7; // la semana empieza el lunes
+    const cuantos = new Date(anio, mes + 1, 0).getDate();
+    const out = new Array(desfase).fill(null);
+    for (let d = 1; d <= cuantos; d++) out.push(d);
+    while (out.length % 7) out.push(null);
+    return out;
+  }, [anio, mes]);
+
+  return (
+    <div>
+      <div className="ca-asist-rot">{MESES_FULL[mes + 1]} {anio}</div>
+      <div className="ca-asist-grid">
+        {DIAS_INI.map((d, i) => <span key={i} className="ca-asist-dia">{d}</span>)}
+        {celdas.map((d, i) => {
+          if (d === null) return <span key={i} />;
+          const iso = `${anio}-${String(mes + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+          const cita = porFecha.get(iso);
+          const conocido = cita ? ASIST[cita.estado] : null;
+          const est = cita ? (conocido || ASIST_FUTURA) : null;
+          const esHoy = iso === HOY_ISO;
+          return (
+            <span key={i} className="ca-asist-celda"
+              title={cita ? `${cita.hora} · ${cita.estado_label}${cita.medico ? " · " + cita.medico : ""}` : ""}
+              style={{
+                background: est ? est.fondo : "transparent",
+                color: est ? est.color : "var(--ink-soft)",
+                fontWeight: est ? 600 : 400,
+                border: cita && !conocido ? `1px dashed ${est.color}`
+                  : (esHoy ? "1px solid var(--accent)" : "1px solid transparent"),
+                cursor: cita ? "help" : "default",
+              }}>
+              {d}
+            </span>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function CalendarioAsistencia({ citas }) {
+  // Índice fecha -> cita. Si hay varias el mismo día, vale a la que asistió.
+  const porFecha = useMemo(() => {
+    const m = new Map();
+    for (const c of citas || []) {
+      const prev = m.get(c.fecha_iso);
+      if (!prev || (VINO.has(c.estado) && !VINO.has(prev.estado))) m.set(c.fecha_iso, c);
+    }
+    return m;
+  }, [citas]);
+
+  // Termina en el mes de la última cita: ahí está la información fresca, y los
+  // dos meses previos dan el contexto de cómo venía.
+  const ultima = (citas || [])[0];
+  const inicio = ultima ? dLocal(ultima.fecha_iso) : new Date();
+  const [cursor, setCursor] = useState(new Date(inicio.getFullYear(), inicio.getMonth(), 1));
+  const anio = cursor.getFullYear(), mes = cursor.getMonth();
+  // Del más antiguo al más reciente; en pantallas chicas se ocultan los viejos.
+  const meses = [-2, -1, 0].map((d) => {
+    const f = new Date(anio, mes + d, 1);
+    return { anio: f.getFullYear(), mes: f.getMonth() };
+  });
+
+  // Resumen y ritmo: sobre TODAS las citas, no solo los meses a la vista.
+  const resumen = useMemo(() => {
+    const r = { vino: 0, falto: 0, cancelo: 0, proximas: 0 };
+    const fechasVino = [];
+    const hoy = HOY_ISO;
+    for (const c of citas || []) {
+      if (VINO.has(c.estado)) { r.vino++; fechasVino.push(c.fecha_iso); }
+      else if (c.estado === "no_asistio") r.falto++;
+      else if (c.estado === "cancelada") r.cancelo++;
+      else if (c.fecha_iso >= hoy) r.proximas++;
+    }
+    // Cada cuánto viene: mediana de los días entre sesiones a las que sí asistió.
+    // Mediana y no promedio: un solo parón de dos meses no debe deformar el dato.
+    fechasVino.sort();
+    const huecos = [];
+    for (let i = 1; i < fechasVino.length; i++) {
+      huecos.push(Math.round((dLocal(fechasVino[i]) - dLocal(fechasVino[i - 1])) / 86400000));
+    }
+    huecos.sort((a, b) => a - b);
+    r.cada = huecos.length ? huecos[Math.floor(huecos.length / 2)] : null;
+    r.ultima = fechasVino.length ? fechasVino[fechasVino.length - 1] : null;
+    r.diasSinVenir = r.ultima
+      ? Math.round((dLocal(hoy) - dLocal(r.ultima)) / 86400000) : null;
+    return r;
+  }, [citas]);
+
+  const mover = (d) => setCursor(new Date(anio, mes + d, 1));
+  const alerta = resumen.cada != null && resumen.diasSinVenir > resumen.cada * 2;
+
+  return (
+    <div className="ca-card ca-asist">
+      <div>
+        <div className="ca-asist-nav">
+          <button className="ca-mini" onClick={() => mover(-1)} aria-label="Meses anteriores">
+            <ChevronLeft size={14} strokeWidth={2} />
+          </button>
+          <button className="ca-mini" onClick={() => mover(1)} aria-label="Meses siguientes">
+            <ChevronRight size={14} strokeWidth={2} />
+          </button>
+        </div>
+        <div className="ca-asist-meses">
+          {meses.map((m, i) => (
+            <div key={`${m.anio}-${m.mes}`} className={`ca-asist-m${i + 1}`}>
+              <MesAsistencia anio={m.anio} mes={m.mes} porFecha={porFecha} />
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="ca-asist-lado">
+        <div className="ca-asist-cifras">
+          {[["Asistió", resumen.vino, "#0A7D92"], ["No asistió", resumen.falto, "#B4564E"],
+            ["Canceló", resumen.cancelo, "#8A8A8A"], ["Por venir", resumen.proximas, "var(--ink-soft)"]].map(([l, n, c]) => (
+            <div key={l}>
+              <div style={{ fontSize: 21, fontWeight: 600, color: c, letterSpacing: "-0.02em" }}>{n}</div>
+              <div style={{ fontSize: 11.5, color: "var(--muted)" }}>{l}</div>
+            </div>
+          ))}
+        </div>
+        <div style={{ fontSize: 13, color: "var(--ink-soft)", lineHeight: 1.7 }}>
+          {resumen.cada != null && (
+            <div>Viene aproximadamente <strong>cada {resumen.cada} día{resumen.cada === 1 ? "" : "s"}</strong>.</div>
+          )}
+          {resumen.diasSinVenir != null && (
+            <div style={alerta ? { color: "#9C6B2E", fontWeight: 600 } : undefined}>
+              Última sesión hace {resumen.diasSinVenir} día{resumen.diasSinVenir === 1 ? "" : "s"}
+              {alerta ? " — lleva más del doble de su ritmo habitual." : "."}
+            </div>
+          )}
+          {resumen.falto > 0 && (
+            <div>Faltó a {resumen.falto} de {resumen.vino + resumen.falto} sesiones agendadas.</div>
+          )}
+        </div>
+        <div className="ca-asist-leyenda">
+          {[["#0A7D92", "#D7F4FA", "Asistió"], ["#B4564E", "#FDE9E7", "No asistió"],
+            ["#8A8A8A", "#EFEFEF", "Cancelada"]].map(([c, f, l]) => (
+            <span key={l}>
+              <span className="ca-asist-pto" style={{ background: f, border: `1px solid ${c}` }} />{l}
+            </span>
+          ))}
+          <span>
+            <span className="ca-asist-pto" style={{ border: "1px dashed #6E6E6E" }} />Agendada
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Ficha({ p, onBack, onEdit, onWhatsApp, onSubirAdjunto, onEliminarAdjunto, puedeEliminar, clinica, onAgendar, onRegistrarSesion, puedeRegistrar, onVenderPaquete, puedeVenderPaquete, onRegistrarPago, puedeCobrar, esMedico, soloLectura = false, ocultaContacto = false, showToast, onRefrescar }) {
   const alertas = (p.alertas || "").split(",").map((s) => s.trim()).filter(Boolean);
   const ultimaEvo = (p.historial || [])[0];
   return (
@@ -4101,10 +4457,10 @@ function Ficha({ p, onBack, onEdit, onWhatsApp, onSubirAdjunto, onEliminarAdjunt
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           {/* El psicólogo solo edita la ficha/historia: sin registrar sesión, agendar, WhatsApp ni imprimir. */}
           {puedeRegistrar && !esMedico && <button className="ca-mini" onClick={onRegistrarSesion}><Activity size={13} strokeWidth={2} /> Registrar sesión</button>}
-          {!esMedico && <button className="ca-mini" onClick={onAgendar}><Calendar size={13} strokeWidth={2} /> Agendar</button>}
-          {!esMedico && <button className="ca-mini wa" onClick={onWhatsApp}><MessageCircle size={13} strokeWidth={2} /> WhatsApp</button>}
+          {!esMedico && !soloLectura && <button className="ca-mini" onClick={onAgendar}><Calendar size={13} strokeWidth={2} /> Agendar</button>}
+          {!esMedico && !soloLectura && <button className="ca-mini wa" onClick={onWhatsApp}><MessageCircle size={13} strokeWidth={2} /> WhatsApp</button>}
           {!esMedico && <button className="ca-mini" onClick={() => imprimirHistoria(p, clinica)}><FileText size={13} strokeWidth={2} /> Imprimir</button>}
-          <button className="ca-mini" onClick={onEdit}><Pencil size={13} strokeWidth={2} /> Editar</button>
+          {!soloLectura && <button className="ca-mini" onClick={onEdit}><Pencil size={13} strokeWidth={2} /> Editar</button>}
         </div>
       </div>
 
@@ -4117,7 +4473,7 @@ function Ficha({ p, onBack, onEdit, onWhatsApp, onSubirAdjunto, onEliminarAdjunt
             <span style={{ background: p.frecuencia === "alta" ? "#EEEBE6" : "#E3F0E8", color: p.frecuencia === "alta" ? "#8A8378" : "#2F6B4F", fontSize: 12, fontWeight: 600, padding: "2px 10px", borderRadius: 20 }}>
               {p.frecuencia === "alta" ? "Alta" : p.frecuencia === "en_pausa" ? "En pausa" : "En proceso"}
             </span>
-            <span style={{ fontWeight: 600 }}>{p.proceso === "consulta" ? "Consulta inicial" : `Sesión ${p.n_sesion || 0}${p.sesiones_proceso ? ` de ${p.sesiones_proceso}` : ""}`}</span>
+            <span style={{ fontWeight: 600 }}>{p.proceso === "consulta" ? "Consulta inicial" : `Sesión ${p.sesion_real || 0}${p.sesiones_proceso ? ` de ${p.sesiones_proceso}` : ""}`}</span>
           </div>
           <div className="ca-pmeta">{[p.proceso_label && p.proceso !== "consulta" ? p.proceso_label : "", p.frecuencia_label].filter(Boolean).join(" · ") || "Frecuencia —"}</div>
           <div className="ca-pmeta" style={{ marginTop: 4 }}>Última sesión: {p.ultima}</div>
@@ -4167,7 +4523,7 @@ function Ficha({ p, onBack, onEdit, onWhatsApp, onSubirAdjunto, onEliminarAdjunt
         </FichaCard>
       </div>
 
-      {(!esMedico && (p.numero_documento || p.tel || p.direccion || p.tutor_nombre)) && (
+      {(!ocultaContacto && (p.numero_documento || p.tel || p.direccion || p.tutor_nombre)) && (
         <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 22 }}>
           {p.numero_documento && <div className="ca-field"><FileText size={15} strokeWidth={1.9} style={{ color: "var(--muted)" }} /> {p.tipo_documento_label} {p.numero_documento}</div>}
           {p.tel && <div className="ca-field"><Phone size={15} strokeWidth={1.9} style={{ color: "var(--muted)" }} /> {p.tel}</div>}
@@ -4232,7 +4588,7 @@ function Ficha({ p, onBack, onEdit, onWhatsApp, onSubirAdjunto, onEliminarAdjunt
 
       <RedProfesionalesPaciente pacienteId={p.id} puede={puedeRegistrar} showToast={showToast} />
 
-      <ConsentimientoPaciente pacienteId={p.id} showToast={showToast} />
+      {!soloLectura && <ConsentimientoPaciente pacienteId={p.id} showToast={showToast} />}
 
       {/* Pagos y estado de cuenta: NO para el psicólogo. */}
       {!esMedico && (p.cuenta || puedeCobrar) && (
@@ -4318,6 +4674,9 @@ function Ficha({ p, onBack, onEdit, onWhatsApp, onSubirAdjunto, onEliminarAdjunt
 
       {p.citas && p.citas.length > 0 && (
         <>
+          <h2 className="ca-secth">Asistencia</h2>
+          <CalendarioAsistencia citas={p.citas} />
+
           <h2 className="ca-secth">Historial de citas</h2>
           <div className="ca-card" style={{ marginBottom: 26, padding: 0, overflow: "hidden" }}>
             {p.citas.map((c) => (
@@ -4383,7 +4742,7 @@ function Ficha({ p, onBack, onEdit, onWhatsApp, onSubirAdjunto, onEliminarAdjunt
 
       <h2 className="ca-secth" style={{ marginTop: 28 }}>Archivos adjuntos</h2>
       <div className="ca-card">
-        <UploaderAdjunto onSubir={onSubirAdjunto} />
+        {!soloLectura && <UploaderAdjunto onSubir={onSubirAdjunto} />}
         <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 9 }}>Laboratorios, ecografías, PDFs o imágenes. Máx. 25 MB. Descarga protegida (solo personal de la clínica).</div>
         {p.adjuntos === undefined ? (
           <div style={{ color: "var(--muted)", fontSize: 14, marginTop: 14 }}>Cargando archivos…</div>
@@ -4401,27 +4760,28 @@ function Ficha({ p, onBack, onEdit, onWhatsApp, onSubirAdjunto, onEliminarAdjunt
 
 // `horaInicial` y `medicoInicial` llegan cuando se agenda haciendo clic en un
 // hueco de la agenda: el modal se abre con ese psicólogo y esa hora ya puestos.
-function AgendarModal({ pacientes, fechaInicial, horaInicial, medicoInicial, pacienteFijo, onClose, onSave }) {
+function AgendarModal({ pacientes, fechaInicial, horaInicial, medicoInicial, pacienteFijo, duplicarDe, onClose, onSave }) {
   const [busca, setBusca] = useState("");
-  const [sel, setSel] = useState(pacienteFijo || null);
+  const [sel, setSel] = useState(pacienteFijo || duplicarDe?.paciente || null);
   const [nuevo, setNuevo] = useState(false);
   const [nuevoTel, setNuevoTel] = useState("");
   const [fecha, setFecha] = useState(fechaInicial || HOY_ISO);
   const [hora, setHora] = useState(horaInicial || "");
-  const [esp, setEsp] = useState(pacienteFijo?.especialidad || "");
-  const [categoria, setCategoria] = useState("");
+  const [esp, setEsp] = useState(pacienteFijo?.especialidad || duplicarDe?.especialidad || "");
+  const [categoria, setCategoria] = useState(duplicarDe?.categoria || "");
   const [servicios, setServicios] = useState([]);
   const [medicos, setMedicos] = useState([]);
   const [medicoId, setMedicoId] = useState(medicoInicial ? String(medicoInicial) : "");
-  const [sede, setSede] = useState(pacienteFijo?.sede || "");
-  const [modalidad, setModalidad] = useState("presencial");
+  const [sede, setSede] = useState(pacienteFijo?.sede || duplicarDe?.sede || "");
+  const [modalidad, setModalidad] = useState(duplicarDe?.modalidad || "presencial");
   const [enlace, setEnlace] = useState("");
   const [notas, setNotas] = useState("");
   const [motivoConsulta, setMotivoConsulta] = useState("");
   const [error, setError] = useState("");
   const [enviando, setEnviando] = useState(false);
   const [nSesion, setNSesion] = useState(
-    pacienteFijo?.n_sesion != null ? String(pacienteFijo.n_sesion + 1) : ""
+    pacienteFijo?.n_sesion != null ? String(pacienteFijo.n_sesion + 1)
+      : duplicarDe?.n_sesion != null ? String(duplicarDe.n_sesion + 1) : ""
   );
 
   useEffect(() => { api.medicos().then(setMedicos).catch(() => {}); }, []);
@@ -4441,14 +4801,20 @@ function AgendarModal({ pacientes, fechaInicial, horaInicial, medicoInicial, pac
   }, [servicios, categoria]);
 
   const matches = useMemo(
-    () => (busca.trim() ? pacientes.filter((p) => p.nombre.toLowerCase().includes(busca.toLowerCase())).slice(0, 4) : []),
+    () => (busca.trim() ? pacientes.filter((p) => coincideBusqueda(p.nombre, busca)).slice(0, 4) : []),
     [busca, pacientes]
   );
 
   function elegir(p) {
     setSel(p); setNuevo(false); setEsp(p.especialidad || "");
     if (p.sede) setSede(p.sede);
-    if (p.n_sesion != null) setNSesion(String(p.n_sesion + 1));
+    // La sesión real (de las citas asistidas), no el contador manual del
+    // paciente — ese casi nunca se actualiza (ver core.continuidad.sesion_real).
+    if (p.sesion_real != null) setNSesion(String(p.sesion_real + 1));
+    // Con quién y cómo ya viene atendiéndose: para que coordinación no lo vuelva
+    // a teclear en cada sesión. Sigue siendo editable si toca cambiarlo.
+    if (p.profesional_medico_id) setMedicoId(String(p.profesional_medico_id));
+    if (p.modalidad) setModalidad(p.modalidad);
     setBusca("");
   }
   function elegirNuevo() { setNuevo(true); setSel(null); }
@@ -4478,10 +4844,15 @@ function AgendarModal({ pacientes, fechaInicial, horaInicial, medicoInicial, pac
   return (
     <div className="ca-modal-bg" onClick={onClose}>
       <div className="ca-modal" style={{ maxWidth: 430 }} onClick={(e) => e.stopPropagation()}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
-          <strong style={{ fontSize: 16 }}>Nueva sesión</strong>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: duplicarDe ? 4 : 16 }}>
+          <strong style={{ fontSize: 16 }}>{duplicarDe ? "Duplicar sesión" : "Nueva sesión"}</strong>
           <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)" }}><X size={18} /></button>
         </div>
+        {duplicarDe && (
+          <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 12 }}>
+            Copiado de la sesión anterior — revisa la fecha antes de guardar.
+          </div>
+        )}
 
         <div style={{ marginBottom: 13 }}>
           <div className="ca-label">Paciente</div>
@@ -4737,7 +5108,7 @@ function NotaCitaModal({ cita, onClose, onSaved, showToast }) {
   );
 }
 
-function CitaRow({ c, esAsistente, esMedico, onAtender, onRecordar, onReagendar, onCancelar, onConfirmar, onCobrar, onSetEstado, onMensaje, openFicha, onEditarNota, onEliminarCita, onSetDecision }) {
+function CitaRow({ c, esAsistente, esMedico, soloLectura = false, onAtender, onRecordar, onReagendar, onDuplicar, onCancelar, onConfirmar, onCobrar, onSetEstado, onMensaje, openFicha, onEditarNota, onEliminarCita, onSetDecision }) {
   const activa = c.estado !== "atendida" && c.estado !== "cancelada";
   const col = STATUS[c.estado] || {};
   const cc = colorCita(c);
@@ -4753,7 +5124,7 @@ function CitaRow({ c, esAsistente, esMedico, onAtender, onRecordar, onReagendar,
         </div>
       </div>
       <SpecialtyTag name={c.especialidad} />
-      {esMedico ? (
+      {(esMedico || soloLectura) ? (
         <Tag colors={STATUS[c.estado]}>{c.estado_label}</Tag>
       ) : (
         <select className="ca-input" title="Cambiar estado de la cita"
@@ -4766,23 +5137,24 @@ function CitaRow({ c, esAsistente, esMedico, onAtender, onRecordar, onReagendar,
       <div className="ca-actions">
         {/* Estado (confirmar/asistió/cancelar…) se maneja con el desplegable de arriba.
             Aquí solo acciones que NO son estado: mensaje, atender, cobrar, mover. */}
-        {!esMedico && (
+        {!esMedico && !soloLectura && (
           <button className="ca-mini wa" onClick={() => onMensaje(c)} title="Enviar mensaje (recordatorio y demás plantillas)"><MessageCircle size={13} strokeWidth={2} /> Mensaje{c.recordado ? " ✓" : ""}</button>
         )}
-        {activa && !esAsistente && (
+        {activa && !esAsistente && !soloLectura && (
           <button className="ca-mini" onClick={() => onAtender(c)}><HeartHandshake size={13} strokeWidth={2} /> {esMedico ? "Registrar sesión" : "Atender"}</button>
         )}
         {esMedico && (
           <button className="ca-mini" onClick={() => openFicha(c.pacienteId)} title="Historia clínica"><FileText size={13} strokeWidth={2} /> Historia</button>
         )}
-        {!esMedico && c.estado === "atendida" && (c.cobrada ? (
+        {!esMedico && !soloLectura && c.estado === "atendida" && (c.cobrada ? (
           <span className="ca-mini done"><Check size={13} strokeWidth={2.4} /> Cobrada</span>
         ) : (
           <button className="ca-mini" onClick={() => onCobrar(c)} title="Registrar cobro"><Receipt size={13} strokeWidth={2} /> Cobrar</button>
         ))}
         {/* Qué pasó con la sesión (código DP). Solo coordinación/gerencia; el
             psicólogo no lo ve. Va junto a la nota libre, no la reemplaza. */}
-        {!esMedico && onSetDecision && (
+        {soloLectura && c.decision_label && <span className="ca-mini done" title="Qué pasó con la sesión">{c.decision_label}</span>}
+        {!esMedico && !soloLectura && onSetDecision && (
           <select className="ca-input" title={c.decision_label || "Anotar qué pasó con la sesión"}
             style={{ width: "auto", maxWidth: 190, padding: "5px 9px", fontSize: 12.5, borderRadius: 999, cursor: "pointer" }}
             value={c.decision || ""} onChange={(e) => onSetDecision(c, e.target.value)}>
@@ -4799,8 +5171,11 @@ function CitaRow({ c, esAsistente, esMedico, onAtender, onRecordar, onReagendar,
             <Pencil size={13} strokeWidth={2} /> Nota{c.notas ? " ✓" : ""}
           </button>
         )}
-        {activa && !esMedico && (
+        {activa && !esMedico && !soloLectura && (
           <button className="ca-mini" onClick={() => onReagendar(c)} title="Reagendar (cambiar fecha/hora)"><Calendar size={13} strokeWidth={2} /> Mover</button>
+        )}
+        {!esMedico && !soloLectura && onDuplicar && (
+          <button className="ca-mini" onClick={() => onDuplicar(c)} title="Agendar la siguiente sesión con los mismos datos (paciente, psicólogo, servicio) — sugiere 7 días después"><Copy size={13} strokeWidth={2} /> Duplicar</button>
         )}
         {onEliminarCita && (
           <button className="ca-mini" onClick={() => onEliminarCita(c)} title="Eliminar esta cita (queda registrado para gerencia)" style={{ color: "#9C4646" }}><Trash2 size={13} strokeWidth={2} /> Eliminar</button>
@@ -4901,7 +5276,7 @@ function TerapeutasGrid({ citas, terapeutas, horarios = {}, fecha, onAbrirCita, 
   );
 }
 
-function Agenda({ citas, bloqueos = [], fecha, setFecha, vista, setVista, esAsistente, esMedico, onAgendar, onBloquear, onBorrarBloqueo, onVenta, onAtender, onRecordar, onReagendar, onCancelar, onConfirmar, onCobrar, onSetEstado, onAbrirCita, onMensaje, openFicha, onEditarNota, onEliminarCita, onSetDecision }) {
+function Agenda({ citas, bloqueos = [], fecha, setFecha, vista, setVista, esAsistente, esMedico, soloLectura = false, onAgendar, onBloquear, onBorrarBloqueo, onVenta, onAtender, onRecordar, onReagendar, onDuplicar, onCancelar, onConfirmar, onCobrar, onSetEstado, onAbrirCita, onMensaje, openFicha, onEditarNota, onEliminarCita, onSetDecision }) {
   const [filtroMedico, setFiltroMedico] = useState("");
   const [filtroSede, setFiltroSede] = useState("");
   const [filtroEstado, setFiltroEstado] = useState("");
@@ -4971,12 +5346,12 @@ function Agenda({ citas, bloqueos = [], fecha, setFecha, vista, setVista, esAsis
           <div className="ca-sub">{subt} · {activas.length} {activas.length === 1 ? "sesión" : "sesiones"}</div>
         </div>
         <div style={{ display: "flex", gap: 9, alignItems: "center" }}>
-          {!esMedico && <ExportBtns nombre="agenda" titulo="Agenda" disabled={activas.length === 0}
+          {!esMedico && <ExportBtns nombre="agenda" titulo="Agenda" disabled={activas.length === 0} contexto={subt}
             headers={["Fecha", "Hora", "Paciente", "Psicologo", "Especialidad", "N° sesion", "Sede", "Modalidad", "Estado", "Que paso"]}
             filas={activas.map((c) => [c.fecha, c.hora, c.paciente, c.medico, c.especialidad, c.n_sesion_efectivo || "", c.sede_label || "", c.modalidad === "virtual" ? "Virtual" : "Presencial", c.estado_label, c.decision_label || ""])} />}
-          {!esMedico && <button className="ca-btn ghost" onClick={onVenta}><Receipt size={15} strokeWidth={2} /> Venta</button>}
-          {!esMedico && <button className="ca-btn ghost" onClick={onBloquear}><Clock size={15} strokeWidth={2} /> Bloquear horario</button>}
-          {!esMedico && <button className="ca-btn" onClick={onAgendar}><Plus size={16} strokeWidth={2.2} /> Agendar sesión</button>}
+          {!esMedico && !soloLectura && <button className="ca-btn ghost" onClick={onVenta}><Receipt size={15} strokeWidth={2} /> Venta</button>}
+          {!esMedico && !soloLectura && <button className="ca-btn ghost" onClick={onBloquear}><Clock size={15} strokeWidth={2} /> Bloquear horario</button>}
+          {!esMedico && !soloLectura && <button className="ca-btn" onClick={onAgendar}><Plus size={16} strokeWidth={2.2} /> Agendar sesión</button>}
         </div>
       </div>
 
@@ -5104,15 +5479,15 @@ function Agenda({ citas, bloqueos = [], fecha, setFecha, vista, setVista, esAsis
               <Clock size={14} strokeWidth={2} />
               <span style={{ fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>{b.hora_inicio}–{b.hora_fin}</span>
               <span style={{ flex: 1 }}>🚫 {b.motivo || "No disponible"}{b.medico_nombre ? ` · ${b.medico_nombre}` : b.sede_label ? ` · ${b.sede_label}` : ""}</span>
-              {!esMedico && <button className="ca-iconbtn" title="Quitar bloqueo" onClick={() => onBorrarBloqueo(b)}><X size={14} strokeWidth={2} /></button>}
+              {!esMedico && !soloLectura && <button className="ca-iconbtn" title="Quitar bloqueo" onClick={() => onBorrarBloqueo(b)}><X size={14} strokeWidth={2} /></button>}
             </div>
           ))}
           {filtEstado(delDia(fecha)).length === 0 ? (
             bloqueosDia.length === 0 && <div className="ca-empty">{filtroEstado ? "No hay citas con ese estado en este día." : "No hay sesiones para este día. Usa «Agendar sesión» para reservar una."}</div>
           ) : (
             filtEstado(delDia(fecha)).map((c) => (
-              <CitaRow key={c.id} c={c} esAsistente={esAsistente} esMedico={esMedico}
-                onAtender={onAtender} onRecordar={onRecordar} onReagendar={onReagendar}
+              <CitaRow key={c.id} c={c} esAsistente={esAsistente} esMedico={esMedico} soloLectura={soloLectura}
+                onAtender={onAtender} onRecordar={onRecordar} onReagendar={onReagendar} onDuplicar={onDuplicar}
                 onCancelar={onCancelar} onConfirmar={onConfirmar} onCobrar={onCobrar}
                 onSetEstado={onSetEstado} onMensaje={onMensaje} openFicha={openFicha} onEditarNota={onEditarNota} onEliminarCita={onEliminarCita}
                 onSetDecision={onSetDecision} />
@@ -5121,7 +5496,7 @@ function Agenda({ citas, bloqueos = [], fecha, setFecha, vista, setVista, esAsis
         </div>
       ) : vista === "terapeutas" ? (
         <TerapeutasGrid citas={filtEstado(delDia(fecha))} terapeutas={filtroMedico ? [filtroMedico] : medicos} horarios={horariosPorNombre} fecha={fecha} onAbrirCita={onAbrirCita} bloqueos={bloqueosDia}
-          onAgendarEn={esMedico ? undefined : (nombre, hora) => onAgendar({ fecha, hora, medicoId: idPorNombre[nombre] })} />
+          onAgendarEn={(esMedico || soloLectura) ? undefined : (nombre, hora) => onAgendar({ fecha, hora, medicoId: idPorNombre[nombre] })} />
       ) : vista === "mes" ? (
         <div className="ca-mes">
           <div className="ca-mes-hd">
@@ -5174,7 +5549,7 @@ function Agenda({ citas, bloqueos = [], fecha, setFecha, vista, setVista, esAsis
                 })
               )}
               {/* Agendar en ese día sin salir de la semana. */}
-              {!esMedico && (
+              {!esMedico && !soloLectura && (
                 <button className="ca-wkadd" title={`Agendar el ${labelLargo(iso)}`}
                   onClick={() => onAgendar({ fecha: iso })}>
                   <Plus size={12} strokeWidth={2.4} /> Agendar
@@ -5188,7 +5563,7 @@ function Agenda({ citas, bloqueos = [], fecha, setFecha, vista, setVista, esAsis
   );
 }
 
-function CitaDetalleModal({ cita, esMedico, esAsistente, onClose, onSetEstado, openFicha, onAtender, onCobrar, onReagendar, onCancelar, onMensaje, onGuardar, medicos = [], servicios = [] }) {
+function CitaDetalleModal({ cita, esMedico, esAsistente, soloLectura = false, onClose, onSetEstado, openFicha, onAtender, onCobrar, onReagendar, onDuplicar, onCancelar, onMensaje, onGuardar, medicos = [], servicios = [] }) {
   const [estado, setEstado] = useState(cita.estado);
   // `medico` viene como nombre; para el selector se busca su id en el directorio.
   const [medicoId, setMedicoId] = useState(
@@ -5219,7 +5594,7 @@ function CitaDetalleModal({ cita, esMedico, esAsistente, onClose, onSetEstado, o
           {cita.notas ? <><br /><span style={{ fontStyle: "italic" }}>{cita.notas}</span></> : null}
         </div>
 
-        {!esMedico && (
+        {!esMedico && !soloLectura && (
           <div style={{ margin: "16px 0" }}>
             <div className="ca-label">Estado</div>
             <select className="ca-input" value={ESTADOS_CITA.some((e) => e.v === estado) ? estado : "agendada"}
@@ -5232,7 +5607,7 @@ function CitaDetalleModal({ cita, esMedico, esAsistente, onClose, onSetEstado, o
 
         {/* Reasignar y numerar la sesión sin borrar la cita y volver a crearla
             (pedido de las coordinadoras). Solo coordinación y gerencia. */}
-        {!esMedico && onGuardar && (
+        {!esMedico && !soloLectura && onGuardar && (
           <div style={{ display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap", margin: "4px 0 14px" }}>
             <div style={{ flex: 2, minWidth: 150 }}>
               <div className="ca-label">Psicólogo</div>
@@ -5270,11 +5645,12 @@ function CitaDetalleModal({ cita, esMedico, esAsistente, onClose, onSetEstado, o
 
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }}>
           <button className="ca-mini" onClick={() => { onClose(); openFicha(cita.pacienteId); }}><FileText size={13} strokeWidth={2} /> Ficha / pagos</button>
-          {!esMedico && <button className="ca-mini wa" onClick={() => { onClose(); onMensaje(cita); }}><MessageCircle size={13} strokeWidth={2} /> Mensaje</button>}
-          {activa && !esAsistente && <button className="ca-mini" onClick={() => { onClose(); onAtender(cita); }}><HeartHandshake size={13} strokeWidth={2} /> {esMedico ? "Registrar sesión" : "Atender"}</button>}
-          {!esMedico && <button className="ca-mini" onClick={() => { onClose(); onCobrar(cita); }}><Receipt size={13} strokeWidth={2} /> Cobrar</button>}
-          {activa && !esMedico && <button className="ca-mini" onClick={() => { onClose(); onReagendar(cita); }}><Calendar size={13} strokeWidth={2} /> Mover</button>}
-          {activa && <button className="ca-mini" style={{ color: "#B4564E" }} onClick={() => { onClose(); onCancelar(cita); }}><X size={13} strokeWidth={2} /> Cancelar</button>}
+          {!esMedico && !soloLectura && <button className="ca-mini wa" onClick={() => { onClose(); onMensaje(cita); }}><MessageCircle size={13} strokeWidth={2} /> Mensaje</button>}
+          {activa && !esAsistente && !soloLectura && <button className="ca-mini" onClick={() => { onClose(); onAtender(cita); }}><HeartHandshake size={13} strokeWidth={2} /> {esMedico ? "Registrar sesión" : "Atender"}</button>}
+          {!esMedico && !soloLectura && <button className="ca-mini" onClick={() => { onClose(); onCobrar(cita); }}><Receipt size={13} strokeWidth={2} /> Cobrar</button>}
+          {activa && !esMedico && !soloLectura && <button className="ca-mini" onClick={() => { onClose(); onReagendar(cita); }}><Calendar size={13} strokeWidth={2} /> Mover</button>}
+          {!esMedico && !soloLectura && onDuplicar && <button className="ca-mini" onClick={() => { onClose(); onDuplicar(cita); }} title="Agendar la siguiente sesión con los mismos datos — sugiere 7 días después"><Copy size={13} strokeWidth={2} /> Duplicar</button>}
+          {activa && !soloLectura && <button className="ca-mini" style={{ color: "#B4564E" }} onClick={() => { onClose(); onCancelar(cita); }}><X size={13} strokeWidth={2} /> Cancelar</button>}
         </div>
       </div>
     </div>
@@ -5872,7 +6248,7 @@ function waLinkTel(telefono) {
   return `https://wa.me/${d.length === 9 && d.startsWith("9") ? "51" + d : d}`;
 }
 
-function SolicitudesWhatsapp({ leads, onSeguimiento, onEditar, showToast }) {
+function SolicitudesWhatsapp({ leads, onSeguimiento, onEditar, showToast, soloLectura = false }) {
   const [verTodas, setVerTodas] = useState(false);
   const [prueba, setPrueba] = useState({ abierto: false, texto: "", data: null, cargando: false });
   const pendientes = useMemo(
@@ -5906,9 +6282,11 @@ function SolicitudesWhatsapp({ leads, onSeguimiento, onEditar, showToast }) {
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
           {conCita > 0 && <span style={{ ...WA_PILL, background: "#E1F2E8", color: "#2E7D52" }}>📅 {conCita} piden cita</span>}
           {demoradas > 0 && <span style={{ ...WA_PILL, background: "#F7E5E5", color: "#B4564E" }}>⏰ {demoradas} esperan 2+ días</span>}
-          <button className="ca-link" onClick={() => setPrueba((p) => ({ ...p, abierto: !p.abierto }))}>
-            {prueba.abierto ? "Ocultar prueba" : "Probar respuesta automática"}
-          </button>
+          {!soloLectura && (
+            <button className="ca-link" onClick={() => setPrueba((p) => ({ ...p, abierto: !p.abierto }))}>
+              {prueba.abierto ? "Ocultar prueba" : "Probar respuesta automática"}
+            </button>
+          )}
         </div>
       </div>
 
@@ -5984,12 +6362,16 @@ function SolicitudesWhatsapp({ leads, onSeguimiento, onEditar, showToast }) {
                   <MessageCircle size={13} strokeWidth={2} /> Responder
                 </a>
               )}
-              <button className="ca-mini" onClick={() => onSeguimiento(lead)} title="Registrar que ya lo atendiste (sale de esta bandeja)">
-                <Check size={13} strokeWidth={2.2} /> Atendido
-              </button>
-              <button className="ca-iconbtn" title="Editar lead (agendar, asignar psicólogo…)" onClick={() => onEditar(lead)}>
-                <Pencil size={14} strokeWidth={2} />
-              </button>
+              {!soloLectura && (
+                <button className="ca-mini" onClick={() => onSeguimiento(lead)} title="Registrar que ya lo atendiste (sale de esta bandeja)">
+                  <Check size={13} strokeWidth={2.2} /> Atendido
+                </button>
+              )}
+              {!soloLectura && (
+                <button className="ca-iconbtn" title="Editar lead (agendar, asignar psicólogo…)" onClick={() => onEditar(lead)}>
+                  <Pencil size={14} strokeWidth={2} />
+                </button>
+              )}
             </div>
           ))}
           {pendientes.length > visibles.length && (
@@ -6003,7 +6385,7 @@ function SolicitudesWhatsapp({ leads, onSeguimiento, onEditar, showToast }) {
   );
 }
 
-function Marketing({ showToast, onConvertir, esAdmin, sedePropia = "" }) {
+function Marketing({ showToast, onConvertir, esAdmin, sedePropia = "", soloLectura = false }) {
   const [leads, setLeads] = useState([]);
   const [rep, setRep] = useState(null);
   const [medicos, setMedicos] = useState([]);
@@ -6039,8 +6421,12 @@ function Marketing({ showToast, onConvertir, esAdmin, sedePropia = "" }) {
   const origen = window.location.origin;
 
   async function cargar() {
+    // La config de captación (token secreto) no se le entrega al rol de solo
+    // lectura (403): se pide aparte para que un rechazo no vacíe toda la pantalla.
     const [l, r, m, c, an] = await Promise.all([
-      api.leads(), api.reportesLeads(), api.medicos(), api.captacionConfig(), api.anuncios(),
+      api.leads(), api.reportesLeads(), api.medicos(),
+      soloLectura ? Promise.resolve(null) : api.captacionConfig().catch(() => null),
+      api.anuncios(),
     ]);
     setLeads(l); setRep(r); setMedicos(m); setCfg(c); setAnuncios(an);
   }
@@ -6161,13 +6547,15 @@ function Marketing({ showToast, onConvertir, esAdmin, sedePropia = "" }) {
           <ExportBtns nombre="leads" titulo="Captación · Leads" disabled={leads.length === 0}
             headers={["Nombre", "Telefono", "Fuente", "Subfuente", "Pauta", "Campaña", "Especialidad", "Psicologo", "Estado", "Creado"]}
             filas={leads.map((l) => [l.nombre, l.telefono, l.fuente_label, l.subfuente || "", l.es_pauta ? "Si" : "No", l.campania, l.especialidad, l.medico_nombre, l.estado_label, l.creado])} />
-          <button className="ca-btn" onClick={() => setCreando(true)}>
-            <Plus size={16} strokeWidth={2.2} /> Captar lead
-          </button>
+          {!soloLectura && (
+            <button className="ca-btn" onClick={() => setCreando(true)}>
+              <Plus size={16} strokeWidth={2.2} /> Captar lead
+            </button>
+          )}
         </div>
       </div>
 
-      <SolicitudesWhatsapp leads={leads} showToast={showToast}
+      <SolicitudesWhatsapp leads={leads} showToast={showToast} soloLectura={soloLectura}
         onSeguimiento={seguimientoLead} onEditar={setEditandoLead} />
 
       <ReporteCierreMkt showToast={showToast} />
@@ -6224,9 +6612,11 @@ function Marketing({ showToast, onConvertir, esAdmin, sedePropia = "" }) {
               Todo queda arriba, en <strong>Solicitudes por WhatsApp</strong>.
             </div>
             <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center", marginTop: 14 }}>
-              <button className="ca-btn ghost" onClick={probar} style={{ opacity: probando ? 0.6 : 1, pointerEvents: probando ? "none" : "auto" }}>
-                <Plus size={14} strokeWidth={2.2} /> {probando ? "Enviando…" : "Probar con un lead de ejemplo"}
-              </button>
+              {!soloLectura && (
+                <button className="ca-btn ghost" onClick={probar} style={{ opacity: probando ? 0.6 : 1, pointerEvents: probando ? "none" : "auto" }}>
+                  <Plus size={14} strokeWidth={2.2} /> {probando ? "Enviando…" : "Probar con un lead de ejemplo"}
+                </button>
+              )}
               {esAdmin && <button className="ca-link" onClick={regenerar}>Regenerar token</button>}
             </div>
             <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 12, lineHeight: 1.5 }}>
@@ -6325,8 +6715,10 @@ function Marketing({ showToast, onConvertir, esAdmin, sedePropia = "" }) {
 
       <h2 className="ca-secth" style={{ marginTop: 30 }}>Anuncios de pauta ({anuncios.length})</h2>
       <div className="ca-card">
-        <AnuncioForm onSave={anuncioEdit ? editarAnuncio : agregarAnuncio}
-          anuncio={anuncioEdit} onCancelar={() => setAnuncioEdit(null)} />
+        {!soloLectura && (
+          <AnuncioForm onSave={anuncioEdit ? editarAnuncio : agregarAnuncio}
+            anuncio={anuncioEdit} onCancelar={() => setAnuncioEdit(null)} />
+        )}
         {anuncios.length > 0 && (
           <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 9 }}>
             {anuncios.map((a) => (
@@ -6341,14 +6733,18 @@ function Marketing({ showToast, onConvertir, esAdmin, sedePropia = "" }) {
                     {a.link && <a href={a.link} target="_blank" rel="noreferrer" style={{ color: "var(--accent)", fontSize: 12.5, fontWeight: 600, display: "inline-flex", alignItems: "center", gap: 3 }}><ExternalLink size={12} strokeWidth={2} /> ver anuncio</a>}
                   </div>
                 </div>
-                <button className="ca-mini" onClick={() => alternarAnuncio(a)}
-                  title={a.activo ? "Pausar: deja de ofrecerse al registrar leads" : "Volver a ofrecerlo al registrar leads"}>
-                  {a.activo ? "Pausar" : "Activar"}
-                </button>
-                <button className="ca-mini" onClick={() => setAnuncioEdit(a)} title="Editar este anuncio">
-                  <Pencil size={13} strokeWidth={2} /> Editar
-                </button>
-                <button className="ca-iconbtn" title="Eliminar anuncio" onClick={() => quitarAnuncio(a.id)}><Trash2 size={14} strokeWidth={2} /></button>
+                {!soloLectura && (
+                  <button className="ca-mini" onClick={() => alternarAnuncio(a)}
+                    title={a.activo ? "Pausar: deja de ofrecerse al registrar leads" : "Volver a ofrecerlo al registrar leads"}>
+                    {a.activo ? "Pausar" : "Activar"}
+                  </button>
+                )}
+                {!soloLectura && (
+                  <button className="ca-mini" onClick={() => setAnuncioEdit(a)} title="Editar este anuncio">
+                    <Pencil size={13} strokeWidth={2} /> Editar
+                  </button>
+                )}
+                {!soloLectura && <button className="ca-iconbtn" title="Eliminar anuncio" onClick={() => quitarAnuncio(a.id)}><Trash2 size={14} strokeWidth={2} /></button>}
               </div>
             ))}
           </div>
@@ -6415,17 +6811,25 @@ function Marketing({ showToast, onConvertir, esAdmin, sedePropia = "" }) {
                 {lead.sede_label ? `${lead.sede_label} · ` : ""}{lead.fuente_label}{lead.subfuente ? ` › ${lead.subfuente}` : ""}{lead.tipo_servicio_label ? ` · ${lead.tipo_servicio_label}` : ""}{lead.anuncio_nombre ? ` · 📣 ${lead.anuncio_nombre.length > 32 ? lead.anuncio_nombre.slice(0, 32).trim() + "…" : lead.anuncio_nombre}` : ""}{lead.medico_nombre ? ` · ${lead.medico_nombre}` : ""}
               </div>
             </div>
-            <select className="ca-tplsel" value={lead.estado} onChange={(ev) => moverEstado(lead, ev.target.value)}
-              style={{ fontWeight: 600, background: (LEAD_ESTADO_COLOR[lead.estado] || {}).bg, color: (LEAD_ESTADO_COLOR[lead.estado] || {}).fg }}>
-              {LEAD_ESTADOS.map((s) => <option key={s.v} value={s.v}>{s.l}</option>)}
-            </select>
-            {!lead.paciente_nombre && (
+            {soloLectura ? (
+              <Tag colors={LEAD_ESTADO_COLOR[lead.estado] || {}}>{lead.estado_label}</Tag>
+            ) : (
+              <select className="ca-tplsel" value={lead.estado} onChange={(ev) => moverEstado(lead, ev.target.value)}
+                style={{ fontWeight: 600, background: (LEAD_ESTADO_COLOR[lead.estado] || {}).bg, color: (LEAD_ESTADO_COLOR[lead.estado] || {}).fg }}>
+                {LEAD_ESTADOS.map((s) => <option key={s.v} value={s.v}>{s.l}</option>)}
+              </select>
+            )}
+            {!soloLectura && lead.estado !== "ganado" && (
               <button className="ca-mini wa" title="Registrar seguimiento" onClick={() => seguimientoLead(lead)}><MessageCircle size={13} strokeWidth={2} /> Seguimiento</button>
             )}
-            <button className="ca-iconbtn" title="Editar lead" onClick={() => setEditandoLead(lead)}><Pencil size={14} strokeWidth={2} /></button>
-            {lead.paciente_nombre ? (
+            {!soloLectura && <button className="ca-iconbtn" title="Editar lead" onClick={() => setEditandoLead(lead)}><Pencil size={14} strokeWidth={2} /></button>}
+            {/* "Ya es paciente" lo decide el ESTADO del lead, no el tener ficha:
+                agendar la consulta abre una ficha provisional para colgar la cita,
+                y eso hacia que un lead PERDIDO se mostrara igual como paciente,
+                sin forma de quitarle la etiqueta. Paciente = inicio proceso. */}
+            {lead.estado === "ganado" ? (
               <Tag colors={LEAD_ESTADO_COLOR.ganado}>Ya es paciente</Tag>
-            ) : (
+            ) : soloLectura ? null : (
               <button className="ca-mini" onClick={() => convertir(lead)}>
                 <UserPlus size={13} strokeWidth={2} /> Convertir
               </button>
@@ -6926,7 +7330,7 @@ const RECURSO_TABS = [
   { v: "recordatorio", l: "Recordatorios del equipo", icon: Bell, hint: "Avisos de gerencia (capacitación, supervisión, NPS…) que salen en el inicio del equipo.", soloAdmin: true },
 ];
 
-function Recursos({ showToast, esAdmin, esMedico }) {
+function Recursos({ showToast, esAdmin, esMedico, soloLectura = false }) {
   const tabs = RECURSO_TABS.filter((t) => !t.soloAdmin || esAdmin);
   const [tipo, setTipo] = useState("herramienta");
   const [lista, setLista] = useState(null);
@@ -7018,7 +7422,7 @@ function Recursos({ showToast, esAdmin, esMedico }) {
                 {r.descripcion && <div style={{ fontSize: 13, color: "var(--ink-soft)", whiteSpace: "pre-wrap", lineHeight: 1.5 }}>{r.descripcion}</div>}
                 <div style={{ display: "flex", gap: 8, marginTop: "auto", paddingTop: 6, flexWrap: "wrap" }}>
                   {r.link && <a className="ca-mini" href={r.link} target="_blank" rel="noreferrer"><ExternalLink size={13} strokeWidth={2} /> Abrir</a>}
-                  {!esMedico && (tipo === "herramienta" || tipo === "terapeuta") && r.link && <button className="ca-mini" style={{ color: "#1E7E5A" }} onClick={() => setEnviarRec(r)}><Send size={13} strokeWidth={2} /> Enviar por WhatsApp</button>}
+                  {!esMedico && !soloLectura && (tipo === "herramienta" || tipo === "terapeuta") && r.link && <button className="ca-mini" style={{ color: "#1E7E5A" }} onClick={() => setEnviarRec(r)}><Send size={13} strokeWidth={2} /> Enviar por WhatsApp</button>}
                   {esAdmin && <button className="ca-mini" onClick={() => setEditando(r)}><Pencil size={13} strokeWidth={2} /> Editar</button>}
                   {esAdmin && <button className="ca-mini" onClick={() => toggleActivo(r)}>{r.activo ? "Ocultar" : "Mostrar"}</button>}
                   {esAdmin && <button className="ca-mini danger" onClick={() => borrar(r)}><Trash2 size={13} strokeWidth={2} /></button>}
@@ -8635,7 +9039,9 @@ function Liquidacion({ showToast }) {
   );
 }
 
-function Finanzas({ showToast, esAdmin }) {
+function Finanzas({ showToast, esAdmin, puedeVerCaja = false }) {
+  // Caja, egresos y utilidad los VE gerencia y la analista; los EDITA solo gerencia.
+  const veCaja = esAdmin || puedeVerCaja;
   const [periodo, setPeriodo] = useState("mes");
   const [sede, setSede] = useState("");
   const [desde, setDesde] = useState("");
@@ -8657,10 +9063,10 @@ function Finanzas({ showToast, esAdmin }) {
 
   async function cargar() {
     const base = [api.resumenFinanzas(filtro), api.cobros(filtro), api.servicios(), api.pacientes()];
-    const extra = esAdmin ? [api.cajaFinanzas(filtro), api.egresos(filtro)] : [];
+    const extra = veCaja ? [api.cajaFinanzas(filtro), api.egresos(filtro)] : [];
     const [r, c, s, p, cj, eg] = await Promise.all([...base, ...extra]);
     setRes(r); setCobros(c); setServicios(s); setPacientes(p);
-    if (esAdmin) { setCaja(cj); setEgresos(eg); }
+    if (veCaja) { setCaja(cj); setEgresos(eg); }
   }
   useEffect(() => {
     setCargando(true);
@@ -8693,10 +9099,12 @@ function Finanzas({ showToast, esAdmin }) {
         </div>
         <div style={{ display: "flex", gap: 9, alignItems: "center" }}>
           <ExportBtns nombre={`cobros_${rangoActivo ? `${desde}_a_${hasta}` : periodo}${sede ? "_" + sede : ""}`} titulo="Finanzas · Cobros" disabled={cobros.length === 0}
+            showToast={showToast}
+            contexto={[sede === "lima" ? "Lima" : sede === "piura" ? "Piura" : "Todas las sedes", rangoActivo ? `${desde} a ${hasta}` : { hoy: "Hoy", semana: "Esta semana", mes: "Este mes" }[periodo] || periodo].filter(Boolean).join(" · ")}
             headers={["Fecha", "Paciente", "Concepto", "Monto", "Estado", "Medio"]}
             filas={cobros.map((c) => [c.fecha_label, c.paciente_nombre, c.concepto, c.monto, c.estado_label, c.medio_label])} />
           {esAdmin && <button className="ca-btn ghost" onClick={() => setPrecios(true)}>Precios</button>}
-          <button className="ca-btn" onClick={() => setNuevo({})}><Plus size={16} strokeWidth={2.2} /> Registrar cobro</button>
+          {esAdmin && <button className="ca-btn" onClick={() => setNuevo({})}><Plus size={16} strokeWidth={2.2} /> Registrar cobro</button>}
         </div>
       </div>
 
@@ -8726,7 +9134,7 @@ function Finanzas({ showToast, esAdmin }) {
         <div className="ca-empty">{cargando ? "Cargando…" : "Sin datos."}</div>
       ) : (
         <div style={{ opacity: cargando ? 0.5 : 1, transition: "opacity .15s" }}>
-          {esAdmin && caja && (
+          {veCaja && caja && (
             <>
               <h2 className="ca-secth" style={{ marginTop: 16 }}>Caja del período{caja.sede ? ` · ${caja.sede === "lima" ? "Lima" : "Piura"}` : ""}</h2>
               <div className="ca-stats">
@@ -8749,9 +9157,9 @@ function Finanzas({ showToast, esAdmin }) {
             </>
           )}
 
-          <div className="ca-stats" style={{ marginTop: esAdmin && caja ? 22 : 16 }}>
-            {!(esAdmin && caja) && <StatCard label="Cobrado en el período" valor={money(res.cobrado)} color="#4F8A77" />}
-            {!(esAdmin && caja) && <StatCard label="Pendiente por cobrar" valor={money(res.pendiente)} sub={`${res.n_pendientes} cobros`} color={res.pendiente > 0 ? "#C9923A" : "#7C7870"} />}
+          <div className="ca-stats" style={{ marginTop: veCaja && caja ? 22 : 16 }}>
+            {!(veCaja && caja) && <StatCard label="Cobrado en el período" valor={money(res.cobrado)} color="#4F8A77" />}
+            {!(veCaja && caja) && <StatCard label="Pendiente por cobrar" valor={money(res.pendiente)} sub={`${res.n_pendientes} cobros`} color={res.pendiente > 0 ? "#C9923A" : "#7C7870"} />}
             <StatCard label="Cobros pagados" valor={res.n_cobros} />
             <StatCard label="Ticket promedio" valor={money(res.ticket_promedio)} />
           </div>
@@ -8764,7 +9172,7 @@ function Finanzas({ showToast, esAdmin }) {
             </div>
           )}
 
-          {!(esAdmin && caja) && res.por_dia && res.por_dia.length > 1 && (
+          {!(veCaja && caja) && res.por_dia && res.por_dia.length > 1 && (
             <>
               <h2 className="ca-secth" style={{ marginTop: 26 }}>Ingresos por día</h2>
               <div className="ca-card">
@@ -8773,7 +9181,7 @@ function Finanzas({ showToast, esAdmin }) {
             </>
           )}
 
-          {esAdmin && caja && caja.por_dia && caja.por_dia.length > 1 && (
+          {veCaja && caja && caja.por_dia && caja.por_dia.length > 1 && (
             <>
               <h2 className="ca-secth" style={{ marginTop: 26 }}>Flujo de caja (ingresos vs egresos)</h2>
               <div className="ca-card">
@@ -8783,11 +9191,11 @@ function Finanzas({ showToast, esAdmin }) {
             </>
           )}
 
-          {esAdmin && (
+          {veCaja && (
             <>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 30, marginBottom: 12 }}>
                 <h2 className="ca-secth" style={{ margin: 0 }}>Egresos del período ({egresos.length})</h2>
-                <button className="ca-mini" onClick={() => setNuevoEgreso(true)}><Plus size={13} strokeWidth={2.2} /> Agregar egreso</button>
+                {esAdmin && <button className="ca-mini" onClick={() => setNuevoEgreso(true)}><Plus size={13} strokeWidth={2.2} /> Agregar egreso</button>}
               </div>
               {egresos.length === 0 ? (
                 <div className="ca-empty" style={{ padding: "26px 20px" }}>Aún no hay gastos registrados en este período.</div>
@@ -8801,7 +9209,7 @@ function Finanzas({ showToast, esAdmin }) {
                         <td style={{ fontWeight: 500 }}>{e.concepto}{e.proveedor ? <span style={{ color: "var(--muted)", fontWeight: 400 }}> · {e.proveedor}</span> : ""}</td>
                         <td>{e.categoria_label}</td>
                         <td className="num" style={{ color: "#B4564E" }}>{money(e.monto)}</td>
-                        <td className="num"><button className="ca-iconbtn" title="Eliminar egreso" onClick={() => borrarEgreso(e)}><Trash2 size={14} strokeWidth={2} /></button></td>
+                        <td className="num">{esAdmin && <button className="ca-iconbtn" title="Eliminar egreso" onClick={() => borrarEgreso(e)}><Trash2 size={14} strokeWidth={2} /></button>}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -8858,7 +9266,7 @@ function Finanzas({ showToast, esAdmin }) {
                     <td className="num">{money(c.monto)}</td>
                     <td><Tag colors={ESTADO_COBRO_COLOR[c.estado]}>{c.estado_label}{c.estado === "pagado" && c.medio_label ? ` · ${c.medio_label}` : ""}</Tag></td>
                     <td className="num">
-                      {c.estado === "pendiente" && (
+                      {esAdmin && c.estado === "pendiente" && (
                         <button className="ca-mini" onClick={() => setPagando(c)}><Check size={13} strokeWidth={2.2} /> Marcar pagado</button>
                       )}
                     </td>
@@ -9072,7 +9480,7 @@ function CobroModal({ prefill, pacientes, servicios, onClose, onSave }) {
   const [concepto, setConcepto] = useState(prefill?.concepto || (servDefault ? servDefault.nombre : ""));
 
   const matches = useMemo(
-    () => (busca.trim() ? (pacientes || []).filter((p) => p.nombre.toLowerCase().includes(busca.toLowerCase())).slice(0, 4) : []),
+    () => (busca.trim() ? (pacientes || []).filter((p) => coincideBusqueda(p.nombre, busca)).slice(0, 4) : []),
     [busca, pacientes]
   );
 
@@ -9313,6 +9721,7 @@ const ROLES = [
   { v: "medico", l: "Psicólogo/a" },
   { v: "asistente", l: "Asistente (coordinación)" },
   { v: "comercial", l: "Comercial" },
+  { v: "analista", l: "Analista (Dirección Clínica · solo lectura)" },
   { v: "admin", l: "Administrador (gerencia)" },
 ];
 const ROL_COLOR = {
@@ -9320,6 +9729,7 @@ const ROL_COLOR = {
   medico: { bg: "#E3F0E8", fg: "#2F6B4F" },
   asistente: { bg: "#E2ECF5", fg: "#2E5C86" },
   comercial: { bg: "#F7ECDD", fg: "#9C6B2E" },
+  analista: { bg: "#E6F1F3", fg: "#1F6B78" },
 };
 
 const SEDES = [{ v: "piura", l: "Piura" }, { v: "lima", l: "Lima" }];
@@ -9505,7 +9915,7 @@ function PacientesDeProfesionalModal({ prof, onClose, showToast }) {
           pacs.map((p) => {
             const meta = p.proceso === "consulta"
               ? "Consulta inicial"
-              : `${p.n_sesion ? `Sesión ${p.n_sesion}` : ""}${p.n_sesion && p.proceso_label ? " · " : ""}${p.proceso_label || ""}`;
+              : `${p.sesion_real ? `Sesión ${p.sesion_real}` : ""}${p.sesion_real && p.proceso_label ? " · " : ""}${p.proceso_label || ""}`;
             return (
               <div key={p.id} className="ca-row" style={{ cursor: "default" }}>
                 <div className="ca-avatar" style={{ width: 36, height: 36, fontSize: 13 }}>{iniciales(p.nombre)}</div>
@@ -10208,7 +10618,10 @@ function RegistrarSesionModal({ paciente, onClose, onSave }) {
     anio: ult?.anio || 2026,
     mes: ult?.mes || 6,
     semana: ult ? Math.min(5, ult.semana + 1) : 1,
-    n_sesion: ult ? (ult.proceso === "consulta" ? 1 : ult.n_sesion + 1) : (paciente.n_sesion || 1),
+    // Si es la primera vez que se usa esta bitácora para este paciente, se
+    // sugiere la sesión REAL (de sus citas asistidas) y no el contador manual
+    // en 0 — si no, alguien con 40 sesiones reales vería sugerido "1".
+    n_sesion: ult ? (ult.proceso === "consulta" ? 1 : ult.n_sesion + 1) : (paciente.sesion_real || 1),
     proceso: ult && ult.proceso !== "consulta" ? ult.proceso : (paciente.proceso && paciente.proceso !== "consulta" ? paciente.proceso : "primero"),
   });
   const setN = (k) => (e) => setF((p) => ({ ...p, [k]: e.target.value.replace(/[^\d]/g, "") }));
@@ -10288,7 +10701,8 @@ function CambiarPasswordModal({ onClose, onSave }) {
 
 const FILTROS_ROL = [
   { v: null, l: "Todos" }, { v: "medico", l: "Psicólogos" },
-  { v: "asistente", l: "Asistentes" }, { v: "admin", l: "Administradores" },
+  { v: "asistente", l: "Asistentes" }, { v: "comercial", l: "Comercial" },
+  { v: "analista", l: "Analistas" }, { v: "admin", l: "Administradores" },
   { v: "inactivos", l: "Inactivos" },
 ];
 
@@ -10350,6 +10764,7 @@ function Equipo({ showToast, miId }) {
           <div><Tag colors={ROL_COLOR.medico}>Psicólogo/a</Tag> <span style={{ marginLeft: 4 }}>Solo lo clínico: su agenda, sus pacientes asignados, historia clínica y sesiones. No ve finanzas ni comercial.</span></div>
           <div><Tag colors={ROL_COLOR.asistente}>Asistente (coordinación)</Tag> <span style={{ marginLeft: 4 }}>Agenda, pacientes y seguimiento clínico + mensajes. No ve marketing ni finanzas.</span></div>
           <div><Tag colors={ROL_COLOR.comercial}>Comercial</Tag> <span style={{ marginLeft: 4 }}>Leads, seguimientos, marketing y conversión + mensajes. No ve datos clínicos ni finanzas.</span></div>
+          <div><Tag colors={ROL_COLOR.analista}>Analista (Dirección Clínica)</Tag> <span style={{ marginLeft: 4 }}>Solo lectura: ve pacientes y alertas de ambas sedes, Gerencia, Ocupación, Finanzas y captación. No edita nada, no envía mensajes y no ve teléfonos ni documentos de pacientes.</span></div>
         </div>
       </div>
 
@@ -10452,7 +10867,7 @@ function UsuarioModal({ usuario, onClose, onSave }) {
           </div>
         </div>
         <div style={{ fontSize: 12, color: "var(--muted)", marginTop: -4, marginBottom: 13 }}>
-          La sede define de qué local ve la información (meta comercial, etc.). «Todas» = ve la clínica completa (gerencia).
+          La sede define de qué local ve la información (meta comercial, etc.). «Todas» = ve la clínica completa (gerencia y analista).
         </div>
         <div style={{ marginBottom: 20 }}>
           <div className="ca-label">{esNuevo ? "Contraseña" : "Nueva contraseña (opcional)"}</div>
@@ -10512,7 +10927,7 @@ function PacienteModal({ paciente, onClose, onSave, esMedico }) {
 
   return (
     <div className="ca-modal-bg" onClick={onClose}>
-      <div className="ca-modal" style={{ maxWidth: 440 }} onClick={(e) => e.stopPropagation()}>
+      <div className="ca-modal" style={{ maxWidth: 760 }} onClick={(e) => e.stopPropagation()}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
           <strong style={{ fontSize: 16 }}>{paciente ? "Editar paciente" : "Nuevo paciente"}</strong>
           <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)" }}><X size={18} /></button>

@@ -169,12 +169,23 @@ REST_FRAMEWORK = {
     ],
     "DEFAULT_PERMISSION_CLASSES": [
         "rest_framework.permissions.IsAuthenticated",
+        # El rol de solo lectura (analista) no puede escribir en ningún endpoint.
+        "core.permisos.BloqueoEscrituraAnalista",
     ],
     # Límite de los endpoints públicos de captación (anti-abuso). Solo aplica a las
     # vistas que declaran throttle_scope="captacion".
     "DEFAULT_THROTTLE_RATES": {
         "captacion": "60/min",
+        # Login: sin esto, probar contraseñas hasta acertar era cuestión de tiempo.
+        # El de la cuenta es el que protege de verdad: quien ataca puede cambiar
+        # de IP, pero no el correo de la persona a la que quiere entrar.
+        "login_ip": "30/min",
+        "login_cuenta": "8/min",
     },
+    # Detrás del proxy de Railway, DRF vería SIEMPRE la IP del proxy y contaría a
+    # todo el mundo en el mismo cubo: un atacante dejaría fuera a las coordinadoras.
+    # Con esto lee la IP real de X-Forwarded-For.
+    "NUM_PROXIES": 1,
 }
 
 # Orígenes de confianza para CSRF en desarrollo (el frontend Vite corre en 5173).
@@ -231,6 +242,9 @@ GOOGLE_CALENDAR_IDS = {
 }
 # Calendario de respaldo si la sede no tiene uno propio.
 GOOGLE_CALENDAR_DEFAULT = os.getenv("GOOGLE_CALENDAR_ID", "")
+# Apagado por defecto: el evento no lleva nombre ni teléfono del paciente, solo
+# "Sesión · psicólogo · sede". Ponerlo en "1" si la clínica prefiere ver el nombre.
+GOOGLE_CALENDAR_MOSTRAR_PACIENTE = os.getenv("GOOGLE_CALENDAR_MOSTRAR_PACIENTE", "") == "1"
 
 
 # --- Endurecimiento en producción (solo cuando DEBUG=False) ---

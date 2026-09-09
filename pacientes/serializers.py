@@ -5,6 +5,8 @@ from django.core.validators import URLValidator
 from django.utils import timezone
 from rest_framework import serializers
 
+from core import continuidad
+from core.permisos import oculta_contacto
 from core.utils import fecha_corta
 
 from usuarios.models import Usuario
@@ -83,6 +85,11 @@ class PacienteSerializer(serializers.ModelSerializer):
     genero_label = serializers.CharField(source="get_genero_display", read_only=True)
     sede_label = serializers.CharField(source="get_sede_display", read_only=True)
     profesional_nombre = serializers.CharField(source="profesional.nombre", read_only=True, default="")
+    # El Usuario (login) enlazado a la ficha del profesional, si tiene uno — para
+    # que agendar autorrellene "Psicólogo" con quien ya atiende a este paciente,
+    # sin tener que volver a elegirlo cada vez. Puede quedar vacío: la ficha del
+    # directorio no siempre está enlazada a un login (ver Profesional.usuario).
+    profesional_medico_id = serializers.IntegerField(source="profesional.usuario_id", read_only=True, default=None)
     codigo = serializers.SerializerMethodField()
     riesgo_label = serializers.CharField(source="get_riesgo_display", read_only=True)
     proceso_label = serializers.SerializerMethodField()
@@ -91,6 +98,8 @@ class PacienteSerializer(serializers.ModelSerializer):
     seguimiento = serializers.SerializerMethodField()
     ultima = serializers.SerializerMethodField()
     proxima = serializers.SerializerMethodField()
+    alertas_continuidad = serializers.SerializerMethodField()
+    sesion_real = serializers.SerializerMethodField()
     historial = serializers.SerializerMethodField()
     adjuntos = serializers.SerializerMethodField()
     cuenta = serializers.SerializerMethodField()
@@ -104,8 +113,9 @@ class PacienteSerializer(serializers.ModelSerializer):
             "tipo_documento", "tipo_documento_label", "numero_documento", "direccion",
             "genero", "genero_label",
             "tutor_nombre", "tutor_parentesco", "tutor_telefono", "tutor_documento",
-            "sede", "sede_label", "profesional", "profesional_nombre", "codigo",
+            "sede", "sede_label", "profesional", "profesional_nombre", "profesional_medico_id", "codigo",
             "n_sesion", "sesiones_proceso", "proceso", "proceso_label", "seguimiento",
+            "provisional",
             "frecuencia", "frecuencia_label", "modalidad", "modalidad_label",
             "especialidad", "alergias", "antecedentes",
             "antecedentes_medicos", "antecedentes_familiares", "antecedentes_otros",
@@ -114,17 +124,19 @@ class PacienteSerializer(serializers.ModelSerializer):
             "alertas", "notas_internas",
             "brujula_motivo", "brujula_hipotesis", "brujula_objetivos", "brujula_fortalezas",
             "brujula_factores_protectores", "brujula_factores_riesgo", "brujula_barreras", "brujula_plan",
-            "ultima", "proxima", "historial", "adjuntos", "cuenta", "paquetes", "citas",
+            "ultima", "proxima", "alertas_continuidad", "sesion_real", "historial", "adjuntos", "cuenta", "paquetes", "citas",
         ]
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
-        # El psicólogo NO ve los datos de contacto del paciente (correo, teléfono,
-        # dirección, documento) ni el contacto del tutor: solo lo clínico y su
-        # estado. Privacidad (Ley 29733). El nombre/parentesco del tutor sí queda
-        # (es contexto clínico), pero su teléfono y documento no.
+        # El psicólogo y la analista NO ven los datos de contacto del paciente
+        # (correo, teléfono, dirección, documento) ni el contacto del tutor: solo
+        # lo clínico y su estado. Privacidad (Ley 29733); la analista además
+        # nunca contacta pacientes (todo pasa por coordinación). El nombre y
+        # parentesco del tutor sí quedan (es contexto clínico), pero su teléfono
+        # y documento no. Lista de roles en core/permisos.py.
         req = self.context.get("request")
-        if req is not None and getattr(req.user, "rol", None) == "medico":
+        if req is not None and oculta_contacto(req.user):
             for k in ("tel", "email", "direccion", "numero_documento",
                       "tutor_telefono", "tutor_documento"):
                 if k in data:
@@ -159,6 +171,33 @@ class PacienteSerializer(serializers.ModelSerializer):
         loc = timezone.localtime(prox.inicio)
         return {"fecha": fecha_corta(loc), "hora": loc.strftime("%H:%M"), "especialidad": prox.especialidad}
 
+    def get_alertas_continuidad(self, obj):
+        # Sobre las citas ya prefetcheadas (evita una query por paciente, igual
+        # que get_proxima). Ver core.continuidad para el criterio.
+        ahora = timezone.now()
+        citas = list(obj.citas.all())
+        tiene_proxima = any(
+            c.inicio and c.inicio >= ahora and c.estado != Cita.Estado.CANCELADA for c in citas
+        )
+        realizadas = sorted(
+            (c for c in citas if c.estado in (Cita.Estado.ATENDIDA, Cita.Estado.ASISTIO)),
+            key=lambda c: c.inicio, reverse=True,
+        )
+        ultima_decision = realizadas[0].decision if realizadas else ""
+        # La sesión REAL (de las citas), no el contador manual del paciente
+        # (`n_sesion`) — ese depende de que alguien use "Registrar sesión" y en
+        # la práctica se queda en 0 para la mayoría, apagando esta alerta sin
+        # que nadie lo note. Ver core.continuidad.sesion_real.
+        return continuidad.evaluar(
+            continuidad.sesion_real(citas), obj.sesiones_proceso, tiene_proxima, ultima_decision, obj.frecuencia
+        )
+
+    def get_sesion_real(self, obj):
+        """Cuántas sesiones ya ocurrieron de verdad, calculado de las citas —
+        para "Estado del proceso" y la línea de tiempo. Distinto de `n_sesion`
+        (el contador manual, que no siempre se actualiza)."""
+        return continuidad.sesion_real(list(obj.citas.all()))
+
     def get_cuenta(self, obj):
         cobros = [c for c in obj.cobros.all() if c.estado != "anulado"]
         cobrado = sum((c.monto for c in cobros if c.estado == "pagado"), Decimal("0"))
@@ -190,9 +229,12 @@ class PacienteSerializer(serializers.ModelSerializer):
         ]
 
     def get_ultima(self, obj):
-        # atenciones viene prefetcheado y ordenado por -fecha (Meta.ordering).
-        ats = list(obj.atenciones.all())
-        return fecha_corta(timezone.localtime(ats[0].fecha)) if ats else "—"
+        # La cita asistida más reciente, no la última FICHA clínica escrita:
+        # la mayoría de las sesiones se cierran sin dejar ficha (ver el
+        # hallazgo de "las dos puertas"), y antes esto mostraba "—" aunque la
+        # sesión sí hubiera ocurrido.
+        cita = continuidad.ultima_sesion_real(list(obj.citas.all()))
+        return fecha_corta(timezone.localtime(cita.inicio)) if cita else "—"
 
     def get_historial(self, obj):
         # Usa el prefetch (ya ordenado por -fecha); no re-consultar por paciente.
@@ -222,6 +264,7 @@ class PacienteSerializer(serializers.ModelSerializer):
                 "medico": str(c.medico) if c.medico_id else "",
                 "notas": c.notas,
                 "motivo_consulta": c.motivo_consulta,
+                "n_sesion": c.n_sesion,
             })
         return out
 

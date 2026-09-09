@@ -45,6 +45,10 @@ class Usuario(AbstractUser):
         MEDICO = "medico", "Psicólogo/a"
         ASISTENTE = "asistente", "Asistente"
         COMERCIAL = "comercial", "Comercial"
+        # Dirección Clínica / experiencia del paciente: ve ambas sedes, indicadores
+        # y finanzas en lectura; no escribe nada y no ve contacto de pacientes
+        # (ver core/permisos.py).
+        ANALISTA = "analista", "Analista"
 
     class Sede(models.TextChoices):
         LIMA = "lima", "Lima"

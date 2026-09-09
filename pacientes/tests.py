@@ -20,7 +20,7 @@ from django.utils import timezone
 
 from core.models import Clinica
 from pacientes.models import Cita, Paciente, Tarea
-from usuarios.models import Usuario
+from usuarios.models import Profesional, Usuario
 
 
 class AgendarCitaTests(TestCase):
@@ -391,3 +391,173 @@ class EliminarPacienteTests(TestCase):
         self.assertEqual(reg.tipo, RegistroEliminacion.Tipo.PACIENTE)
         self.assertEqual(reg.paciente_nombre, "Ana Pérez")
         self.assertEqual(reg.usuario, self.admin)
+
+
+class SincronizarProfesionalAlReasignarCitaTests(TestCase):
+    """Al reasignar una cita a otro psicólogo (p. ej. para cubrir una ausencia),
+    el paciente debe pasar a figurar a su cargo (Paciente.profesional). Antes
+    no se tocaba ese campo: el paciente seguía apareciendo bajo el psicólogo
+    anterior y desaparecía del filtro por psicólogo de quien en la práctica lo
+    estaba atendiendo (caso real reportado: "Ángelo" psicólogo, no le
+    aparecía uno de sus pacientes al filtrar)."""
+
+    def setUp(self):
+        self.clinica = Clinica.objects.create(nombre="Conversemos", slug="conversemos-sync-prof")
+        self.coord = Usuario.objects.create_user(
+            email="coordsp@test.pe", password="x", clinica=self.clinica, rol=Usuario.Rol.ASISTENTE,
+        )
+        self.usuario_titular = Usuario.objects.create_user(
+            email="titular@test.pe", password="x", clinica=self.clinica, rol=Usuario.Rol.MEDICO,
+        )
+        self.usuario_cobertura = Usuario.objects.create_user(
+            email="cobertura@test.pe", password="x", clinica=self.clinica, rol=Usuario.Rol.MEDICO,
+        )
+        self.ficha_titular = Profesional.objects.create(
+            clinica=self.clinica, nombre="Titular", usuario=self.usuario_titular,
+        )
+        self.ficha_cobertura = Profesional.objects.create(
+            clinica=self.clinica, nombre="Ángelo Villa", usuario=self.usuario_cobertura,
+        )
+        self.paciente = Paciente.objects.create(
+            clinica=self.clinica, nombre="Paciente cubierto", profesional=self.ficha_titular,
+        )
+        self.cita = Cita.objects.create(
+            clinica=self.clinica, paciente=self.paciente, medico=self.usuario_titular,
+            inicio=timezone.now() + timedelta(days=1), estado=Cita.Estado.AGENDADA,
+        )
+        self.client.force_login(self.coord)
+
+    def _reasignar(self):
+        return self.client.patch(
+            f"/api/citas/{self.cita.id}/", {"medicoId": self.usuario_cobertura.id},
+            content_type="application/json",
+        )
+
+    def test_reasignar_la_cita_actualiza_el_profesional_a_cargo(self):
+        r = self._reasignar()
+        self.assertEqual(r.status_code, 200)
+        self.paciente.refresh_from_db()
+        self.assertEqual(self.paciente.profesional_id, self.ficha_cobertura.id)
+
+    def test_el_paciente_aparece_al_filtrar_por_el_nuevo_profesional(self):
+        self._reasignar()
+        r = self.client.get("/api/pacientes/", {"profesional": self.ficha_cobertura.id})
+        self.assertEqual(r.status_code, 200)
+        self.assertIn("Paciente cubierto", [p["nombre"] for p in r.json()])
+
+    def test_sin_reasignar_el_profesional_no_cambia(self):
+        r = self.client.patch(
+            f"/api/citas/{self.cita.id}/", {"notas": "sin cambio de psicólogo"},
+            content_type="application/json",
+        )
+        self.assertEqual(r.status_code, 200)
+        self.paciente.refresh_from_db()
+        self.assertEqual(self.paciente.profesional_id, self.ficha_titular.id)
+
+
+class AlertasContinuidadEnListaTests(TestCase):
+    """El filtro "Riesgo S3" / "Fin de bloque" de la pantalla Pacientes se apoya
+    en `alertas_continuidad`, que debe viajar en /api/pacientes/ (la lista) y
+    no solo en el detalle de la ficha."""
+
+    def setUp(self):
+        self.clinica = Clinica.objects.create(nombre="Conversemos", slug="conversemos-alertas")
+        self.admin = Usuario.objects.create_user(
+            email="gerencia2@test.pe", password="x", clinica=self.clinica, rol=Usuario.Rol.ADMIN,
+        )
+        self.client.force_login(self.admin)
+
+    def _lista(self):
+        r = self.client.get("/api/pacientes/")
+        self.assertEqual(r.status_code, 200)
+        return {p["nombre"]: p for p in r.json()}
+
+    def test_paciente_en_riesgo_s3_trae_la_alerta_en_la_lista(self):
+        # La alerta se calcula de la CITA real (sesión 3 asistida), no de poner
+        # a mano `n_sesion=3` en el paciente — ver AlertaUsaSesionRealTests.
+        p = Paciente.objects.create(clinica=self.clinica, nombre="En riesgo", frecuencia="semanal")
+        Cita.objects.create(
+            clinica=self.clinica, paciente=p, n_sesion=3, estado=Cita.Estado.ASISTIO,
+            inicio=timezone.now() - timedelta(days=1),
+        )
+        fila = self._lista()["En riesgo"]
+        self.assertIn("riesgo_abandono_s3", fila["alertas_continuidad"])
+
+    def test_paciente_sin_alerta_trae_lista_vacia(self):
+        p = Paciente.objects.create(clinica=self.clinica, nombre="Sin alerta", frecuencia="semanal")
+        Cita.objects.create(
+            clinica=self.clinica, paciente=p, n_sesion=1, estado=Cita.Estado.ASISTIO,
+            inicio=timezone.now() - timedelta(days=1),
+        )
+        fila = self._lista()["Sin alerta"]
+        self.assertEqual(fila["alertas_continuidad"], [])
+
+
+class AlertaUsaSesionRealTests(TestCase):
+    """Reportado por Mirai (con casos reales de producción): "Estado del
+    proceso" mostraba "Sesión 0" y la línea de tiempo aparecía vacía o con
+    muchas menos sesiones de las reales. La causa: todo dependía de
+    `Paciente.n_sesion`, un contador que solo se mueve si alguien usa a
+    propósito "Registrar sesión" — y en producción, 210 de 324 pacientes
+    activos mostraban n_sesion=0 pese a tener asistencia real (uno con 57
+    sesiones reales). Como `evaluar()` no dispara NINGUNA alerta si el valor
+    es 0, la alerta de riesgo S3 estaba apagada para la mayoría."""
+
+    def setUp(self):
+        self.clinica = Clinica.objects.create(nombre="Conversemos", slug="conversemos-sesionreal")
+        self.admin = Usuario.objects.create_user(
+            email="gerencia3@test.pe", password="x", clinica=self.clinica, rol=Usuario.Rol.ADMIN,
+        )
+        self.client.force_login(self.admin)
+
+    def test_alerta_s3_dispara_aunque_el_contador_manual_este_en_cero(self):
+        p = Paciente.objects.create(
+            clinica=self.clinica, nombre="Contador roto", n_sesion=0, frecuencia="semanal",
+        )
+        Cita.objects.create(
+            clinica=self.clinica, paciente=p, n_sesion=3, estado=Cita.Estado.ASISTIO,
+            inicio=timezone.now() - timedelta(days=1),
+        )
+        r = self.client.get(f"/api/pacientes/{p.id}/")
+        datos = r.json()
+        self.assertEqual(datos["sesion_real"], 3)
+        self.assertIn("riesgo_abandono_s3", datos["alertas_continuidad"])
+
+    def test_sesion_real_toma_la_mas_avanzada_aunque_falten_numeros_intermedios(self):
+        """El hueco de n_sesion (algunas citas no lo traen) no debe hacer que
+        la sesión real retroceda: se queda con la más alta que sí se registró."""
+        p = Paciente.objects.create(clinica=self.clinica, nombre="Con huecos", n_sesion=0)
+        Cita.objects.create(clinica=self.clinica, paciente=p, n_sesion=1, estado=Cita.Estado.ASISTIO,
+                             inicio=timezone.now() - timedelta(days=20))
+        Cita.objects.create(clinica=self.clinica, paciente=p, n_sesion=None, estado=Cita.Estado.ASISTIO,
+                             inicio=timezone.now() - timedelta(days=13))
+        Cita.objects.create(clinica=self.clinica, paciente=p, n_sesion=5, estado=Cita.Estado.ATENDIDA,
+                             inicio=timezone.now() - timedelta(days=6))
+        r = self.client.get(f"/api/pacientes/{p.id}/")
+        self.assertEqual(r.json()["sesion_real"], 5)
+
+    def test_sesion_real_cuenta_asistencias_si_ninguna_cita_trae_el_numero(self):
+        p = Paciente.objects.create(clinica=self.clinica, nombre="Sin numeros", n_sesion=0)
+        for i in range(3):
+            Cita.objects.create(clinica=self.clinica, paciente=p, estado=Cita.Estado.ASISTIO,
+                                 inicio=timezone.now() - timedelta(days=10 - i))
+        r = self.client.get(f"/api/pacientes/{p.id}/")
+        self.assertEqual(r.json()["sesion_real"], 3)
+
+    def test_ultima_sesion_es_la_cita_asistida_no_la_ficha_clinica(self):
+        """Antes mostraba "—" si nunca se escribió una ficha, aunque la sesión
+        sí hubiera ocurrido — la mayoría de las sesiones no dejan ficha."""
+        p = Paciente.objects.create(clinica=self.clinica, nombre="Sin ficha")
+        Cita.objects.create(clinica=self.clinica, paciente=p, n_sesion=1, estado=Cita.Estado.ASISTIO,
+                             inicio=timezone.now() - timedelta(days=3))
+        r = self.client.get(f"/api/pacientes/{p.id}/")
+        self.assertNotEqual(r.json()["ultima"], "—")
+
+    def test_citas_agendadas_o_canceladas_no_cuentan_como_sesion_real(self):
+        p = Paciente.objects.create(clinica=self.clinica, nombre="Solo agendada", n_sesion=0)
+        Cita.objects.create(clinica=self.clinica, paciente=p, n_sesion=3, estado=Cita.Estado.AGENDADA,
+                             inicio=timezone.now() + timedelta(days=2))
+        Cita.objects.create(clinica=self.clinica, paciente=p, n_sesion=2, estado=Cita.Estado.CANCELADA,
+                             inicio=timezone.now() - timedelta(days=1))
+        r = self.client.get(f"/api/pacientes/{p.id}/")
+        self.assertEqual(r.json()["sesion_real"], 0)

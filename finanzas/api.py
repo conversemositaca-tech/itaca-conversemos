@@ -10,7 +10,10 @@ from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from rest_framework.permissions import SAFE_METHODS
+
 from core import soto
+from core.permisos import ve_finanzas
 from core.tenant import get_clinica_actual
 from pacientes.models import Atencion, Cita, Paciente
 
@@ -189,6 +192,14 @@ class CobroViewSet(viewsets.ModelViewSet):
         cobro.estado = Cobro.Estado.PAGADO
         cobro.medio_pago = medio
         campos = ["estado", "medio_pago"]
+        # `fecha` es la que usan TODOS los reportes por día/mes (Finanzas,
+        # meta comercial de "Hoy"). Si se deja la fecha de cuando se creó como
+        # "pendiente", un cobro atendido hoy y pagado mañana nunca aparece en
+        # los ingresos del día en que realmente se cobró — se actualiza al
+        # momento real del pago (decidido con Gabriela: la fecha refleja el
+        # ingreso real de caja, no cuándo se generó el cargo).
+        cobro.fecha = timezone.now()
+        campos.append("fecha")
         comp = request.data.get("comprobante_tipo")
         if comp in dict(Cobro.Comprobante.choices):
             cobro.comprobante_tipo = comp
@@ -310,7 +321,12 @@ class EgresoViewSet(viewsets.ModelViewSet):
 
     def initial(self, request, *args, **kwargs):
         super().initial(request, *args, **kwargs)
-        if not _es_admin(request.user):
+        # Leerlos: gerencia y la analista (los egresos son uno de sus
+        # indicadores). Registrarlos, editarlos o borrarlos: solo gerencia.
+        if request.method in SAFE_METHODS:
+            if not ve_finanzas(request.user):
+                raise PermissionDenied("Solo gerencia y Dirección Clínica pueden ver los egresos.")
+        elif not _es_admin(request.user):
             raise PermissionDenied("Solo el gerente (admin) puede gestionar los egresos.")
 
     def get_queryset(self):
@@ -351,8 +367,8 @@ class CajaView(APIView):
     """GET /api/finanzas/caja/?periodo= — Ingresos - Egresos = Utilidad (solo admin)."""
 
     def get(self, request):
-        if not _es_admin(request.user):
-            return Response({"detail": "Solo el gerente (admin) puede ver la caja."}, status=status.HTTP_403_FORBIDDEN)
+        if not ve_finanzas(request.user):
+            return Response({"detail": "Solo gerencia y Dirección Clínica pueden ver la caja."}, status=status.HTTP_403_FORBIDDEN)
         if get_clinica_actual() is None:
             return Response({"detail": "Sin clínica en contexto."}, status=status.HTTP_400_BAD_REQUEST)
 

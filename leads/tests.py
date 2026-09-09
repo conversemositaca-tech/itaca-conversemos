@@ -223,6 +223,82 @@ class LeadCreaLaCitaTests(TestCase):
         self.assertEqual(Lead.objects.get().estado, Lead.Estado.AGENDADO)
 
 
+class AgendarNoEsSerPacienteTests(TestCase):
+    """Agendar la consulta abría la ficha y la persona salía como paciente.
+
+    Reportado por las dos sedes: leads en "Perdido" mostraban igual la etiqueta
+    verde "Ya es paciente", y nadie podía quitarla. La ficha se crea igual —la
+    cita tiene que colgar de alguien— pero nace `provisional`: paciente es quien
+    inicia proceso, no quien reserva la primera consulta.
+    """
+
+    def setUp(self):
+        self.clinica = Clinica.objects.create(nombre="Conversemos", slug="conversemos-prov")
+        self.coord = Usuario.objects.create_user(
+            email="coord4@test.pe", password="x", clinica=self.clinica, rol=Usuario.Rol.ASISTENTE,
+        )
+        self.psico = Usuario.objects.create_user(
+            email="p4@test.pe", password="x", clinica=self.clinica, rol=Usuario.Rol.MEDICO,
+        )
+        self.manana = timezone.localdate() + timedelta(days=1)
+        self.client.force_login(self.coord)
+
+    def _agendar(self, **extra):
+        datos = {
+            "nombre": "Sebastián Gamboa", "telefono": "987654321", "sede": "piura",
+            "fuente": "whatsapp", "estado": "agendado", "agendo_consulta": True,
+            "fecha_consulta": self.manana.isoformat(), "hora_consulta": "10:00",
+            "medico": self.psico.id, "especialidad": "Terapia individual",
+            **extra,
+        }
+        r = self.client.post("/api/leads/", datos, content_type="application/json")
+        self.assertEqual(r.status_code, 201)
+        return Lead.objects.get()
+
+    def test_la_ficha_que_deja_la_consulta_nace_provisional(self):
+        lead = self._agendar()
+        self.assertIsNotNone(lead.paciente_id)          # la cita necesita la ficha
+        self.assertTrue(lead.paciente.provisional)      # pero no es paciente aún
+
+    def test_el_lead_perdido_no_queda_contado_como_paciente(self):
+        """El caso de la captura: agendó, no vino, lo pasan a Perdido."""
+        lead = self._agendar()
+        r = self.client.patch(f"/api/leads/{lead.id}/", {"estado": "perdido"},
+                              content_type="application/json")
+        self.assertEqual(r.status_code, 200)
+        lead.refresh_from_db()
+        self.assertEqual(lead.estado, Lead.Estado.PERDIDO)
+        self.assertTrue(lead.paciente.provisional)
+        self.assertEqual(Paciente.objects.filter(provisional=False).count(), 0)
+
+    def test_iniciar_proceso_asciende_la_ficha(self):
+        lead = self._agendar()
+        r = self.client.patch(f"/api/leads/{lead.id}/", {"estado": "ganado"},
+                              content_type="application/json")
+        self.assertEqual(r.status_code, 200)
+        lead.refresh_from_db()
+        lead.paciente.refresh_from_db()
+        self.assertFalse(lead.paciente.provisional)
+        self.assertEqual(Paciente.objects.filter(provisional=False).count(), 1)
+
+    def test_el_boton_convertir_no_se_bloquea_por_la_ficha_provisional(self):
+        """Antes devolvía "ya es paciente" y no hacía nada: el lead se quedaba
+        agendado para siempre y sin forma de cerrarlo desde la lista."""
+        lead = self._agendar()
+        r = self.client.post(f"/api/leads/{lead.id}/convertir/", content_type="application/json")
+        self.assertEqual(r.status_code, 201)
+        lead.refresh_from_db()
+        lead.paciente.refresh_from_db()
+        self.assertEqual(lead.estado, Lead.Estado.GANADO)
+        self.assertFalse(lead.paciente.provisional)
+        self.assertEqual(Paciente.objects.count(), 1)   # no creó una segunda ficha
+
+    def test_la_fila_que_entra_ya_como_proceso_es_paciente_de_una(self):
+        """El avance de etapa se registra como fila NUEVA, no editando la anterior."""
+        lead = self._agendar(estado="ganado")
+        self.assertFalse(lead.paciente.provisional)
+
+
 class ServicioDeLaConsultaTests(TestCase):
     """La cita que nace de un lead es una CONSULTA, no una sesión de terapia.
 
@@ -593,3 +669,45 @@ class ReporteCuadraConElConteoManualTests(TestCase):
         for sede in (Lead.Sede.PIURA, Lead.Sede.LIMA):
             nombres = [a["nombre"] for a in self._datos(sede=sede)["anuncios"]]
             self.assertIn("Campana nacional", nombres, f"falta en {sede}")
+
+
+class LeadCerradoNoDuplicaPacienteTests(TestCase):
+    """Reportado: un lead que se cierra ("Inició proceso") sin haber pasado antes
+    por "agendar consulta" —así que todavía no tenía `paciente_id`— creaba una
+    ficha de Paciente nueva aunque esa persona ya existiera por otro lado. La
+    misma persona quedaba dos veces: una vez como paciente real, otra como el
+    "lead cerrado"."""
+
+    def setUp(self):
+        self.clinica = Clinica.objects.create(nombre="Conversemos", slug="conversemos-nodup")
+        self.coord = Usuario.objects.create_user(
+            email="coord-nodup@test.pe", password="x", clinica=self.clinica, rol=Usuario.Rol.ASISTENTE,
+        )
+        self.client.force_login(self.coord)
+
+    def test_cerrar_un_lead_reutiliza_al_paciente_que_ya_existe_por_telefono(self):
+        ya = Paciente.objects.create(clinica=self.clinica, nombre="Carla Ruiz", telefono="+51 987 654 321")
+        r = self.client.post("/api/leads/", {
+            "nombre": "Carla Ruiz", "telefono": "987654321", "sede": "piura",
+            "fuente": "whatsapp", "estado": "ganado", "agendo_consulta": False,
+        }, content_type="application/json")
+        self.assertEqual(r.status_code, 201)
+        self.assertEqual(Paciente.objects.count(), 1)
+        lead = Lead.objects.get()
+        self.assertEqual(lead.paciente_id, ya.id)
+        ya.refresh_from_db()
+        self.assertFalse(ya.provisional)
+
+    def test_marcar_ganado_despues_tambien_reutiliza_al_paciente(self):
+        """Mismo caso pero cerrando el lead en un PATCH posterior, no al crearlo."""
+        ya = Paciente.objects.create(clinica=self.clinica, nombre="Bruno Vega", telefono="987654321")
+        r = self.client.post("/api/leads/", {
+            "nombre": "Bruno Vega", "telefono": "987654321", "sede": "piura",
+            "fuente": "whatsapp", "estado": "nuevo", "agendo_consulta": False,
+        }, content_type="application/json")
+        self.assertEqual(r.status_code, 201)
+        lead_id = r.json()["id"]
+        r2 = self.client.patch(f"/api/leads/{lead_id}/", {"estado": "ganado"}, content_type="application/json")
+        self.assertEqual(r2.status_code, 200)
+        self.assertEqual(Paciente.objects.count(), 1)
+        self.assertEqual(Lead.objects.get(pk=lead_id).paciente_id, ya.id)
