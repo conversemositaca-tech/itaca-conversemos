@@ -233,6 +233,9 @@ GOOGLE_CALENDAR_IDS = {
 }
 # Calendario de respaldo si la sede no tiene uno propio.
 GOOGLE_CALENDAR_DEFAULT = os.getenv("GOOGLE_CALENDAR_ID", "")
+# Apagado por defecto: el evento no lleva nombre ni teléfono del paciente, solo
+# "Sesión · psicólogo · sede". Ponerlo en "1" si la clínica prefiere ver el nombre.
+GOOGLE_CALENDAR_MOSTRAR_PACIENTE = os.getenv("GOOGLE_CALENDAR_MOSTRAR_PACIENTE", "") == "1"
 
 
 # --- Endurecimiento en producción (solo cuando DEBUG=False) ---
