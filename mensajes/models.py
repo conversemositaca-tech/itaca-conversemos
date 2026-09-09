@@ -103,7 +103,14 @@ def valores_plantilla(paciente=None, cita=None, clinica=None):
     # Anteponer "psic." al nombre (los mensajes deben decir "psic. Karol García").
     if psicologo and not psicologo.lower().startswith(("psic", "lic", "dr", "dra", "ps.")):
         psicologo = f"psic. {psicologo}"
-    n_sesion = str(paciente.n_sesion) if paciente else ""
+    n_sesion = ""
+    if paciente is not None:
+        from core.continuidad import sesion_real_de_paciente
+        # La sesión real sale de las citas asistidas, no del contador manual
+        # Paciente.n_sesion (se queda en 0 salvo que alguien use "Registrar
+        # sesión" a propósito) — para no mandarle al paciente un WhatsApp que
+        # diga "tu sesión N° 0" cuando en realidad va por la 10.
+        n_sesion = str(sesion_real_de_paciente(paciente))
     sede = paciente.get_sede_display() if (paciente and paciente.sede) else ""
     cl = clinica or (paciente.clinica if paciente else None) or (cita.clinica if cita else None)
     return {

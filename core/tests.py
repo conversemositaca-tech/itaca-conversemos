@@ -14,7 +14,7 @@ from core.continuidad import (
 )
 from core.models import Clinica
 from pacientes.models import Cita, Paciente
-from usuarios.models import Usuario
+from usuarios.models import Profesional, Usuario
 
 
 class ProximaMetaTests(TestCase):
@@ -113,12 +113,19 @@ class HoyContinuidadViewTests(TestCase):
         self.assertEqual(r.status_code, 200)
         return r.json()
 
+    def _continuidad_nombres(self, usuario=None, estado="todos"):
+        """La cola completa de "Evaluar continuidad" (no los 5 de /api/hoy/)."""
+        self.client.force_login(usuario or self.coord_lima)
+        r = self.client.get(f"/api/continuidad/pendientes/?estado={estado}")
+        self.assertEqual(r.status_code, 200)
+        return [x["paciente"] for x in r.json()["filas"]]
+
     def test_riesgo_abandono_s3_sin_proxima_cita(self):
         p = self._paciente("Sin próxima en S3", "lima", n_sesion=3)
         datos = self._hoy(self.coord_lima)
         nombres = [x["nombre"] for x in datos["riesgo_abandono"]]
         self.assertIn(p.nombre, nombres)
-        self.assertNotIn(p.nombre, [x["nombre"] for x in datos["por_continuidad"]])
+        self.assertNotIn(p.nombre, self._continuidad_nombres())
 
     def test_s3_con_proxima_cita_no_es_riesgo(self):
         p = self._paciente("Con próxima en S3", "lima", n_sesion=3)
@@ -129,14 +136,12 @@ class HoyContinuidadViewTests(TestCase):
     def test_fin_de_bloque_sin_decision_registrada(self):
         p = self._paciente("Fin de bloque sin decidir", "lima", n_sesion=6, sesiones_proceso=6)
         self._cita(p, dias=-1, estado=Cita.Estado.ATENDIDA, decision="")
-        datos = self._hoy(self.coord_lima)
-        self.assertIn(p.nombre, [x["nombre"] for x in datos["por_continuidad"]])
+        self.assertIn(p.nombre, self._continuidad_nombres())
 
     def test_fin_de_bloque_con_decision_ya_no_avisa(self):
         p = self._paciente("Fin de bloque ya decidido", "lima", n_sesion=6, sesiones_proceso=6)
         self._cita(p, dias=-1, estado=Cita.Estado.ATENDIDA, decision="DP-08")
-        datos = self._hoy(self.coord_lima)
-        self.assertNotIn(p.nombre, [x["nombre"] for x in datos["por_continuidad"]])
+        self.assertNotIn(p.nombre, self._continuidad_nombres())
 
     def test_coordinadora_de_lima_no_ve_pacientes_de_piura(self):
         """Antes de este fix, la tarjeta de continuidad no filtraba por sede
@@ -229,3 +234,75 @@ class RespaldoTests(TestCase):
         from core.respaldo import modelos_a_respaldar
         propias = {m for m in apps.get_models() if not m.__module__.startswith("django.")}
         self.assertEqual(set(modelos_a_respaldar()), propias)
+
+
+class MiPanelUsaSesionRealTests(TestCase):
+    """El panel del psicólogo (LTV promedio y la medalla "Continuidad") leía
+    `Paciente.n_sesion`, el contador manual — auditado el 9 sep contra
+    producción: 22 de 22 profesionales con caseload mostraban una cifra
+    equivocada, y siete mostraban directamente "ltv": null pese a tener
+    pacientes con sesiones reales."""
+
+    def setUp(self):
+        self.clinica = Clinica.objects.create(nombre="Conversemos", slug="conversemos-mipanel")
+        self.psico = Usuario.objects.create_user(
+            email="psicomp@test.pe", password="x", clinica=self.clinica, rol=Usuario.Rol.MEDICO,
+        )
+        self.ficha = Profesional.objects.create(clinica=self.clinica, usuario=self.psico, nombre="Psico Panel")
+        self.client.force_login(self.psico)
+
+    def _paciente_con_sesiones(self, nombre, n_reales):
+        # n_sesion=0 a propósito: el contador manual sin usar, el caso típico.
+        p = Paciente.objects.create(
+            clinica=self.clinica, nombre=nombre, profesional=self.ficha, n_sesion=0, provisional=False,
+        )
+        for i in range(n_reales):
+            Cita.objects.create(
+                clinica=self.clinica, paciente=p, medico=self.psico, n_sesion=i + 1,
+                estado=Cita.Estado.ASISTIO, inicio=timezone.now() - timedelta(days=40 - i),
+            )
+        return p
+
+    def test_ltv_promedia_las_sesiones_reales_aunque_el_contador_manual_este_en_cero(self):
+        self._paciente_con_sesiones("Con 4 reales", n_reales=4)
+        self._paciente_con_sesiones("Con 2 reales", n_reales=2)
+        r = self.client.get("/api/mi-panel/")
+        self.assertEqual(r.json()["metricas"]["ltv"], 3.0)  # (4+2)/2 — antes: null
+
+    def test_continuidad_cuenta_a_quien_de_verdad_volvio(self):
+        self._paciente_con_sesiones("Volvió", n_reales=3)
+        self._paciente_con_sesiones("Una sola vez", n_reales=1)
+        r = self.client.get("/api/mi-panel/")
+        medalla = next(m for m in r.json()["progreso"]["medallas"] if m["clave"] == "continuidad")
+        self.assertEqual(medalla["valor"], 1)  # solo "Volvió" (>=2 sesiones) — antes: 0
+
+
+class RetencionS3UsaSesionRealTests(TestCase):
+    """El reporte semanal de gerencia ("Retención S3+ por sede") también leía
+    el contador manual: en Piura, verificado el 9 sep, la base de cálculo eran
+    7 pacientes (los que alguien había marcado a mano) en vez de los 769 que
+    de verdad llegaron a sesión 1."""
+
+    def setUp(self):
+        self.clinica = Clinica.objects.create(nombre="Conversemos", slug="conversemos-retencion")
+        self.admin = Usuario.objects.create_user(
+            email="gerencia-ret@test.pe", password="x", clinica=self.clinica, rol=Usuario.Rol.ADMIN,
+        )
+        self.client.force_login(self.admin)
+
+    def _paciente(self, nombre, sede, n_reales):
+        p = Paciente.objects.create(clinica=self.clinica, nombre=nombre, sede=sede, n_sesion=0)
+        for i in range(n_reales):
+            Cita.objects.create(
+                clinica=self.clinica, paciente=p, n_sesion=i + 1, estado=Cita.Estado.ASISTIO,
+                inicio=timezone.now() - timedelta(days=40 - i),
+            )
+        return p
+
+    def test_retencion_cuenta_a_quien_asistio_de_verdad_no_al_contador_manual(self):
+        self._paciente("Llegó a S3", "piura", n_reales=3)
+        self._paciente("Solo S1", "piura", n_reales=1)
+        r = self.client.get("/api/reportes-semanales/sugerir/")
+        # 2 pacientes llegaron a sesión 1+, 1 llegó a sesión 3+ -> 50%. Con el
+        # contador manual (ambos en 0) esto salía "0.0" por falta de base.
+        self.assertEqual(r.json()["retencion_piura"], 50.0)

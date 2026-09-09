@@ -180,28 +180,15 @@ class HoyResumenView(APIView):
             "solo_lectura": es_solo_lectura(request.user),
         }
 
+        # `rol` también lo usa, más abajo, el bloque de captación/comercial.
+        rol = getattr(request.user, "rol", None)
+
         # --- Continuidad terapéutica: riesgo de abandono (S3) y fin de bloque
         # sin decisión registrada. El psicólogo ve solo SUS pacientes; la
         # coordinadora (asistente) solo los de SU sede; admin y analista
-        # (Dirección Clínica), todos los de ambas sedes — ojo: caen en el
-        # "else" implícito de la cadena de abajo, no en una rama propia.
-        rol = getattr(request.user, "rol", None)
-        ficha = None
-        if rol == "medico":
-            from usuarios.models import Profesional
-            ficha = Profesional.objects.filter(usuario=request.user).first()
-        pac_cont = Paciente.objects.del_tenant_actual()
-        if rol == "medico":
-            pac_cont = pac_cont.filter(profesional=ficha) if ficha else pac_cont.none()
-        elif rol == "comercial":
-            pac_cont = pac_cont.none()
-        elif rol == "asistente":
-            # Antes veía pacientes de TODAS las sedes en esta tarjeta (Yazmín en
-            # Piura veía también los de Lima, y viceversa con Ayvi) aunque el
-            # resto del panel (la meta comercial, más abajo) ya escopa por sede.
-            sede_usuario = getattr(request.user, "sede", "") or ""
-            if sede_usuario:
-                pac_cont = pac_cont.filter(sede=sede_usuario)
+        # (Dirección Clínica), ambas sedes.
+        pac_cont = continuidad_mod.pacientes_del_rol(
+            Paciente.objects.del_tenant_actual(), request.user)
 
         # La sesión real sale de las CITAS asistidas/atendidas, no del contador
         # manual del paciente (`Paciente.n_sesion`): ese solo se mueve si alguien
@@ -212,18 +199,8 @@ class HoyResumenView(APIView):
         base = list(pac_cont.exclude(frecuencia__in=["alta", "en_pausa"])
                     .values("id", "nombre", "sesiones_proceso"))
         ids_base = [r["id"] for r in base]
-        agregado = {
-            a["paciente_id"]: (a["max_n"], a["total"])
-            for a in Cita.objects.del_tenant_actual()
-                .filter(paciente_id__in=ids_base, estado__in=[Cita.Estado.ASISTIO, Cita.Estado.ATENDIDA])
-                .values("paciente_id").annotate(max_n=Max("n_sesion"), total=Count("id"))
-        }
-        filas = []
-        for r in base:
-            max_n, total = agregado.get(r["id"], (None, 0))
-            n = continuidad_mod.resolver_sesion_real(max_n, total)
-            if n > 0:
-                filas.append({**r, "n_sesion": n})
+        reales = continuidad_mod.sesion_real_por_pacientes(ids_base)
+        filas = [{**r, "n_sesion": reales[r["id"]]} for r in base if reales.get(r["id"], 0) > 0]
         ids = [r["id"] for r in filas]
 
         con_futura_ids = set(
@@ -242,7 +219,7 @@ class HoyResumenView(APIView):
         for c in citas_realizadas:
             ultima_decision.setdefault(c["paciente_id"], c["decision"])  # la 1ra por paciente = la más reciente
 
-        continuidad, riesgo_abandono = [], []
+        riesgo_abandono = []
         for r in filas:
             n = r["n_sesion"] or 0
             alertas = continuidad_mod.evaluar(
@@ -251,15 +228,29 @@ class HoyResumenView(APIView):
             )
             if continuidad_mod.RIESGO_ABANDONO_S3 in alertas:
                 riesgo_abandono.append({"id": r["id"], "nombre": r["nombre"], "n_sesion": n})
-            if continuidad_mod.FIN_BLOQUE_SIN_DECISION in alertas:
-                meta = continuidad_mod.proxima_meta(n, r["sesiones_proceso"] or 0)
-                continuidad.append({"id": r["id"], "nombre": r["nombre"], "n_sesion": n, "meta": meta})
-        continuidad.sort(key=lambda x: (x["meta"] - x["n_sesion"], x["nombre"]))
         riesgo_abandono.sort(key=lambda x: x["nombre"])
-        out["por_continuidad"] = continuidad[:30]
-        out["por_continuidad_total"] = len(continuidad)
         out["riesgo_abandono"] = riesgo_abandono[:30]
         out["riesgo_abandono_total"] = len(riesgo_abandono)
+
+        # "Evaluar continuidad" ya no es una lista de todos los cierres sin
+        # decisión de la historia (eran 391, y 303 de ellos llevaban más de 90
+        # días sin venir): es una cola priorizada por la FECHA real del cierre.
+        # La tarjeta muestra el resumen y como mucho cinco casos; el resto vive
+        # en "ver todos" (/api/continuidad/pendientes/).
+        cola = continuidad_mod.cola_de_continuidad(pac_cont)
+        conteo = continuidad_mod.resumen_de_cola(cola)
+        accionables = [f for f in cola if f["estado"] in continuidad_mod.EstadoCierre.ACCIONABLES]
+        out["continuidad"] = {
+            "hoy": conteo[continuidad_mod.EstadoCierre.HOY],
+            "vencidos": conteo[continuidad_mod.EstadoCierre.VENCIDO],
+            "proximos": conteo[continuidad_mod.EstadoCierre.PROXIMO],
+            "sin_agendar": conteo[continuidad_mod.EstadoCierre.SIN_AGENDAR],
+            "continuo_sin_decision": conteo[continuidad_mod.EstadoCierre.CONTINUO_SIN_DECISION],
+            "backlog": conteo[continuidad_mod.EstadoCierre.BACKLOG],
+            "accionables": conteo["accionables"],
+            "prioritarios": accionables[:5],
+            "dias_proximos": continuidad_mod.DIAS_PROXIMOS,
+        }
 
         # --- NPS (satisfacción del paciente) de los últimos 90 días ---
         # Promedio + índice NPS estándar (% promotores − % detractores).
@@ -377,6 +368,63 @@ class HoyResumenView(APIView):
                 "cuando": timezone.localtime(e.creado_en).strftime("%d/%m %H:%M"),
             } for e in elim]
         return Response(out)
+
+
+class ContinuidadPendientesView(APIView):
+    """GET /api/continuidad/pendientes/ — la cola completa de cierres de bloque
+    sin decisión registrada, para trabajarla como lista.
+
+    La tarjeta de "Hoy" solo muestra el resumen y cinco casos; aquí está todo,
+    con filtros. Respeta el mismo alcance por rol que la tarjeta: el psicólogo
+    ve solo sus pacientes, la coordinadora los de su sede, admin y analista
+    ambas sedes, el comercial nada.
+
+    Filtros (todos opcionales, se combinan):
+      estado=vencido|hoy|proximo|sin_agendar|continuo_sin_decision|backlog
+             |accionables   (por defecto: accionables, o sea lo que pide acción)
+      sede=lima|piura · medico=<id del profesional> · bloque=6|12|18|24
+      dias_proximos=<n>  (ventana hacia adelante; por defecto 7)
+    """
+
+    def get(self, request):
+        if get_clinica_actual() is None:
+            return Response({"detail": "Sin clínica en contexto."}, status=status.HTTP_400_BAD_REQUEST)
+        qs = continuidad_mod.pacientes_del_rol(Paciente.objects.del_tenant_actual(), request.user)
+
+        sede = (request.query_params.get("sede") or "").strip()
+        if sede:
+            qs = qs.filter(sede=sede)
+        medico = (request.query_params.get("medico") or "").strip()
+        if medico.isdigit():
+            qs = qs.filter(profesional_id=int(medico))
+
+        try:
+            dias_proximos = int(request.query_params.get("dias_proximos") or continuidad_mod.DIAS_PROXIMOS)
+        except (TypeError, ValueError):
+            dias_proximos = continuidad_mod.DIAS_PROXIMOS
+
+        cola = continuidad_mod.cola_de_continuidad(qs, dias_proximos=dias_proximos)
+        conteo = continuidad_mod.resumen_de_cola(cola)
+
+        estado = (request.query_params.get("estado") or "accionables").strip()
+        if estado == "accionables":
+            filas = [f for f in cola if f["estado"] in continuidad_mod.EstadoCierre.ACCIONABLES]
+        elif estado and estado != "todos":
+            filas = [f for f in cola if f["estado"] == estado]
+        else:
+            filas = cola
+
+        bloque = (request.query_params.get("bloque") or "").strip()
+        if bloque.isdigit():
+            filas = [f for f in filas if f["meta"] == int(bloque)]
+
+        return Response({
+            "filas": filas,
+            "total": len(filas),
+            "conteo": conteo,
+            "dias_proximos": dias_proximos,
+            "dias_backlog": continuidad_mod.DIAS_BACKLOG,
+        })
 
 
 class EliminacionRevisarView(APIView):

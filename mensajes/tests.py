@@ -19,7 +19,7 @@ from django.test import TestCase
 from django.utils import timezone
 
 from core.models import Clinica
-from mensajes.models import Mensaje
+from mensajes.models import Mensaje, render_plantilla
 from pacientes.models import Cita, Paciente
 from usuarios.models import Usuario
 
@@ -246,3 +246,35 @@ class AvisoDeRecordatoriosPendientesTests(TestCase):
         temprano = timezone.localtime().replace(hour=7, minute=30)
         with patch("django.utils.timezone.localtime", return_value=temprano):
             self.assertFalse(self.client.get("/api/hoy/").json()["recordatorios"]["avisar"])
+
+
+class VariableNSesionEnPlantillasTests(TestCase):
+    """La variable {n_sesion} de las plantillas salía del contador manual
+    `Paciente.n_sesion`, que en producción se queda en 0 para la mayoría: un
+    mensaje al paciente podía decirle "sesión N° 0" yendo por la 10. Hoy
+    ninguna plantilla activa la usa, pero el dato quedaba mal cableado."""
+
+    def setUp(self):
+        self.clinica = Clinica.objects.create(nombre="Conversemos", slug="conversemos-plantilla")
+        self.paciente = Paciente.objects.create(
+            clinica=self.clinica, nombre="Ana Pérez", n_sesion=0,  # contador manual sin usar
+        )
+
+    def _asistio(self, n_sesion, dias):
+        Cita.objects.create(
+            clinica=self.clinica, paciente=self.paciente, n_sesion=n_sesion,
+            estado=Cita.Estado.ASISTIO, inicio=timezone.now() - timedelta(days=dias),
+        )
+
+    def test_usa_la_sesion_real_no_el_contador_manual(self):
+        self._asistio(n_sesion=1, dias=20)
+        self._asistio(n_sesion=4, dias=6)
+        texto = render_plantilla("Vamos por tu sesión {n_sesion}", paciente=self.paciente)
+        self.assertEqual(texto, "Vamos por tu sesión 4")
+
+    def test_sin_citas_asistidas_es_cero(self):
+        self.assertEqual(
+            render_plantilla("{n_sesion}", paciente=self.paciente), "0")
+
+    def test_sin_paciente_queda_vacio(self):
+        self.assertEqual(render_plantilla("{n_sesion}", clinica=self.clinica), "")
