@@ -86,10 +86,20 @@ class HoyContinuidadViewTests(TestCase):
         )
 
     def _paciente(self, nombre, sede, n_sesion, sesiones_proceso=0, frecuencia="semanal"):
-        return Paciente.objects.create(
+        p = Paciente.objects.create(
             clinica=self.clinica, nombre=nombre, sede=sede,
             n_sesion=n_sesion, sesiones_proceso=sesiones_proceso, frecuencia=frecuencia,
         )
+        if n_sesion:
+            # La sesión real ahora sale de una cita asistida, no del contador
+            # manual que se le pone al paciente (ver AlertaUsaSesionRealTests
+            # en pacientes/tests.py). Bien atrás en el tiempo para no competir
+            # con las citas que cada test agrega aparte (última/próxima).
+            Cita.objects.create(
+                clinica=self.clinica, paciente=p, n_sesion=n_sesion, estado=Cita.Estado.ASISTIO,
+                inicio=timezone.now() - timedelta(days=30),
+            )
+        return p
 
     def _cita(self, paciente, dias, estado=Cita.Estado.AGENDADA, decision=""):
         return Cita.objects.create(

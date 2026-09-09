@@ -1629,7 +1629,7 @@ export default function ClinicaApp() {
               filtered.map((p) => {
                 const meta = p.proceso === "consulta"
                   ? "Consulta inicial"
-                  : `${p.n_sesion ? `Sesión ${p.n_sesion}` : ""}${p.n_sesion && p.proceso_label ? " · " : ""}${p.proceso_label || ""}`;
+                  : `${p.sesion_real ? `Sesión ${p.sesion_real}` : ""}${p.sesion_real && p.proceso_label ? " · " : ""}${p.proceso_label || ""}`;
                 return (
                   <div key={p.id} className="ca-row click" onClick={() => openFicha(p.id)}>
                     <div className="ca-avatar">{iniciales(p.nombre)}</div>
@@ -1710,7 +1710,7 @@ export default function ClinicaApp() {
         )}
         {agendarPara && (
           <AgendarModal pacientes={pacientes} fechaInicial={agendaFecha}
-            pacienteFijo={{ id: agendarPara.id, nombre: agendarPara.nombre, especialidad: agendarPara.especialidad, sede: agendarPara.sede, n_sesion: agendarPara.n_sesion }}
+            pacienteFijo={{ id: agendarPara.id, nombre: agendarPara.nombre, especialidad: agendarPara.especialidad, sede: agendarPara.sede, n_sesion: agendarPara.sesion_real }}
             onClose={() => setAgendarPara(null)} onSave={async (d) => { await agendarCita(d); setAgendarPara(null); }} />
         )}
         {vendiendoPaquete && (
@@ -3949,10 +3949,18 @@ function BrujulaClinica({ p, puede, onRefrescar, showToast }) {
 }
 
 function LineaTiempoProceso({ p }) {
+  // De las CITAS asistidas, no de las fichas clínicas escritas: la mayoría de
+  // las sesiones se cierran sin dejar ficha (ver "las dos puertas"), así que
+  // usar el historial de fichas dejaba esto vacío o con muchas menos sesiones
+  // de las reales. Se prioriza el N° de sesión que ya trae la cita; si ninguna
+  // lo trae, se numera por posición (de la más antigua a la más reciente).
   const puntos = useMemo(() => {
-    const hist = [...(p.historial || [])].reverse(); // de la más antigua a la más reciente
-    return hist.map((h, i) => ({ n: i + 1, fecha: h.fecha }));
-  }, [p.historial]);
+    const asistidas = (p.citas || [])
+      .filter((c) => c.estado === "asistio" || c.estado === "atendida")
+      .slice()
+      .sort((a, b) => (a.fecha_iso < b.fecha_iso ? -1 : a.fecha_iso > b.fecha_iso ? 1 : 0));
+    return asistidas.map((c, i) => ({ n: c.n_sesion || i + 1, fecha: c.fecha }));
+  }, [p.citas]);
   const total = p.sesiones_proceso || 0;
   if (puntos.length === 0) return null;
   const proyectada = total > puntos.length;
@@ -4458,7 +4466,7 @@ function Ficha({ p, onBack, onEdit, onWhatsApp, onSubirAdjunto, onEliminarAdjunt
             <span style={{ background: p.frecuencia === "alta" ? "#EEEBE6" : "#E3F0E8", color: p.frecuencia === "alta" ? "#8A8378" : "#2F6B4F", fontSize: 12, fontWeight: 600, padding: "2px 10px", borderRadius: 20 }}>
               {p.frecuencia === "alta" ? "Alta" : p.frecuencia === "en_pausa" ? "En pausa" : "En proceso"}
             </span>
-            <span style={{ fontWeight: 600 }}>{p.proceso === "consulta" ? "Consulta inicial" : `Sesión ${p.n_sesion || 0}${p.sesiones_proceso ? ` de ${p.sesiones_proceso}` : ""}`}</span>
+            <span style={{ fontWeight: 600 }}>{p.proceso === "consulta" ? "Consulta inicial" : `Sesión ${p.sesion_real || 0}${p.sesiones_proceso ? ` de ${p.sesiones_proceso}` : ""}`}</span>
           </div>
           <div className="ca-pmeta">{[p.proceso_label && p.proceso !== "consulta" ? p.proceso_label : "", p.frecuencia_label].filter(Boolean).join(" · ") || "Frecuencia —"}</div>
           <div className="ca-pmeta" style={{ marginTop: 4 }}>Última sesión: {p.ultima}</div>
@@ -4793,7 +4801,9 @@ function AgendarModal({ pacientes, fechaInicial, horaInicial, medicoInicial, pac
   function elegir(p) {
     setSel(p); setNuevo(false); setEsp(p.especialidad || "");
     if (p.sede) setSede(p.sede);
-    if (p.n_sesion != null) setNSesion(String(p.n_sesion + 1));
+    // La sesión real (de las citas asistidas), no el contador manual del
+    // paciente — ese casi nunca se actualiza (ver core.continuidad.sesion_real).
+    if (p.sesion_real != null) setNSesion(String(p.sesion_real + 1));
     // Con quién y cómo ya viene atendiéndose: para que coordinación no lo vuelva
     // a teclear en cada sesión. Sigue siendo editable si toca cambiarlo.
     if (p.profesional_medico_id) setMedicoId(String(p.profesional_medico_id));
@@ -9898,7 +9908,7 @@ function PacientesDeProfesionalModal({ prof, onClose, showToast }) {
           pacs.map((p) => {
             const meta = p.proceso === "consulta"
               ? "Consulta inicial"
-              : `${p.n_sesion ? `Sesión ${p.n_sesion}` : ""}${p.n_sesion && p.proceso_label ? " · " : ""}${p.proceso_label || ""}`;
+              : `${p.sesion_real ? `Sesión ${p.sesion_real}` : ""}${p.sesion_real && p.proceso_label ? " · " : ""}${p.proceso_label || ""}`;
             return (
               <div key={p.id} className="ca-row" style={{ cursor: "default" }}>
                 <div className="ca-avatar" style={{ width: 36, height: 36, fontSize: 13 }}>{iniciales(p.nombre)}</div>
@@ -10601,7 +10611,10 @@ function RegistrarSesionModal({ paciente, onClose, onSave }) {
     anio: ult?.anio || 2026,
     mes: ult?.mes || 6,
     semana: ult ? Math.min(5, ult.semana + 1) : 1,
-    n_sesion: ult ? (ult.proceso === "consulta" ? 1 : ult.n_sesion + 1) : (paciente.n_sesion || 1),
+    // Si es la primera vez que se usa esta bitácora para este paciente, se
+    // sugiere la sesión REAL (de sus citas asistidas) y no el contador manual
+    // en 0 — si no, alguien con 40 sesiones reales vería sugerido "1".
+    n_sesion: ult ? (ult.proceso === "consulta" ? 1 : ult.n_sesion + 1) : (paciente.sesion_real || 1),
     proceso: ult && ult.proceso !== "consulta" ? ult.proceso : (paciente.proceso && paciente.proceso !== "consulta" ? paciente.proceso : "primero"),
   });
   const setN = (k) => (e) => setF((p) => ({ ...p, [k]: e.target.value.replace(/[^\d]/g, "") }));

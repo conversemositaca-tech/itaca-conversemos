@@ -203,9 +203,27 @@ class HoyResumenView(APIView):
             if sede_usuario:
                 pac_cont = pac_cont.filter(sede=sede_usuario)
 
-        filas = list(pac_cont.filter(n_sesion__gt=0)
-                     .exclude(frecuencia__in=["alta", "en_pausa"])
-                     .values("id", "nombre", "n_sesion", "sesiones_proceso"))
+        # La sesión real sale de las CITAS asistidas/atendidas, no del contador
+        # manual del paciente (`Paciente.n_sesion`): ese solo se mueve si alguien
+        # usa a propósito "Registrar sesión", y en producción se quedaba en 0
+        # para la mayoría — filtrar por `n_sesion__gt=0` aquí mismo los sacaba
+        # de esta pantalla antes de siquiera evaluar la alerta. Se agrega en una
+        # sola consulta agrupada (no una por paciente) para no perder rendimiento.
+        base = list(pac_cont.exclude(frecuencia__in=["alta", "en_pausa"])
+                    .values("id", "nombre", "sesiones_proceso"))
+        ids_base = [r["id"] for r in base]
+        agregado = {
+            a["paciente_id"]: (a["max_n"], a["total"])
+            for a in Cita.objects.del_tenant_actual()
+                .filter(paciente_id__in=ids_base, estado__in=[Cita.Estado.ASISTIO, Cita.Estado.ATENDIDA])
+                .values("paciente_id").annotate(max_n=Max("n_sesion"), total=Count("id"))
+        }
+        filas = []
+        for r in base:
+            max_n, total = agregado.get(r["id"], (None, 0))
+            n = continuidad_mod.resolver_sesion_real(max_n, total)
+            if n > 0:
+                filas.append({**r, "n_sesion": n})
         ids = [r["id"] for r in filas]
 
         con_futura_ids = set(
