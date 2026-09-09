@@ -669,3 +669,45 @@ class ReporteCuadraConElConteoManualTests(TestCase):
         for sede in (Lead.Sede.PIURA, Lead.Sede.LIMA):
             nombres = [a["nombre"] for a in self._datos(sede=sede)["anuncios"]]
             self.assertIn("Campana nacional", nombres, f"falta en {sede}")
+
+
+class LeadCerradoNoDuplicaPacienteTests(TestCase):
+    """Reportado: un lead que se cierra ("Inició proceso") sin haber pasado antes
+    por "agendar consulta" —así que todavía no tenía `paciente_id`— creaba una
+    ficha de Paciente nueva aunque esa persona ya existiera por otro lado. La
+    misma persona quedaba dos veces: una vez como paciente real, otra como el
+    "lead cerrado"."""
+
+    def setUp(self):
+        self.clinica = Clinica.objects.create(nombre="Conversemos", slug="conversemos-nodup")
+        self.coord = Usuario.objects.create_user(
+            email="coord-nodup@test.pe", password="x", clinica=self.clinica, rol=Usuario.Rol.ASISTENTE,
+        )
+        self.client.force_login(self.coord)
+
+    def test_cerrar_un_lead_reutiliza_al_paciente_que_ya_existe_por_telefono(self):
+        ya = Paciente.objects.create(clinica=self.clinica, nombre="Carla Ruiz", telefono="+51 987 654 321")
+        r = self.client.post("/api/leads/", {
+            "nombre": "Carla Ruiz", "telefono": "987654321", "sede": "piura",
+            "fuente": "whatsapp", "estado": "ganado", "agendo_consulta": False,
+        }, content_type="application/json")
+        self.assertEqual(r.status_code, 201)
+        self.assertEqual(Paciente.objects.count(), 1)
+        lead = Lead.objects.get()
+        self.assertEqual(lead.paciente_id, ya.id)
+        ya.refresh_from_db()
+        self.assertFalse(ya.provisional)
+
+    def test_marcar_ganado_despues_tambien_reutiliza_al_paciente(self):
+        """Mismo caso pero cerrando el lead en un PATCH posterior, no al crearlo."""
+        ya = Paciente.objects.create(clinica=self.clinica, nombre="Bruno Vega", telefono="987654321")
+        r = self.client.post("/api/leads/", {
+            "nombre": "Bruno Vega", "telefono": "987654321", "sede": "piura",
+            "fuente": "whatsapp", "estado": "nuevo", "agendo_consulta": False,
+        }, content_type="application/json")
+        self.assertEqual(r.status_code, 201)
+        lead_id = r.json()["id"]
+        r2 = self.client.patch(f"/api/leads/{lead_id}/", {"estado": "ganado"}, content_type="application/json")
+        self.assertEqual(r2.status_code, 200)
+        self.assertEqual(Paciente.objects.count(), 1)
+        self.assertEqual(Lead.objects.get(pk=lead_id).paciente_id, ya.id)
