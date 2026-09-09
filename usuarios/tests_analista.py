@@ -44,8 +44,15 @@ class _Base(TestCase):
             clinica=self.clinica, nombre="Paciente de Piura", sede="piura", n_sesion=3,
             frecuencia="semanal", telefono="977333444",
         )
+        # La sesión real sale de las citas asistidas (core.continuidad.sesion_real),
+        # no del contador manual n_sesion del paciente: para que los dos estén
+        # en su S3 sin próxima cita, cada uno lleva una cita atendida como S3.
         self.cita = Cita.objects.create(
-            clinica=self.clinica, paciente=self.lima,
+            clinica=self.clinica, paciente=self.lima, n_sesion=3,
+            inicio=timezone.now() - timedelta(days=1), estado=Cita.Estado.ATENDIDA,
+        )
+        Cita.objects.create(
+            clinica=self.clinica, paciente=self.piura, n_sesion=3,
             inicio=timezone.now() - timedelta(days=1), estado=Cita.Estado.ATENDIDA,
         )
         self.cobro = Cobro.objects.create(
