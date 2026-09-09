@@ -515,6 +515,43 @@ function SpecialtyTag({ name }) {
 }
 const iniciales = (n) => (n || "").split(" ").map((w) => w[0]).slice(0, 2).join("");
 
+// Búsqueda de nombres tolerante: sin importar mayúsculas, tildes, orden de las
+// palabras (nombre, apellido o solo el segundo apellido) ni uno o dos errores
+// de tipeo. Usada para buscar pacientes al agendar, cobrar, y en el listado.
+const normalizarTexto = (s) =>
+  String(s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").trim();
+
+function distanciaEdicion(a, b) {
+  const m = a.length, n = b.length;
+  if (!m) return n;
+  if (!n) return m;
+  const fila = Array.from({ length: n + 1 }, (_, j) => j);
+  for (let i = 1; i <= m; i++) {
+    let diagonal = fila[0];
+    fila[0] = i;
+    for (let j = 1; j <= n; j++) {
+      const temp = fila[j];
+      fila[j] = a[i - 1] === b[j - 1] ? diagonal : 1 + Math.min(diagonal, fila[j], fila[j - 1]);
+      diagonal = temp;
+    }
+  }
+  return fila[n];
+}
+
+function coincideBusqueda(texto, busqueda) {
+  const objetivo = normalizarTexto(texto);
+  const palabrasBusqueda = normalizarTexto(busqueda).split(/\s+/).filter(Boolean);
+  if (!palabrasBusqueda.length) return true;
+  const palabrasObjetivo = objetivo.split(/\s+/).filter(Boolean);
+  return palabrasBusqueda.every((qw) => {
+    if (objetivo.includes(qw)) return true; // substring directo, en cualquier orden
+    const tolerancia = qw.length <= 4 ? 1 : 2; // más margen cuanto más larga la palabra
+    return palabrasObjetivo.some(
+      (ow) => Math.abs(ow.length - qw.length) <= tolerancia && distanciaEdicion(qw, ow) <= tolerancia
+    );
+  });
+}
+
 export default function ClinicaApp() {
   const [view, setView] = useState("hoy");
   const [pacientes, setPacientes] = useState([]);
@@ -667,7 +704,7 @@ export default function ClinicaApp() {
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return basePacientes.filter((p) =>
-      (!q || p.nombre.toLowerCase().includes(q) || (p.tel || "").toLowerCase().includes(q) || (p.numero_documento || "").toLowerCase().includes(q)) &&
+      (!q || coincideBusqueda(p.nombre, query) || (p.tel || "").toLowerCase().includes(q) || (p.numero_documento || "").toLowerCase().includes(q)) &&
       (!filterEsp || p.especialidad === filterEsp) &&
       (!filterSede || p.sede === filterSede) &&
       (!filterProf || p.profesional_nombre === filterProf) &&
@@ -4749,7 +4786,7 @@ function AgendarModal({ pacientes, fechaInicial, horaInicial, medicoInicial, pac
   }, [servicios, categoria]);
 
   const matches = useMemo(
-    () => (busca.trim() ? pacientes.filter((p) => p.nombre.toLowerCase().includes(busca.toLowerCase())).slice(0, 4) : []),
+    () => (busca.trim() ? pacientes.filter((p) => coincideBusqueda(p.nombre, busca)).slice(0, 4) : []),
     [busca, pacientes]
   );
 
@@ -4757,6 +4794,10 @@ function AgendarModal({ pacientes, fechaInicial, horaInicial, medicoInicial, pac
     setSel(p); setNuevo(false); setEsp(p.especialidad || "");
     if (p.sede) setSede(p.sede);
     if (p.n_sesion != null) setNSesion(String(p.n_sesion + 1));
+    // Con quién y cómo ya viene atendiéndose: para que coordinación no lo vuelva
+    // a teclear en cada sesión. Sigue siendo editable si toca cambiarlo.
+    if (p.profesional_medico_id) setMedicoId(String(p.profesional_medico_id));
+    if (p.modalidad) setModalidad(p.modalidad);
     setBusca("");
   }
   function elegirNuevo() { setNuevo(true); setSel(null); }
@@ -9422,7 +9463,7 @@ function CobroModal({ prefill, pacientes, servicios, onClose, onSave }) {
   const [concepto, setConcepto] = useState(prefill?.concepto || (servDefault ? servDefault.nombre : ""));
 
   const matches = useMemo(
-    () => (busca.trim() ? (pacientes || []).filter((p) => p.nombre.toLowerCase().includes(busca.toLowerCase())).slice(0, 4) : []),
+    () => (busca.trim() ? (pacientes || []).filter((p) => coincideBusqueda(p.nombre, busca)).slice(0, 4) : []),
     [busca, pacientes]
   );
 
@@ -10866,7 +10907,7 @@ function PacienteModal({ paciente, onClose, onSave, esMedico }) {
 
   return (
     <div className="ca-modal-bg" onClick={onClose}>
-      <div className="ca-modal" style={{ maxWidth: 440 }} onClick={(e) => e.stopPropagation()}>
+      <div className="ca-modal" style={{ maxWidth: 760 }} onClick={(e) => e.stopPropagation()}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
           <strong style={{ fontSize: 16 }}>{paciente ? "Editar paciente" : "Nuevo paciente"}</strong>
           <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)" }}><X size={18} /></button>

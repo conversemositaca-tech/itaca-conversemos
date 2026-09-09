@@ -85,6 +85,11 @@ class PacienteSerializer(serializers.ModelSerializer):
     genero_label = serializers.CharField(source="get_genero_display", read_only=True)
     sede_label = serializers.CharField(source="get_sede_display", read_only=True)
     profesional_nombre = serializers.CharField(source="profesional.nombre", read_only=True, default="")
+    # El Usuario (login) enlazado a la ficha del profesional, si tiene uno — para
+    # que agendar autorrellene "Psicólogo" con quien ya atiende a este paciente,
+    # sin tener que volver a elegirlo cada vez. Puede quedar vacío: la ficha del
+    # directorio no siempre está enlazada a un login (ver Profesional.usuario).
+    profesional_medico_id = serializers.IntegerField(source="profesional.usuario_id", read_only=True, default=None)
     codigo = serializers.SerializerMethodField()
     riesgo_label = serializers.CharField(source="get_riesgo_display", read_only=True)
     proceso_label = serializers.SerializerMethodField()
@@ -107,7 +112,7 @@ class PacienteSerializer(serializers.ModelSerializer):
             "tipo_documento", "tipo_documento_label", "numero_documento", "direccion",
             "genero", "genero_label",
             "tutor_nombre", "tutor_parentesco", "tutor_telefono", "tutor_documento",
-            "sede", "sede_label", "profesional", "profesional_nombre", "codigo",
+            "sede", "sede_label", "profesional", "profesional_nombre", "profesional_medico_id", "codigo",
             "n_sesion", "sesiones_proceso", "proceso", "proceso_label", "seguimiento",
             "provisional",
             "frecuencia", "frecuencia_label", "modalidad", "modalidad_label",
