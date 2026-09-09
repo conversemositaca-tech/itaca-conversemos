@@ -13,6 +13,12 @@ Configuración (ver settings.GOOGLE_CALENDAR_*):
 
 El evento usa un id determinístico por cita (itacacita<ID>), así que crear/mover/
 cancelar siempre apunta al mismo evento sin necesidad de guardar nada en la BD.
+
+Por defecto el evento NO lleva nombre, teléfono ni motivo del paciente — solo
+"Sesión · psicólogo · sede". Cualquiera con acceso al calendario compartido vería
+esos datos aunque no tenga permiso para abrir la ficha del paciente en Ítaca, así
+que el dato clínico se queda adentro. Para mostrar el nombre igual, poner
+GOOGLE_CALENDAR_MOSTRAR_PACIENTE=1 (opt-in, no por defecto).
 """
 import json
 import os
@@ -86,16 +92,31 @@ def _cuerpo(cita):
     tz = getattr(cita.clinica, "zona_horaria", "") or "America/Lima"
     medico = str(cita.medico) if cita.medico_id else ""
     emoji = {"confirmada": "✅", "por_confirmar": "🕓", "atendida": "✔️"}.get(cita.estado, "")
-    resumen = f"{emoji} {cita.paciente.nombre}".strip()
-    if cita.especialidad:
-        resumen += f" · {cita.especialidad}"
-    desc = "\n".join(x for x in [
-        f"Paciente: {cita.paciente.nombre}",
-        f"Teléfono: {cita.paciente.telefono}" if cita.paciente.telefono else "",
+    sede = cita.paciente.get_sede_display() if cita.paciente.sede else ""
+
+    # Por defecto el evento NO lleva dato clínico (nombre, teléfono, motivo): Google
+    # Calendar es un tercero fuera de Ítaca, y cualquiera con acceso al calendario
+    # vería el nombre del paciente aunque no tenga permiso para abrir su ficha. Con
+    # GOOGLE_CALENDAR_MOSTRAR_PACIENTE=1 una clínica que lo prefiera puede optar por
+    # verlo — apagado es lo seguro por defecto, no hace falta que cada quien lo pida.
+    mostrar = getattr(settings, "GOOGLE_CALENDAR_MOSTRAR_PACIENTE", False)
+
+    if mostrar:
+        resumen = f"{emoji} {cita.paciente.nombre}".strip()
+        if cita.especialidad:
+            resumen += f" · {cita.especialidad}"
+    else:
+        resumen = f"{emoji} Sesión" + (f" · {medico}" if medico else "") + (f" · {sede}" if sede else "")
+        resumen = resumen.strip()
+
+    desc_lineas = [
+        f"Paciente: {cita.paciente.nombre}" if mostrar else "",
+        f"Teléfono: {cita.paciente.telefono}" if (mostrar and cita.paciente.telefono) else "",
         f"Psicólogo: {medico}" if medico else "",
         f"Estado: {cita.get_estado_display()}",
         "(Itaca Conversemos · Gestión)",
-    ] if x)
+    ]
+    desc = "\n".join(x for x in desc_lineas if x)
     return {
         "id": _evento_id(cita),
         "summary": resumen,
