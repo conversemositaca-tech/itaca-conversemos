@@ -206,31 +206,20 @@ def convertir_lead_en_paciente(lead):
 
     Este es el ÚNICO punto donde alguien pasa a ser paciente. Si ya tenía ficha
     provisional —la que dejó la consulta agendada—, aquí deja de serlo: recién
-    ahora inició proceso."""
-    if lead.paciente_id:
-        paciente = lead.paciente
-        if paciente.provisional:
-            paciente.provisional = False
-            paciente.save(update_fields=["provisional"])
-        if lead.estado != Lead.Estado.GANADO:
-            lead.estado = Lead.Estado.GANADO
-            lead.save(update_fields=["estado"])
-        return paciente
-    from usuarios.models import Profesional
+    ahora inició proceso.
 
-    ficha = Profesional.objects.filter(usuario=lead.medico).first() if lead.medico_id else None
-    paciente = Paciente.objects.create(
-        clinica=lead.clinica,
-        nombre=lead.nombre,
-        telefono=lead.telefono,
-        sede=lead.sede or "",
-        profesional=ficha,
-        especialidad_habitual=lead.especialidad or lead.get_tipo_servicio_display() or "",
-    )
-    lead.paciente = paciente
+    Antes de crear una ficha nueva, reutiliza `_paciente_del_lead` para buscar
+    por teléfono: si el lead se marca «cerrado» sin haber pasado por «agendar
+    consulta» (por eso no tenía `paciente_id` todavía) y esa persona YA era
+    paciente por otro lado, esto evitaba el match y dejaba dos fichas de la
+    misma persona — una por Marketing y otra por la consulta real."""
+    paciente = _paciente_del_lead(lead)
+    if paciente.provisional:
+        paciente.provisional = False
+        paciente.save(update_fields=["provisional"])
     if lead.estado != Lead.Estado.GANADO:
         lead.estado = Lead.Estado.GANADO
-    lead.save(update_fields=["paciente", "estado"])
+        lead.save(update_fields=["estado"])
     return paciente
 
 
