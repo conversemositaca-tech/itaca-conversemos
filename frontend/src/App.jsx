@@ -3959,7 +3959,14 @@ function LineaTiempoProceso({ p }) {
       .filter((c) => c.estado === "asistio" || c.estado === "atendida")
       .slice()
       .sort((a, b) => (a.fecha_iso < b.fecha_iso ? -1 : a.fecha_iso > b.fecha_iso ? 1 : 0));
-    return asistidas.map((c, i) => ({ n: c.n_sesion || i + 1, fecha: c.fecha }));
+    // La primera asistida sin N° es la consulta inicial; las demás usan su N° o,
+    // si no lo traen, su posición (sin contar la consulta). Así la consulta y la
+    // sesión 1 no salen las dos como "Consulta".
+    return asistidas.map((c, i) => {
+      const esConsulta = i === 0 && c.n_sesion == null;
+      const n = c.n_sesion != null ? c.n_sesion : (i === 0 ? 1 : i);
+      return { n, fecha: c.fecha, etiqueta: esConsulta ? "Consulta" : `Sesión ${n}` };
+    });
   }, [p.citas]);
   const total = p.sesiones_proceso || 0;
   if (puntos.length === 0) return null;
@@ -3977,7 +3984,7 @@ function LineaTiempoProceso({ p }) {
                   <div style={{ width: 26, height: 26, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11.5, fontWeight: 700, background: actual ? "var(--accent)" : "#E3F0E8", color: actual ? "#fff" : "#2F6B4F" }}>
                     {actual ? pt.n : <Check size={13} strokeWidth={2.5} />}
                   </div>
-                  <div style={{ fontSize: 11.5, fontWeight: 600, marginTop: 6, textAlign: "center" }}>{pt.n === 1 ? "Consulta" : `Sesión ${pt.n}`}</div>
+                  <div style={{ fontSize: 11.5, fontWeight: 600, marginTop: 6, textAlign: "center" }}>{pt.etiqueta}</div>
                   <div style={{ fontSize: 11, color: "var(--muted)", textAlign: "center" }}>{pt.fecha}</div>
                 </div>
                 {(i < puntos.length - 1 || proyectada) && <div style={{ height: 2, width: 30, background: "var(--line)", marginTop: 12 }} />}
