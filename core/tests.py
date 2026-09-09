@@ -113,12 +113,19 @@ class HoyContinuidadViewTests(TestCase):
         self.assertEqual(r.status_code, 200)
         return r.json()
 
+    def _continuidad_nombres(self, usuario=None, estado="todos"):
+        """La cola completa de "Evaluar continuidad" (no los 5 de /api/hoy/)."""
+        self.client.force_login(usuario or self.coord_lima)
+        r = self.client.get(f"/api/continuidad/pendientes/?estado={estado}")
+        self.assertEqual(r.status_code, 200)
+        return [x["paciente"] for x in r.json()["filas"]]
+
     def test_riesgo_abandono_s3_sin_proxima_cita(self):
         p = self._paciente("Sin próxima en S3", "lima", n_sesion=3)
         datos = self._hoy(self.coord_lima)
         nombres = [x["nombre"] for x in datos["riesgo_abandono"]]
         self.assertIn(p.nombre, nombres)
-        self.assertNotIn(p.nombre, [x["nombre"] for x in datos["por_continuidad"]])
+        self.assertNotIn(p.nombre, self._continuidad_nombres())
 
     def test_s3_con_proxima_cita_no_es_riesgo(self):
         p = self._paciente("Con próxima en S3", "lima", n_sesion=3)
@@ -129,14 +136,12 @@ class HoyContinuidadViewTests(TestCase):
     def test_fin_de_bloque_sin_decision_registrada(self):
         p = self._paciente("Fin de bloque sin decidir", "lima", n_sesion=6, sesiones_proceso=6)
         self._cita(p, dias=-1, estado=Cita.Estado.ATENDIDA, decision="")
-        datos = self._hoy(self.coord_lima)
-        self.assertIn(p.nombre, [x["nombre"] for x in datos["por_continuidad"]])
+        self.assertIn(p.nombre, self._continuidad_nombres())
 
     def test_fin_de_bloque_con_decision_ya_no_avisa(self):
         p = self._paciente("Fin de bloque ya decidido", "lima", n_sesion=6, sesiones_proceso=6)
         self._cita(p, dias=-1, estado=Cita.Estado.ATENDIDA, decision="DP-08")
-        datos = self._hoy(self.coord_lima)
-        self.assertNotIn(p.nombre, [x["nombre"] for x in datos["por_continuidad"]])
+        self.assertNotIn(p.nombre, self._continuidad_nombres())
 
     def test_coordinadora_de_lima_no_ve_pacientes_de_piura(self):
         """Antes de este fix, la tarjeta de continuidad no filtraba por sede

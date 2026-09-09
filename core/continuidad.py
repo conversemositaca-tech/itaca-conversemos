@@ -112,3 +112,200 @@ def evaluar(n_sesion, sesiones_proceso, tiene_proxima, ultima_decision, frecuenc
     if meta - 1 <= n_sesion <= meta and not ultima_decision:
         alertas.append(FIN_BLOQUE_SIN_DECISION)
     return alertas
+
+
+# ---------------------------------------------------------------------------
+# Cola de trabajo de "Evaluar continuidad"
+#
+# La alerta original respondía "¿cuántos cierres sin decisión hay en toda la
+# historia del sistema?" y contestaba 391 — de los cuales, medido contra
+# producción el 9 sep 2026: 303 llevaban más de 90 días sin pisar el
+# consultorio, 380 venían importados del sistema anterior (donde el código de
+# decisión no existía) y la fecha real del cierre era, en la mitad de los
+# casos, de hacía 260 días. La pantalla se llama "Hoy": tiene que responder
+# "¿a quién hay que llamar hoy?", y para eso la FECHA del cierre pesa tanto
+# como el número de sesión.
+# ---------------------------------------------------------------------------
+
+# Cuánto se mira hacia adelante para preparar la conversación de continuidad.
+DIAS_PROXIMOS = 7
+# Un cierre más viejo que esto ya no es la operación del día: es backlog. Se
+# sigue pudiendo ver y trabajar, pero no compite con lo de hoy.
+DIAS_BACKLOG = 90
+# Desde qué sesión tiene sentido decir "pasó un cierre y siguió viniendo".
+PRIMER_CIERRE = BLOQUE_POR_DEFECTO
+
+
+class EstadoCierre:
+    """En qué punto está el cierre de bloque de cada paciente."""
+
+    HOY = "hoy"                                      # cierra hoy y no hay decisión
+    VENCIDO = "vencido"                              # cerró antes de hoy y sigue sin decisión
+    PROXIMO = "proximo"                              # cierra dentro de la ventana, ya agendado
+    SIN_AGENDAR = "sin_agendar"                      # a una sesión de cerrar y sin próxima cita
+    CONTINUO_SIN_DECISION = "continuo_sin_decision"  # pasó el cierre y siguió: calidad de registro
+    BACKLOG = "backlog"                              # cierre viejo: no es la operación de hoy
+
+    # Lo que de verdad pide acción, en orden de urgencia.
+    ACCIONABLES = (VENCIDO, HOY, PROXIMO, SIN_AGENDAR)
+
+
+# Orden de la cola: primero la brecha ya abierta, al final la calidad del dato.
+_ORDEN_ESTADO = {
+    EstadoCierre.VENCIDO: 0,
+    EstadoCierre.HOY: 1,
+    EstadoCierre.PROXIMO: 2,
+    EstadoCierre.SIN_AGENDAR: 3,
+    EstadoCierre.CONTINUO_SIN_DECISION: 4,
+    EstadoCierre.BACKLOG: 5,
+}
+
+
+def pacientes_del_rol(queryset, usuario):
+    """Acota un queryset de pacientes a lo que ese rol puede ver.
+
+    Las mismas reglas que ya aplicaba la pantalla "Hoy": el psicólogo ve solo
+    los suyos, la coordinadora los de su sede, y admin/analista (Dirección
+    Clínica) ambas sedes. El comercial no ve pacientes.
+    """
+    rol = getattr(usuario, "rol", None)
+    if rol == "medico":
+        from usuarios.models import Profesional
+        ficha = Profesional.objects.filter(usuario=usuario).first()
+        return queryset.filter(profesional=ficha) if ficha else queryset.none()
+    if rol == "comercial":
+        return queryset.none()
+    if rol == "asistente":
+        sede = getattr(usuario, "sede", "") or ""
+        return queryset.filter(sede=sede) if sede else queryset
+    return queryset
+
+
+def _fecha_de_cierre(asistidas, futuras, meta, n):
+    """Cuándo ocurrió —o va a ocurrir— la sesión que cierra el bloque.
+
+    Devuelve (fecha, de_dónde_salió). El número de sesión solo dice "va por la
+    6"; para saber si eso fue hoy, hace un mes o pasa el jueves hay que mirar
+    la fecha de esa cita.
+    """
+    for c in asistidas:                        # 1) la cita que trae el número del cierre
+        if c["n_sesion"] and c["n_sesion"] == meta:
+            return c["inicio"].date(), "numero"
+    if n >= meta:
+        if len(asistidas) >= meta:             # 2) la meta-ésima que asistió, en orden
+            return asistidas[meta - 1]["inicio"].date(), "posicion"
+        if asistidas:                          # 3) respaldo: la última que asistió
+            return asistidas[-1]["inicio"].date(), "ultima"
+        return None, "sin_fecha"
+    for c in futuras:                          # 4) todavía no cierra: la cita que lo hará
+        if c["n_sesion"] in (meta, None):
+            return c["inicio"].date(), "agendada"
+    return None, "sin_agendar"
+
+
+def cola_de_continuidad(pacientes, hoy=None, dias_proximos=None, dias_backlog=None):
+    """La cola de trabajo de "Evaluar continuidad", priorizada.
+
+    Recibe un queryset de pacientes YA acotado por rol (ver `pacientes_del_rol`)
+    y devuelve las filas ordenadas por urgencia. Se resuelve con dos consultas
+    agregadas, no una por paciente.
+    """
+    from django.utils import timezone
+
+    from pacientes.models import Cita
+
+    hoy = hoy or timezone.localdate()
+    dias_proximos = DIAS_PROXIMOS if dias_proximos is None else dias_proximos
+    dias_backlog = DIAS_BACKLOG if dias_backlog is None else dias_backlog
+
+    base = list(pacientes.exclude(frecuencia__in=FRECUENCIAS_CERRADAS)
+                .values("id", "nombre", "sede", "sesiones_proceso", "profesional__nombre"))
+    ids = [r["id"] for r in base]
+    if not ids:
+        return []
+
+    asistidas, futuras = {}, {}
+    for c in (Cita.objects.filter(paciente_id__in=ids, estado__in=_ESTADOS_ASISTIDOS)
+              .values("paciente_id", "n_sesion", "inicio", "decision")
+              .order_by("paciente_id", "inicio")):
+        asistidas.setdefault(c["paciente_id"], []).append(c)
+    for c in (Cita.objects.filter(paciente_id__in=ids, inicio__gte=timezone.now())
+              .exclude(estado="cancelada")
+              .values("paciente_id", "n_sesion", "inicio")
+              .order_by("paciente_id", "inicio")):
+        futuras.setdefault(c["paciente_id"], []).append(c)
+
+    filas = []
+    for r in base:
+        pid = r["id"]
+        citas = asistidas.get(pid, [])
+        if not citas:
+            continue
+        con_numero = [c["n_sesion"] for c in citas if c["n_sesion"]]
+        n = resolver_sesion_real(max(con_numero) if con_numero else None, len(citas))
+        if n <= 0:
+            continue
+        # La decisión de la última cita realizada es la que cierra la alerta.
+        if citas[-1]["decision"]:
+            continue
+        meta = proxima_meta(n, r["sesiones_proceso"] or 0)
+        proximas = futuras.get(pid, [])
+        ultima_sesion = citas[-1]["inicio"].date()
+
+        if n <= meta - 2:
+            # Pasó un cierre sin decisión y siguió viniendo. No es el riesgo de
+            # que se vaya sin cerrar: es una decisión que nadie anotó. Se separa
+            # para no mezclar un problema de registro con uno de continuidad.
+            if n < PRIMER_CIERRE:
+                continue
+            filas.append(_fila(r, n, meta, None, "continuo", EstadoCierre.CONTINUO_SIN_DECISION,
+                               None, bool(proximas), ultima_sesion))
+            continue
+
+        fecha, origen = _fecha_de_cierre(citas, proximas, meta, n)
+        if fecha is None:
+            filas.append(_fila(r, n, meta, None, origen, EstadoCierre.SIN_AGENDAR,
+                               None, bool(proximas), ultima_sesion))
+            continue
+
+        dias = (hoy - fecha).days
+        if dias > dias_backlog:
+            estado = EstadoCierre.BACKLOG
+        elif dias > 0:
+            estado = EstadoCierre.VENCIDO
+        elif dias == 0:
+            estado = EstadoCierre.HOY
+        elif -dias <= dias_proximos:
+            estado = EstadoCierre.PROXIMO
+        else:
+            continue  # cierra más allá de la ventana: todavía no es asunto de nadie
+        filas.append(_fila(r, n, meta, fecha, origen, estado, dias, bool(proximas), ultima_sesion))
+
+    filas.sort(key=lambda f: (_ORDEN_ESTADO[f["estado"]], -(f["dias"] or 0), f["paciente"]))
+    return filas
+
+
+def _fila(r, n, meta, fecha, origen, estado, dias, tiene_proxima, ultima_sesion):
+    return {
+        "id": r["id"],
+        "paciente": r["nombre"],
+        "sede": r["sede"] or "",
+        "psicologo": r["profesional__nombre"] or "",
+        "n_sesion": n,
+        "meta": meta,
+        "fecha_cierre": fecha.isoformat() if fecha else None,
+        "origen_fecha": origen,
+        "estado": estado,
+        "dias": dias,
+        "tiene_proxima": tiene_proxima,
+        "ultima_sesion": ultima_sesion.isoformat() if ultima_sesion else None,
+    }
+
+
+def resumen_de_cola(filas):
+    """Cuántos hay en cada estado — lo que la tarjeta de "Hoy" muestra arriba."""
+    conteo = {e: 0 for e in _ORDEN_ESTADO}
+    for f in filas:
+        conteo[f["estado"]] += 1
+    conteo["accionables"] = sum(conteo[e] for e in EstadoCierre.ACCIONABLES)
+    return conteo

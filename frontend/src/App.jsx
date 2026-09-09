@@ -1549,6 +1549,11 @@ export default function ClinicaApp() {
             onRetencion={() => { setSoloSinProxima(true); go("pacientes"); }} cumple={cumpleHoy} esAdmin={usuario?.rol === "admin"} esMedico={usuario?.rol === "medico"} showToast={showToast} />
         )}
 
+        {view === "continuidad" && (
+          <ContinuidadPendientes onOpen={openFicha} onVolver={() => go("hoy")} showToast={showToast}
+            esMedico={usuario?.rol === "medico"} esAsistente={usuario?.rol === "asistente"} />
+        )}
+
         {view === "agenda" && (
           <Agenda
             citas={citas} bloqueos={bloqueos} fecha={agendaFecha} setFecha={setAgendaFecha}
@@ -3391,24 +3396,7 @@ function Hoy({ proximas, citasHoy, porConfirmar, atendidas, onOpen, onGo, onRete
         </div>
       )}
 
-      {r && r.por_continuidad && r.por_continuidad.length > 0 && (
-        <div className="ca-card" style={{ marginTop: 14, borderColor: "#CDE8F0", background: "#F4FBFD" }}>
-          <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 10, display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap" }}>
-            <Activity size={15} strokeWidth={2} style={{ color: "var(--accent)" }} /> Evaluar continuidad
-            <span style={{ fontWeight: 400, color: "var(--muted)", fontSize: 12.5 }}>· {r.por_continuidad_total} paciente{r.por_continuidad_total !== 1 ? "s" : ""} por terminar proceso (sesión 6, 12…)</span>
-          </div>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-            {r.por_continuidad.map((p) => (
-              <button key={p.id} className="ca-mini" onClick={() => onOpen(p.id)}>
-                {p.nombre} <span style={{ color: "var(--muted)" }}>· sesión {p.n_sesion}/{p.meta}</span>
-              </button>
-            ))}
-          </div>
-          {r.por_continuidad_total > r.por_continuidad.length && (
-            <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 8 }}>y {r.por_continuidad_total - r.por_continuidad.length} más…</div>
-          )}
-        </div>
-      )}
+      {r?.continuidad && <ContinuidadCard c={r.continuidad} onOpen={onOpen} onGo={onGo} />}
 
       {/* Los recordatorios los manda una tarea programada fuera del sistema: si un
           día no corre, sin este aviso nadie se entera hasta que alguien no llega. */}
@@ -3553,6 +3541,207 @@ function Hoy({ proximas, citasHoy, porConfirmar, atendidas, onOpen, onGo, onRete
 
 // --- Helpers de la historia clínica ---
 const numeroLimpio = (s) => { const n = Number(s); return Number.isFinite(n) ? String(n) : s; };
+
+// ---- Evaluar continuidad: la cola de cierres de bloque sin decisión ----
+// Antes la tarjeta listaba TODOS los cierres sin decisión de la historia (391,
+// de los cuales 303 llevaban más de 90 días sin venir). Ahora el backend los
+// clasifica por la FECHA real del cierre y la tarjeta muestra solo el resumen
+// y los cinco más urgentes; el resto vive en "Ver todos".
+
+const MESES_CORTOS_COLA = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "set", "oct", "nov", "dic"];
+function fechaCortaISO(iso) {
+  const [y, m, d] = String(iso).split("-").map(Number);
+  return m ? `${d} ${MESES_CORTOS_COLA[m - 1]} ${y}` : iso;
+}
+
+// Etiqueta y color de cada estado de la cola. Primero la brecha ya abierta
+// (vencido, rojo), después lo de hoy (celeste), después prevención (verde).
+function etiquetaCierre(f) {
+  const d = f.dias || 0;
+  if (f.estado === "vencido") return { t: `${d} día${d === 1 ? "" : "s"} vencido`, bg: "#F7E5E5", fg: "#9C4646" };
+  if (f.estado === "hoy") return { t: "Cierra hoy", bg: "#D7F4FA", fg: "#0A7D92" };
+  if (f.estado === "proximo") return { t: d === -1 ? "Cierra mañana" : `Cierra en ${-d} días`, bg: "#E9F1ED", fg: "#3E7A65" };
+  if (f.estado === "sin_agendar") return { t: "Sin próxima cita", bg: "#F7ECDD", fg: "#9C6B2E" };
+  if (f.estado === "continuo_sin_decision") return { t: "Continuó sin decisión", bg: "#EFEDE8", fg: "#7C7870" };
+  return { t: `Cierre antiguo · ${d} días`, bg: "#EFEDE8", fg: "#7C7870" };
+}
+
+const ESTADOS_COLA = [
+  { v: "accionables", l: "Requieren acción" },
+  { v: "vencido", l: "Vencidos" },
+  { v: "hoy", l: "Hoy" },
+  { v: "proximo", l: "Próximos" },
+  { v: "sin_agendar", l: "Sin próxima cita" },
+  { v: "continuo_sin_decision", l: "Continuó sin decisión" },
+  { v: "backlog", l: "Cierres antiguos" },
+];
+
+function NumeroConEtiqueta({ n, label, bg, fg }) {
+  return (
+    <span style={{ display: "inline-flex", alignItems: "baseline", gap: 5, padding: "4px 11px", borderRadius: 999, background: bg, color: fg, fontSize: 13, fontWeight: 600 }}>
+      <span style={{ fontSize: 17, fontVariantNumeric: "tabular-nums" }}>{n}</span> {label}
+    </span>
+  );
+}
+
+function ContinuidadCard({ c, onOpen, onGo }) {
+  const historial = (c.continuo_sin_decision || 0) + (c.backlog || 0);
+  if (!c.accionables) {
+    // Estado vacío: nada que hacer hoy. El historial sigue a un clic, sin ocupar la pantalla.
+    return (
+      <div className="ca-card" style={{ marginTop: 14, borderColor: "#CDE8F0", background: "#F4FBFD", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+        <Activity size={15} strokeWidth={2} style={{ color: "var(--accent)" }} />
+        <span style={{ fontSize: 14, fontWeight: 600 }}>Evaluar continuidad</span>
+        <span style={{ fontSize: 13, color: "var(--muted)" }}>· sin cierres pendientes esta semana ✓</span>
+        {historial > 0 && <button className="ca-mini" style={{ marginLeft: "auto" }} onClick={() => onGo("continuidad")}>Ver historial ({historial})</button>}
+      </div>
+    );
+  }
+  return (
+    <div className="ca-card" style={{ marginTop: 14, borderColor: "#CDE8F0", background: "#F4FBFD" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap", marginBottom: 10 }}>
+        <Activity size={15} strokeWidth={2} style={{ color: "var(--accent)" }} />
+        <span style={{ fontSize: 14, fontWeight: 600 }}>Evaluar continuidad</span>
+        <span style={{ fontSize: 12.5, color: "var(--muted)" }}>· cierres de bloque (sesión 6, 12…) sin decisión registrada</span>
+      </div>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+        {c.vencidos > 0 && <NumeroConEtiqueta n={c.vencidos} label={c.vencidos === 1 ? "vencido" : "vencidos"} bg="#F7E5E5" fg="#9C4646" />}
+        {c.hoy > 0 && <NumeroConEtiqueta n={c.hoy} label={c.hoy === 1 ? "cierra hoy" : "cierran hoy"} bg="#D7F4FA" fg="#0A7D92" />}
+        {c.proximos > 0 && <NumeroConEtiqueta n={c.proximos} label={`próximos ${c.dias_proximos} días`} bg="#E9F1ED" fg="#3E7A65" />}
+        {c.sin_agendar > 0 && <NumeroConEtiqueta n={c.sin_agendar} label="a una sesión, sin cita" bg="#F7ECDD" fg="#9C6B2E" />}
+      </div>
+      <div style={{ background: "var(--surface)", borderRadius: 10, border: "1px solid var(--line)", overflowX: "auto" }}>
+        <table className="ca-table">
+          <thead><tr><th>Paciente</th><th>Sesión</th><th>Psicólogo</th><th>Estado</th></tr></thead>
+          <tbody>
+            {c.prioritarios.map((f) => { const e = etiquetaCierre(f); return (
+              <tr key={f.id}>
+                <td><button className="ca-pnamebtn" onClick={() => onOpen(f.id)}>{f.paciente}</button></td>
+                <td style={{ fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>S{f.n_sesion}/{f.meta}</td>
+                <td style={{ color: "var(--ink-soft)" }}>{f.psicologo || "—"}</td>
+                <td><Tag colors={{ bg: e.bg, fg: e.fg }}>{e.t}</Tag></td>
+              </tr>
+            ); })}
+          </tbody>
+        </table>
+      </div>
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", marginTop: 12 }}>
+        <button className="ca-btn" onClick={() => onGo("continuidad")}>
+          Ver todos los pendientes{c.accionables > c.prioritarios.length ? ` (+${c.accionables - c.prioritarios.length})` : ""}
+        </button>
+        {historial > 0 && (
+          <span style={{ fontSize: 12, color: "var(--muted)" }}>
+            Calidad de registro: {c.continuo_sin_decision > 0 ? `${c.continuo_sin_decision} continuaron sin decisión` : ""}
+            {c.continuo_sin_decision > 0 && c.backlog > 0 ? " · " : ""}
+            {c.backlog > 0 ? `${c.backlog} cierres antiguos` : ""} — no compiten con lo de hoy.
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ContinuidadPendientes({ onOpen, onVolver, showToast, esMedico, esAsistente }) {
+  const [estado, setEstado] = useState("accionables");
+  const [sede, setSede] = useState("");
+  const [medico, setMedico] = useState("");
+  const [bloque, setBloque] = useState("");
+  const [datos, setDatos] = useState(null);
+  const [profesionales, setProfesionales] = useState([]);
+
+  useEffect(() => {
+    if (esMedico) return;
+    api.profesionales().then((ps) => setProfesionales(ps || [])).catch(() => {});
+  }, [esMedico]);
+
+  useEffect(() => {
+    let vivo = true;
+    setDatos(null);
+    api.continuidadPendientes({ estado, sede, medico, bloque })
+      .then((d) => { if (vivo) setDatos(d); })
+      .catch((e) => showToast("Error: " + e.message));
+    return () => { vivo = false; };
+  }, [estado, sede, medico, bloque]);
+
+  const filas = datos?.filas || [];
+  const conteo = datos?.conteo || {};
+  const etiquetaEstado = ESTADOS_COLA.find((x) => x.v === estado)?.l || "";
+  const headers = ["Paciente", "Sede", "Psicólogo", "Sesión", "Fecha de cierre", "Días pendiente", "Estado", "Próxima cita"];
+  const filasExport = filas.map((f) => [
+    f.paciente, f.sede, f.psicologo, `${f.n_sesion}/${f.meta}`, f.fecha_cierre || "",
+    f.dias != null && f.dias > 0 ? f.dias : "", etiquetaCierre(f).t, f.tiene_proxima ? "Sí" : "No",
+  ]);
+
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 4 }}>
+        <button className="ca-mini" onClick={onVolver}>← Hoy</button>
+        <h1 className="ca-h1" style={{ margin: 0 }}>Evaluar continuidad</h1>
+        <div style={{ marginLeft: "auto" }}>
+          <ExportBtns nombre="continuidad" titulo="Evaluar continuidad" headers={headers} filas={filasExport}
+            disabled={!filas.length} contexto={etiquetaEstado} showToast={showToast} />
+        </div>
+      </div>
+      <div className="ca-sub">Cierres de bloque (sesión 6, 12, 18…) sin decisión registrada. Primero lo vencido, después lo de hoy, después lo que viene.</div>
+
+      <div className="ca-fchips" style={{ marginTop: 16 }}>
+        {ESTADOS_COLA.map((e) => (
+          <button key={e.v} className={`ca-fchip ${estado === e.v ? "on" : ""}`} onClick={() => setEstado(e.v)}>
+            {e.l}{conteo[e.v] != null ? ` · ${conteo[e.v]}` : ""}
+          </button>
+        ))}
+      </div>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14 }}>
+        {!esAsistente && (
+          <select className="ca-input" style={{ width: "auto" }} value={sede} onChange={(e) => setSede(e.target.value)}>
+            <option value="">Todas las sedes</option><option value="lima">Lima</option><option value="piura">Piura</option>
+          </select>
+        )}
+        {!esMedico && (
+          <select className="ca-input" style={{ width: "auto" }} value={medico} onChange={(e) => setMedico(e.target.value)}>
+            <option value="">Todos los psicólogos</option>
+            {profesionales.map((p) => <option key={p.id} value={p.id}>{p.nombre}</option>)}
+          </select>
+        )}
+        <select className="ca-input" style={{ width: "auto" }} value={bloque} onChange={(e) => setBloque(e.target.value)}>
+          <option value="">Todos los bloques</option>
+          {[6, 12, 18, 24].map((b) => <option key={b} value={b}>Cierre en sesión {b}</option>)}
+        </select>
+      </div>
+
+      {!datos ? <div className="ca-empty">Cargando…</div> : filas.length === 0 ? (
+        <div className="ca-empty">{estado === "accionables" ? "Nada pendiente esta semana ✓" : "Ningún paciente con ese filtro."}</div>
+      ) : (
+        <div className="ca-card" style={{ padding: 0, overflowX: "auto" }}>
+          <table className="ca-table">
+            <thead>
+              <tr><th>Paciente</th><th>Sede</th><th>Psicólogo</th><th>Sesión</th><th>Fecha de cierre</th><th className="num">Días</th><th>Estado</th><th>Próxima cita</th></tr>
+            </thead>
+            <tbody>
+              {filas.map((f) => { const e = etiquetaCierre(f); return (
+                <tr key={f.id}>
+                  <td><button className="ca-pnamebtn" onClick={() => onOpen(f.id)}>{f.paciente}</button></td>
+                  <td>{f.sede === "lima" ? "Lima" : f.sede === "piura" ? "Piura" : "—"}</td>
+                  <td style={{ color: "var(--ink-soft)" }}>{f.psicologo || "—"}</td>
+                  <td style={{ fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>S{f.n_sesion}/{f.meta}</td>
+                  <td style={{ whiteSpace: "nowrap" }}>{f.fecha_cierre ? fechaCortaISO(f.fecha_cierre) : "—"}</td>
+                  <td className="num">{f.dias != null && f.dias > 0 ? f.dias : "—"}</td>
+                  <td><Tag colors={{ bg: e.bg, fg: e.fg }}>{e.t}</Tag></td>
+                  <td>{f.tiene_proxima ? <span style={{ color: "#3E7A65", fontWeight: 600 }}>Sí</span> : <span style={{ color: "#9C4646" }}>No</span>}</td>
+                </tr>
+              ); })}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 12, lineHeight: 1.5 }}>
+        Un paciente sale de esta lista cuando coordinación registra la decisión (código DP) en su última cita realizada, desde la Agenda.
+        «Cierres antiguos» son los de hace más de {datos?.dias_backlog || 90} días — casi todos heredados del sistema anterior, donde ese código no existía.
+        «Continuó sin decisión» es calidad de registro, no riesgo: el paciente siguió viniendo, pero nadie anotó qué se decidió.
+      </div>
+    </div>
+  );
+}
 
 function vitalesDe(h) {
   const v = [];
