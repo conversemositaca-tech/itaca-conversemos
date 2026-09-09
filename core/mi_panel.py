@@ -6,11 +6,11 @@ atención. Todo acotado a SÍ MISMO: sus citas, sus leads, sus pacientes.
 """
 from datetime import datetime, time, timedelta
 
-from django.db.models import Avg
 from django.utils import timezone
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from core import continuidad as continuidad_mod
 from core.tenant import get_clinica_actual
 from leads.models import Lead
 from pacientes.models import Cita, Paciente, RespuestaNPS
@@ -88,10 +88,18 @@ class MiPanelView(APIView):
         cierre = _pct(len(ganados), len(con_consulta))
 
         # --- LTV: promedio de N° de sesión de sus pacientes con sesiones ---
+        # La sesión real sale de las citas asistidas, no del contador manual
+        # Paciente.n_sesion: ese campo se queda en 0 salvo que alguien use
+        # "Registrar sesión" a propósito, así que el promedio y el conteo de
+        # "volvieron" (continuidad_total, más abajo) salían de una fracción muy
+        # chica de los pacientes reales del psicólogo.
         mis_pacientes = (Paciente.objects.filter(clinica=clinica, profesional=ficha, provisional=False)
                          if ficha else Paciente.objects.none())
         total_pac = mis_pacientes.count()
-        ltv = mis_pacientes.filter(n_sesion__gt=0).aggregate(a=Avg("n_sesion"))["a"]
+        reales = continuidad_mod.sesion_real_por_pacientes(
+            mis_pacientes.values_list("id", flat=True)) if ficha else {}
+        con_sesion = [n for n in reales.values() if n > 0]
+        ltv = sum(con_sesion) / len(con_sesion) if con_sesion else None
 
         # --- Satisfacción (NPS de sus pacientes) ---
         nps = RespuestaNPS.objects.filter(clinica=clinica, paciente__profesional=ficha) if ficha else RespuestaNPS.objects.none()
@@ -109,7 +117,7 @@ class MiPanelView(APIView):
         historias_totales = Atencion.objects.filter(
             clinica=clinica, medico=user, tipo=Atencion.Tipo.HISTORIA).count()
         # Continuidad: pacientes suyos que volvieron (2ª sesión o más).
-        continuidad_total = mis_pacientes.filter(n_sesion__gte=2).count() if ficha else 0
+        continuidad_total = sum(1 for n in reales.values() if n >= 2) if ficha else 0
 
         from core import gamificacion
         progreso = gamificacion.calcular(gamificacion.config_efectiva(clinica), {

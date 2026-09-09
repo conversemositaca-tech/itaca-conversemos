@@ -4550,7 +4550,10 @@ function Ficha({ p, onBack, onEdit, onWhatsApp, onSubirAdjunto, onEliminarAdjunt
               <div>
                 <div className="ca-antlabel"><Activity size={14} strokeWidth={2} style={{ color: "var(--muted)" }} /> Sesión actual</div>
                 <div style={{ fontSize: 20, fontWeight: 600, marginTop: 4 }}>
-                  {p.proceso === "consulta" ? "Consulta inicial" : `Sesión ${p.n_sesion}`}
+                  {/* La sesión real (de las citas asistidas), la misma que muestra
+                      "Estado del proceso" arriba. Antes salía el contador manual y las
+                      dos tarjetas de la misma ficha se contradecían. */}
+                  {p.proceso === "consulta" ? "Consulta inicial" : `Sesión ${p.sesion_real}`}
                   {p.proceso_label && p.proceso !== "consulta" ? <span style={{ fontSize: 12, color: "var(--muted)", fontWeight: 400 }}> · {p.proceso_label}</span> : null}
                 </div>
               </div>

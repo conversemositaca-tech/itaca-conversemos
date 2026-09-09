@@ -212,18 +212,8 @@ class HoyResumenView(APIView):
         base = list(pac_cont.exclude(frecuencia__in=["alta", "en_pausa"])
                     .values("id", "nombre", "sesiones_proceso"))
         ids_base = [r["id"] for r in base]
-        agregado = {
-            a["paciente_id"]: (a["max_n"], a["total"])
-            for a in Cita.objects.del_tenant_actual()
-                .filter(paciente_id__in=ids_base, estado__in=[Cita.Estado.ASISTIO, Cita.Estado.ATENDIDA])
-                .values("paciente_id").annotate(max_n=Max("n_sesion"), total=Count("id"))
-        }
-        filas = []
-        for r in base:
-            max_n, total = agregado.get(r["id"], (None, 0))
-            n = continuidad_mod.resolver_sesion_real(max_n, total)
-            if n > 0:
-                filas.append({**r, "n_sesion": n})
+        reales = continuidad_mod.sesion_real_por_pacientes(ids_base)
+        filas = [{**r, "n_sesion": reales[r["id"]]} for r in base if reales.get(r["id"], 0) > 0]
         ids = [r["id"] for r in filas]
 
         con_futura_ids = set(

@@ -41,6 +41,34 @@ def sesion_real(citas):
     return resolver_sesion_real(max(con_numero) if con_numero else None, len(asistidas))
 
 
+def sesion_real_por_pacientes(paciente_ids):
+    """Como `sesion_real`, pero para muchos pacientes a la vez: una sola consulta
+    agrupada en vez de una por paciente (el mismo cálculo que ya usaba
+    core.gerencia para la pantalla "Hoy", ahora reutilizable).
+
+    Devuelve {paciente_id: sesión_real}. Un paciente sin ninguna cita asistida
+    no aparece en el dict — usar `.get(id, 0)`."""
+    from django.db.models import Count, Max
+
+    from pacientes.models import Cita
+
+    ids = [i for i in paciente_ids if i is not None]
+    if not ids:
+        return {}
+    agregado = (
+        Cita.objects.filter(paciente_id__in=ids, estado__in=_ESTADOS_ASISTIDOS)
+        .values("paciente_id").annotate(max_n=Max("n_sesion"), total=Count("id"))
+    )
+    return {a["paciente_id"]: resolver_sesion_real(a["max_n"], a["total"]) for a in agregado}
+
+
+def sesion_real_de_paciente(paciente):
+    """Como `sesion_real_por_pacientes`, para un solo paciente (una consulta
+    agregada, sin traer las citas completas). Para cuando no conviene armar
+    el dict masivo — un solo mensaje, una sola ficha."""
+    return sesion_real_por_pacientes([paciente.id]).get(paciente.id, 0)
+
+
 def ultima_sesion_real(citas):
     """La cita asistida más reciente (no la última FICHA clínica escrita, que
     puede no existir aunque la sesión sí haya ocurrido — la mayoría de las

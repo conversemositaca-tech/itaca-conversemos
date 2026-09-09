@@ -10,6 +10,7 @@ from rest_framework.exceptions import APIException, PermissionDenied
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from core import continuidad as continuidad_mod
 from core import estructurar_nota, gcalendar, transcripcion
 from core.tenant import get_clinica_actual
 from mensajes.models import Mensaje, PlantillaMensaje
@@ -428,6 +429,16 @@ class CitaViewSet(viewsets.ModelViewSet):
         if hasta:
             qs = qs.filter(inicio__date__lte=hasta)
         return qs.order_by("inicio")
+
+    def get_serializer_context(self):
+        ctx = super().get_serializer_context()
+        # Para el "N° de sesión" que se ve en cada fila de la Agenda cuando la
+        # cita no trae el suyo propio: se precalcula UNA vez para toda la lista
+        # (no una consulta por fila) y se le pasa al serializer.
+        if self.action == "list":
+            ids = self.filter_queryset(self.get_queryset()).values_list("paciente_id", flat=True)
+            ctx["sesiones_reales"] = continuidad_mod.sesion_real_por_pacientes(list(ids))
+        return ctx
 
     def perform_update(self, serializer):
         # El psicólogo no registra la decisión del paciente ni reasigna citas a

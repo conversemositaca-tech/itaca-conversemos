@@ -54,8 +54,14 @@ class ProfesionalSerializer(serializers.ModelSerializer):
         semanal = conteo.get("semanal", 0)
         quincenal = conteo.get("quincenal", 0)
         esporadico = conteo.get("esporadico", 0)
-        # En proceso pero sin frecuencia marcada.
-        sin_frecuencia = obj.pacientes.filter(frecuencia="", n_sesion__gt=0).count()
+        # En proceso pero sin frecuencia marcada. La sesión real sale de las
+        # citas asistidas, no del contador manual n_sesion (se queda en 0 salvo
+        # que alguien use "Registrar sesión" a propósito): con el contador,
+        # esta pantalla mostraba en 0 el caso más común.
+        from core import continuidad as continuidad_mod
+        sin_frec_ids = list(obj.pacientes.filter(frecuencia="").values_list("id", flat=True))
+        reales = continuidad_mod.sesion_real_por_pacientes(sin_frec_ids)
+        sin_frecuencia = sum(1 for i in sin_frec_ids if reales.get(i, 0) > 0)
         return {
             "activos": semanal + quincenal + esporadico + sin_frecuencia,
             "semanal": semanal,

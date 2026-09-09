@@ -390,8 +390,19 @@ class CitaSerializer(serializers.ModelSerializer):
         return any(c.estado != "anulado" for c in obj.cobros.all())
 
     def get_n_sesion_efectivo(self, obj):
-        # El N° de la cita si se indicó; si no, el del paciente.
-        return obj.n_sesion if obj.n_sesion else obj.paciente.n_sesion
+        # El N° de la cita si se indicó; si no, la sesión real del paciente
+        # (de sus citas asistidas — no el contador manual Paciente.n_sesion,
+        # que se queda en 0 salvo que alguien use "Registrar sesión" a
+        # propósito: con ese campo la Agenda mostraba "Sesión N° 0" o "N° 1"
+        # en citas que en verdad eran, por ejemplo, la sesión 10).
+        if obj.n_sesion:
+            return obj.n_sesion
+        reales = self.context.get("sesiones_reales")
+        if reales is not None:
+            return reales.get(obj.paciente_id, 0)
+        # Sin el precálculo de la lista (una sola cita: retrieve o una acción
+        # como atender/duplicar/cancelar) — una consulta agregada, no N+1.
+        return continuidad.sesion_real_de_paciente(obj.paciente)
 
     def get_medico(self, obj):
         return str(obj.medico) if obj.medico_id else ""
