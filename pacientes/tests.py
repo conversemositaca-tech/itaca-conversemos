@@ -238,11 +238,22 @@ class EditarCitaTests(TestCase):
         self.assertEqual(r.json()["n_sesion"], 7)
         self.assertEqual(r.json()["n_sesion_efectivo"], 7)
 
-    def test_sin_numero_propio_se_muestra_el_del_paciente(self):
+    def test_sin_numero_propio_se_muestra_la_sesion_real_no_el_contador_manual(self):
+        """Antes caía al contador manual del paciente (`Paciente.n_sesion`), que
+        en producción se queda desactualizado (81 citas mostraban un número
+        equivocado en la Agenda, verificado el 9 sep). Ahora cae a la sesión
+        real —de las citas asistidas—, igual que en la ficha del paciente."""
+        self.paciente.n_sesion = 3  # contador manual, a propósito desactualizado
+        self.paciente.save(update_fields=["n_sesion"])
+        for i in range(5):
+            Cita.objects.create(
+                clinica=self.clinica, paciente=self.paciente, medico=self.psico, n_sesion=i + 1,
+                estado=Cita.Estado.ASISTIO, inicio=timezone.now() - timedelta(days=30 - i),
+            )
         r = self.client.get("/api/citas/")
-        cita = r.json()[0]
+        cita = next(c for c in r.json() if c["id"] == self.cita.id)
         self.assertIsNone(cita["n_sesion"])
-        self.assertEqual(cita["n_sesion_efectivo"], 3)  # el del paciente
+        self.assertEqual(cita["n_sesion_efectivo"], 5)  # la sesión real, no el 3 manual
 
     def test_el_psicologo_no_puede_reasignar_la_cita(self):
         self.client.force_login(self.psico)

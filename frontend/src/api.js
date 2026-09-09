@@ -182,6 +182,12 @@ export const api = {
 
   // Inicio (datos reales del día) + panel de gerencia (solo admin)
   hoy: () => req("/api/hoy/"),
+  // Cola completa de "Evaluar continuidad" (la tarjeta de Hoy solo muestra 5).
+  continuidadPendientes: (params = {}) => {
+    const q = Object.entries(params).filter(([, v]) => v !== "" && v != null)
+      .map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join("&");
+    return req(`/api/continuidad/pendientes/${q ? `?${q}` : ""}`);
+  },
   marcarEliminacionRevisada: (id) => req(`/api/eliminaciones/${id}/revisar/`, { method: "POST" }),
   marcarTodasEliminacionesRevisadas: () => req("/api/eliminaciones/revisar-todas/", { method: "POST" }),
   gerenciaResumen: (periodo, sede) => req(`/api/gerencia/resumen/?periodo=${periodo || "mes"}${sede ? `&sede=${sede}` : ""}`),

@@ -116,6 +116,7 @@ class ReporteSemanalViewSet(viewsets.ModelViewSet):
         """Calcula los indicadores que el sistema YA tiene (captación y pacientes
         activos) para un período, para autocompletar el reporte. Lo demás
         (facturación, ocupación, retención) sigue siendo manual."""
+        from core import continuidad as continuidad_mod
         from finanzas.models import Cobro
         from leads.models import Lead
         from leads.reporte import personas_unicas
@@ -160,9 +161,20 @@ class ReporteSemanalViewSet(viewsets.ModelViewSet):
         proy = {s: round(v * factor, 2) for s, v in fact.items()}
 
         # --- Retención S3+ por sede (% de pacientes que llegan a la sesión 3) ---
+        # La sesión real sale de las citas asistidas, no del contador manual
+        # Paciente.n_sesion (se queda en 0 para la mayoría): con el contador,
+        # "base" solo contaba a los pocos pacientes con ese campo lleno a mano
+        # y el % de retención salía de una muestra minúscula.
+        reales_por_sede = {
+            sede: continuidad_mod.sesion_real_por_pacientes(
+                list(pac.filter(sede=sede).values_list("id", flat=True)))
+            for sede in ("lima", "piura")
+        }
+
         def retencion(sede):
-            base = pac.filter(sede=sede, n_sesion__gte=1).count()
-            s3 = pac.filter(sede=sede, n_sesion__gte=3).count()
+            valores = reales_por_sede[sede].values()
+            base = sum(1 for n in valores if n >= 1)
+            s3 = sum(1 for n in valores if n >= 3)
             return round(s3 / base * 100, 1) if base else 0.0
 
         # --- Ocupación de agenda (si viene la semana del reporte) ---

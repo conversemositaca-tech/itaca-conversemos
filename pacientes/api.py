@@ -10,6 +10,7 @@ from rest_framework.exceptions import APIException, PermissionDenied
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from core import continuidad as continuidad_mod
 from core import estructurar_nota, gcalendar, transcripcion
 from core.tenant import get_clinica_actual
 from mensajes.models import Mensaje, PlantillaMensaje
@@ -429,6 +430,16 @@ class CitaViewSet(viewsets.ModelViewSet):
             qs = qs.filter(inicio__date__lte=hasta)
         return qs.order_by("inicio")
 
+    def get_serializer_context(self):
+        ctx = super().get_serializer_context()
+        # Para el "N° de sesión" que se ve en cada fila de la Agenda cuando la
+        # cita no trae el suyo propio: se precalcula UNA vez para toda la lista
+        # (no una consulta por fila) y se le pasa al serializer.
+        if self.action == "list":
+            ids = self.filter_queryset(self.get_queryset()).values_list("paciente_id", flat=True)
+            ctx["sesiones_reales"] = continuidad_mod.sesion_real_por_pacientes(list(ids))
+        return ctx
+
     def perform_update(self, serializer):
         # El psicólogo no registra la decisión del paciente ni reasigna citas a
         # otro colega: las dos cosas son de coordinación. Si llegan en el payload
@@ -442,6 +453,17 @@ class CitaViewSet(viewsets.ModelViewSet):
             choque = _choque_de_horario(nuevo, serializer.instance.inicio, excluir_id=serializer.instance.pk)
             if choque and not self.request.data.get("forzar"):
                 raise ChoqueDeHorario(_detalle_choque(nuevo, choque))
+        # Trazabilidad de la decisión (código DP): cuándo se registró y quién.
+        # Es lo que permite medir cuánto tarda en cerrarse un bloque y qué
+        # pasó con "Evaluar continuidad" antes y después del rediseño.
+        decision_nueva = serializer.validated_data.get("decision")
+        if decision_nueva is not None and decision_nueva != serializer.instance.decision:
+            if decision_nueva:
+                serializer.validated_data["decision_registrada_en"] = timezone.now()
+                serializer.validated_data["decision_registrada_por"] = self.request.user
+            else:
+                serializer.validated_data["decision_registrada_en"] = None
+                serializer.validated_data["decision_registrada_por"] = None
         serializer.save()
         # Reasignar la cita a otro psicólogo (p. ej. para cubrir una ausencia)
         # dejaba a la ficha del paciente apuntando al psicólogo anterior en

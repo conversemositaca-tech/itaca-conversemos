@@ -311,6 +311,14 @@ class Cita(ModeloTenant):
         "decisión del paciente", max_length=6, choices=Decision.choices, blank=True, default="",
         db_index=True,
     )
+    # Cuándo y quién registró la decisión. Sin esto no se puede medir cuánto
+    # tarda coordinación en cerrar un bloque ni comparar antes/después del
+    # rediseño de "Evaluar continuidad". Se llenan solos al guardar la decisión.
+    decision_registrada_en = models.DateTimeField(null=True, blank=True)
+    decision_registrada_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="decisiones_registradas",
+    )
 
     class Meta:
         verbose_name = "Cita"
