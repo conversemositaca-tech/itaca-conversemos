@@ -99,6 +99,7 @@ class PacienteSerializer(serializers.ModelSerializer):
     ultima = serializers.SerializerMethodField()
     proxima = serializers.SerializerMethodField()
     alertas_continuidad = serializers.SerializerMethodField()
+    sesion_real = serializers.SerializerMethodField()
     historial = serializers.SerializerMethodField()
     adjuntos = serializers.SerializerMethodField()
     cuenta = serializers.SerializerMethodField()
@@ -123,7 +124,7 @@ class PacienteSerializer(serializers.ModelSerializer):
             "alertas", "notas_internas",
             "brujula_motivo", "brujula_hipotesis", "brujula_objetivos", "brujula_fortalezas",
             "brujula_factores_protectores", "brujula_factores_riesgo", "brujula_barreras", "brujula_plan",
-            "ultima", "proxima", "alertas_continuidad", "historial", "adjuntos", "cuenta", "paquetes", "citas",
+            "ultima", "proxima", "alertas_continuidad", "sesion_real", "historial", "adjuntos", "cuenta", "paquetes", "citas",
         ]
 
     def to_representation(self, instance):
@@ -183,9 +184,19 @@ class PacienteSerializer(serializers.ModelSerializer):
             key=lambda c: c.inicio, reverse=True,
         )
         ultima_decision = realizadas[0].decision if realizadas else ""
+        # La sesión REAL (de las citas), no el contador manual del paciente
+        # (`n_sesion`) — ese depende de que alguien use "Registrar sesión" y en
+        # la práctica se queda en 0 para la mayoría, apagando esta alerta sin
+        # que nadie lo note. Ver core.continuidad.sesion_real.
         return continuidad.evaluar(
-            obj.n_sesion, obj.sesiones_proceso, tiene_proxima, ultima_decision, obj.frecuencia
+            continuidad.sesion_real(citas), obj.sesiones_proceso, tiene_proxima, ultima_decision, obj.frecuencia
         )
+
+    def get_sesion_real(self, obj):
+        """Cuántas sesiones ya ocurrieron de verdad, calculado de las citas —
+        para "Estado del proceso" y la línea de tiempo. Distinto de `n_sesion`
+        (el contador manual, que no siempre se actualiza)."""
+        return continuidad.sesion_real(list(obj.citas.all()))
 
     def get_cuenta(self, obj):
         cobros = [c for c in obj.cobros.all() if c.estado != "anulado"]
@@ -218,9 +229,12 @@ class PacienteSerializer(serializers.ModelSerializer):
         ]
 
     def get_ultima(self, obj):
-        # atenciones viene prefetcheado y ordenado por -fecha (Meta.ordering).
-        ats = list(obj.atenciones.all())
-        return fecha_corta(timezone.localtime(ats[0].fecha)) if ats else "—"
+        # La cita asistida más reciente, no la última FICHA clínica escrita:
+        # la mayoría de las sesiones se cierran sin dejar ficha (ver el
+        # hallazgo de "las dos puertas"), y antes esto mostraba "—" aunque la
+        # sesión sí hubiera ocurrido.
+        cita = continuidad.ultima_sesion_real(list(obj.citas.all()))
+        return fecha_corta(timezone.localtime(cita.inicio)) if cita else "—"
 
     def get_historial(self, obj):
         # Usa el prefetch (ya ordenado por -fecha); no re-consultar por paciente.
@@ -250,6 +264,7 @@ class PacienteSerializer(serializers.ModelSerializer):
                 "medico": str(c.medico) if c.medico_id else "",
                 "notas": c.notas,
                 "motivo_consulta": c.motivo_consulta,
+                "n_sesion": c.n_sesion,
             })
         return out
 
