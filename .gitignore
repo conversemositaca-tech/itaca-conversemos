@@ -29,3 +29,9 @@ cloudflared.exe
 
 # Datos reales de pacientes (nombre + psicologo + sesion): NUNCA al repo.
 datos_pacientes_reales.json
+
+# Exportables y auditorías del Centro de Continuidad (pueden llevar PII): NUNCA al repo.
+auditorias_continuidad/
+auditorias_continuidad_notas/
+revision_continuidad_*.csv
+revision_continuidad_*.txt
