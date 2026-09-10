@@ -148,6 +148,14 @@ DIAS_BACKLOG = 90
 # Desde qué sesión tiene sentido decir "pasó un cierre y siguió viniendo".
 PRIMER_CIERRE = BLOQUE_POR_DEFECTO
 
+# El mismo texto con el que `importar_reservas` marca cada cita que trajo del
+# volcado de AgendaPro (14 jul 2026), en `Cita.notas`. Un paciente cuyas citas
+# llevan TODAS este marcador nunca tuvo, ni una vez, una cita creada de verdad
+# en el sistema nuevo (ni siquiera una que se agendó y después se canceló) —
+# eso es distinto de "lleva tiempo sin venir": es que nunca llegó a interactuar
+# con Ítaca. Mirai lo pidió el 9 sep viendo un caso así en "Cierres antiguos".
+MARCADOR_IMPORTADO_AGENDAPRO = "Importado de AgendaPro."
+
 
 class EstadoCierre:
     """En qué punto está el cierre de bloque de cada paciente."""
@@ -248,6 +256,17 @@ def cola_de_continuidad(pacientes, hoy=None, dias_proximos=None, dias_backlog=No
               .order_by("paciente_id", "inicio")):
         futuras.setdefault(c["paciente_id"], []).append(c)
 
+    # Quiénes tienen, entre TODAS sus citas (cualquier estado — hasta una que se
+    # agendó y luego se canceló cuenta como "algo se intentó"), al menos una que
+    # NO viene del volcado de AgendaPro. El resto nunca tuvo, ni una vez, una
+    # cita creada de verdad en el sistema nuevo.
+    con_cita_nativa = set(
+        Cita.objects.filter(paciente_id__in=ids)
+        .exclude(notas__startswith=MARCADOR_IMPORTADO_AGENDAPRO)
+        .values_list("paciente_id", flat=True).distinct()
+    )
+    solo_migrados = set(ids) - con_cita_nativa
+
     filas = []
     for r in base:
         pid = r["id"]
@@ -264,6 +283,7 @@ def cola_de_continuidad(pacientes, hoy=None, dias_proximos=None, dias_backlog=No
         meta = proxima_meta(n, r["sesiones_proceso"] or 0)
         proximas = futuras.get(pid, [])
         ultima_sesion = citas[-1]["inicio"].date()
+        migrado = pid in solo_migrados
 
         if n <= meta - 2:
             # Pasó un cierre sin decisión y siguió viniendo. No es el riesgo de
@@ -272,13 +292,13 @@ def cola_de_continuidad(pacientes, hoy=None, dias_proximos=None, dias_backlog=No
             if n < PRIMER_CIERRE:
                 continue
             filas.append(_fila(r, n, meta, None, "continuo", EstadoCierre.CONTINUO_SIN_DECISION,
-                               None, bool(proximas), ultima_sesion))
+                               None, bool(proximas), ultima_sesion, migrado))
             continue
 
         fecha, origen = _fecha_de_cierre(citas, proximas, meta, n)
         if fecha is None:
             filas.append(_fila(r, n, meta, None, origen, EstadoCierre.SIN_AGENDAR,
-                               None, bool(proximas), ultima_sesion))
+                               None, bool(proximas), ultima_sesion, migrado))
             continue
 
         dias = (hoy - fecha).days
@@ -292,13 +312,13 @@ def cola_de_continuidad(pacientes, hoy=None, dias_proximos=None, dias_backlog=No
             estado = EstadoCierre.PROXIMO
         else:
             continue  # cierra más allá de la ventana: todavía no es asunto de nadie
-        filas.append(_fila(r, n, meta, fecha, origen, estado, dias, bool(proximas), ultima_sesion))
+        filas.append(_fila(r, n, meta, fecha, origen, estado, dias, bool(proximas), ultima_sesion, migrado))
 
     filas.sort(key=lambda f: (_ORDEN_ESTADO[f["estado"]], -(f["dias"] or 0), f["paciente"]))
     return filas
 
 
-def _fila(r, n, meta, fecha, origen, estado, dias, tiene_proxima, ultima_sesion):
+def _fila(r, n, meta, fecha, origen, estado, dias, tiene_proxima, ultima_sesion, migrado_sin_actividad):
     return {
         "id": r["id"],
         "paciente": r["nombre"],
@@ -312,6 +332,10 @@ def _fila(r, n, meta, fecha, origen, estado, dias, tiene_proxima, ultima_sesion)
         "dias": dias,
         "tiene_proxima": tiene_proxima,
         "ultima_sesion": ultima_sesion.isoformat() if ultima_sesion else None,
+        # True si NINGUNA de sus citas (cualquier estado) se creó en el sistema
+        # nuevo: vino entero del volcado de AgendaPro y nunca hubo interacción
+        # real con Ítaca, ni siquiera un intento de agendarle algo.
+        "migrado_sin_actividad": migrado_sin_actividad,
     }
 
 

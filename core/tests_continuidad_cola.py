@@ -63,6 +63,53 @@ class _Base(TestCase):
         return next((f for f in self._cola(**kw) if f["id"] == p.id), None)
 
 
+class MigradoSinActividadTests(_Base):
+    """La etiqueta "Migrado de AgendaPro — nunca se le agendó nada acá":
+    ningún estado (vencido, sin agendar, lo que sea) se creó nunca en el
+    sistema nuevo. Pedido por Mirai el 9 sep viendo un caso así en producción."""
+
+    MARCADOR = C.MARCADOR_IMPORTADO_AGENDAPRO
+
+    def _cita_importada(self, p, n_sesion, hace_dias, estado=Cita.Estado.ASISTIO):
+        return Cita.objects.create(
+            clinica=self.clinica, paciente=p, medico=self.psico, n_sesion=n_sesion,
+            estado=estado, inicio=_dt(-hace_dias), notas=f"{self.MARCADOR} comentario original",
+        )
+
+    def test_si_todas_sus_citas_son_del_volcado_queda_marcado(self):
+        p = self._paciente("Solo AgendaPro")
+        for i in range(6):
+            self._cita_importada(p, i + 1, hace_dias=200 - 7 * i)
+        self.assertTrue(self._fila(p)["migrado_sin_actividad"])
+
+    def test_una_sola_cita_nativa_ya_lo_saca_de_la_etiqueta(self):
+        """Aunque el cierre real siga siendo viejo, si en algún momento el
+        sistema nuevo SÍ le creó algo, ya no es "nunca se le agendó nada"."""
+        p = self._paciente("Con algo nativo")
+        for i in range(6):
+            self._cita_importada(p, i + 1, hace_dias=200 - 7 * i)
+        self.assertTrue(self._fila(p)["migrado_sin_actividad"])
+        # Una cita nativa CANCELADA (nunca asistida) igual cuenta como "se intentó".
+        Cita.objects.create(clinica=self.clinica, paciente=p, medico=self.psico,
+                            estado=Cita.Estado.CANCELADA, inicio=_dt(-30))
+        self.assertFalse(self._fila(p)["migrado_sin_actividad"])
+
+    def test_un_paciente_nativo_normal_nunca_lleva_la_etiqueta(self):
+        p = self._paciente("Nativo de Ítaca")
+        self._asistidas(p, 6, ultima_hace=200)  # sin marcador: notas="" por defecto
+        self.assertFalse(self._fila(p)["migrado_sin_actividad"])
+
+    def test_aplica_tambien_a_vencidos_y_no_solo_a_backlog(self):
+        """Verificado en producción: 29% de los "vencidos" también vienen
+        enteros de AgendaPro, no es un atributo exclusivo del backlog."""
+        p = self._paciente("Vencido pero migrado")
+        for i in range(6):
+            self._cita_importada(p, i + 1, hace_dias=16 - i)
+        f = self._fila(p)
+        self.assertEqual(f["estado"], C.EstadoCierre.VENCIDO)
+        self.assertTrue(f["migrado_sin_actividad"])
+
+
 class ClasificacionTests(_Base):
     """Cada estado de la cola, con un paciente de ejemplo."""
 

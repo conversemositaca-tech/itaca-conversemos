@@ -75,6 +75,15 @@ decisión, no de a quién hay que llamar hoy.
 - Frontend: la tarjeta de "Hoy" pasa de una lista de chips a un resumen +
   tabla de 5 prioritarios; "Ver todos los pendientes" abre la vista completa
   con los mismos filtros.
+- **🕰️ "Migrado de AgendaPro — nunca se le agendó nada acá"** (pedido de
+  Mirai el 9 sep, viendo un caso real): se calcula si TODAS las citas del
+  paciente (cualquier estado, no solo asistidas) llevan el marcador
+  `"Importado de AgendaPro."` que deja `importar_reservas` en `notas` — más
+  confiable que una fecha, porque el volcado también trae citas con fecha
+  posterior al corte. No es exclusivo del backlog: verificado en producción,
+  aparece en 94% de "Cierres antiguos" pero también en 71% de "Sin próxima
+  cita", 29% de "Vencidos" y 12% de "Continuó sin decisión" — por eso se
+  muestra en cualquier estado, no solo ahí.
 
 ## Lo que sigue siendo decisión de Gaby / Dirección Clínica, no de código
 
