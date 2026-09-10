@@ -1671,7 +1671,7 @@ export default function ClinicaApp() {
               filtered.map((p) => {
                 const meta = p.proceso === "consulta"
                   ? "Consulta inicial"
-                  : `${p.sesion_real ? `Sesión ${p.sesion_real}` : ""}${p.sesion_real && p.proceso_label ? " · " : ""}${p.proceso_label || ""}`;
+                  : `${p.proceso_actual?.numero > 1 ? `P${p.proceso_actual.numero} · ` : ""}${p.sesion_real ? `Sesión ${p.sesion_real}` : ""}${p.sesion_real && p.proceso_label ? " · " : ""}${p.proceso_label || ""}`;
                 return (
                   <div key={p.id} className="ca-row click" onClick={() => openFicha(p.id)}>
                     <div className="ca-avatar">{iniciales(p.nombre)}</div>
@@ -3602,16 +3602,20 @@ function etiquetaCierre(f) {
   if (f.estado === "sin_agendar") return { t: "Pre-cierre sin cita", bg: "#F7ECDD", fg: "#9C6B2E" };
   if (f.estado === "continuo_sin_decision") return { t: `Cierre ${f.meta} sin decisión`, bg: "#EFEDE8", fg: "#7C7870" };
   if (f.estado === "dato_incompleto") return { t: "Dato incompleto", bg: "#EDEAF3", fg: "#6B5F86" };
+  if (f.estado === "proceso_anterior") return { t: `Proceso anterior sin cierre (S${f.meta})`, bg: "#EFEDE8", fg: "#7C7870" };
   if (f.estado === "cerrado") return { t: "Condición resuelta", bg: "#E9F1ED", fg: "#3E7A65" };
   return { t: `Cierre antiguo · ${d} días`, bg: "#EFEDE8", fg: "#7C7870" };
 }
 
 // "S6/6" mientras el bloque está vigente; si el paciente ya lo pasó sin
-// decidirlo (va por la 8 y el pendiente es el cierre 6), decirlo así.
+// decidirlo (va por la 8 y el pendiente es el cierre 6), decirlo así. Y si
+// va por un segundo proceso o más, decirlo también: "P2 · S3/6".
 function sesionTexto(f) {
+  const pref = f.proceso?.numero > 1 ? `P${f.proceso.numero} · ` : "";
   if (f.n_sesion == null) return f.meta ? `bloque ${f.meta}` : "—";
-  if (f.estado === "riesgo_s3") return `S${f.n_sesion}`;
-  return f.n_sesion > f.meta ? `S${f.n_sesion} · cierre ${f.meta}` : `S${f.n_sesion}/${f.meta}`;
+  if (f.estado === "proceso_anterior") return `${pref}S${f.n_sesion}`;
+  if (f.estado === "riesgo_s3") return `${pref}S${f.n_sesion}`;
+  return pref + (f.n_sesion > f.meta ? `S${f.n_sesion} · cierre ${f.meta}` : `S${f.n_sesion}/${f.meta}`);
 }
 
 // Los filtros, agrupados por lo que exigen de quien los mira. Una brecha ya
@@ -3633,6 +3637,9 @@ const GRUPOS_COLA = [
     { v: "continuo_sin_decision", l: "Continuó sin decisión" },
     { v: "dato_incompleto", l: "Dato incompleto" },
     { v: "backlog", l: "Cierres antiguos" },
+    // Procesos previos que terminaron sin DP. No es acción de hoy: el
+    // paciente ya está en otro proceso; lo que falta es el registro.
+    { v: "proceso_anterior", l: "Procesos anteriores sin cierre" },
   ] },
 ];
 const ESTADOS_COLA = GRUPOS_COLA.flatMap((g) => g.items);
@@ -3668,7 +3675,7 @@ function NumeroConEtiqueta({ n, label, bg, fg }) {
 
 function ContinuidadCard({ c, onOpen, onGo }) {
   // Calidad de registro: no compite con la operación del día, pero sigue a un clic.
-  const historial = (c.continuo_sin_decision || 0) + (c.dato_incompleto || 0) + (c.backlog || 0);
+  const historial = (c.continuo_sin_decision || 0) + (c.dato_incompleto || 0) + (c.backlog || 0) + (c.proceso_anterior || 0);
   if (!c.accionables) {
     // Estado vacío: nada que hacer hoy. El historial sigue a un clic, sin ocupar la pantalla.
     return (
@@ -3837,6 +3844,20 @@ function ContinuidadDetalle({ id, onCerrar, onOpen, showToast, onGestionGuardada
           <div style={{ marginBottom: 12 }}>
             <div className="ca-label" style={{ marginBottom: 6 }}>Datos</div>
             <dl className="cc-dl">
+              <dt>Proceso</dt>
+              <dd>
+                {f.proceso?.numero ? `${f.proceso.numero} de ${f.proceso.total}` : "—"}
+                {f.proceso?.inicio && <span style={{ color: "var(--muted)" }}> · desde {fechaCortaISO(f.proceso.inicio)}</span>}
+                {f.proceso?.numero > 1 && f.proceso?.motivo && (
+                  <div className="cc-sub">Reinicio detectado por: {f.proceso.motivo.replace("n=1", "sesión 1").replace("dp_cierre", "DP de cierre").replace("dp_inicio", "DP de consulta").replace("consulta", "consulta entre medias").replace("proceso", "cambio de etapa").replace("lead", "lead convertido").replace("gap", "hueco ≥ 60 días").replace(/\+/g, " + ")}</div>
+                )}
+                {f.proceso?.anteriores_sin_cierre > 0 && (
+                  <div className="cc-sub" style={{ color: "#9C6B2E" }}>{f.proceso.anteriores_sin_cierre} proceso{f.proceso.anteriores_sin_cierre === 1 ? "" : "s"} anterior{f.proceso.anteriores_sin_cierre === 1 ? "" : "es"} sin cierre registrado</div>
+                )}
+                {f.proceso?.numeracion_inconsistente && (
+                  <div className="cc-sub" style={{ color: "#9C6B2E" }}>Numeración inconsistente en este proceso (se trató como continuación)</div>
+                )}
+              </dd>
               <dt>Sesión</dt>
               <dd>
                 {f.estado === "riesgo_s3" ? f.n_sesion : f.n_sesion > f.meta ? `${f.n_sesion} (pendiente el cierre ${f.meta})` : `${f.n_sesion} de ${f.meta}`}
@@ -4034,7 +4055,7 @@ function ContinuidadPendientes({ onOpen, onVolver, showToast, esMedico, esAsiste
             </thead>
             <tbody>
               {filas.map((f) => { const e = etiquetaCierre(f); const rv = REVISION_OPCIONES.find((o) => o.v === (f.gestion?.estado_revision || "sin_revisar")); return (
-                <tr key={f.id} className={caso === f.id ? "on" : ""}
+                <tr key={f.fila_id || f.id} className={caso === f.id ? "on" : ""}
                     onClick={() => setCaso(caso === f.id ? null : f.id)}>
                   <td className="cc-pac">
                     <div style={{ fontWeight: 600 }}>{f.paciente}</div>
@@ -4045,6 +4066,11 @@ function ContinuidadPendientes({ onOpen, onVolver, showToast, esMedico, esAsiste
                       {" · "}
                       <span style={f.psicologo ? undefined : { color: "#9C6B2E" }}>{f.psicologo || "Sin psicólogo"}</span>
                     </div>
+                    {f.migrado_sin_actividad && (
+                      <div className="cc-sub" style={{ color: "#9C6B2E" }} title="Todas sus citas vienen del volcado de AgendaPro: nunca se le creó una cita en el sistema nuevo.">
+                        🕰️ Migrado de AgendaPro · sin actividad acá
+                      </div>
+                    )}
                   </td>
                   <td><Tag colors={{ bg: e.bg, fg: e.fg }}>{e.t}</Tag></td>
                   <td style={{ whiteSpace: "nowrap" }}>
@@ -4064,13 +4090,21 @@ function ContinuidadPendientes({ onOpen, onVolver, showToast, esMedico, esAsiste
                   <td style={{ fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>
                     {sesionTexto(f)}
                     {f.anteriores_sin_decision?.length > 0 && (
-                      <div className="cc-sub" title="Cierres anteriores que tampoco tienen decisión">
+                      <div className="cc-sub" title="Cierres anteriores de ESTE proceso que tampoco tienen decisión">
                         + cierre {f.anteriores_sin_decision.join(", ")} sin decidir
+                      </div>
+                    )}
+                    {f.proceso?.numeracion_inconsistente && (
+                      <div className="cc-sub" style={{ color: "#9C6B2E" }} title="Hay una sesión con número menor que la anterior sin que conste un proceso nuevo; se trató como continuación.">
+                        numeración inconsistente
                       </div>
                     )}
                   </td>
                   <td style={{ whiteSpace: "nowrap" }}>
-                    {f.fecha_cierre ? fechaCortaISO(f.fecha_cierre) : "—"}
+                    {f.fecha_cierre ? fechaCortaISO(f.fecha_cierre)
+                      : f.estado === "sin_agendar" ? <span style={{ color: "var(--muted)", fontStyle: "italic" }}>Falta agendar S{f.meta}</span>
+                      : f.estado === "proceso_anterior" && f.ultima_sesion ? <span style={{ color: "var(--muted)" }}>última {fechaCortaISO(f.ultima_sesion)}</span>
+                      : "—"}
                     {f.dias != null && f.dias > 0 && <div className="cc-sub">{f.dias} días</div>}
                   </td>
                   <td style={{ whiteSpace: "nowrap" }}>
@@ -5107,7 +5141,7 @@ function Ficha({ p, onBack, onEdit, onWhatsApp, onSubirAdjunto, onEliminarAdjunt
             <span style={{ background: p.frecuencia === "alta" ? "#EEEBE6" : "#E3F0E8", color: p.frecuencia === "alta" ? "#8A8378" : "#2F6B4F", fontSize: 12, fontWeight: 600, padding: "2px 10px", borderRadius: 20 }}>
               {p.frecuencia === "alta" ? "Alta" : p.frecuencia === "en_pausa" ? "En pausa" : "En proceso"}
             </span>
-            <span style={{ fontWeight: 600 }}>{p.proceso === "consulta" ? "Consulta inicial" : `Sesión ${p.sesion_real || 0}${p.sesiones_proceso ? ` de ${p.sesiones_proceso}` : ""}`}</span>
+            <span style={{ fontWeight: 600 }}>{p.proceso === "consulta" ? "Consulta inicial" : `${p.proceso_actual?.numero > 1 ? `Proceso ${p.proceso_actual.numero} · ` : ""}Sesión ${p.sesion_real || 0}${p.sesiones_proceso ? ` de ${p.sesiones_proceso}` : ""}`}</span>
           </div>
           <div className="ca-pmeta">{[p.proceso_label && p.proceso !== "consulta" ? p.proceso_label : "", p.frecuencia_label].filter(Boolean).join(" · ") || "Frecuencia —"}</div>
           <div className="ca-pmeta" style={{ marginTop: 4 }}>Última sesión: {p.ultima}</div>
@@ -10552,7 +10586,7 @@ function PacientesDeProfesionalModal({ prof, onClose, showToast }) {
           pacs.map((p) => {
             const meta = p.proceso === "consulta"
               ? "Consulta inicial"
-              : `${p.sesion_real ? `Sesión ${p.sesion_real}` : ""}${p.sesion_real && p.proceso_label ? " · " : ""}${p.proceso_label || ""}`;
+              : `${p.proceso_actual?.numero > 1 ? `P${p.proceso_actual.numero} · ` : ""}${p.sesion_real ? `Sesión ${p.sesion_real}` : ""}${p.sesion_real && p.proceso_label ? " · " : ""}${p.proceso_label || ""}`;
             return (
               <div key={p.id} className="ca-row" style={{ cursor: "default" }}>
                 <div className="ca-avatar" style={{ width: 36, height: 36, fontSize: 13 }}>{iniciales(p.nombre)}</div>

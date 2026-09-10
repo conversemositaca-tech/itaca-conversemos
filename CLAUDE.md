@@ -444,10 +444,19 @@ los feriados de Perú. Zona horaria por defecto: `America/Lima` (GMT-5).
      `PATCH /api/continuidad/caso/<id>/gestion/`; el analista sigue solo lectura en todo lo
      demás (tests en `core/tests_gestion_continuidad.py`). Alcance por `pacientes_del_rol`.
    - **Tarjeta Hoy**: `prioritarios_para_tarjeta` (un caso por categoría accionable + relleno).
-   - **PENDIENTE TÉCNICO antes de producción**: `resolver_sesion_real` usa el MÁXIMO histórico
-     de `n_sesion`; un proceso nuevo que reinicia en S1/S2/S3 tras uno anterior queda mal
-     interpretado (el riesgo S3 del segundo proceso no se detecta). Requiere propuesta aparte
-     que no rompa Hoy, Pacientes, Gerencia ni Continuidad. **No llevar a producción** hasta
-     revisarlo. WhatsApp desde Continuidad: iteración separada (hueco `contacto` en el detalle).
+   - **Reinicio de proceso resuelto (2026-09-10, alternativa A)**: `core/continuidad.py` parte
+     la historia en TRAMOS (`segmentar_procesos` / `proceso_actual`). Una bajada de `n_sesion`
+     es solo candidato a reinicio; se acepta con respaldo estructurado (nueva sesión = 1; DP de
+     cierre 04/09/10/11/12 en el tramo anterior; consulta o DP-01/02/03 entre medias; cambio de
+     etapa en `SeguimientoSesion`; lead convertido). El tiempo (60 días) solo refuerza una
+     bajada a 1 o 2, nunca decide solo. Sin respaldo (S1…S6, S5) = continuidad + marca
+     `numeracion_inconsistente`. `sesion_real` = máximo del tramo actual (ya no el histórico);
+     toda la cola, anclas y `anteriores_sin_decision` trabajan solo con el tramo. Los procesos
+     previos sin DP van a **"Calidad de registro · Procesos anteriores sin cierre"**
+     (`EstadoCierre.PROCESO_ANTERIOR`, filas aparte vía `indicadores`), nunca a la acción.
+     Portado de PR #71: `MARCADOR_IMPORTADO_AGENDAPRO` → `migrado_sin_actividad`, "Falta
+     agendar", y sus 8 tests (`core/tests_proceso.py`, 40 tests). Frontend: "P2 · S3" en Centro,
+     ficha y lista; `PacienteSerializer.proceso_actual`. PR #71 queda superado (cerrar).
+     WhatsApp desde Continuidad: iteración separada (hueco `contacto` en el detalle).
    - Dev: el preview corre contra una base demo aislada (`DATABASE_URL` → sqlite en el
      scratchpad); `db.sqlite3` local tiene 3 migraciones pendientes (0033, 0034, usuarios 0012).

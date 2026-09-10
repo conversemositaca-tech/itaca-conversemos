@@ -229,8 +229,10 @@ class PacienteViewSet(viewsets.ModelViewSet):
                 .prefetch_related(
                     Prefetch("atenciones", queryset=Atencion.objects.only(
                         "id", "paciente_id", "fecha")),
+                    # `n_sesion` va en el only(): sin él, `sesion_real` (que lo
+                    # lee para segmentar procesos) disparaba una consulta por cita.
                     Prefetch("citas", queryset=Cita.objects.only(
-                        "id", "paciente_id", "inicio", "estado", "especialidad", "decision")),
+                        "id", "paciente_id", "inicio", "estado", "especialidad", "decision", "n_sesion")),
                     "cobros",
                 )
             )

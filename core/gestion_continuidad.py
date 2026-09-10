@@ -34,6 +34,7 @@ MOTIVOS = {
     "proxima_cita": "Próxima cita detectada",
     "decision_registrada": "Decisión registrada en la Agenda",
     "proceso_cerrado": "Proceso cerrado (alta / en pausa)",
+    "proceso_nuevo": "Proceso nuevo detectado (la gestión era de un proceso anterior)",
     "sin_condicion": "La condición ya no se detecta",
 }
 
@@ -198,8 +199,15 @@ def _motivo(g, paciente, fila):
     """Por qué dejó de detectarse la condición, mirando las fuentes oficiales."""
     if paciente.frecuencia in cont.FRECUENCIAS_CERRADAS:
         return "proceso_cerrado"
-    asistidas = list(Cita.objects.filter(paciente=paciente, estado__in=cont._ESTADOS_ASISTIDOS)
-                     .order_by("inicio").values("id", "n_sesion", "inicio", "decision"))
+    historia = list(Cita.objects.filter(paciente=paciente, estado__in=cont._ESTADOS_ASISTIDOS)
+                    .order_by("inicio").values("id", "n_sesion", "inicio", "estado", "decision"))
+    # Solo el proceso en curso. Si la cita de referencia de la gestión quedó en
+    # un proceso anterior, la condición no "se resolvió": el paciente empezó
+    # de nuevo, y esa gestión pertenece a la historia.
+    pa = cont.proceso_actual(historia)
+    asistidas = pa["citas"]
+    if pa["numero"] > 1 and g.cita_referencia_id and g.cita_referencia_id not in {c["id"] for c in asistidas}:
+        return "proceso_nuevo"
     if g.tipo == GestionContinuidad.Tipo.RIESGO_S3:
         if Cita.objects.filter(paciente=paciente, inicio__gte=timezone.now()).exclude(estado="cancelada").exists():
             return "proxima_cita"

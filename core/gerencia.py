@@ -241,8 +241,12 @@ class HoyResumenView(APIView):
         # días sin venir): es una cola priorizada por la FECHA real del cierre.
         # La tarjeta muestra el resumen y como mucho cinco casos; el resto vive
         # en "ver todos" (/api/continuidad/pendientes/).
-        cola = continuidad_mod.cola_de_continuidad(pac_cont)
+        indicadores = {}
+        cola = continuidad_mod.cola_de_continuidad(pac_cont, indicadores=indicadores)
         conteo = continuidad_mod.resumen_de_cola(cola)
+        # Procesos anteriores sin cierre registrado: calidad de registro, no
+        # acción. Va en el resumen para la línea "Calidad" de la tarjeta.
+        conteo[continuidad_mod.EstadoCierre.PROCESO_ANTERIOR] = indicadores.get("procesos_anteriores_sin_cierre", 0)
         # Se copian TODOS los estados del resumen, no una lista escrita a mano:
         # cuando se agregó "riesgo_s3" la tarjeta se quedó sin él y mostraba
         # cero aunque el Centro de Continuidad sí lo contara. Derivarlo de
@@ -413,21 +417,33 @@ class ContinuidadPendientesView(APIView):
         except (TypeError, ValueError):
             dias_proximos = continuidad_mod.DIAS_PROXIMOS
 
+        indicadores = {}
         cola = continuidad_mod.cola_de_continuidad(qs, dias_proximos=dias_proximos,
-                                                   con_contexto=True)
+                                                   con_contexto=True, indicadores=indicadores)
         conteo = continuidad_mod.resumen_de_cola(cola)
+        # Calidad de registro · procesos anteriores sin cierre registrado. No
+        # son la cola de acción (el paciente ya está en otro proceso): se
+        # cuentan y se listan aparte, y solo entran con su propio filtro.
+        anteriores = indicadores.get("filas_procesos_anteriores", [])
+        conteo[continuidad_mod.EstadoCierre.PROCESO_ANTERIOR] = len(anteriores)
+        conteo[continuidad_mod.GRUPO_CALIDAD] += len(anteriores)
+        conteo["numeracion_inconsistente"] = indicadores.get("numeracion_inconsistente", 0)
 
         estado = (request.query_params.get("estado") or "accionables").strip()
         grupos = (continuidad_mod.GRUPO_ACCION, continuidad_mod.GRUPO_SEGUIMIENTO,
                   continuidad_mod.GRUPO_CALIDAD)
         if estado == "accionables":
             filas = [f for f in cola if f["estado"] in continuidad_mod.EstadoCierre.ACCIONABLES]
+        elif estado == continuidad_mod.EstadoCierre.PROCESO_ANTERIOR:
+            filas = list(anteriores)
         elif estado in grupos:
             filas = [f for f in cola if f["grupo"] == estado]
+            if estado == continuidad_mod.GRUPO_CALIDAD:
+                filas = filas + anteriores
         elif estado and estado != "todos":
             filas = [f for f in cola if f["estado"] == estado]
         else:
-            filas = cola
+            filas = cola + anteriores
 
         bloque = (request.query_params.get("bloque") or "").strip()
         if bloque.isdigit():
