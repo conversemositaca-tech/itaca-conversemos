@@ -572,3 +572,20 @@ class AlertaUsaSesionRealTests(TestCase):
                              inicio=timezone.now() - timedelta(days=1))
         r = self.client.get(f"/api/pacientes/{p.id}/")
         self.assertEqual(r.json()["sesion_real"], 0)
+
+    def test_sesion_real_no_toma_el_maximo_historico_sino_la_mas_reciente(self):
+        """`n_sesion` se reinicia cada proceso nuevo (Paciente.proceso: primero,
+        segundo...). Verificado en producción: 81 de 391 pacientes de la cola
+        de continuidad mostraban el cierre de un proceso YA terminado (a veces
+        meses atrás) en vez de su sesión real de hoy, por tomar el máximo de
+        toda la historia en vez del de la cita más reciente."""
+        p = Paciente.objects.create(clinica=self.clinica, nombre="Segundo proceso", n_sesion=0)
+        for i, hace in zip(range(1, 7), [90, 83, 76, 69, 62, 55]):  # primer proceso, completo
+            Cita.objects.create(clinica=self.clinica, paciente=p, n_sesion=i, estado=Cita.Estado.ASISTIO,
+                                 inicio=timezone.now() - timedelta(days=hace))
+        Cita.objects.create(clinica=self.clinica, paciente=p, n_sesion=1, estado=Cita.Estado.ASISTIO,
+                             inicio=timezone.now() - timedelta(days=10))
+        Cita.objects.create(clinica=self.clinica, paciente=p, n_sesion=2, estado=Cita.Estado.ASISTIO,
+                             inicio=timezone.now() - timedelta(days=3))
+        r = self.client.get(f"/api/pacientes/{p.id}/")
+        self.assertEqual(r.json()["sesion_real"], 2)  # no 6

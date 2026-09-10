@@ -63,6 +63,110 @@ class _Base(TestCase):
         return next((f for f in self._cola(**kw) if f["id"] == p.id), None)
 
 
+class ReinicioDeProcesoTests(_Base):
+    """`n_sesion` se reinicia cada vez que el paciente empieza un proceso
+    nuevo (Paciente.proceso: primero, segundo, tercero…). Verificado en
+    producción el 9 sep: 81 de 391 pacientes de la cola tenían este patrón, y
+    tomar el MÁXIMO histórico los mostraba en el cierre de un proceso ya
+    terminado (a veces meses atrás) en vez de en su sesión real de hoy."""
+
+    def _cita(self, p, n_sesion, hace_dias, estado=Cita.Estado.ASISTIO):
+        return Cita.objects.create(
+            clinica=self.clinica, paciente=p, medico=self.psico, n_sesion=n_sesion,
+            estado=estado, inicio=_dt(-hace_dias))
+
+    def test_toma_la_sesion_del_proceso_actual_no_el_maximo_historico(self):
+        """Terminó su primer proceso (1..6) y va en la sesión 2 del segundo."""
+        p = self._paciente("Segundo proceso")
+        for i, hace in zip(range(1, 7), [90, 83, 76, 69, 62, 55]):
+            self._cita(p, i, hace)
+        self._cita(p, 1, hace_dias=10)
+        self._cita(p, 2, hace_dias=3)
+        self.assertEqual(C.sesion_real_por_pacientes([p.id])[p.id], 2)  # no 6
+
+    def test_lo_mismo_calculado_desde_la_lista_de_citas_de_un_solo_paciente(self):
+        """La misma regla que usa la ficha (PacienteSerializer), sin pasar
+        por el agregado masivo — para que no se desalineen entre sí."""
+        p = self._paciente("Segundo proceso (ficha)")
+        for i, hace in zip(range(1, 7), [90, 83, 76, 69, 62, 55]):
+            self._cita(p, i, hace)
+        self._cita(p, 1, hace_dias=10)
+        self._cita(p, 2, hace_dias=3)
+        citas = list(Cita.objects.filter(paciente=p).order_by("?"))  # orden desordenado a propósito
+        self.assertEqual(C.sesion_real(citas), 2)
+
+    def test_la_cola_ya_no_los_mete_a_backlog_por_error(self):
+        """Antes del fix: sesion_real=6/6 (el cierre del proceso VIEJO, de
+        hace 90 días) -> backlog. Con el fix: sesion_real=5 (va en la 5ta del
+        proceso actual, a una de cerrar) -> sin_agendar, no backlog."""
+        p = self._paciente("No debe ser backlog")
+        for i, hace in zip(range(1, 7), [95, 88, 81, 74, 67, 60]):
+            self._cita(p, i, hace)
+        for i, hace in zip(range(1, 6), [30, 23, 16, 9, 3]):
+            self._cita(p, i, hace)
+        f = self._fila(p)
+        self.assertNotEqual(f["estado"], C.EstadoCierre.BACKLOG)
+        self.assertEqual(f["n_sesion"], 5)
+        self.assertEqual(f["estado"], C.EstadoCierre.SIN_AGENDAR)
+
+    def test_una_cita_sin_numero_al_final_no_rompe_el_calculo(self):
+        """La última cita todavía no tiene n_sesion puesto (recién ocurrió,
+        falta que alguien lo llene) — se usa la anterior que sí lo trae."""
+        p = self._paciente("Última sin número")
+        self._cita(p, 1, hace_dias=20)
+        self._cita(p, 2, hace_dias=13)
+        Cita.objects.create(clinica=self.clinica, paciente=p, medico=self.psico,
+                            estado=Cita.Estado.ASISTIO, inicio=_dt(-6))  # sin n_sesion
+        self.assertEqual(C.sesion_real_por_pacientes([p.id])[p.id], 2)
+
+
+class MigradoSinActividadTests(_Base):
+    """La etiqueta "Migrado de AgendaPro — nunca se le agendó nada acá":
+    ningún estado (vencido, sin agendar, lo que sea) se creó nunca en el
+    sistema nuevo. Pedido por Mirai el 9 sep viendo un caso así en producción."""
+
+    MARCADOR = C.MARCADOR_IMPORTADO_AGENDAPRO
+
+    def _cita_importada(self, p, n_sesion, hace_dias, estado=Cita.Estado.ASISTIO):
+        return Cita.objects.create(
+            clinica=self.clinica, paciente=p, medico=self.psico, n_sesion=n_sesion,
+            estado=estado, inicio=_dt(-hace_dias), notas=f"{self.MARCADOR} comentario original",
+        )
+
+    def test_si_todas_sus_citas_son_del_volcado_queda_marcado(self):
+        p = self._paciente("Solo AgendaPro")
+        for i in range(6):
+            self._cita_importada(p, i + 1, hace_dias=200 - 7 * i)
+        self.assertTrue(self._fila(p)["migrado_sin_actividad"])
+
+    def test_una_sola_cita_nativa_ya_lo_saca_de_la_etiqueta(self):
+        """Aunque el cierre real siga siendo viejo, si en algún momento el
+        sistema nuevo SÍ le creó algo, ya no es "nunca se le agendó nada"."""
+        p = self._paciente("Con algo nativo")
+        for i in range(6):
+            self._cita_importada(p, i + 1, hace_dias=200 - 7 * i)
+        self.assertTrue(self._fila(p)["migrado_sin_actividad"])
+        # Una cita nativa CANCELADA (nunca asistida) igual cuenta como "se intentó".
+        Cita.objects.create(clinica=self.clinica, paciente=p, medico=self.psico,
+                            estado=Cita.Estado.CANCELADA, inicio=_dt(-30))
+        self.assertFalse(self._fila(p)["migrado_sin_actividad"])
+
+    def test_un_paciente_nativo_normal_nunca_lleva_la_etiqueta(self):
+        p = self._paciente("Nativo de Ítaca")
+        self._asistidas(p, 6, ultima_hace=200)  # sin marcador: notas="" por defecto
+        self.assertFalse(self._fila(p)["migrado_sin_actividad"])
+
+    def test_aplica_tambien_a_vencidos_y_no_solo_a_backlog(self):
+        """Verificado en producción: 29% de los "vencidos" también vienen
+        enteros de AgendaPro, no es un atributo exclusivo del backlog."""
+        p = self._paciente("Vencido pero migrado")
+        for i in range(6):
+            self._cita_importada(p, i + 1, hace_dias=16 - i)
+        f = self._fila(p)
+        self.assertEqual(f["estado"], C.EstadoCierre.VENCIDO)
+        self.assertTrue(f["migrado_sin_actividad"])
+
+
 class ClasificacionTests(_Base):
     """Cada estado de la cola, con un paciente de ejemplo."""
 

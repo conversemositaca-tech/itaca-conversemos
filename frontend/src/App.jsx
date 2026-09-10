@@ -3666,10 +3666,11 @@ function ContinuidadPendientes({ onOpen, onVolver, showToast, esMedico, esAsiste
   const filas = datos?.filas || [];
   const conteo = datos?.conteo || {};
   const etiquetaEstado = ESTADOS_COLA.find((x) => x.v === estado)?.l || "";
-  const headers = ["Paciente", "Sede", "Psicólogo", "Sesión", "Fecha de cierre", "Días pendiente", "Estado", "Próxima cita"];
+  const headers = ["Paciente", "Sede", "Psicólogo", "Sesión", "Fecha de cierre", "Días pendiente", "Estado", "Próxima cita", "Migrado sin actividad"];
   const filasExport = filas.map((f) => [
     f.paciente, f.sede, f.psicologo, `${f.n_sesion}/${f.meta}`, f.fecha_cierre || "",
     f.dias != null && f.dias > 0 ? f.dias : "", etiquetaCierre(f).t, f.tiene_proxima ? "Sí" : "No",
+    f.migrado_sin_actividad ? "Sí" : "No",
   ]);
 
   return (
@@ -3720,11 +3721,22 @@ function ContinuidadPendientes({ onOpen, onVolver, showToast, esMedico, esAsiste
             <tbody>
               {filas.map((f) => { const e = etiquetaCierre(f); return (
                 <tr key={f.id}>
-                  <td><button className="ca-pnamebtn" onClick={() => onOpen(f.id)}>{f.paciente}</button></td>
+                  <td>
+                    <button className="ca-pnamebtn" onClick={() => onOpen(f.id)}>{f.paciente}</button>
+                    {f.migrado_sin_actividad && (
+                      <div style={{ fontSize: 11, color: "#9C6B2E", marginTop: 1 }} title="Ninguna de sus citas se creó en el sistema nuevo, ni siquiera una agendada y luego cancelada.">
+                        🕰️ Migrado de AgendaPro · nunca se le agendó nada acá
+                      </div>
+                    )}
+                  </td>
                   <td>{f.sede === "lima" ? "Lima" : f.sede === "piura" ? "Piura" : "—"}</td>
                   <td style={{ color: "var(--ink-soft)" }}>{f.psicologo || "—"}</td>
                   <td style={{ fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>S{f.n_sesion}/{f.meta}</td>
-                  <td style={{ whiteSpace: "nowrap" }}>{f.fecha_cierre ? fechaCortaISO(f.fecha_cierre) : "—"}</td>
+                  <td style={{ whiteSpace: "nowrap" }}>
+                    {f.fecha_cierre ? fechaCortaISO(f.fecha_cierre)
+                      : f.estado === "sin_agendar" ? <span style={{ color: "var(--muted)", fontStyle: "italic" }}>Falta agendar S{f.meta}</span>
+                      : "—"}
+                  </td>
                   <td className="num">{f.dias != null && f.dias > 0 ? f.dias : "—"}</td>
                   <td><Tag colors={{ bg: e.bg, fg: e.fg }}>{e.t}</Tag></td>
                   <td>{f.tiene_proxima ? <span style={{ color: "#3E7A65", fontWeight: 600 }}>Sí</span> : <span style={{ color: "#9C4646" }}>No</span>}</td>
@@ -3738,6 +3750,8 @@ function ContinuidadPendientes({ onOpen, onVolver, showToast, esMedico, esAsiste
         Un paciente sale de esta lista cuando coordinación registra la decisión (código DP) en su última cita realizada, desde la Agenda.
         «Cierres antiguos» son los de hace más de {datos?.dias_backlog || 90} días — casi todos heredados del sistema anterior, donde ese código no existía.
         «Continuó sin decisión» es calidad de registro, no riesgo: el paciente siguió viniendo, pero nadie anotó qué se decidió.
+        «Falta agendar»: está a una sesión de cerrar el bloque pero no tiene la siguiente cita puesta — por eso no hay fecha ni días; en cuanto se le agende, pasa a "Próximos".
+        🕰️ «Migrado de AgendaPro»: en NINGÚN estado (vencido, próximo, lo que sea) se le creó nunca una cita en el sistema nuevo — ni una que se agendó y se canceló. Es distinto de solo "llevar tiempo sin venir".
       </div>
     </div>
   );
