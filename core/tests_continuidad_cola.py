@@ -115,11 +115,14 @@ class ClasificacionTests(_Base):
 
     def test_continuo_sin_decision_es_calidad_de_registro_no_urgencia(self):
         """Pasó el cierre de la 6 sin decisión y siguió viniendo (va por la 9).
-        Antes no aparecía en ninguna parte: la meta se corría a la 12."""
+        El evento pendiente es el cierre de la 6 —meta 6, anclado en la cita de
+        la sesión 6—, no un cierre de la 12 que todavía no existe."""
         p = self._paciente("Siguió viniendo")
         self._asistidas(p, 9, ultima_hace=2)
         f = self._fila(p)
-        self.assertEqual((f["estado"], f["meta"]), (C.EstadoCierre.CONTINUO_SIN_DECISION, 12))
+        self.assertEqual((f["estado"], f["meta"]), (C.EstadoCierre.CONTINUO_SIN_DECISION, 6))
+        s6 = Cita.objects.get(paciente=p, n_sesion=6)
+        self.assertEqual(f["evento"]["cita_referencia"], s6.id)
 
     def test_un_cierre_de_hace_meses_es_backlog_no_operacion_del_dia(self):
         p = self._paciente("Heredado")
@@ -150,6 +153,204 @@ class ClasificacionTests(_Base):
         self.assertEqual((f["estado"], f["dias"], f["origen_fecha"]), (C.EstadoCierre.VENCIDO, 10, "numero"))
 
 
+class DecisionPorBloqueTests(_Base):
+    """La decisión de cada cierre se evalúa contra la cita que cierra ESE
+    bloque, no contra la última cita asistida. Que S7 no traiga DP no significa
+    que falte la decisión del cierre 6; que S6 sí la traiga cierra ese bloque
+    aunque el paciente siga viniendo."""
+
+    def _sesiones(self, p, n, ultima_hace, decisiones=None):
+        """n sesiones numeradas, semanales; `decisiones` = {n_sesion: "DP-xx"}."""
+        decisiones = decisiones or {}
+        for i in range(1, n + 1):
+            Cita.objects.create(
+                clinica=self.clinica, paciente=p, medico=self.psico, n_sesion=i,
+                estado=Cita.Estado.ASISTIO, inicio=_dt(-ultima_hace - 7 * (n - i)),
+                decision=decisiones.get(i, ""),
+            )
+
+    def _s(self, p, k):
+        return Cita.objects.get(paciente=p, n_sesion=k)
+
+    def test_s6_con_dp_y_s7_sin_dp_no_reclama_nada(self):
+        p = self._paciente("Decidió en la 6")
+        self._sesiones(p, 7, ultima_hace=2, decisiones={6: "DP-08"})
+        self.assertIsNone(self._fila(p))          # ni "continuó", ni pendiente de la 12
+
+    def test_s6_sin_dp_y_s7_es_continuo_del_cierre_6(self):
+        p = self._paciente("Siguió sin decidir")
+        self._sesiones(p, 7, ultima_hace=2)
+        f = self._fila(p)
+        self.assertEqual((f["estado"], f["meta"]), (C.EstadoCierre.CONTINUO_SIN_DECISION, 6))
+        self.assertEqual(f["evento"]["cita_referencia"], self._s(p, 6).id)
+
+    def test_s6_sin_dp_con_s7_y_s8_sigue_siendo_el_mismo_evento(self):
+        p = self._paciente("Va por la 8")
+        self._sesiones(p, 7, ultima_hace=9)
+        antes = self._fila(p)["evento"]
+        Cita.objects.create(clinica=self.clinica, paciente=p, medico=self.psico, n_sesion=8,
+                            estado=Cita.Estado.ASISTIO, inicio=_dt(-2))
+        filas = [f for f in self._cola() if f["id"] == p.id]
+        self.assertEqual(len(filas), 1)           # una sola fila, no una por sesión extra
+        despues = filas[0]["evento"]
+        self.assertEqual((antes["tipo"], antes["meta"], antes["cita_referencia"]),
+                         (despues["tipo"], despues["meta"], despues["cita_referencia"]))
+        self.assertEqual(filas[0]["n_sesion"], 8)
+
+    def test_s6_con_dp_y_s7_s8_s9_sin_alerta_del_cierre_6(self):
+        p = self._paciente("Decidió y siguió")
+        self._sesiones(p, 9, ultima_hace=1, decisiones={6: "DP-08"})
+        self.assertIsNone(self._fila(p))
+
+    def test_al_acercarse_al_cierre_12_aplican_las_reglas_del_bloque_12(self):
+        p = self._paciente("Camino a la 12")
+        self._sesiones(p, 11, ultima_hace=3, decisiones={6: "DP-08"})
+        f = self._fila(p)                          # a una sesión del cierre 12, sin cita
+        self.assertEqual((f["estado"], f["meta"]), (C.EstadoCierre.SIN_AGENDAR, 12))
+        self.assertEqual(f["evento"]["cita_referencia"], self._s(p, 11).id)
+        self.assertEqual(f["evento"]["referencia_origen"], "pre_cierre")
+        self.assertEqual(f["anteriores_sin_decision"], [])   # la 6 sí se decidió
+        Cita.objects.create(clinica=self.clinica, paciente=p, medico=self.psico, n_sesion=12,
+                            estado=Cita.Estado.ASISTIO, inicio=_dt(0))
+        f = self._fila(p)                          # cerró hoy la 12
+        self.assertEqual((f["estado"], f["meta"]), (C.EstadoCierre.HOY, 12))
+        self.assertEqual(f["evento"]["cita_referencia"], self._s(p, 12).id)
+
+    def test_cierre_12_vigente_con_la_6_sin_decidir_muestra_la_12_y_anota_la_6(self):
+        """Dos cierres sin decisión: manda el vigente (acción), y el anterior
+        no se pierde: viaja en `anteriores_sin_decision` para el detalle."""
+        p = self._paciente("Doble pendiente")
+        self._sesiones(p, 12, ultima_hace=3)
+        f = self._fila(p)
+        self.assertEqual((f["estado"], f["meta"]), (C.EstadoCierre.VENCIDO, 12))
+        self.assertEqual(f["anteriores_sin_decision"], [6])
+
+    def test_decidida_la_12_sube_el_cierre_6_que_quedo_sin_decidir(self):
+        p = self._paciente("Decidió la 12, no la 6")
+        self._sesiones(p, 12, ultima_hace=3, decisiones={12: "DP-08"})
+        f = self._fila(p)
+        self.assertEqual((f["estado"], f["meta"]), (C.EstadoCierre.CONTINUO_SIN_DECISION, 6))
+
+    def test_una_decision_en_la_ultima_sesion_cierra_el_bloque_vigente(self):
+        """Regresión: "finaliza proceso" en la 5 significa que no habrá cierre
+        de la 6 que evaluar. Esa regla se conserva para el bloque vigente."""
+        p = self._paciente("Terminó en la 5")
+        self._sesiones(p, 5, ultima_hace=2, decisiones={5: "DP-09"})
+        self.assertIsNone(self._fila(p))
+
+    def test_s3_con_decision_en_esa_sesion_no_es_riesgo(self):
+        p = self._paciente("No inicia")
+        self._sesiones(p, 3, ultima_hace=2, decisiones={3: "DP-04"})
+        self.assertIsNone(self._fila(p))
+
+
+class IdentidadDelEventoTests(_Base):
+    """La identidad de un evento (tipo, meta, cita de referencia) sale de la
+    condición detectada y es la misma la abra quien la abra y cuando la abra.
+    Estos son los tests de la clave de gestión, ANTES de que exista el modelo."""
+
+    def _sesiones(self, p, n, ultima_hace, decisiones=None, desde=1):
+        decisiones = decisiones or {}
+        for i in range(desde, n + 1):
+            Cita.objects.create(
+                clinica=self.clinica, paciente=p, medico=self.psico, n_sesion=i,
+                estado=Cita.Estado.ASISTIO, inicio=_dt(-ultima_hace - 7 * (n - i)),
+                decision=decisiones.get(i, ""),
+            )
+
+    def _identidad(self, p):
+        f = self._fila(p)
+        return f and (f["evento"]["tipo"], f["evento"]["meta"], f["evento"]["cita_referencia"])
+
+    def _s(self, p, k, **filtro):
+        return Cita.objects.filter(paciente=p, n_sesion=k, **filtro).order_by("inicio")
+
+    def test_s6_del_primer_proceso_y_s6_de_uno_posterior_no_colisionan(self):
+        p = self._paciente("Dos procesos")
+        self._sesiones(p, 6, ultima_hace=300, decisiones={6: "DP-10"})   # proceso 1, con alta
+        self._sesiones(p, 6, ultima_hace=4)                              # proceso 2, sin decidir
+        vieja, nueva = self._s(p, 6)
+        identidad = self._identidad(p)
+        self.assertEqual(identidad, (C.TIPO_CIERRE_BLOQUE, 6, nueva.id))
+        self.assertNotEqual(identidad[2], vieja.id)
+        self.assertEqual(self._fila(p)["estado"], C.EstadoCierre.VENCIDO)
+
+    def test_s6_sin_dp_que_llega_a_s7_y_s8_es_un_solo_evento(self):
+        p = self._paciente("Un solo evento")
+        self._sesiones(p, 6, ultima_hace=16)
+        en_6 = self._identidad(p)
+        self._sesiones(p, 8, ultima_hace=2, desde=7)
+        en_8 = self._identidad(p)
+        self.assertEqual(en_6, en_8)
+        self.assertEqual(en_8[2], self._s(p, 6).get().id)
+
+    def test_cerrar_y_reabrir_la_misma_condicion_da_la_misma_identidad(self):
+        p = self._paciente("Reversión")
+        self._sesiones(p, 6, ultima_hace=5)
+        antes = self._identidad(p)
+        s6 = self._s(p, 6).get()
+        s6.decision = "DP-08"; s6.save(update_fields=["decision"])
+        self.assertIsNone(self._identidad(p))      # resuelto por la fuente oficial
+        s6.decision = ""; s6.save(update_fields=["decision"])
+        self.assertEqual(self._identidad(p), antes)  # misma identidad: no es un evento nuevo
+
+    def test_un_nuevo_proceso_da_identidad_nueva(self):
+        p = self._paciente("Proceso nuevo")
+        self._sesiones(p, 6, ultima_hace=200)
+        primera = self._identidad(p)
+        s6 = self._s(p, 6).get(); s6.decision = "DP-10"; s6.save(update_fields=["decision"])
+        self._sesiones(p, 6, ultima_hace=3)
+        segunda = self._identidad(p)
+        self.assertEqual((primera[0], primera[1]), (segunda[0], segunda[1]))   # mismo tipo y meta…
+        self.assertNotEqual(primera[2], segunda[2])                            # …pero otra cita
+
+    def test_s6_y_s12_nunca_comparten_identidad(self):
+        p = self._paciente("Seis y doce")
+        self._sesiones(p, 12, ultima_hace=3)
+        f = self._fila(p)
+        self.assertEqual(f["evento"]["meta"], 12)
+        self.assertEqual(f["evento"]["cita_referencia"], self._s(p, 12).get().id)
+        s12 = self._s(p, 12).get(); s12.decision = "DP-08"; s12.save(update_fields=["decision"])
+        f = self._fila(p)                          # ahora sube el cierre 6 pendiente
+        self.assertEqual(f["evento"]["meta"], 6)
+        self.assertEqual(f["evento"]["cita_referencia"], self._s(p, 6).get().id)
+
+    def test_pre_cierre_y_cierre_del_mismo_bloque_comparten_anclas(self):
+        """A la 5 el evento se ancla en la 5; cuando llega la 6 se ancla en la
+        6, pero la 5 sigue entre sus anclas: es el mismo evento avanzando."""
+        p = self._paciente("Avanza")
+        self._sesiones(p, 5, ultima_hace=3)
+        f5 = self._fila(p)
+        s5 = self._s(p, 5).get()
+        self.assertEqual((f5["estado"], f5["evento"]["cita_referencia"]), (C.EstadoCierre.SIN_AGENDAR, s5.id))
+        self.assertEqual(f5["evento"]["anclas"], [s5.id])
+        self._sesiones(p, 6, ultima_hace=0, desde=6)
+        f6 = self._fila(p)
+        s6 = self._s(p, 6).get()
+        self.assertEqual((f6["estado"], f6["evento"]["cita_referencia"]), (C.EstadoCierre.HOY, s6.id))
+        self.assertIn(s5.id, f6["evento"]["anclas"])
+        self.assertIn(s6.id, f6["evento"]["anclas"])
+
+    def test_riesgo_s3_se_ancla_en_la_cita_de_la_sesion_3(self):
+        p = self._paciente("S3")
+        self._sesiones(p, 3, ultima_hace=4)
+        f = self._fila(p)
+        s3 = self._s(p, 3).get()
+        self.assertEqual((f["evento"]["tipo"], f["evento"]["meta"], f["evento"]["cita_referencia"]),
+                         (C.TIPO_RIESGO_S3, 3, s3.id))
+        self.assertEqual(f["evento"]["anclas"], [s3.id])
+
+    def test_la_identidad_no_depende_del_momento_en_que_se_mira(self):
+        """Abrirlo hoy o dentro de tres días da la misma referencia."""
+        from datetime import timedelta
+        p = self._paciente("Cuando sea")
+        self._sesiones(p, 6, ultima_hace=2)
+        hoy = C.cola_de_continuidad(Paciente.objects.filter(pk=p.pk))[0]["evento"]
+        luego = C.cola_de_continuidad(Paciente.objects.filter(pk=p.pk),
+                                      hoy=self.hoy + timedelta(days=3))[0]["evento"]
+        self.assertEqual(hoy, luego)
+
+
 class OrdenYResumenTests(_Base):
     def test_orden_primero_lo_vencido_mas_viejo_luego_hoy_luego_proximos(self):
         viejo = self._paciente("Vencido 30"); self._asistidas(viejo, 6, ultima_hace=30)
@@ -172,6 +373,111 @@ class OrdenYResumenTests(_Base):
         self.assertEqual(r[C.EstadoCierre.CONTINUO_SIN_DECISION], 1)
         self.assertEqual(r[C.EstadoCierre.BACKLOG], 1)
         self.assertEqual(r["accionables"], 2)
+
+
+class PrioritariosDeLaTarjetaTests(_Base):
+    """La mini-tabla de "Hoy" muestra como mucho cinco casos, elegidos para que
+    ninguna categoría accionable quede invisible detrás de los vencidos. La cola
+    completa NO cambia: sigue en orden de urgencia pura."""
+
+    def _vencido(self, nombre, hace):
+        p = self._paciente(nombre); self._asistidas(p, 6, ultima_hace=hace); return p
+
+    def _hoy(self, nombre):
+        p = self._paciente(nombre); self._asistidas(p, 6, ultima_hace=0); return p
+
+    def _s3(self, nombre, hace=4):
+        p = self._paciente(nombre); self._asistidas(p, 3, ultima_hace=hace); return p
+
+    def _precierre(self, nombre, hace=3):
+        p = self._paciente(nombre); self._asistidas(p, 5, ultima_hace=hace); return p
+
+    def _proximo(self, nombre):
+        p = self._paciente(nombre); self._asistidas(p, 5, ultima_hace=2); self._agendada(p, 2, 6); return p
+
+    def _tarjeta(self, **kw):
+        return C.prioritarios_para_tarjeta(self._cola(), **kw)
+
+    def test_con_las_cuatro_categorias_aparece_al_menos_una_de_cada(self):
+        for i in range(6):                       # seis vencidos: antes llenaban los cinco lugares
+            self._vencido(f"Vencido {i}", hace=10 + i)
+        self._hoy("Cierra hoy"); self._s3("En S3"); self._precierre("Pre-cierre")
+        estados = {f["estado"] for f in self._tarjeta()}
+        self.assertEqual(estados, {C.EstadoCierre.VENCIDO, C.EstadoCierre.HOY,
+                                   C.EstadoCierre.RIESGO_S3, C.EstadoCierre.SIN_AGENDAR})
+
+    def test_el_representante_de_cada_categoria_es_su_caso_mas_urgente(self):
+        self._vencido("Vencido 5", hace=5); self._vencido("Vencido 40", hace=40)
+        self._s3("S3 reciente", hace=2); self._s3("S3 viejo", hace=20)
+        nombres = [f["paciente"] for f in self._tarjeta(maximo=2)]
+        # Con solo dos lugares entran el vencido más viejo y el S3 más viejo.
+        self.assertEqual(nombres, ["Vencido 40", "S3 viejo"])
+
+    def test_si_falta_una_categoria_el_lugar_se_rellena_con_el_siguiente_mas_urgente(self):
+        for i in range(6):
+            self._vencido(f"Vencido {i}", hace=10 + i)
+        self._hoy("Cierra hoy")                  # sin S3 ni pre-cierre
+        filas = self._tarjeta()
+        self.assertEqual(len(filas), 5)
+        self.assertEqual([f["paciente"] for f in filas],
+                         ["Vencido 5", "Vencido 4", "Vencido 3", "Vencido 2", "Cierra hoy"])
+        self.assertNotIn(C.EstadoCierre.RIESGO_S3, {f["estado"] for f in filas})
+
+    def test_nunca_mas_de_cinco(self):
+        for i in range(4):
+            self._vencido(f"Vencido {i}", hace=10 + i); self._s3(f"S3 {i}", hace=i + 1)
+            self._precierre(f"Pre {i}", hace=i + 1)
+        self._hoy("Cierra hoy A"); self._hoy("Cierra hoy B")
+        self.assertEqual(len(self._tarjeta()), 5)
+
+    def test_sin_duplicados(self):
+        for i in range(3):
+            self._vencido(f"Vencido {i}", hace=10 + i)
+        self._hoy("Cierra hoy"); self._s3("En S3"); self._precierre("Pre-cierre")
+        ids = [f["id"] for f in self._tarjeta()]
+        self.assertEqual(len(ids), len(set(ids)))
+
+    def test_seguimiento_y_calidad_no_entran_mientras_haya_accionables(self):
+        self._vencido("Vencido", hace=10)
+        self._proximo("Próximo")                                    # seguimiento
+        siguio = self._paciente("Siguió"); self._asistidas(siguio, 9, ultima_hace=1)   # calidad
+        antiguo = self._paciente("Antiguo"); self._asistidas(antiguo, 6, ultima_hace=200)  # backlog
+        filas = self._tarjeta()
+        self.assertEqual([f["paciente"] for f in filas], ["Vencido"])
+        # Ni siquiera con lugares libres: sobran cuatro y no se rellenan con seguimiento.
+        self.assertTrue(all(f["estado"] in C.EstadoCierre.ACCIONABLES for f in filas))
+
+    def test_sin_accionables_no_hay_prioritarios(self):
+        self._proximo("Solo próximo")
+        self.assertEqual(self._tarjeta(), [])
+
+    def test_conserva_el_orden_real_de_la_cola(self):
+        """La selección puede saltarse vencidos para dar lugar a otras categorías,
+        pero lo que muestra va en el orden de urgencia de la cola, no en el
+        orden en que se eligió."""
+        for i in range(6):
+            self._vencido(f"Vencido {i}", hace=10 + i)
+        self._hoy("Cierra hoy"); self._s3("En S3"); self._precierre("Pre-cierre")
+        cola = self._cola()
+        posicion = {f["id"]: i for i, f in enumerate(cola)}
+        filas = C.prioritarios_para_tarjeta(cola)
+        self.assertEqual([posicion[f["id"]] for f in filas], sorted(posicion[f["id"]] for f in filas))
+        # Y la cola completa sigue en orden puro: todos los vencidos antes que "hoy".
+        estados_cola = [f["estado"] for f in cola]
+        self.assertEqual(estados_cola[:6], [C.EstadoCierre.VENCIDO] * 6)
+
+    def test_el_endpoint_de_hoy_usa_la_seleccion_hibrida(self):
+        admin = Usuario.objects.create_user(email="adm-tarjeta@test.pe", password="x",
+                                            clinica=self.clinica, rol=Usuario.Rol.ADMIN)
+        for i in range(6):
+            self._vencido(f"Vencido {i}", hace=10 + i)
+        self._s3("En S3")
+        self.client.force_login(admin)
+        c = self.client.get("/api/hoy/").json()["continuidad"]
+        self.assertEqual(len(c["prioritarios"]), 5)
+        self.assertIn("En S3", [f["paciente"] for f in c["prioritarios"]])
+        self.assertEqual(c["riesgo_s3"], 1)          # el contador llega a la tarjeta
+        self.assertEqual(c["accionables"], 7)
 
 
 class AlcancePorRolTests(_Base):

@@ -182,12 +182,18 @@ export const api = {
 
   // Inicio (datos reales del día) + panel de gerencia (solo admin)
   hoy: () => req("/api/hoy/"),
-  // Cola completa de "Evaluar continuidad" (la tarjeta de Hoy solo muestra 5).
+  // Cola completa del Centro de Continuidad (la tarjeta de Hoy solo muestra 5).
   continuidadPendientes: (params = {}) => {
     const q = Object.entries(params).filter(([, v]) => v !== "" && v != null)
       .map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join("&");
     return req(`/api/continuidad/pendientes/${q ? `?${q}` : ""}`);
   },
+  // Detalle de UN caso: se recalcula desde citas y decisiones en el momento.
+  continuidadCaso: (id) => req(`/api/continuidad/caso/${id}/`),
+  // "Guardar seguimiento": solo los cuatro campos operativos. Devuelve el
+  // mismo detalle que continuidadCaso, ya actualizado.
+  continuidadGuardarGestion: (id, datos) =>
+    req(`/api/continuidad/caso/${id}/gestion/`, { method: "PATCH", body: JSON.stringify(datos) }),
   marcarEliminacionRevisada: (id) => req(`/api/eliminaciones/${id}/revisar/`, { method: "POST" }),
   marcarTodasEliminacionesRevisadas: () => req("/api/eliminaciones/revisar-todas/", { method: "POST" }),
   gerenciaResumen: (periodo, sede) => req(`/api/gerencia/resumen/?periodo=${periodo || "mes"}${sede ? `&sede=${sede}` : ""}`),

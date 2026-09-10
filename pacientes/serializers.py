@@ -100,6 +100,9 @@ class PacienteSerializer(serializers.ModelSerializer):
     proxima = serializers.SerializerMethodField()
     alertas_continuidad = serializers.SerializerMethodField()
     sesion_real = serializers.SerializerMethodField()
+    # En qué proceso va el paciente (1 = primero, 2 = segundo…) y cómo se
+    # detectó el reinicio. Ver core.continuidad.segmentar_procesos.
+    proceso_actual = serializers.SerializerMethodField()
     historial = serializers.SerializerMethodField()
     adjuntos = serializers.SerializerMethodField()
     cuenta = serializers.SerializerMethodField()
@@ -124,7 +127,7 @@ class PacienteSerializer(serializers.ModelSerializer):
             "alertas", "notas_internas",
             "brujula_motivo", "brujula_hipotesis", "brujula_objetivos", "brujula_fortalezas",
             "brujula_factores_protectores", "brujula_factores_riesgo", "brujula_barreras", "brujula_plan",
-            "ultima", "proxima", "alertas_continuidad", "sesion_real", "historial", "adjuntos", "cuenta", "paquetes", "citas",
+            "ultima", "proxima", "alertas_continuidad", "sesion_real", "proceso_actual", "historial", "adjuntos", "cuenta", "paquetes", "citas",
         ]
 
     def to_representation(self, instance):
@@ -193,10 +196,21 @@ class PacienteSerializer(serializers.ModelSerializer):
         )
 
     def get_sesion_real(self, obj):
-        """Cuántas sesiones ya ocurrieron de verdad, calculado de las citas —
-        para "Estado del proceso" y la línea de tiempo. Distinto de `n_sesion`
-        (el contador manual, que no siempre se actualiza)."""
+        """Cuántas sesiones ya ocurrieron de verdad EN EL PROCESO ACTUAL,
+        calculado de las citas — para "Estado del proceso" y la línea de
+        tiempo. Distinto de `n_sesion` (el contador manual, que no siempre se
+        actualiza) y distinto del máximo histórico (que mezclaba procesos)."""
         return continuidad.sesion_real(list(obj.citas.all()))
+
+    def get_proceso_actual(self, obj):
+        pa = continuidad.proceso_actual(list(obj.citas.all()))
+        return {
+            "numero": pa["numero"], "total": pa["total"],
+            "inicio": pa["inicio"].isoformat() if pa["inicio"] else None,
+            "motivo": pa["motivo"],
+            "numeracion_inconsistente": pa["numeracion_inconsistente"],
+            "anteriores_sin_cierre": pa["anteriores_sin_cierre"],
+        }
 
     def get_cuenta(self, obj):
         cobros = [c for c in obj.cobros.all() if c.estado != "anulado"]

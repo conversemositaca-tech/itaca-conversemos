@@ -121,17 +121,23 @@ class HoyContinuidadViewTests(TestCase):
         return [x["paciente"] for x in r.json()["filas"]]
 
     def test_riesgo_abandono_s3_sin_proxima_cita(self):
+        """S3 sin próxima cita sale en la tarjeta de riesgo Y en el Centro de
+        Continuidad. Antes solo estaba en la tarjeta: al no entrar a la cola no
+        se podía filtrar ni trabajar junto al resto de los casos."""
         p = self._paciente("Sin próxima en S3", "lima", n_sesion=3)
         datos = self._hoy(self.coord_lima)
-        nombres = [x["nombre"] for x in datos["riesgo_abandono"]]
-        self.assertIn(p.nombre, nombres)
-        self.assertNotIn(p.nombre, self._continuidad_nombres())
+        self.assertIn(p.nombre, [x["nombre"] for x in datos["riesgo_abandono"]])
+        self.assertIn(p.nombre, self._continuidad_nombres())
+        self.assertIn(p.nombre, self._continuidad_nombres(estado="riesgo_s3"))
 
     def test_s3_con_proxima_cita_no_es_riesgo(self):
+        """Agendar la siguiente sesión lo saca de los dos sitios: el estado se
+        recalcula desde la Agenda, no se guarda en ninguna parte."""
         p = self._paciente("Con próxima en S3", "lima", n_sesion=3)
         self._cita(p, dias=2)
         datos = self._hoy(self.coord_lima)
         self.assertNotIn(p.nombre, [x["nombre"] for x in datos["riesgo_abandono"]])
+        self.assertNotIn(p.nombre, self._continuidad_nombres(estado="riesgo_s3"))
 
     def test_fin_de_bloque_sin_decision_registrada(self):
         p = self._paciente("Fin de bloque sin decidir", "lima", n_sesion=6, sesiones_proceso=6)

@@ -7,8 +7,9 @@ from rest_framework.routers import DefaultRouter
 from core.buzon import SugerenciaViewSet
 from core.recursos import RecursoViewSet
 from core.gerencia import (
-    ClinicaConfigView, ContinuidadPendientesView, EliminacionRevisarView,
-    EliminacionesRevisarTodasView, GerenciaResumenView, HoyResumenView,
+    ClinicaConfigView, ContinuidadCasoView, ContinuidadGestionView,
+    ContinuidadPendientesView, EliminacionRevisarView, EliminacionesRevisarTodasView,
+    GerenciaResumenView, HoyResumenView,
 )
 from core.integraciones import (
     ConsultaView, ContextoView, NotaVozView, PacientesBuscarView, PsicologoView,
@@ -113,6 +114,8 @@ urlpatterns = [
     path("api/transcribir/", TranscribirView.as_view(), name="transcribir"),
     path("api/hoy/", HoyResumenView.as_view(), name="hoy-resumen"),
     path("api/continuidad/pendientes/", ContinuidadPendientesView.as_view(), name="continuidad-pendientes"),
+    path("api/continuidad/caso/<int:pk>/", ContinuidadCasoView.as_view(), name="continuidad-caso"),
+    path("api/continuidad/caso/<int:pk>/gestion/", ContinuidadGestionView.as_view(), name="continuidad-gestion"),
     path("api/eliminaciones/<int:pk>/revisar/", EliminacionRevisarView.as_view(), name="eliminacion-revisar"),
     path("api/eliminaciones/revisar-todas/", EliminacionesRevisarTodasView.as_view(), name="eliminaciones-revisar-todas"),
     path("api/clinica/", ClinicaConfigView.as_view(), name="clinica-config"),

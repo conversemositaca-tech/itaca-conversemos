@@ -15,8 +15,12 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from rest_framework.permissions import IsAuthenticated
+
 from core import continuidad as continuidad_mod
-from core.permisos import es_solo_lectura, ve_finanzas
+from core.permisos import (
+    PuedeGestionarContinuidad, es_solo_lectura, puede_gestionar_continuidad, ve_finanzas,
+)
 from core.tenant import get_clinica_actual
 from finanzas.models import Cobro, Egreso
 from leads.models import Lead
@@ -232,23 +236,30 @@ class HoyResumenView(APIView):
         out["riesgo_abandono"] = riesgo_abandono[:30]
         out["riesgo_abandono_total"] = len(riesgo_abandono)
 
-        # "Evaluar continuidad" ya no es una lista de todos los cierres sin
+        # El Centro de Continuidad ya no es una lista de todos los cierres sin
         # decisión de la historia (eran 391, y 303 de ellos llevaban más de 90
         # días sin venir): es una cola priorizada por la FECHA real del cierre.
         # La tarjeta muestra el resumen y como mucho cinco casos; el resto vive
         # en "ver todos" (/api/continuidad/pendientes/).
-        cola = continuidad_mod.cola_de_continuidad(pac_cont)
+        indicadores = {}
+        cola = continuidad_mod.cola_de_continuidad(pac_cont, indicadores=indicadores)
         conteo = continuidad_mod.resumen_de_cola(cola)
-        accionables = [f for f in cola if f["estado"] in continuidad_mod.EstadoCierre.ACCIONABLES]
+        # Procesos anteriores sin cierre registrado: calidad de registro, no
+        # acción. Va en el resumen para la línea "Calidad" de la tarjeta.
+        conteo[continuidad_mod.EstadoCierre.PROCESO_ANTERIOR] = indicadores.get("procesos_anteriores_sin_cierre", 0)
+        # Se copian TODOS los estados del resumen, no una lista escrita a mano:
+        # cuando se agregó "riesgo_s3" la tarjeta se quedó sin él y mostraba
+        # cero aunque el Centro de Continuidad sí lo contara. Derivarlo de
+        # `conteo` evita que las dos pantallas vuelvan a desalinearse.
         out["continuidad"] = {
-            "hoy": conteo[continuidad_mod.EstadoCierre.HOY],
+            **{estado: conteo[estado] for estado in continuidad_mod.GRUPOS},
+            # Alias histórico: el frontend ya usaba estos dos nombres en plural.
             "vencidos": conteo[continuidad_mod.EstadoCierre.VENCIDO],
             "proximos": conteo[continuidad_mod.EstadoCierre.PROXIMO],
-            "sin_agendar": conteo[continuidad_mod.EstadoCierre.SIN_AGENDAR],
-            "continuo_sin_decision": conteo[continuidad_mod.EstadoCierre.CONTINUO_SIN_DECISION],
-            "backlog": conteo[continuidad_mod.EstadoCierre.BACKLOG],
             "accionables": conteo["accionables"],
-            "prioritarios": accionables[:5],
+            # Selección híbrida: un caso por categoría accionable y el resto por
+            # urgencia global, para que ninguna categoría quede invisible.
+            "prioritarios": continuidad_mod.prioritarios_para_tarjeta(cola),
             "dias_proximos": continuidad_mod.DIAS_PROXIMOS,
         }
 
@@ -380,8 +391,11 @@ class ContinuidadPendientesView(APIView):
     ambas sedes, el comercial nada.
 
     Filtros (todos opcionales, se combinan):
-      estado=vencido|hoy|proximo|sin_agendar|continuo_sin_decision|backlog
-             |accionables   (por defecto: accionables, o sea lo que pide acción)
+      estado=vencido|hoy|riesgo_s3|sin_agendar|proximo|continuo_sin_decision
+             |dato_incompleto|backlog
+             |accionables   (por defecto: lo que pide acción esta semana)
+             |accion|seguimiento|calidad   (grupos completos)
+             |todos
       sede=lima|piura · medico=<id del profesional> · bloque=6|12|18|24
       dias_proximos=<n>  (ventana hacia adelante; por defecto 7)
     """
@@ -403,20 +417,69 @@ class ContinuidadPendientesView(APIView):
         except (TypeError, ValueError):
             dias_proximos = continuidad_mod.DIAS_PROXIMOS
 
-        cola = continuidad_mod.cola_de_continuidad(qs, dias_proximos=dias_proximos)
+        indicadores = {}
+        cola = continuidad_mod.cola_de_continuidad(qs, dias_proximos=dias_proximos,
+                                                   con_contexto=True, indicadores=indicadores)
         conteo = continuidad_mod.resumen_de_cola(cola)
+        # Calidad de registro · procesos anteriores sin cierre registrado. No
+        # son la cola de acción (el paciente ya está en otro proceso): se
+        # cuentan y se listan aparte, y solo entran con su propio filtro.
+        anteriores = indicadores.get("filas_procesos_anteriores", [])
+        conteo[continuidad_mod.EstadoCierre.PROCESO_ANTERIOR] = len(anteriores)
+        conteo[continuidad_mod.GRUPO_CALIDAD] += len(anteriores)
+        conteo["numeracion_inconsistente"] = indicadores.get("numeracion_inconsistente", 0)
 
         estado = (request.query_params.get("estado") or "accionables").strip()
+        grupos = (continuidad_mod.GRUPO_ACCION, continuidad_mod.GRUPO_SEGUIMIENTO,
+                  continuidad_mod.GRUPO_CALIDAD)
         if estado == "accionables":
             filas = [f for f in cola if f["estado"] in continuidad_mod.EstadoCierre.ACCIONABLES]
+        elif estado == continuidad_mod.EstadoCierre.PROCESO_ANTERIOR:
+            filas = list(anteriores)
+        elif estado in grupos:
+            filas = [f for f in cola if f["grupo"] == estado]
+            if estado == continuidad_mod.GRUPO_CALIDAD:
+                filas = filas + anteriores
         elif estado and estado != "todos":
             filas = [f for f in cola if f["estado"] == estado]
         else:
-            filas = cola
+            filas = cola + anteriores
 
         bloque = (request.query_params.get("bloque") or "").strip()
         if bloque.isdigit():
             filas = [f for f in filas if f["meta"] == int(bloque)]
+
+        # Gestión operativa por fila (una consulta para toda la cola). Se
+        # superpone: la fila sigue saliendo de la fuente oficial aunque alguien
+        # la haya marcado "resuelto" — en ese caso lleva `alerta`.
+        from core import gestion_continuidad as gc
+        from pacientes.models import GestionContinuidad
+        por_paciente = {}
+        for g in GestionContinuidad.objects.filter(paciente_id__in=[f["id"] for f in cola]):
+            por_paciente.setdefault(g.paciente_id, []).append(g)
+        for f in filas:
+            f["gestion"] = gc.resumen(gc.gestion_de(f, por_paciente.get(f["id"], [])), f)
+
+        revision = (request.query_params.get("revision") or "").strip()
+        if revision == "sin_revisar":
+            filas = [f for f in filas if not f["gestion"] or f["gestion"]["estado_revision"] == "sin_revisar"]
+        elif revision in ("en_seguimiento", "resuelto"):
+            filas = [f for f in filas if f["gestion"] and f["gestion"]["estado_revision"] == revision]
+        elif revision == "atencion":
+            # "Requiere mi atención": sin revisar, o resuelto pero todavía
+            # detectado, o asignado al responsable que corresponde a mi rol.
+            mio = gc.RESPONSABLE_DE_ROL.get(getattr(request.user, "rol", None))
+            filas = [f for f in filas if (not f["gestion"])
+                     or f["gestion"]["estado_revision"] == "sin_revisar"
+                     or f["gestion"]["alerta"]
+                     or (mio and f["gestion"]["responsable"] == mio
+                         and f["gestion"]["estado_revision"] != "resuelto")]
+
+        # "Resueltos" también lista lo que el sistema o una persona cerró y ya
+        # no está en la cola (últimos 30 días): es la única forma de ver que
+        # un caso se resolvió de verdad, no solo que desapareció.
+        if revision == "resuelto":
+            filas = filas + self._cerradas_fuera_de_cola(qs, cola, por_paciente)
 
         return Response({
             "filas": filas,
@@ -425,6 +488,158 @@ class ContinuidadPendientesView(APIView):
             "dias_proximos": dias_proximos,
             "dias_backlog": continuidad_mod.DIAS_BACKLOG,
         })
+
+    DIAS_CERRADAS = 30
+
+    def _cerradas_fuera_de_cola(self, qs, cola, por_paciente):
+        from core import gestion_continuidad as gc
+        from pacientes.models import GestionContinuidad
+        en_cola = {(f["id"], f["evento"]["tipo"], f["evento"]["meta"]) for f in cola}
+        desde = timezone.now() - timedelta(days=self.DIAS_CERRADAS)
+        cerradas = (GestionContinuidad.objects
+                    .filter(paciente__in=qs, resuelto_en__gte=desde)
+                    .select_related("paciente", "paciente__profesional")
+                    .order_by("-resuelto_en"))
+        filas, vistos = [], set()
+        for g in cerradas:
+            clave = (g.paciente_id, g.tipo, g.meta)
+            if clave in en_cola or clave in vistos:
+                continue
+            vistos.add(clave)
+            filas.append({
+                "id": g.paciente_id,
+                "paciente": g.paciente.nombre,
+                "sede": g.paciente.sede or "",
+                "psicologo": getattr(g.paciente.profesional, "nombre", "") or "",
+                "n_sesion": None, "meta": g.meta,
+                "fecha_cierre": None, "origen_fecha": "", "estado": "cerrado", "grupo": "cerrado",
+                "dias": None, "tiene_proxima": None, "proxima_fecha": None, "ultima_sesion": None,
+                "faltantes": [], "evento": {"tipo": g.tipo, "meta": g.meta},
+                "anteriores_sin_decision": [], "contexto": "", "contexto_claves": [], "avisos": [],
+                "que_confirmar": "Sin pendiente: la condición ya no se detecta.",
+                "resuelto_en": gc._iso(g.resuelto_en),
+                "gestion": gc.resumen(g, None),
+            })
+        return filas
+
+
+class ContinuidadCasoView(APIView):
+    """GET /api/continuidad/caso/<paciente_id>/ — el detalle de UN caso, para
+    revisarlo sin salir del Centro de Continuidad.
+
+    Devuelve lo mismo que la fila de la cola más lo que no cabe en una tabla:
+    las notas de agenda que sustentan el contexto y el historial corto de
+    sesiones. Todo se recalcula en el momento desde las fuentes oficiales
+    (citas y decisiones), así que si la Agenda ya arregló el caso —se agendó la
+    próxima cita, se registró el DP— este endpoint responde `en_cola: false` y
+    la pantalla lo refleja sola. No hay copia del estado en ninguna parte.
+
+    Respeta el alcance por rol: si el caso no está dentro de lo que ese usuario
+    puede ver, responde 404 (no "prohibido": no se confirma que exista).
+    """
+
+    # Cuántas sesiones del historial se devuelven. Suficiente para entender el
+    # caso; la historia completa vive en la ficha del paciente.
+    MAX_HISTORIAL = 8
+
+    @staticmethod
+    def payload(request, paciente, visibles):
+        """El detalle completo de un caso. Lo usan GET y el PATCH de gestión,
+        para que la pantalla reciba lo mismo después de guardar."""
+        from core import gestion_continuidad as gc
+
+        cola = continuidad_mod.cola_de_continuidad(
+            visibles.filter(pk=paciente.pk), con_contexto=True)
+        fila = cola[0] if cola else None
+
+        citas = list(Cita.objects.filter(paciente=paciente)
+                     .order_by("-inicio")
+                     .values("id", "inicio", "estado", "n_sesion", "decision", "notas")
+                     [:ContinuidadCasoView.MAX_HISTORIAL])
+        historial = [{
+            "id": c["id"],
+            "fecha": timezone.localtime(c["inicio"]).date().isoformat(),
+            "estado": c["estado"],
+            "n_sesion": c["n_sesion"],
+            "decision": c["decision"] or "",
+            "notas": (c["notas"] or "").strip(),
+        } for c in citas]
+
+        # La gestión operativa se superpone al leer: nunca cambia la fila.
+        gestion = gc.gestion_de(fila) if fila is not None else gc.ultima_gestion(paciente)
+
+        return {
+            "paciente": {
+                "id": paciente.id,
+                "nombre": paciente.nombre,
+                "sede": paciente.sede or "",
+                "psicologo": getattr(paciente.profesional, "nombre", "") or "",
+                "frecuencia": paciente.frecuencia or "",
+            },
+            "en_cola": fila is not None,
+            "fila": fila,
+            "historial": historial,
+            # Las notas son texto de coordinación, no historia clínica; se muestran
+            # a quien ya puede ver el caso. La bandera queda explícita para poder
+            # restringirlo por rol más adelante sin tocar el frontend.
+            "notas_visibles": True,
+            "gestion": gc.serializar(gestion, fila),
+            "historial_gestion": gc.serializar_historial(gestion),
+            "puede_gestionar": puede_gestionar_continuidad(request.user),
+            # Hueco reservado para la iteración de WhatsApp (último contacto y
+            # estado del mensaje). Se llenará desde mensajes.Mensaje; aquí no se
+            # consulta ni se envía nada todavía.
+            "contacto": None,
+        }
+
+    def get(self, request, pk):
+        if get_clinica_actual() is None:
+            return Response({"detail": "Sin clínica en contexto."}, status=status.HTTP_400_BAD_REQUEST)
+        visibles = continuidad_mod.pacientes_del_rol(
+            Paciente.objects.del_tenant_actual(), request.user)
+        paciente = visibles.filter(pk=pk).first()
+        if paciente is None:
+            return Response({"detail": "No encontrado."}, status=status.HTTP_404_NOT_FOUND)
+        return Response(self.payload(request, paciente, visibles))
+
+
+class ContinuidadGestionView(APIView):
+    """PATCH /api/continuidad/caso/<paciente_id>/gestion/ — "Guardar seguimiento".
+
+    Acepta SOLO los cuatro campos operativos (estado_revision,
+    resultado_operativo, responsable, observacion_operativa); cualquier otra
+    clave se ignora. No toca citas, decisiones ni datos clínicos: eso vive en
+    la Agenda y aquí ni se lee para escribir.
+
+    Permisos propios (reemplazan a los globales solo en esta vista): admin,
+    coordinación, psicólogo y analista. El alcance sigue siendo el de
+    `pacientes_del_rol`: coordinación no sale de su sede, el psicólogo no toca
+    pacientes ajenos (404, no 403: no se confirma que existan).
+    """
+
+    permission_classes = [IsAuthenticated, PuedeGestionarContinuidad]
+
+    def patch(self, request, pk):
+        from core import gestion_continuidad as gc
+
+        if get_clinica_actual() is None:
+            return Response({"detail": "Sin clínica en contexto."}, status=status.HTTP_400_BAD_REQUEST)
+        visibles = continuidad_mod.pacientes_del_rol(
+            Paciente.objects.del_tenant_actual(), request.user)
+        paciente = visibles.filter(pk=pk).first()
+        if paciente is None:
+            return Response({"detail": "No encontrado."}, status=status.HTTP_404_NOT_FOUND)
+
+        datos = {c: request.data.get(c) for c in gc.CAMPOS_EDITABLES if c in request.data}
+        if not datos:
+            return Response({"detail": "Nada que guardar."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            gc.guardar(paciente, request.user, datos)
+        except gc.SinCondicion as e:
+            return Response({"detail": str(e)}, status=status.HTTP_409_CONFLICT)
+        except ValueError as e:
+            return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(ContinuidadCasoView.payload(request, paciente, visibles))
 
 
 class EliminacionRevisarView(APIView):

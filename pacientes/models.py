@@ -845,3 +845,156 @@ class RegistroEliminacion(ModeloTenant):
 
     def __str__(self):
         return f"{self.get_tipo_display()} · {self.descripcion[:40]}"
+
+
+# ---------------------------------------------------------------------------
+# Centro de Continuidad: gestión operativa de un caso.
+#
+# Guarda SOLO qué se revisó, qué falta gestionar, quién debe actuar y el
+# seguimiento. Nunca próxima cita, asistencia, sesión, psicólogo, DP, alta,
+# derivación ni estado clínico: eso se sigue leyendo de Cita/Paciente en el
+# momento (core/continuidad.py) y la gestión se le superpone al leer, jamás al
+# revés. No existe ningún campo que la cola consulte para decidir si un caso
+# está pendiente: "resuelto" aquí no silencia una condición real.
+# ---------------------------------------------------------------------------
+
+
+class GestionContinuidad(ModeloTenant):
+    """Gestión de UN evento de continuidad de un paciente.
+
+    El evento se identifica por (paciente, tipo, meta) más la cita de
+    referencia que sale de la condición detectada —la sesión 3 para el riesgo
+    S3, la sesión que cierra el bloque para un cierre, la previa mientras aún
+    no cierra—. Así el cierre 6 de un proceso y el cierre 6 de otro posterior
+    son gestiones distintas (otra cita), y el 6 y el 12 nunca se mezclan.
+    Como mucho hay UNA gestión abierta por (paciente, tipo, meta); las
+    resueltas quedan como historia y no se reutilizan.
+    """
+
+    class Tipo(models.TextChoices):
+        CIERRE_BLOQUE = "cierre_bloque", "Cierre de bloque"
+        RIESGO_S3 = "riesgo_s3", "Riesgo S3"
+
+    class Revision(models.TextChoices):
+        SIN_REVISAR = "sin_revisar", "Sin revisar"
+        EN_SEGUIMIENTO = "en_seguimiento", "En seguimiento"
+        RESUELTO = "resuelto", "Resuelto"
+
+    class Resultado(models.TextChoices):
+        PENDIENTE_REAL = "pendiente_real", "Pendiente real"
+        YA_ACTUALIZADO = "ya_actualizado", "Ya actualizado"
+        REQUIERE_CORRECCION = "requiere_correccion", "Requiere corrección"
+        REQUIERE_CONFIRMAR = "requiere_confirmar", "Requiere confirmar"
+
+    class Responsable(models.TextChoices):
+        COORDINACION = "coordinacion", "Coordinación"
+        PSICOLOGO = "psicologo", "Psicólogo"
+        DIRECCION_CLINICA = "direccion_clinica", "Dirección Clínica"
+        SISTEMA_SOPORTE = "sistema_soporte", "Sistema / soporte"
+
+    # --- referencia estable al evento (fuentes oficiales) ---
+    paciente = models.ForeignKey(Paciente, on_delete=models.PROTECT, related_name="gestiones_continuidad")
+    tipo = models.CharField(max_length=16, choices=Tipo.choices)
+    meta = models.PositiveSmallIntegerField(help_text="Bloque del evento: 3 (riesgo S3), 6, 12, 18, 24…")
+    cita_referencia = models.ForeignKey(
+        Cita, on_delete=models.SET_NULL, null=True, blank=True, related_name="gestiones_continuidad",
+        help_text="La cita que representa la condición detectada (S3, la del cierre, o la previa).",
+    )
+
+    # --- gestión operativa: lo ÚNICO que edita un humano ---
+    estado_revision = models.CharField(max_length=16, choices=Revision.choices, default=Revision.SIN_REVISAR)
+    resultado_operativo = models.CharField(max_length=24, choices=Resultado.choices, blank=True, default="")
+    responsable = models.CharField(max_length=20, choices=Responsable.choices, blank=True, default="")
+    observacion_operativa = models.TextField(
+        blank=True, default="",
+        help_text="Solo lo necesario para el seguimiento operativo. No es historia clínica.",
+    )
+
+    # --- auditoría: la escribe el sistema, nunca el formulario ---
+    revisado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="continuidad_revisadas", help_text="Quien hizo el primer guardado.",
+    )
+    revisado_en = models.DateTimeField(null=True, blank=True)
+    actualizado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="continuidad_actualizadas",
+    )
+    actualizado_en = models.DateTimeField(null=True, blank=True)
+    resuelto_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="continuidad_resueltas",
+        help_text="Vacío con resuelto_en lleno = la cerró el sistema por cambio en la fuente oficial.",
+    )
+    resuelto_en = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        verbose_name = "Gestión de continuidad"
+        verbose_name_plural = "Gestiones de continuidad"
+        ordering = ["-creado_en"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["paciente", "tipo", "meta"],
+                condition=models.Q(resuelto_en__isnull=True),
+                name="uniq_gestion_continuidad_abierta",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["clinica", "paciente"]),
+            models.Index(fields=["clinica", "estado_revision"]),
+        ]
+
+    @property
+    def abierta(self):
+        return self.resuelto_en is None
+
+    @property
+    def resuelta_por_sistema(self):
+        return self.resuelto_en is not None and self.resuelto_por_id is None
+
+    def __str__(self):
+        return f"{self.paciente_id} · {self.tipo} {self.meta} · {self.get_estado_revision_display()}"
+
+
+class HistorialContinuidad(ModeloTenant):
+    """Bitácora append-only de una gestión: qué pasó, quién y cuándo.
+
+    Calcada de EdicionAtencion. `antes`/`despues` guardan solo códigos (de los
+    choices o el id de una cita): para la observación se registra que cambió,
+    sin copiar el texto, por minimización de datos. No hay endpoint que edite
+    ni borre filas de aquí.
+    """
+
+    class Evento(models.TextChoices):
+        REVISION_INICIADA = "revision_iniciada", "Revisión iniciada"
+        ESTADO = "estado", "Estado de revisión"
+        RESULTADO = "resultado", "Resultado operativo"
+        RESPONSABLE = "responsable", "Responsable"
+        OBSERVACION = "observacion", "Observación actualizada"
+        REFERENCIA = "referencia", "Referencia del evento actualizada"
+        AUTO_RESUELTO = "auto_resuelto", "Condición resuelta automáticamente"
+        REABIERTO = "reabierto", "Condición reabierta"
+        NUEVA_CONDICION = "nueva_condicion", "Nueva condición detectada"
+
+    class Origen(models.TextChoices):
+        USUARIO = "usuario", "Usuario"
+        SISTEMA = "sistema", "Sistema"
+
+    gestion = models.ForeignKey(GestionContinuidad, on_delete=models.CASCADE, related_name="historial")
+    evento = models.CharField(max_length=20, choices=Evento.choices)
+    antes = models.CharField(max_length=60, blank=True, default="")
+    despues = models.CharField(max_length=60, blank=True, default="")
+    origen = models.CharField(max_length=8, choices=Origen.choices, default=Origen.USUARIO)
+    usuario = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="historial_continuidad", help_text="Vacío en eventos del sistema.",
+    )
+
+    class Meta:
+        verbose_name = "Historial de continuidad"
+        verbose_name_plural = "Historial de continuidad"
+        ordering = ["creado_en", "id"]
+        indexes = [models.Index(fields=["clinica", "gestion"])]
+
+    def __str__(self):
+        return f"{self.gestion_id} · {self.get_evento_display()} · {self.creado_en:%d/%m %H:%M}"
