@@ -176,6 +176,11 @@ REST_FRAMEWORK = {
     # vistas que declaran throttle_scope="captacion".
     "DEFAULT_THROTTLE_RATES": {
         "captacion": "60/min",
+        # Webhook de Evolution (líneas operativas). Más holgado que captación:
+        # una conversación activa manda un evento por mensaje y otro por cada
+        # acuse de entrega/lectura, así que 60/min se quedaría corto en un día
+        # cargado y perderíamos mensajes de pacientes.
+        "webhook_evolution": "300/min",
         # Login: sin esto, probar contraseñas hasta acertar era cuestión de tiempo.
         # El de la cuenta es el que protege de verdad: quien ataca puede cambiar
         # de IP, pero no el correo de la persona a la que quiere entrar.
