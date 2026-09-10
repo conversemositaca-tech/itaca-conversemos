@@ -8521,6 +8521,105 @@ function LegalModal({ prof, onClose, onSaved, showToast }) {
   );
 }
 
+// Semáforo de la conexión de una línea, con el vocabulario de WhatsApp (no el
+// de la API): "Conectado" dice más que "open".
+const ESTADO_LINEA = {
+  open: { texto: "Conectada", fondo: "#E9F1ED", color: "#3E7A65" },
+  connecting: { texto: "Conectando…", fondo: "#F7ECDD", color: "#9C6B2E" },
+  close: { texto: "Desconectada", fondo: "#F7E4E2", color: "#B4564E" },
+  refused: { texto: "Rechazada", fondo: "#F7E4E2", color: "#B4564E" },
+};
+
+function LineasEvolution({ showToast }) {
+  const [data, setData] = useState(null);
+  const [consultando, setConsultando] = useState(false);
+
+  useEffect(() => {
+    api.evolutionInstancias().then(setData).catch(() => setData({ instancias: [] }));
+  }, []);
+
+  // La consulta en vivo sale a internet (habla con el servidor de Evolution),
+  // así que se pide a mano: no se dispara sola al abrir la pantalla.
+  async function consultar() {
+    setConsultando(true);
+    try { setData(await api.evolutionEstado()); }
+    catch (e) { showToast("Error: " + e.message); }
+    finally { setConsultando(false); }
+  }
+
+  if (!data) return null;
+  const lineas = data.instancias || [];
+
+  const pill = (texto, fondo, color) => (
+    <span className="ca-vital" style={{ background: fondo, color }}>{texto}</span>
+  );
+
+  return (
+    <div className="ca-card" style={{ marginBottom: 18 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 4 }}>
+        <strong style={{ fontSize: 15 }}>Líneas por sede (Evolution)</strong>
+        <button className="ca-mini" disabled={consultando} onClick={consultar}>
+          {consultando ? "Consultando…" : "Consultar estado"}
+        </button>
+      </div>
+      <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 14, lineHeight: 1.5 }}>
+        Cada sede envía por su propia línea. Estas líneas las atiende Coordinación:
+        el sistema registra y manda las automatizaciones, pero <strong>no responde solo</strong>.
+      </div>
+
+      {!data.servidor_configurado && (
+        <div style={{ fontSize: 12.5, color: "#9C6B2E", background: "#F7ECDD", padding: "9px 11px", borderRadius: 8, marginBottom: 12 }}>
+          Falta configurar el servidor de Evolution en las variables de entorno.
+        </div>
+      )}
+
+      {lineas.length === 0 ? (
+        <div className="ca-empty">
+          Aún no hay líneas registradas. Se dan de alta desde el servidor
+          (<code>registrar_instancia_evolution</code>), no desde aquí.
+        </div>
+      ) : lineas.map((l) => {
+        const est = ESTADO_LINEA[l.conexion?.estado] || null;
+        return (
+          <div key={l.id} style={{ border: "1px solid var(--line)", borderRadius: 10, padding: "12px 14px", marginBottom: 10 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 9, flexWrap: "wrap" }}>
+              <MapPin size={15} strokeWidth={2} style={{ color: "var(--accent)" }} />
+              <strong style={{ fontSize: 14.5 }}>{l.sede_display || "Sin sede"}</strong>
+              <code style={{ fontFamily: "ui-monospace, monospace", fontSize: 12.5, color: "var(--ink-soft)" }}>
+                {l.instancia}
+              </code>
+              {l.activo ? pill("Activa", "#E9F1ED", "#3E7A65") : pill("Apagada", "var(--hover)", "var(--muted)")}
+              {est && pill(est.texto, est.fondo, est.color)}
+              {l.conexion && !l.conexion.ok && !est && pill("Sin respuesta", "var(--hover)", "var(--muted)")}
+            </div>
+            <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 7, lineHeight: 1.6 }}>
+              Proveedor: Evolution API · Respuestas automáticas:{" "}
+              <strong>{l.respuestas_automaticas ? "encendidas" : "apagadas"}</strong>
+              <br />
+              Último evento recibido:{" "}
+              {l.ultimo_evento_en
+                ? `${new Date(l.ultimo_evento_en).toLocaleString("es-PE", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}${l.ultimo_estado ? ` · ${l.ultimo_estado}` : ""}`
+                : "todavía ninguno"}
+              {l.webhook?.consultado && (
+                <>
+                  <br />
+                  Webhook:{" "}
+                  {l.webhook.configurado
+                    ? (l.webhook.faltan_eventos?.length
+                        ? `configurado, faltan eventos (${l.webhook.faltan_eventos.join(", ")})`
+                        : (l.webhook.apunta_aqui ? "configurado y apuntando a este sistema" : "configurado (apunta a otro destino)"))
+                    : "sin configurar"}
+                </>
+              )}
+              {l.conexion?.detalle && <><br />{l.conexion.detalle}</>}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function ConexionWhatsapp({ showToast }) {
   const [cfg, setCfg] = useState(null);
   const [agregando, setAgregando] = useState(false);
@@ -8551,11 +8650,14 @@ function ConexionWhatsapp({ showToast }) {
       <div className="ca-tophead">
         <div>
           <h1 className="ca-h1">Conexión WhatsApp</h1>
-          <div className="ca-sub">WhatsApp Cloud API · Meta</div>
+          <div className="ca-sub">Líneas por sede (Evolution) · WhatsApp Cloud API (Meta)</div>
         </div>
       </div>
 
       <div style={{ maxWidth: 740 }}>
+        {/* Líneas operativas por sede (Evolution). Solo para mirar. */}
+        <LineasEvolution showToast={showToast} />
+
         {/* Datos compartidos por todos los números (se pegan una sola vez en Meta) */}
         <div className="ca-card" style={{ marginBottom: 18 }}>
           <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 14 }}>

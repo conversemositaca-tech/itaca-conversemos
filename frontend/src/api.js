@@ -317,6 +317,10 @@ export const api = {
   whatsappConfig: () => req("/api/whatsapp/config/"),
   guardarWhatsappConfig: (data) => req("/api/whatsapp/config/", { method: "POST", body: JSON.stringify(data) }),
   borrarWhatsappNumero: (id) => req(`/api/whatsapp/config/?id=${id}`, { method: "DELETE" }),
+  // Líneas de WhatsApp por sede (Evolution API). Solo lectura: el alta y la baja
+  // de una línea se hacen fuera de la app (es una decisión de Coordinación).
+  evolutionInstancias: () => req("/api/evolution/instancias/"),
+  evolutionEstado: () => req("/api/evolution/estado/"),
   // Paquetes de sesiones prepagadas
   paquetes: (pacienteId) => req(`/api/paquetes/${pacienteId ? `?paciente=${pacienteId}` : ""}`),
   crearPaquete: (data) => req("/api/paquetes/", { method: "POST", body: JSON.stringify(data) }),
