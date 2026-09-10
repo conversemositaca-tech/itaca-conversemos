@@ -54,6 +54,11 @@ class Clinica(models.Model):
     # Token secreto para el ingreso automático de leads (URL pública de captación).
     # Identifica a la clínica en los endpoints sin sesión (web, campañas, WhatsApp).
     token_captacion = models.CharField(max_length=64, unique=True, null=True, blank=True)
+    # Token secreto del webhook de Evolution para las líneas OPERATIVAS (las de
+    # Coordinación). Es aparte del de captación a propósito: ese alimenta el flujo
+    # que responde FAQs solo, y regenerarlo no debe tumbar la bandeja de la
+    # coordinadora (ni al revés).
+    token_webhook_evolution = models.CharField(max_length=64, unique=True, null=True, blank=True)
     activo = models.BooleanField(default=True)
     creado_en = models.DateTimeField(auto_now_add=True)
 
@@ -77,6 +82,20 @@ class Clinica(models.Model):
         self.token_captacion = secrets.token_urlsafe(24)
         self.save(update_fields=["token_captacion"])
         return self.token_captacion
+
+    def asegurar_token_webhook_evolution(self):
+        """Token del webhook de Evolution operativo; se genera la primera vez."""
+        if not self.token_webhook_evolution:
+            self.token_webhook_evolution = secrets.token_urlsafe(24)
+            self.save(update_fields=["token_webhook_evolution"])
+        return self.token_webhook_evolution
+
+    def regenerar_token_webhook_evolution(self):
+        """Token nuevo: invalida el webhook anterior (hay que re-configurarlo en
+        Evolution con `configurar_webhook_evolution`)."""
+        self.token_webhook_evolution = secrets.token_urlsafe(24)
+        self.save(update_fields=["token_webhook_evolution"])
+        return self.token_webhook_evolution
 
     def asegurar_wa_verify_token(self):
         """Token de verificación del webhook de WhatsApp (se genera una vez)."""
@@ -358,3 +377,61 @@ class Recurso(ModeloTenant):
 
     def __str__(self):
         return f"{self.get_tipo_display()} · {self.titulo}"
+
+
+class InstanciaEvolution(ModeloTenant):
+    """Una instancia de Evolution API (WhatsApp no oficial) conectada a la clínica.
+
+    Es el equivalente de NumeroWhatsapp pero para Evolution: son dos proveedores
+    distintos y no comparten credenciales ni forma de enrutar, por eso son dos
+    modelos. Cada sede tiene su línea (Lima y Piura las llevan sus coordinadoras),
+    así que el envío elige la instancia por la SEDE del paciente o de la cita.
+
+    Aquí NO se guardan secretos: la URL y la API key del servidor Evolution viven
+    en el entorno (EVOLUTION_API_URL / EVOLUTION_API_KEY) y son del servidor, no
+    de la instancia. Esta tabla solo dice qué instancia atiende a qué sede.
+    """
+
+    class Sede(models.TextChoices):
+        LIMA = "lima", "Lima"
+        PIURA = "piura", "Piura"
+        AMBAS = "ambas", "Ambas sedes"
+
+    sede = models.CharField(max_length=10, choices=Sede.choices, blank=True, default="")
+    nombre_instancia = models.CharField(
+        "Instancia de Evolution", max_length=120,
+        help_text="Nombre EXACTO de la instancia en Evolution API (ej. conversemoslima).",
+    )
+    activo = models.BooleanField(default=True)
+    # Apagado a propósito: estas líneas son de Coordinación (Lima: Ayvi, Piura:
+    # Yazmín). El sistema registra y manda automatizaciones autorizadas, pero no
+    # contesta solo (ni IA ni FAQs) desde el número oficial de una persona.
+    respuestas_automaticas = models.BooleanField(
+        "Responder automáticamente", default=False,
+        help_text="Déjalo apagado: el número oficial lo atiende una persona.",
+    )
+    # Última señal de vida que mandó Evolution (connection.update o un mensaje).
+    ultimo_estado = models.CharField(max_length=30, blank=True, default="")
+    ultimo_evento_en = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        verbose_name = "Instancia de Evolution"
+        verbose_name_plural = "Instancias de Evolution"
+        ordering = ["sede", "id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["clinica", "nombre_instancia"], name="uniq_evolution_instancia"
+            ),
+            # Una sola instancia ACTIVA por sede: si hubiera dos, el envío elegiría
+            # al azar y el paciente recibiría el mensaje desde el número de la otra
+            # coordinadora. "ambas" y la sede vacía quedan fuera (son de respaldo).
+            models.UniqueConstraint(
+                fields=["clinica", "sede"], condition=models.Q(activo=True, sede__in=["lima", "piura"]),
+                name="uniq_evolution_sede_activa",
+            ),
+        ]
+        indexes = [models.Index(fields=["clinica", "sede", "activo"])]
+
+    def __str__(self):
+        etiqueta = self.get_sede_display() if self.sede else "Evolution"
+        return f"{etiqueta} · {self.nombre_instancia}"

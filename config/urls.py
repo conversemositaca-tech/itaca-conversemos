@@ -47,6 +47,8 @@ from leads.captacion import (
     RegenerarTokenView,
 )
 from mensajes.api import MensajeViewSet, PlantillaMensajeViewSet
+from mensajes.monitor_evolution import EvolutionEstadoView, EvolutionInstanciasView
+from mensajes.webhook_evolution import EvolutionWebhookView
 from pacientes.api import AdjuntoViewSet, AplicacionEscalaViewSet, AtencionViewSet, BloqueoAgendaViewSet, CitaViewSet, ContactoProfesionalViewSet, ObjetivoTerapeuticoViewSet, PacienteViewSet, RespuestaNPSViewSet, TareaViewSet, TranscribirView
 from pacientes.agendamiento import (
     AgendamientoFotoView,
@@ -125,6 +127,12 @@ urlpatterns = [
     # WhatsApp Cloud API (Meta): configuración (admin) + webhook público de Meta.
     path("api/whatsapp/config/", WhatsappConfigView.as_view(), name="whatsapp-config"),
     path("api/webhook/whatsapp", WhatsappWebhookView.as_view(), name="whatsapp-webhook"),
+    # Evolution API (líneas de Coordinación por sede): monitor (admin) + webhook
+    # público. Este webhook SOLO escucha: no responde ni crea leads (a diferencia
+    # del de captación, que sí contesta las preguntas frecuentes).
+    path("api/evolution/instancias/", EvolutionInstanciasView.as_view(), name="evolution-instancias"),
+    path("api/evolution/estado/", EvolutionEstadoView.as_view(), name="evolution-estado"),
+    path("api/webhook/evolution/<str:token>/", EvolutionWebhookView.as_view(), name="evolution-webhook"),
     path("api/finanzas/soto/", SotoResumenView.as_view(), name="finanzas-soto"),
     path("api/finanzas/soto/prueba/", SotoPruebaView.as_view(), name="finanzas-soto-prueba"),
 
