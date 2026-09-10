@@ -421,3 +421,33 @@ los feriados de Perú. Zona horaria por defecto: `America/Lima` (GMT-5).
    - **Pendiente (fuera de alcance)**: `core.whatsapp_cloud._capturar_leads` sigue **sin
      enganchar** al webhook de Meta (`WhatsappWebhookView.post` solo registra en log, como
      antes); mientras la línea oficial viva en Cloud API hay que conectarla ahí.
+30. ⏳ Centro de Continuidad (rama `feature/centro-continuidad`, 2026-09-09, SIN desplegar).
+   "Evaluar continuidad" pasa a ser una herramienta de gestión para Analista + Coordinación.
+   - **Cola** (`core/continuidad.py`): 8 estados en 3 grupos — Acción (vencido, cierra hoy,
+     **riesgo_s3**, pre-cierre sin cita), Seguimiento (próximo), Calidad (continuó sin decisión,
+     **dato_incompleto** = ninguna cita numerada, backlog). `ACCIONABLES` ya no incluye próximo.
+     **La decisión de cada cierre se evalúa contra la cita de ESE bloque** (`cita_de_sesion`,
+     `metas_cerradas`), no contra la última cita: S6 con DP + S7 sin DP no reclama nada; S6 sin
+     DP + S7 = "continuó" con meta 6. Cada fila trae `evento` = identidad estable (tipo, meta,
+     `cita_referencia` que sale de la condición, `anclas`) y `anteriores_sin_decision`.
+   - **Contexto de notas** (`core/notas_operativas.py`): resume `Cita.notas` en señales
+     operativas; NUNCA decide nada clínico (una mención de alta/derivación solo produce
+     "verificar registro formal"). `que_confirmar()` da la frase operativa.
+   - **Gestión** (`pacientes.GestionContinuidad` + `HistorialContinuidad`, migración 0034;
+     lógica en `core/gestion_continuidad.py`): estado de revisión / resultado / responsable /
+     observación + auditoría. Una gestión abierta por (paciente, tipo, meta); se crea en el
+     primer "Guardar seguimiento" (abrir el panel no escribe). **Resuelto no silencia la
+     cola**: si la fuente oficial sigue detectando el caso, se muestra la alerta. Señales en
+     `pacientes/signals.py` reconcilian al guardar/borrar citas: cierre automático con
+     historial, reapertura si la corrección se revierte; una resolución manual nunca se pisa.
+   - **Permisos**: `PuedeGestionarContinuidad` (admin, asistente, medico, **analista**) SOLO en
+     `PATCH /api/continuidad/caso/<id>/gestion/`; el analista sigue solo lectura en todo lo
+     demás (tests en `core/tests_gestion_continuidad.py`). Alcance por `pacientes_del_rol`.
+   - **Tarjeta Hoy**: `prioritarios_para_tarjeta` (un caso por categoría accionable + relleno).
+   - **PENDIENTE TÉCNICO antes de producción**: `resolver_sesion_real` usa el MÁXIMO histórico
+     de `n_sesion`; un proceso nuevo que reinicia en S1/S2/S3 tras uno anterior queda mal
+     interpretado (el riesgo S3 del segundo proceso no se detecta). Requiere propuesta aparte
+     que no rompa Hoy, Pacientes, Gerencia ni Continuidad. **No llevar a producción** hasta
+     revisarlo. WhatsApp desde Continuidad: iteración separada (hueco `contacto` en el detalle).
+   - Dev: el preview corre contra una base demo aislada (`DATABASE_URL` → sqlite en el
+     scratchpad); `db.sqlite3` local tiene 3 migraciones pendientes (0033, 0034, usuarios 0012).

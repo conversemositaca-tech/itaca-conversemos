@@ -1457,6 +1457,43 @@ export default function ClinicaApp() {
           padding:5px 13px; font-size:12.5px; font-weight:500; cursor:pointer; font-family:inherit; transition:background .12s, color .12s, border-color .12s; }
         .ca-fchip:hover { background:var(--hover); }
         .ca-fchip.on { background:var(--ink); color:#fff; border-color:var(--ink); }
+
+        /* --- Centro de Continuidad --------------------------------------- */
+        /* Los filtros se agrupan en Acción / Seguimiento / Calidad de registro
+           para que no parezcan ocho opciones igual de importantes. */
+        .cc-grupos { display:flex; gap:20px; flex-wrap:wrap; align-items:flex-start; margin:16px 0 4px; }
+        .cc-grupo { display:flex; flex-direction:column; gap:7px; }
+        .cc-grupo > .ca-fchips { margin-bottom:0; }
+        .cc-gtit { font-size:10.5px; font-weight:700; letter-spacing:.07em; text-transform:uppercase;
+          color:var(--muted); padding-left:2px; }
+        .cc-grupo.accion .cc-gtit { color:#9C4646; }
+        .cc-sep { width:1px; align-self:stretch; background:var(--line); }
+        /* La tabla puede scrollear en horizontal, pero el nombre del paciente
+           nunca se pierde: es la columna que ancla la lectura de la fila. */
+        .cc-wrap { overflow-x:auto; }
+        .cc-tabla { min-width:900px; }
+        .cc-tabla td, .cc-tabla th { vertical-align:top; }
+        .cc-tabla tbody tr { cursor:pointer; }
+        .cc-tabla tbody tr:hover { background:var(--hover); }
+        .cc-tabla tbody tr.on { background:var(--accent-soft); }
+        .cc-pac { position:sticky; left:0; z-index:1; background:var(--surface); min-width:180px; }
+        .cc-tabla tbody tr:hover .cc-pac { background:var(--hover); }
+        .cc-tabla tbody tr.on .cc-pac { background:var(--accent-soft); }
+        .cc-sub { font-size:11.5px; color:var(--muted); margin-top:2px; }
+        .cc-conf { font-size:12.5px; color:var(--ink-soft); max-width:230px; line-height:1.45; }
+        .cc-aviso { font-size:11.5px; color:#8A6D14; background:#FCF3D4; border-radius:6px;
+          padding:3px 7px; margin-top:4px; display:inline-block; line-height:1.4; }
+        /* Panel de detalle: al lado en pantalla ancha, debajo en angosta. */
+        .cc-split { display:grid; grid-template-columns:minmax(0,1fr) 340px; gap:16px; align-items:start; }
+        .cc-panel { position:sticky; top:14px; max-height:calc(100vh - 28px); overflow-y:auto; }
+        .cc-dl { display:grid; grid-template-columns:auto 1fr; gap:6px 12px; font-size:13px; }
+        .cc-dl dt { color:var(--muted); white-space:nowrap; }
+        .cc-dl dd { margin:0; font-weight:500; }
+        @media (max-width:1150px) {
+          .cc-split { grid-template-columns:minmax(0,1fr); }
+          .cc-panel { position:static; }
+          .cc-conf { max-width:none; }
+        }
         .ca-toast { position:fixed; top:22px; left:50%; transform:translateX(-50%); background:#fff; color:#343434;
           padding:12px 20px 12px 13px; border-radius:14px; font-size:14.5px; font-weight:600; z-index:9999;
           box-shadow:0 14px 40px rgba(40,38,34,.22); display:flex; align-items:center; gap:11px; min-width:210px;
@@ -3542,7 +3579,7 @@ function Hoy({ proximas, citasHoy, porConfirmar, atendidas, onOpen, onGo, onRete
 // --- Helpers de la historia clínica ---
 const numeroLimpio = (s) => { const n = Number(s); return Number.isFinite(n) ? String(n) : s; };
 
-// ---- Evaluar continuidad: la cola de cierres de bloque sin decisión ----
+// ---- Centro de Continuidad: la cola de momentos clave del proceso ----
 // Antes la tarjeta listaba TODOS los cierres sin decisión de la historia (391,
 // de los cuales 303 llevaban más de 90 días sin venir). Ahora el backend los
 // clasifica por la FECHA real del cierre y la tarjeta muestra solo el resumen
@@ -3560,21 +3597,66 @@ function etiquetaCierre(f) {
   const d = f.dias || 0;
   if (f.estado === "vencido") return { t: `${d} día${d === 1 ? "" : "s"} vencido`, bg: "#F7E5E5", fg: "#9C4646" };
   if (f.estado === "hoy") return { t: "Cierra hoy", bg: "#D7F4FA", fg: "#0A7D92" };
+  if (f.estado === "riesgo_s3") return { t: d > 0 ? `Riesgo S3 · ${d} días` : "Riesgo S3", bg: "#FBE1E1", fg: "#B23A3A" };
   if (f.estado === "proximo") return { t: d === -1 ? "Cierra mañana" : `Cierra en ${-d} días`, bg: "#E9F1ED", fg: "#3E7A65" };
-  if (f.estado === "sin_agendar") return { t: "Sin próxima cita", bg: "#F7ECDD", fg: "#9C6B2E" };
-  if (f.estado === "continuo_sin_decision") return { t: "Continuó sin decisión", bg: "#EFEDE8", fg: "#7C7870" };
+  if (f.estado === "sin_agendar") return { t: "Pre-cierre sin cita", bg: "#F7ECDD", fg: "#9C6B2E" };
+  if (f.estado === "continuo_sin_decision") return { t: `Cierre ${f.meta} sin decisión`, bg: "#EFEDE8", fg: "#7C7870" };
+  if (f.estado === "dato_incompleto") return { t: "Dato incompleto", bg: "#EDEAF3", fg: "#6B5F86" };
+  if (f.estado === "cerrado") return { t: "Condición resuelta", bg: "#E9F1ED", fg: "#3E7A65" };
   return { t: `Cierre antiguo · ${d} días`, bg: "#EFEDE8", fg: "#7C7870" };
 }
 
-const ESTADOS_COLA = [
-  { v: "accionables", l: "Requieren acción" },
-  { v: "vencido", l: "Vencidos" },
-  { v: "hoy", l: "Hoy" },
-  { v: "proximo", l: "Próximos" },
-  { v: "sin_agendar", l: "Sin próxima cita" },
-  { v: "continuo_sin_decision", l: "Continuó sin decisión" },
-  { v: "backlog", l: "Cierres antiguos" },
+// "S6/6" mientras el bloque está vigente; si el paciente ya lo pasó sin
+// decidirlo (va por la 8 y el pendiente es el cierre 6), decirlo así.
+function sesionTexto(f) {
+  if (f.n_sesion == null) return f.meta ? `bloque ${f.meta}` : "—";
+  if (f.estado === "riesgo_s3") return `S${f.n_sesion}`;
+  return f.n_sesion > f.meta ? `S${f.n_sesion} · cierre ${f.meta}` : `S${f.n_sesion}/${f.meta}`;
+}
+
+// Los filtros, agrupados por lo que exigen de quien los mira. Una brecha ya
+// abierta y un dato mal escrito no compiten por la misma atención, así que no
+// se muestran como ocho chips iguales en una sola fila.
+const GRUPOS_COLA = [
+  { g: "Acción", k: "accion", items: [
+    // Filtro general del grupo: junta las cuatro categorías de abajo.
+    { v: "accionables", l: "Todos los prioritarios" },
+    { v: "vencido", l: "Vencidos" },
+    { v: "hoy", l: "Cierra hoy" },
+    { v: "riesgo_s3", l: "Riesgo S3" },
+    { v: "sin_agendar", l: "Pre-cierre sin próxima cita" },
+  ] },
+  { g: "Seguimiento", k: "seguimiento", items: [
+    { v: "proximo", l: "Próximos 7 días" },
+  ] },
+  { g: "Calidad de registro", k: "calidad", items: [
+    { v: "continuo_sin_decision", l: "Continuó sin decisión" },
+    { v: "dato_incompleto", l: "Dato incompleto" },
+    { v: "backlog", l: "Cierres antiguos" },
+  ] },
 ];
+const ESTADOS_COLA = GRUPOS_COLA.flatMap((g) => g.items);
+
+// Gestión operativa del caso (Parte 2). Solo qué se revisó, qué falta y quién
+// actúa: nada de agenda ni de decisiones clínicas, que siguen en sus fuentes.
+const REVISION_OPCIONES = [
+  { v: "sin_revisar", l: "Sin revisar", bg: "#EFEDE8", fg: "#7C7870" },
+  { v: "en_seguimiento", l: "En seguimiento", bg: "#FCF3D4", fg: "#8A6D14" },
+  { v: "resuelto", l: "Resuelto", bg: "#E9F1ED", fg: "#3E7A65" },
+];
+const RESULTADO_OPCIONES = [
+  { v: "pendiente_real", l: "Pendiente real" },
+  { v: "ya_actualizado", l: "Ya actualizado" },
+  { v: "requiere_correccion", l: "Requiere corrección" },
+  { v: "requiere_confirmar", l: "Requiere confirmar" },
+];
+const RESPONSABLE_OPCIONES = [
+  { v: "coordinacion", l: "Coordinación" },
+  { v: "psicologo", l: "Psicólogo" },
+  { v: "direccion_clinica", l: "Dirección Clínica" },
+  { v: "sistema", l: "Sistema / soporte" },
+];
+const etiquetaDe = (lista, v) => lista.find((o) => o.v === v)?.l || "";
 
 function NumeroConEtiqueta({ n, label, bg, fg }) {
   return (
@@ -3585,14 +3667,15 @@ function NumeroConEtiqueta({ n, label, bg, fg }) {
 }
 
 function ContinuidadCard({ c, onOpen, onGo }) {
-  const historial = (c.continuo_sin_decision || 0) + (c.backlog || 0);
+  // Calidad de registro: no compite con la operación del día, pero sigue a un clic.
+  const historial = (c.continuo_sin_decision || 0) + (c.dato_incompleto || 0) + (c.backlog || 0);
   if (!c.accionables) {
     // Estado vacío: nada que hacer hoy. El historial sigue a un clic, sin ocupar la pantalla.
     return (
       <div className="ca-card" style={{ marginTop: 14, borderColor: "#CDE8F0", background: "#F4FBFD", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
         <Activity size={15} strokeWidth={2} style={{ color: "var(--accent)" }} />
-        <span style={{ fontSize: 14, fontWeight: 600 }}>Evaluar continuidad</span>
-        <span style={{ fontSize: 13, color: "var(--muted)" }}>· sin cierres pendientes esta semana ✓</span>
+        <span style={{ fontSize: 14, fontWeight: 600 }}>Centro de Continuidad</span>
+        <span style={{ fontSize: 13, color: "var(--muted)" }}>· nada que atender esta semana ✓</span>
         {historial > 0 && <button className="ca-mini" style={{ marginLeft: "auto" }} onClick={() => onGo("continuidad")}>Ver historial ({historial})</button>}
       </div>
     );
@@ -3601,14 +3684,20 @@ function ContinuidadCard({ c, onOpen, onGo }) {
     <div className="ca-card" style={{ marginTop: 14, borderColor: "#CDE8F0", background: "#F4FBFD" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap", marginBottom: 10 }}>
         <Activity size={15} strokeWidth={2} style={{ color: "var(--accent)" }} />
-        <span style={{ fontSize: 14, fontWeight: 600 }}>Evaluar continuidad</span>
-        <span style={{ fontSize: 12.5, color: "var(--muted)" }}>· cierres de bloque (sesión 6, 12…) sin decisión registrada</span>
+        <span style={{ fontSize: 14, fontWeight: 600 }}>Centro de Continuidad</span>
+        <span style={{ fontSize: 12.5, color: "var(--muted)" }}>· momentos clave del proceso sin decisión registrada</span>
       </div>
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+      {/* Primero lo que pide acción; el seguimiento va detrás y más tenue. */}
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12, alignItems: "center" }}>
         {c.vencidos > 0 && <NumeroConEtiqueta n={c.vencidos} label={c.vencidos === 1 ? "vencido" : "vencidos"} bg="#F7E5E5" fg="#9C4646" />}
         {c.hoy > 0 && <NumeroConEtiqueta n={c.hoy} label={c.hoy === 1 ? "cierra hoy" : "cierran hoy"} bg="#D7F4FA" fg="#0A7D92" />}
-        {c.proximos > 0 && <NumeroConEtiqueta n={c.proximos} label={`próximos ${c.dias_proximos} días`} bg="#E9F1ED" fg="#3E7A65" />}
-        {c.sin_agendar > 0 && <NumeroConEtiqueta n={c.sin_agendar} label="a una sesión, sin cita" bg="#F7ECDD" fg="#9C6B2E" />}
+        {c.riesgo_s3 > 0 && <NumeroConEtiqueta n={c.riesgo_s3} label="en riesgo S3" bg="#FBE1E1" fg="#B23A3A" />}
+        {c.sin_agendar > 0 && <NumeroConEtiqueta n={c.sin_agendar} label="pre-cierre, sin cita" bg="#F7ECDD" fg="#9C6B2E" />}
+        {c.proximos > 0 && (
+          <span style={{ fontSize: 12, color: "var(--muted)" }}>
+            + {c.proximos} en los próximos {c.dias_proximos} días
+          </span>
+        )}
       </div>
       <div style={{ background: "var(--surface)", borderRadius: 10, border: "1px solid var(--line)", overflowX: "auto" }}>
         <table className="ca-table">
@@ -3617,7 +3706,7 @@ function ContinuidadCard({ c, onOpen, onGo }) {
             {c.prioritarios.map((f) => { const e = etiquetaCierre(f); return (
               <tr key={f.id}>
                 <td><button className="ca-pnamebtn" onClick={() => onOpen(f.id)}>{f.paciente}</button></td>
-                <td style={{ fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>S{f.n_sesion}/{f.meta}</td>
+                <td style={{ fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>{sesionTexto(f)}</td>
                 <td style={{ color: "var(--ink-soft)" }}>{f.psicologo || "—"}</td>
                 <td><Tag colors={{ bg: e.bg, fg: e.fg }}>{e.t}</Tag></td>
               </tr>
@@ -3629,14 +3718,260 @@ function ContinuidadCard({ c, onOpen, onGo }) {
         <button className="ca-btn" onClick={() => onGo("continuidad")}>
           Ver todos los pendientes{c.accionables > c.prioritarios.length ? ` (+${c.accionables - c.prioritarios.length})` : ""}
         </button>
+        {/* La calidad de registro no es prioridad del día: se menciona en una
+            línea para que exista, sin competir con los casos de arriba. */}
         {historial > 0 && (
           <span style={{ fontSize: 12, color: "var(--muted)" }}>
-            Calidad de registro: {c.continuo_sin_decision > 0 ? `${c.continuo_sin_decision} continuaron sin decisión` : ""}
-            {c.continuo_sin_decision > 0 && c.backlog > 0 ? " · " : ""}
-            {c.backlog > 0 ? `${c.backlog} cierres antiguos` : ""} — no compiten con lo de hoy.
+            Calidad de registro: {historial} caso{historial === 1 ? "" : "s"}, aparte de la prioridad de hoy.
           </span>
         )}
       </div>
+    </div>
+  );
+}
+
+const SEDE_LABEL = { lima: "Lima", piura: "Piura" };
+
+// Panel de detalle de UN caso. Lo que no cabe en la fila: la situación en
+// palabras, los datos estructurados, las notas de agenda que sustentan el
+// contexto y qué toca confirmar. Se recalcula en el servidor cada vez que se
+// abre, así que refleja la Agenda y las decisiones tal como están AHORA.
+// Fecha y hora cortas para la auditoría de gestión: "09 sep · 22:27".
+function fechaHoraCorta(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  const hh = String(d.getHours()).padStart(2, "0"), mm = String(d.getMinutes()).padStart(2, "0");
+  return `${String(d.getDate()).padStart(2, "0")} ${MESES_CORTOS_COLA[d.getMonth()]} · ${hh}:${mm}`;
+}
+
+const GESTION_VACIA = { estado_revision: "sin_revisar", resultado_operativo: "", responsable: "", observacion_operativa: "" };
+const gestionAForm = (g) => (g ? {
+  estado_revision: g.estado_revision, resultado_operativo: g.resultado_operativo || "",
+  responsable: g.responsable || "", observacion_operativa: g.observacion_operativa || "",
+} : GESTION_VACIA);
+
+function ContinuidadDetalle({ id, onCerrar, onOpen, showToast, onGestionGuardada }) {
+  const [caso, setCaso] = useState(null);
+  const [error, setError] = useState("");
+  const [verNotas, setVerNotas] = useState(false);
+  // Gestión del caso: el formulario arranca con lo guardado (o vacío).
+  const [gestion, setGestion] = useState(GESTION_VACIA);
+  const [guardando, setGuardando] = useState(false);
+  const setG = (k, v) => setGestion((g) => ({ ...g, [k]: v }));
+
+  useEffect(() => {
+    let vivo = true;
+    setCaso(null); setError(""); setVerNotas(false); setGestion(GESTION_VACIA);
+    api.continuidadCaso(id)
+      .then((d) => { if (vivo) { setCaso(d); setGestion(gestionAForm(d.gestion)); } })
+      .catch((e) => { if (vivo) { setError(e.message); showToast("Error: " + e.message); } });
+    return () => { vivo = false; };
+  }, [id]);
+
+  const f = caso?.fila;
+  const e = f ? etiquetaCierre(f) : null;
+  const conNota = (caso?.historial || []).filter((h) => h.notas);
+  const g = caso?.gestion;
+  const puedeGestionar = !!caso?.puede_gestionar;
+  const sinCambios = JSON.stringify(gestion) === JSON.stringify(gestionAForm(g));
+
+  const guardar = () => {
+    if (guardando) return;
+    setGuardando(true);
+    api.continuidadGuardarGestion(id, gestion)
+      .then((d) => {
+        setCaso(d); setGestion(gestionAForm(d.gestion));
+        showToast("Seguimiento guardado");
+        // La fila de la tabla se actualiza sin recargar nada.
+        onGestionGuardada?.(id, d.gestion, d.en_cola);
+      })
+      .catch((err) => showToast("No se pudo guardar: " + err.message))
+      .finally(() => setGuardando(false));
+  };
+
+  return (
+    <div className="ca-card cc-panel">
+      <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 10 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 14.5, fontWeight: 600, lineHeight: 1.3 }}>
+            {caso?.paciente?.nombre || "Cargando…"}
+          </div>
+          {caso && (
+            <div className="cc-sub">
+              {SEDE_LABEL[caso.paciente.sede] || "Sin sede"} · {caso.paciente.psicologo || "Sin psicólogo asignado"}
+            </div>
+          )}
+        </div>
+        <button className="ca-mini" onClick={onCerrar} title="Cerrar"><X size={13} strokeWidth={2} /></button>
+      </div>
+
+      {error && <div className="ca-empty">No se pudo cargar el caso.</div>}
+      {!caso && !error && <div className="ca-empty">Cargando…</div>}
+
+      {caso && !caso.en_cola && (
+        <div style={{ background: "#E9F1ED", color: "#3E7A65", borderRadius: 9, padding: "10px 12px", fontSize: 13, lineHeight: 1.5 }}>
+          <strong>Ya no está pendiente.</strong> La Agenda o la historia clínica se
+          actualizaron (se agendó la próxima cita o se registró la decisión), así que
+          el caso salió solo de la cola.
+        </div>
+      )}
+
+      {caso && f && (
+        <>
+          {/* Situación detectada, en una frase. */}
+          <div style={{ marginBottom: 12 }}>
+            <div className="ca-label" style={{ marginBottom: 5 }}>Situación detectada</div>
+            <Tag colors={{ bg: e.bg, fg: e.fg }}>{e.t}</Tag>
+            <div style={{ fontSize: 13, color: "var(--ink-soft)", marginTop: 7, lineHeight: 1.5 }}>
+              {f.estado === "riesgo_s3"
+                ? `Llegó a la sesión ${f.n_sesion} y no tiene próxima cita agendada.`
+                : f.fecha_cierre
+                  ? `La sesión ${f.meta} ${f.dias > 0 ? "se realizó" : f.dias === 0 ? "es" : "está agendada para"} el ${fechaCortaISO(f.fecha_cierre)}.`
+                  : `Va por la sesión ${f.n_sesion} de un bloque de ${f.meta}.`}
+              {" "}Sin decisión registrada.
+              {!f.tiene_proxima && " Sin próxima cita."}
+            </div>
+          </div>
+
+          {/* Datos estructurados: cada uno viene de su modelo oficial. */}
+          <div style={{ marginBottom: 12 }}>
+            <div className="ca-label" style={{ marginBottom: 6 }}>Datos</div>
+            <dl className="cc-dl">
+              <dt>Sesión</dt>
+              <dd>
+                {f.estado === "riesgo_s3" ? f.n_sesion : f.n_sesion > f.meta ? `${f.n_sesion} (pendiente el cierre ${f.meta})` : `${f.n_sesion} de ${f.meta}`}
+                {f.anteriores_sin_decision?.length > 0 && (
+                  <div className="cc-sub">También sin decidir: cierre {f.anteriores_sin_decision.join(", ")}</div>
+                )}
+              </dd>
+              <dt>Última sesión</dt><dd>{f.ultima_sesion ? fechaCortaISO(f.ultima_sesion) : "—"}</dd>
+              <dt>Próxima cita</dt>
+              <dd style={{ color: f.proxima_fecha ? "#3E7A65" : "#9C4646" }}>
+                {f.proxima_fecha ? fechaCortaISO(f.proxima_fecha) : "Sin agendar"}
+              </dd>
+              <dt>Decisión</dt><dd style={{ color: "#9C4646" }}>Sin registrar</dd>
+            </dl>
+          </div>
+
+          {/* Contexto de notas. Nunca decide: solo resume y, si la nota roza algo
+              clínico, pide verificar el registro formal. */}
+          <div style={{ marginBottom: 12 }}>
+            <div className="ca-label" style={{ marginBottom: 6 }}>Contexto de las notas</div>
+            {f.contexto_claves?.length ? (
+              <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
+                {f.contexto.split(" / ").map((t) => (
+                  <Tag key={t} colors={{ bg: "#EFEDE8", fg: "#6B6760" }}>{t}</Tag>
+                ))}
+              </div>
+            ) : (
+              <div style={{ fontSize: 12.5, color: "var(--muted)" }}>Sin señales en las notas de agenda.</div>
+            )}
+            {(f.avisos || []).map((a) => <div key={a} className="cc-aviso">⚠ {a}</div>)}
+            {caso.notas_visibles && conNota.length > 0 && (
+              <>
+                <button className="ca-mini" style={{ marginTop: 8 }} onClick={() => setVerNotas(!verNotas)}>
+                  {verNotas ? "Ocultar" : `Ver notas originales (${conNota.length})`}
+                </button>
+                {verNotas && (
+                  <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 7 }}>
+                    {conNota.map((h) => (
+                      <div key={h.id} style={{ fontSize: 12.5, lineHeight: 1.5, borderLeft: "2px solid var(--line)", paddingLeft: 9 }}>
+                        <span style={{ color: "var(--muted)" }}>{fechaCortaISO(h.fecha)}{h.n_sesion ? ` · S${h.n_sesion}` : ""}</span>
+                        <div style={{ color: "var(--ink-soft)" }}>{h.notas}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+
+          {/* Qué confirmar: apoyo operativo. No es una decisión clínica ni un DP. */}
+          <div style={{ background: "#F4FBFD", border: "1px solid #CDE8F0", borderRadius: 9, padding: "10px 12px" }}>
+            <div className="ca-label" style={{ marginBottom: 4 }}>Qué confirmar</div>
+            <div style={{ fontSize: 13.2, lineHeight: 1.5 }}>{f.que_confirmar}</div>
+            <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 6, lineHeight: 1.45 }}>
+              Apoyo operativo. La decisión clínica (código DP) se registra en la Agenda,
+              por quien tiene permiso.
+            </div>
+          </div>
+
+          {/* Gestión del caso: qué se revisó, qué falta y quién actúa. Es lo
+              único que Continuidad guarda; lo demás sigue viniendo de Agenda. */}
+          <div style={{ marginTop: 14, paddingTop: 12, borderTop: "1px solid var(--line)" }}>
+            <div className="ca-label" style={{ marginBottom: 8 }}>Gestión del caso</div>
+            {/* "Resuelto" aquí no silencia la cola: si la fuente oficial sigue
+                detectando el caso, se dice en rojo y el caso no desaparece. */}
+            {g?.alerta && (
+              <div style={{ background: "#F7E5E5", color: "#9C4646", borderRadius: 8, padding: "8px 10px", fontSize: 12.5, lineHeight: 1.45, marginBottom: 10, display: "flex", gap: 7 }}>
+                <AlertTriangle size={14} strokeWidth={2} style={{ flexShrink: 0, marginTop: 1 }} />
+                <span>{g.alerta}</span>
+              </div>
+            )}
+            <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "8px 10px", alignItems: "center", fontSize: 13 }}>
+              <span style={{ color: "var(--muted)" }}>Estado de revisión</span>
+              <select className="ca-input" disabled={!puedeGestionar} value={gestion.estado_revision} onChange={(ev) => setG("estado_revision", ev.target.value)}>
+                {REVISION_OPCIONES.map((o) => <option key={o.v} value={o.v}>{o.l}</option>)}
+              </select>
+              <span style={{ color: "var(--muted)" }}>Resultado operativo</span>
+              <select className="ca-input" disabled={!puedeGestionar} value={gestion.resultado_operativo} onChange={(ev) => setG("resultado_operativo", ev.target.value)}>
+                <option value="">Seleccionar</option>
+                {RESULTADO_OPCIONES.map((o) => <option key={o.v} value={o.v}>{o.l}</option>)}
+              </select>
+              <span style={{ color: "var(--muted)" }}>Responsable</span>
+              <select className="ca-input" disabled={!puedeGestionar} value={gestion.responsable} onChange={(ev) => setG("responsable", ev.target.value)}>
+                <option value="">Seleccionar</option>
+                {RESPONSABLE_OPCIONES.map((o) => <option key={o.v} value={o.v}>{o.l}</option>)}
+              </select>
+            </div>
+            <textarea className="ca-input" rows={2} placeholder="Observación (opcional)" disabled={!puedeGestionar}
+              style={{ marginTop: 8, width: "100%", resize: "vertical", fontFamily: "inherit" }}
+              value={gestion.observacion_operativa} onChange={(ev) => setG("observacion_operativa", ev.target.value)} />
+            <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 4 }}>
+              Registra solo información necesaria para el seguimiento operativo.
+            </div>
+            {puedeGestionar ? (
+              <button className="ca-btn" style={{ marginTop: 8, width: "100%" }} onClick={guardar}
+                disabled={guardando || sinCambios} title={sinCambios ? "Sin cambios por guardar" : ""}>
+                {guardando ? "Guardando…" : "Guardar seguimiento"}
+              </button>
+            ) : (
+              <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 8 }}>Solo lectura para tu perfil.</div>
+            )}
+            <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 6, lineHeight: 1.5 }}>
+              {g?.actualizado_en ? (
+                <>Última actualización: <strong style={{ color: "var(--ink-soft)" }}>{g.actualizado_por || "—"}</strong> · {fechaHoraCorta(g.actualizado_en)}</>
+              ) : "Última actualización: —"}
+              {g?.resuelto_en && (
+                <div>Resuelto: {g.resuelta_por_sistema ? "Sistema" : g.resuelto_por || "—"} · {fechaHoraCorta(g.resuelto_en)}</div>
+              )}
+            </div>
+          </div>
+
+          {/* Historial de gestión: qué pasó, quién y cuándo. Solo códigos: la
+              observación aparece como "actualizada", nunca con su texto. */}
+          {(caso.historial_gestion || []).length > 0 && (
+            <div style={{ marginTop: 14, paddingTop: 12, borderTop: "1px solid var(--line)" }}>
+              <div className="ca-label" style={{ marginBottom: 8 }}>Historial de gestión</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+                {caso.historial_gestion.slice().reverse().map((h) => (
+                  <div key={h.id} style={{ fontSize: 12.5, lineHeight: 1.45, borderLeft: `2px solid ${h.origen === "sistema" ? "#CDE8F0" : "var(--line)"}`, paddingLeft: 9 }}>
+                    <div style={{ color: "var(--muted)" }}>{fechaHoraCorta(h.fecha)}</div>
+                    <div>
+                      <span style={{ fontWeight: 600, color: h.origen === "sistema" ? "#0A7D92" : "var(--ink)" }}>{h.usuario}</span>
+                      <span style={{ color: "var(--ink-soft)" }}> · {h.texto}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <button className="ca-btn" style={{ marginTop: 12, width: "100%" }} onClick={() => onOpen(f.id)}>
+            Abrir ficha del paciente <ChevronRight size={13} strokeWidth={2} />
+          </button>
+        </>
+      )}
     </div>
   );
 }
@@ -3646,8 +3981,10 @@ function ContinuidadPendientes({ onOpen, onVolver, showToast, esMedico, esAsiste
   const [sede, setSede] = useState("");
   const [medico, setMedico] = useState("");
   const [bloque, setBloque] = useState("");
+  const [revision, setRevision] = useState("");   // gestión: sin revisar / en seguimiento / resueltos / mi atención
   const [datos, setDatos] = useState(null);
   const [profesionales, setProfesionales] = useState([]);
+  const [caso, setCaso] = useState(null);   // paciente abierto en el panel de detalle
 
   useEffect(() => {
     if (esMedico) return;
@@ -3657,40 +3994,142 @@ function ContinuidadPendientes({ onOpen, onVolver, showToast, esMedico, esAsiste
   useEffect(() => {
     let vivo = true;
     setDatos(null);
-    api.continuidadPendientes({ estado, sede, medico, bloque })
+    api.continuidadPendientes({ estado, sede, medico, bloque, revision })
       .then((d) => { if (vivo) setDatos(d); })
       .catch((e) => showToast("Error: " + e.message));
     return () => { vivo = false; };
-  }, [estado, sede, medico, bloque]);
+  }, [estado, sede, medico, bloque, revision]);
 
   const filas = datos?.filas || [];
   const conteo = datos?.conteo || {};
   const etiquetaEstado = ESTADOS_COLA.find((x) => x.v === estado)?.l || "";
-  const headers = ["Paciente", "Sede", "Psicólogo", "Sesión", "Fecha de cierre", "Días pendiente", "Estado", "Próxima cita"];
+  const headers = ["Paciente", "Sede", "Psicólogo", "Sesión", "Fecha de cierre", "Días pendiente", "Estado", "Próxima cita", "Contexto", "Qué confirmar"];
   const filasExport = filas.map((f) => [
-    f.paciente, f.sede, f.psicologo, `${f.n_sesion}/${f.meta}`, f.fecha_cierre || "",
-    f.dias != null && f.dias > 0 ? f.dias : "", etiquetaCierre(f).t, f.tiene_proxima ? "Sí" : "No",
+    f.paciente, SEDE_LABEL[f.sede] || "", f.psicologo, sesionTexto(f), f.fecha_cierre || "",
+    f.dias != null && f.dias > 0 ? f.dias : "", etiquetaCierre(f).t, f.proxima_fecha || "No",
+    f.contexto || "", f.que_confirmar || "",
   ]);
+
+  // El detalle se cierra solo si el caso deja de estar en la lista visible.
+  useEffect(() => {
+    if (caso != null && datos && !filas.some((f) => f.id === caso)) setCaso(null);
+  }, [datos]);
+
+  const tabla = (
+    <>
+      {!datos ? <div className="ca-empty">Cargando…</div> : filas.length === 0 ? (
+        <div className="ca-empty">{estado === "accionables" ? "Nada pendiente esta semana ✓" : "Ningún paciente con ese filtro."}</div>
+      ) : (
+        <div className="ca-card cc-wrap" style={{ padding: 0 }}>
+          <table className="ca-table cc-tabla">
+            <thead>
+              {/* Orden por prioridad de lectura: paciente, situación, revisión y
+                  responsable van primero; lo demás queda accesible con scroll. */}
+              <tr>
+                <th className="cc-pac">Paciente</th>
+                <th>Situación</th><th>Revisión</th><th>Responsable</th>
+                <th>Sesión</th><th>Cierre</th><th>Próxima cita</th>
+                <th>Contexto</th><th>Qué confirmar</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filas.map((f) => { const e = etiquetaCierre(f); const rv = REVISION_OPCIONES.find((o) => o.v === (f.gestion?.estado_revision || "sin_revisar")); return (
+                <tr key={f.id} className={caso === f.id ? "on" : ""}
+                    onClick={() => setCaso(caso === f.id ? null : f.id)}>
+                  <td className="cc-pac">
+                    <div style={{ fontWeight: 600 }}>{f.paciente}</div>
+                    {/* Lo que falta se marca en ámbar, pero no baja la urgencia
+                        del caso: sigue en su grupo. */}
+                    <div className="cc-sub">
+                      <span style={f.sede ? undefined : { color: "#9C6B2E" }}>{SEDE_LABEL[f.sede] || "Sin sede"}</span>
+                      {" · "}
+                      <span style={f.psicologo ? undefined : { color: "#9C6B2E" }}>{f.psicologo || "Sin psicólogo"}</span>
+                    </div>
+                  </td>
+                  <td><Tag colors={{ bg: e.bg, fg: e.fg }}>{e.t}</Tag></td>
+                  <td style={{ whiteSpace: "nowrap" }}>
+                    <Tag colors={{ bg: rv.bg, fg: rv.fg }}>{rv.l}</Tag>
+                    {f.gestion?.alerta && (
+                      <div className="cc-sub" style={{ color: "#9C4646" }} title="Gestión marcada como resuelta, pero la condición detectada sigue pendiente.">
+                        ⚠ condición sigue pendiente
+                      </div>
+                    )}
+                    {f.gestion?.resuelta_por_sistema && !f.gestion?.alerta && (
+                      <div className="cc-sub">por el sistema</div>
+                    )}
+                  </td>
+                  <td style={{ whiteSpace: "nowrap", fontSize: 13 }}>
+                    {f.gestion?.responsable ? etiquetaDe(RESPONSABLE_OPCIONES, f.gestion.responsable) : <span style={{ color: "var(--muted)" }}>—</span>}
+                  </td>
+                  <td style={{ fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>
+                    {sesionTexto(f)}
+                    {f.anteriores_sin_decision?.length > 0 && (
+                      <div className="cc-sub" title="Cierres anteriores que tampoco tienen decisión">
+                        + cierre {f.anteriores_sin_decision.join(", ")} sin decidir
+                      </div>
+                    )}
+                  </td>
+                  <td style={{ whiteSpace: "nowrap" }}>
+                    {f.fecha_cierre ? fechaCortaISO(f.fecha_cierre) : "—"}
+                    {f.dias != null && f.dias > 0 && <div className="cc-sub">{f.dias} días</div>}
+                  </td>
+                  <td style={{ whiteSpace: "nowrap" }}>
+                    {f.proxima_fecha
+                      ? <span style={{ color: "#3E7A65", fontWeight: 600 }}>{fechaCortaISO(f.proxima_fecha)}</span>
+                      : <span style={{ color: "#9C4646" }}>Sin agendar</span>}
+                  </td>
+                  <td>
+                    {f.contexto
+                      ? <span style={{ fontSize: 12.5, color: "var(--ink-soft)" }}>{f.contexto}</span>
+                      : <span style={{ color: "var(--muted)" }}>—</span>}
+                    {(f.avisos || []).length > 0 && (
+                      <div className="cc-aviso" title={f.avisos.join(" · ")}>⚠ Verificar registro</div>
+                    )}
+                  </td>
+                  <td className="cc-conf">{f.que_confirmar}</td>
+                </tr>
+              ); })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </>
+  );
 
   return (
     <div>
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 4 }}>
         <button className="ca-mini" onClick={onVolver}>← Hoy</button>
-        <h1 className="ca-h1" style={{ margin: 0 }}>Evaluar continuidad</h1>
+        <h1 className="ca-h1" style={{ margin: 0 }}>Centro de Continuidad</h1>
         <div style={{ marginLeft: "auto" }}>
-          <ExportBtns nombre="continuidad" titulo="Evaluar continuidad" headers={headers} filas={filasExport}
+          <ExportBtns nombre="continuidad" titulo="Centro de Continuidad" headers={headers} filas={filasExport}
             disabled={!filas.length} contexto={etiquetaEstado} showToast={showToast} />
         </div>
       </div>
-      <div className="ca-sub">Cierres de bloque (sesión 6, 12, 18…) sin decisión registrada. Primero lo vencido, después lo de hoy, después lo que viene.</div>
+      <div className="ca-sub">Detecta, prioriza y da seguimiento a pacientes en momentos clave de su proceso.</div>
 
-      <div className="ca-fchips" style={{ marginTop: 16 }}>
-        {ESTADOS_COLA.map((e) => (
-          <button key={e.v} className={`ca-fchip ${estado === e.v ? "on" : ""}`} onClick={() => setEstado(e.v)}>
-            {e.l}{conteo[e.v] != null ? ` · ${conteo[e.v]}` : ""}
-          </button>
+      {/* Filtros agrupados: acción, seguimiento y calidad de registro no piden
+          lo mismo de quien los mira, así que no se ven igual. */}
+      <div className="cc-grupos">
+        {GRUPOS_COLA.map((g, i) => (
+          <React.Fragment key={g.k}>
+            {i > 0 && <div className="cc-sep" />}
+            <div className={`cc-grupo ${g.k}`}>
+              <div className="cc-gtit">
+                {g.g}{conteo[g.k] != null ? ` · ${conteo[g.k]}` : ""}
+              </div>
+              <div className="ca-fchips">
+                {g.items.map((e) => (
+                  <button key={e.v} className={`ca-fchip ${estado === e.v ? "on" : ""}`} onClick={() => setEstado(e.v)}>
+                    {e.l}{conteo[e.v] != null ? ` · ${conteo[e.v]}` : ""}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </React.Fragment>
         ))}
       </div>
+
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14 }}>
         {!esAsistente && (
           <select className="ca-input" style={{ width: "auto" }} value={sede} onChange={(e) => setSede(e.target.value)}>
@@ -3707,37 +4146,43 @@ function ContinuidadPendientes({ onOpen, onVolver, showToast, esMedico, esAsiste
           <option value="">Todos los bloques</option>
           {[6, 12, 18, 24].map((b) => <option key={b} value={b}>Cierre en sesión {b}</option>)}
         </select>
+        {/* Gestión: filtra por lo que el equipo ya hizo con el caso, no por la
+            condición (esa va en los chips de arriba). */}
+        <select className="ca-input" style={{ width: "auto" }} value={revision} onChange={(e) => setRevision(e.target.value)}>
+          <option value="">Toda la gestión</option>
+          <option value="sin_revisar">Sin revisar</option>
+          <option value="en_seguimiento">En seguimiento</option>
+          <option value="resuelto">Resueltos</option>
+          <option value="atencion">Requiere mi atención</option>
+        </select>
+        {filas.length > 0 && (
+          <span style={{ fontSize: 12.5, color: "var(--muted)", alignSelf: "center" }}>
+            {filas.length} caso{filas.length === 1 ? "" : "s"} · clic en una fila para ver el detalle
+          </span>
+        )}
       </div>
 
-      {!datos ? <div className="ca-empty">Cargando…</div> : filas.length === 0 ? (
-        <div className="ca-empty">{estado === "accionables" ? "Nada pendiente esta semana ✓" : "Ningún paciente con ese filtro."}</div>
-      ) : (
-        <div className="ca-card" style={{ padding: 0, overflowX: "auto" }}>
-          <table className="ca-table">
-            <thead>
-              <tr><th>Paciente</th><th>Sede</th><th>Psicólogo</th><th>Sesión</th><th>Fecha de cierre</th><th className="num">Días</th><th>Estado</th><th>Próxima cita</th></tr>
-            </thead>
-            <tbody>
-              {filas.map((f) => { const e = etiquetaCierre(f); return (
-                <tr key={f.id}>
-                  <td><button className="ca-pnamebtn" onClick={() => onOpen(f.id)}>{f.paciente}</button></td>
-                  <td>{f.sede === "lima" ? "Lima" : f.sede === "piura" ? "Piura" : "—"}</td>
-                  <td style={{ color: "var(--ink-soft)" }}>{f.psicologo || "—"}</td>
-                  <td style={{ fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>S{f.n_sesion}/{f.meta}</td>
-                  <td style={{ whiteSpace: "nowrap" }}>{f.fecha_cierre ? fechaCortaISO(f.fecha_cierre) : "—"}</td>
-                  <td className="num">{f.dias != null && f.dias > 0 ? f.dias : "—"}</td>
-                  <td><Tag colors={{ bg: e.bg, fg: e.fg }}>{e.t}</Tag></td>
-                  <td>{f.tiene_proxima ? <span style={{ color: "#3E7A65", fontWeight: 600 }}>Sí</span> : <span style={{ color: "#9C4646" }}>No</span>}</td>
-                </tr>
-              ); })}
-            </tbody>
-          </table>
+      {caso != null ? (
+        <div className="cc-split">
+          {tabla}
+          <ContinuidadDetalle id={caso} onCerrar={() => setCaso(null)} onOpen={onOpen} showToast={showToast}
+            onGestionGuardada={(id, g) => setDatos((d) => d && ({
+              ...d,
+              filas: d.filas.map((f) => f.id === id ? { ...f, gestion: g && {
+                estado_revision: g.estado_revision, responsable: g.responsable,
+                resultado_operativo: g.resultado_operativo, alerta: !!g.alerta,
+                resuelta_por_sistema: g.resuelta_por_sistema,
+              } } : f),
+            }))} />
         </div>
-      )}
-      <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 12, lineHeight: 1.5 }}>
-        Un paciente sale de esta lista cuando coordinación registra la decisión (código DP) en su última cita realizada, desde la Agenda.
-        «Cierres antiguos» son los de hace más de {datos?.dias_backlog || 90} días — casi todos heredados del sistema anterior, donde ese código no existía.
-        «Continuó sin decisión» es calidad de registro, no riesgo: el paciente siguió viniendo, pero nadie anotó qué se decidió.
+      ) : tabla}
+
+      <div style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 14, lineHeight: 1.6 }}>
+        Esta vista se actualiza automáticamente cuando cambia la agenda, se registra
+        una decisión o se completa información pendiente.
+        <div style={{ marginTop: 3 }}>
+          Los casos de calidad de registro se mantienen separados de los riesgos actuales.
+        </div>
       </div>
     </div>
   );

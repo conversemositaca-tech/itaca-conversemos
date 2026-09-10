@@ -34,6 +34,36 @@ def ve_finanzas(user):
     return getattr(user, "rol", None) in ROLES_VEN_FINANZAS
 
 
+# Roles que pueden guardar la GESTIÓN OPERATIVA de un caso del Centro de
+# Continuidad (estado de revisión, resultado, responsable, observación). Es la
+# única escritura permitida al analista (Dirección Clínica): el resto de la
+# API sigue cerrada para ese rol por BloqueoEscrituraAnalista. El alcance por
+# sede/paciente lo pone la vista con core.continuidad.pacientes_del_rol.
+ROLES_GESTION_CONTINUIDAD = ("admin", "asistente", "medico", "analista")
+
+
+def puede_gestionar_continuidad(user):
+    return getattr(user, "rol", None) in ROLES_GESTION_CONTINUIDAD
+
+
+class PuedeGestionarContinuidad(BasePermission):
+    """Excepción ACOTADA de escritura para el Centro de Continuidad.
+
+    Se declara como `permission_classes` propia de la vista de gestión, así que
+    REEMPLAZA a las globales (IsAuthenticated + BloqueoEscrituraAnalista) solo
+    ahí. Por eso el analista puede guardar seguimiento en ese endpoint y en
+    ningún otro: citas, pacientes, DP, historia clínica y dinero siguen
+    bloqueados para ese rol. Ver usuarios/tests_analista.py y
+    core/tests_gestion_continuidad.py.
+    """
+
+    message = "Tu perfil no puede gestionar casos de continuidad."
+
+    def has_permission(self, request, view):
+        return bool(request.user and request.user.is_authenticated
+                    and puede_gestionar_continuidad(request.user))
+
+
 class BloqueoEscrituraAnalista(BasePermission):
     """Cierra POST/PUT/PATCH/DELETE para los roles de solo lectura.
 
