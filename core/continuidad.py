@@ -15,51 +15,64 @@ FIN_BLOQUE_SIN_DECISION = "fin_bloque_sin_decision"
 _ESTADOS_ASISTIDOS = ("asistio", "atendida")
 
 
-def resolver_sesion_real(max_n_sesion, conteo_asistidas):
+def resolver_sesion_real(ultimo_n_sesion, conteo_asistidas):
     """La regla de una sola línea que decide la sesión real, ya con los dos
-    agregados calculados (el N° de sesión más alto entre las citas asistidas,
-    y cuántas se asistieron en total). Separada de `sesion_real` para que
-    tanto el cálculo en Python sobre una lista (`sesion_real`, ficha de un
-    paciente) como el cálculo en SQL sobre muchos pacientes a la vez
-    (core.gerencia, la pantalla "Hoy") usen exactamente la misma regla."""
-    return max_n_sesion if max_n_sesion else (conteo_asistidas or 0)
+    agregados calculados (el N° de sesión de la cita asistida MÁS RECIENTE que
+    lo trae, y cuántas se asistieron en total). Separada de `sesion_real` para
+    que tanto el cálculo en Python sobre una lista (`sesion_real`, ficha de un
+    paciente) como el cálculo agrupado sobre muchos pacientes a la vez
+    (core.gerencia, la pantalla "Hoy") usen exactamente la misma regla.
+
+    OJO: es el de la cita MÁS RECIENTE, no el más alto de toda la historia —
+    `n_sesion` se reinicia cada vez que el paciente empieza un proceso nuevo
+    (`Paciente.proceso`: primero, segundo…). Tomar el máximo histórico hacía
+    que un paciente en su proceso "segundo" (sesión 2) apareciera con la
+    sesión 6 de su "primero" ya cerrado — verificado en producción el 9 sep:
+    81 de 391 pacientes de la cola de continuidad estaban así de mal, algunos
+    marcados "backlog" (sesión 6/6, cerrado hace meses) cuando en realidad
+    estaban recién empezando un proceso nuevo."""
+    return ultimo_n_sesion if ultimo_n_sesion else (conteo_asistidas or 0)
 
 
 def sesion_real(citas):
-    """La sesión más avanzada que YA ocurrió, calculada de las citas —no del
-    contador manual del paciente (`Paciente.n_sesion`), que solo se mueve si
-    alguien usa a propósito "Registrar sesión" y en la práctica se queda en 0
-    para la mayoría (auditado: 210 de 324 pacientes activos mostraban 0 pese a
-    tener asistencia real, y `evaluar()` no dispara ninguna alerta si el valor
-    es 0 — la alerta de continuidad dependía de ese paso manual).
+    """La sesión más avanzada del proceso ACTUAL, calculada de las citas —no
+    del contador manual del paciente (`Paciente.n_sesion`), que solo se mueve
+    si alguien usa a propósito "Registrar sesión" y en la práctica se queda en
+    0 para la mayoría (auditado: 210 de 324 pacientes activos mostraban 0 pese
+    a tener asistencia real, y `evaluar()` no dispara ninguna alerta si el
+    valor es 0 — la alerta de continuidad dependía de ese paso manual).
 
-    Prioriza el N° de sesión que ya trae la cita más avanzada (Cita.n_sesion,
-    que sí se llena la mayoría de las veces); si ninguna cita asistida lo
-    trae, cuenta cuántas se asistieron como respaldo."""
-    asistidas = [c for c in citas if c.estado in _ESTADOS_ASISTIDOS]
-    con_numero = [c.n_sesion for c in asistidas if c.n_sesion]
-    return resolver_sesion_real(max(con_numero) if con_numero else None, len(asistidas))
+    Toma el N° de sesión de la cita asistida MÁS RECIENTE que lo trae (no el
+    más alto de toda la historia: ver la nota en `resolver_sesion_real` sobre
+    por qué el máximo se rompe entre un proceso y el siguiente). Si ninguna
+    trae número, cuenta cuántas se asistieron como respaldo."""
+    asistidas = sorted((c for c in citas if c.estado in _ESTADOS_ASISTIDOS), key=lambda c: c.inicio)
+    ultimo_con_numero = next((c.n_sesion for c in reversed(asistidas) if c.n_sesion), None)
+    return resolver_sesion_real(ultimo_con_numero, len(asistidas))
 
 
 def sesion_real_por_pacientes(paciente_ids):
-    """Como `sesion_real`, pero para muchos pacientes a la vez: una sola consulta
-    agrupada en vez de una por paciente (el mismo cálculo que ya usaba
-    core.gerencia para la pantalla "Hoy", ahora reutilizable).
+    """Como `sesion_real`, pero para muchos pacientes a la vez: una sola
+    consulta para todos (agrupada en Python, no una por paciente) — el mismo
+    cálculo que ya usaba core.gerencia para la pantalla "Hoy", ahora
+    reutilizable.
 
     Devuelve {paciente_id: sesión_real}. Un paciente sin ninguna cita asistida
     no aparece en el dict — usar `.get(id, 0)`."""
-    from django.db.models import Count, Max
-
     from pacientes.models import Cita
 
     ids = [i for i in paciente_ids if i is not None]
     if not ids:
         return {}
-    agregado = (
-        Cita.objects.filter(paciente_id__in=ids, estado__in=_ESTADOS_ASISTIDOS)
-        .values("paciente_id").annotate(max_n=Max("n_sesion"), total=Count("id"))
-    )
-    return {a["paciente_id"]: resolver_sesion_real(a["max_n"], a["total"]) for a in agregado}
+    por_paciente = {}
+    for c in (Cita.objects.filter(paciente_id__in=ids, estado__in=_ESTADOS_ASISTIDOS)
+              .values("paciente_id", "n_sesion").order_by("paciente_id", "inicio")):
+        por_paciente.setdefault(c["paciente_id"], []).append(c["n_sesion"])
+    resultado = {}
+    for pid, numeros in por_paciente.items():
+        ultimo_con_numero = next((n for n in reversed(numeros) if n), None)
+        resultado[pid] = resolver_sesion_real(ultimo_con_numero, len(numeros))
+    return resultado
 
 
 def sesion_real_de_paciente(paciente):
