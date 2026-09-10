@@ -20,9 +20,36 @@ class Mensaje(ModeloTenant):
         MANUAL = "manual", "Mensaje manual"
 
     class Estado(models.TextChoices):
+        # Los tres primeros son los de siempre: NO cambiar sus valores, la
+        # bitácora vieja los tiene guardados así.
         ENVIADO = "enviado", "Enviado"
         FALLIDO = "fallido", "Falló"
         NO_CONFIGURADO = "no_configurado", "Sin WhatsApp"
+        # Los que agrega el webhook de Evolution: el ciclo de vida real del
+        # mensaje (lo que se ve como ✓, ✓✓ y ✓✓ azul en el celular).
+        RECIBIDO = "recibido", "Recibido"
+        ENTREGADO = "entregado", "Entregado"
+        LEIDO = "leido", "Leído"
+
+    class Proveedor(models.TextChoices):
+        META = "meta", "WhatsApp Cloud (Meta)"
+        EVOLUTION = "evolution", "Evolution API"
+        MANUAL = "manual", "Manual (wa.me)"
+
+    class Direccion(models.TextChoices):
+        SALIENTE = "saliente", "Enviado"
+        ENTRANTE = "entrante", "Recibido"
+
+    # Orden del ciclo de vida de un mensaje SALIENTE. Sirve para que un acuse que
+    # llega tarde o desordenado no haga retroceder el estado (WhatsApp manda los
+    # acuses por su cuenta: el "leído" puede llegar antes que el "entregado").
+    # Los estados que no están aquí (fallido, no_configurado, recibido) no entran
+    # en la comparación: no son parte de esa escalera.
+    ORDEN_ESTADO = {
+        Estado.ENVIADO: 1,
+        Estado.ENTREGADO: 2,
+        Estado.LEIDO: 3,
+    }
 
     paciente = models.ForeignKey(
         "pacientes.Paciente", on_delete=models.SET_NULL, related_name="mensajes", null=True, blank=True
@@ -38,15 +65,68 @@ class Mensaje(ModeloTenant):
     enviado_por = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, related_name="mensajes", null=True, blank=True
     )
+    # --- Trazabilidad (agregado con las instancias de Evolution por sede) ---
+    # Los mensajes anteriores a este cambio quedan con proveedor vacío: no se
+    # puede saber a posteriori por dónde salieron, y adivinar sería peor que
+    # dejarlo en blanco.
+    proveedor = models.CharField(max_length=12, choices=Proveedor.choices, blank=True, default="")
+    direccion = models.CharField(max_length=10, choices=Direccion.choices,
+                                 default=Direccion.SALIENTE)
+    sede = models.CharField(max_length=10, blank=True, default="")
+    instancia = models.CharField("Instancia / línea", max_length=120, blank=True, default="",
+                                 help_text="Instancia de Evolution que envió o recibió el mensaje.")
+    # Id que le pone WhatsApp al mensaje (key.id). Es la llave para casar los
+    # acuses de entrega y para no procesar dos veces el mismo evento.
+    external_message_id = models.CharField(max_length=180, blank=True, default="")
+    error_codigo = models.CharField(max_length=40, blank=True, default="")
+    actualizado_en = models.DateTimeField(auto_now=True)
 
     class Meta:
         verbose_name = "Mensaje"
         verbose_name_plural = "Mensajes"
         ordering = ["-creado_en"]
-        indexes = [models.Index(fields=["clinica", "-creado_en"])]
+        indexes = [
+            models.Index(fields=["clinica", "-creado_en"]),
+            models.Index(fields=["clinica", "external_message_id"]),
+        ]
+        constraints = [
+            # La deduplicación la sostiene la BASE DE DATOS, no un `if` en Python:
+            # Evolution reintenta el webhook cuando no le respondemos rápido, y dos
+            # reintentos a la vez pasarían cualquier chequeo previo. Los mensajes
+            # sin id (los históricos, los que fallaron antes de salir) quedan fuera
+            # del constraint.
+            models.UniqueConstraint(
+                fields=["clinica", "external_message_id"],
+                condition=~models.Q(external_message_id=""),
+                name="uniq_mensaje_external_id",
+            ),
+        ]
 
     def __str__(self):
         return f"{self.get_tipo_display()} · {self.telefono} · {self.estado}"
+
+    def avanzar_estado(self, nuevo, *, detalle="", error_codigo=""):
+        """Mueve el estado hacia adelante en la escalera enviado→entregado→leído.
+
+        Devuelve True si guardó. Un acuse que llega tarde (el "entregado" después
+        del "leído") NO retrocede el estado: en la bitácora quedaría como si el
+        paciente no hubiera leído algo que ya leyó.
+        """
+        if nuevo not in self.ORDEN_ESTADO:
+            return False
+        actual = self.ORDEN_ESTADO.get(self.estado, 0)
+        if self.ORDEN_ESTADO[nuevo] <= actual:
+            return False
+        self.estado = nuevo
+        campos = ["estado", "actualizado_en"]
+        if detalle:
+            self.detalle = detalle[:300]
+            campos.append("detalle")
+        if error_codigo:
+            self.error_codigo = error_codigo[:40]
+            campos.append("error_codigo")
+        self.save(update_fields=campos)
+        return True
 
 
 class PlantillaMensaje(ModeloTenant):

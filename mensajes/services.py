@@ -3,7 +3,8 @@
 Orden de envío:
 1. WhatsApp Cloud API (Meta) eligiendo el número por la SEDE del paciente,
    si hay un número configurado en "Conexión WhatsApp".
-2. Evolution API, si la Cloud API no está configurada.
+2. Evolution API, si la Cloud API no está configurada, eligiendo también la
+   instancia por la SEDE (Lima y Piura tienen su propia línea).
 3. Enlace wa.me de respaldo (lo arma quien recibe el resultado) cuando ninguno
    envió de forma automática.
 """
@@ -50,7 +51,11 @@ def registrar_y_enviar(clinica, *, telefono, texto, tipo, paciente=None, cita=No
     if usuario is not None and es_solo_lectura(usuario):
         raise PermissionDenied("Tu perfil es de solo lectura: no puede enviar mensajes.")
     sede = sede or _sede_de(paciente, cita)
+    # Meta sigue primero cuando está configurado (no cambia el orden de la
+    # cascada Meta → Evolution → wa.me); Evolution ahora manda por la línea de
+    # la SEDE del paciente, no por una única instancia global.
     if cloud_api.esta_configurado(clinica, sede):
+        proveedor = Mensaje.Proveedor.META
         if plantilla is not None and plantilla.wa_template_nombre:
             params = params_plantilla(plantilla, paciente=paciente, cita=cita, clinica=clinica)
             resultado = cloud_api.enviar_plantilla(
@@ -59,7 +64,14 @@ def registrar_y_enviar(clinica, *, telefono, texto, tipo, paciente=None, cita=No
         else:
             resultado = cloud_api.enviar_texto(clinica, telefono, texto, sede=sede)
     else:
-        resultado = enviar_evolution(clinica, telefono, texto)
+        proveedor = Mensaje.Proveedor.EVOLUTION
+        # Una respuesta automática (las preguntas frecuentes que se le contestan
+        # a un lead) NO puede salir por el número oficial de una coordinadora:
+        # quien escribe desde ese número es ella. Sigue saliendo por la línea de
+        # captación, que es la que está para eso.
+        automatico = tipo == Mensaje.Tipo.AUTOMATICO
+        resultado = enviar_evolution(clinica, telefono, texto, sede=sede,
+                                     automatico=automatico)
 
     mensaje = Mensaje.objects.create(
         clinica=clinica,
@@ -71,6 +83,12 @@ def registrar_y_enviar(clinica, *, telefono, texto, tipo, paciente=None, cita=No
         estado=resultado["estado"],
         detalle=resultado.get("detalle", "")[:300],
         enviado_por=usuario,
+        proveedor=proveedor,
+        direccion=Mensaje.Direccion.SALIENTE,
+        sede=sede or "",
+        instancia=(resultado.get("instancia") or "")[:120],
+        external_message_id=(resultado.get("external_message_id") or "")[:180],
+        error_codigo=(resultado.get("error_codigo") or "")[:40],
     )
     wa_url = wa_link(telefono, texto) if resultado["estado"] != "enviado" else None
     return mensaje, resultado, wa_url

@@ -3,11 +3,12 @@
 Uso:
     python manage.py test_whatsapp 51904301391
     python manage.py test_whatsapp 51904301391 --texto "Hola, prueba"
+    python manage.py test_whatsapp 51904301391 --sede lima
 """
 from django.core.management.base import BaseCommand
 
 from core.models import Clinica
-from mensajes.evolution import enviar_texto, esta_configurado, normalizar_numero
+from mensajes.evolution import enviar_texto, esta_configurado, instancia_para, normalizar_numero
 
 
 class Command(BaseCommand):
@@ -19,6 +20,8 @@ class Command(BaseCommand):
             "--texto",
             default="✅ Prueba de WhatsApp desde el sistema de Clínica San Rafael. ¡Funciona!",
         )
+        parser.add_argument("--sede", default="", choices=["", "lima", "piura"],
+                            help="Envía por la línea de esa sede (si está configurada).")
 
     def handle(self, *args, **options):
         clinica = Clinica.objects.filter(slug="san-rafael").first() or Clinica.objects.first()
@@ -26,12 +29,16 @@ class Command(BaseCommand):
             self.stderr.write("No hay ninguna clínica. Corre primero: python manage.py seed_demo")
             return
 
+        sede = options["sede"]
+        elegida = instancia_para(clinica, sede)
         self.stdout.write(f"Clínica:            {clinica.nombre}")
-        self.stdout.write(f"WhatsApp configurado: {esta_configurado(clinica)}")
+        self.stdout.write(f"Sede:               {sede or '(sin sede)'}")
+        self.stdout.write(f"Instancia:          {elegida.nombre_instancia if elegida else '(legacy / entorno)'}")
+        self.stdout.write(f"WhatsApp configurado: {esta_configurado(clinica, sede)}")
         self.stdout.write(f"Número normalizado:  {normalizar_numero(options['numero'])}")
         self.stdout.write("Enviando…")
 
-        resultado = enviar_texto(clinica, options["numero"], options["texto"])
+        resultado = enviar_texto(clinica, options["numero"], options["texto"], sede=sede)
 
         estado = resultado.get("estado")
         detalle = resultado.get("detalle", "")
