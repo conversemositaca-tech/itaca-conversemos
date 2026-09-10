@@ -202,12 +202,36 @@ def pacientes_del_rol(queryset, usuario):
     return queryset
 
 
+def _tramo_proceso_actual(asistidas_ordenadas):
+    """El tramo final de citas asistidas (diccionarios con "n_sesion", ya
+    ordenadas por fecha) que pertenece al proceso EN CURSO: desde la última
+    vez que el número volvió a bajar —el paciente empezó un proceso nuevo
+    (Paciente.proceso: primero, segundo…)— hasta la más reciente. Sin ningún
+    reinicio, es la lista completa.
+
+    Sin esto, buscar "la cita que trae el número del cierre" (más abajo, en
+    `_fecha_de_cierre`) podía encontrar la del proceso ANTERIOR si compartía el
+    mismo número de bloque (dos "sesión 6", una de cada proceso) — verificado
+    en producción el 9 sep."""
+    inicio, maximo = 0, None
+    for i, c in enumerate(asistidas_ordenadas):
+        n = c["n_sesion"]
+        if not n:
+            continue
+        if maximo is not None and n < maximo:
+            inicio, maximo = i, n
+        else:
+            maximo = max(maximo or 0, n)
+    return asistidas_ordenadas[inicio:]
+
+
 def _fecha_de_cierre(asistidas, futuras, meta, n):
     """Cuándo ocurrió —o va a ocurrir— la sesión que cierra el bloque.
 
     Devuelve (fecha, de_dónde_salió). El número de sesión solo dice "va por la
     6"; para saber si eso fue hoy, hace un mes o pasa el jueves hay que mirar
-    la fecha de esa cita.
+    la fecha de esa cita. `asistidas` debe ser solo el tramo del proceso
+    actual (ver `_tramo_proceso_actual`), no toda la historia.
     """
     for c in asistidas:                        # 1) la cita que trae el número del cierre
         if c["n_sesion"] and c["n_sesion"] == meta:
@@ -273,8 +297,12 @@ def cola_de_continuidad(pacientes, hoy=None, dias_proximos=None, dias_backlog=No
         citas = asistidas.get(pid, [])
         if not citas:
             continue
-        con_numero = [c["n_sesion"] for c in citas if c["n_sesion"]]
-        n = resolver_sesion_real(max(con_numero) if con_numero else None, len(citas))
+        # `citas` ya viene ordenada por fecha (ver el fetch de `asistidas` más
+        # arriba): el ÚLTIMO número que trae, no el más alto de la historia —
+        # ver la nota en `resolver_sesion_real` sobre por qué el máximo se
+        # rompe cuando el paciente ya tuvo un proceso anterior.
+        ultimo_con_numero = next((c["n_sesion"] for c in reversed(citas) if c["n_sesion"]), None)
+        n = resolver_sesion_real(ultimo_con_numero, len(citas))
         if n <= 0:
             continue
         # La decisión de la última cita realizada es la que cierra la alerta.
@@ -295,7 +323,7 @@ def cola_de_continuidad(pacientes, hoy=None, dias_proximos=None, dias_backlog=No
                                None, bool(proximas), ultima_sesion, migrado))
             continue
 
-        fecha, origen = _fecha_de_cierre(citas, proximas, meta, n)
+        fecha, origen = _fecha_de_cierre(_tramo_proceso_actual(citas), proximas, meta, n)
         if fecha is None:
             filas.append(_fila(r, n, meta, None, origen, EstadoCierre.SIN_AGENDAR,
                                None, bool(proximas), ultima_sesion, migrado))

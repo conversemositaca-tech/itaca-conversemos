@@ -85,6 +85,62 @@ decisión, no de a quién hay que llamar hoy.
   cita", 29% de "Vencidos" y 12% de "Continuó sin decisión" — por eso se
   muestra en cualquier estado, no solo ahí.
 
+## Segundo hallazgo (10 sep): el número de sesión se reinicia por proceso
+
+Mirai pidió cruzar las notas manuales que escribe coordinación ("s5/6",
+"s20/24"...) contra el `n_sesion` que guarda el sistema, para verificar que
+coincidan. De 1.319 citas con ese patrón de nota:
+
+| | |
+|---|---|
+| Coinciden con el sistema | 734 |
+| El sistema dice OTRO número | 447 (**431 son del volcado de AgendaPro**, 16 son citas nativas) |
+| El sistema no tiene ningún número guardado | 39 |
+
+Las 431 discrepancias de AgendaPro se explican solas: la nota preserva la
+numeración ORIGINAL de AgendaPro (acumulada de por vida, ej. "SEXTO PROCESO
+S31/36" = su sesión 31 de toda la vida), mientras que el importador guardó
+`n_sesion` relativo al proceso actual (ese mismo caso: `n_sesion=1`, primera
+del sexto proceso). No es un error, son dos convenciones de numeración
+distintas. **Las 16 nativas sí son discrepancias reales** (mayormente off-by-one
+entre lo que anotó coordinación y lo que quedó en el sistema) — quedan para
+que alguien de coordinación las revise, no ameritan un cambio de código.
+
+Pero al construir esa comparación apareció algo más serio: **`n_sesion` se
+reinicia cada vez que el paciente empieza un proceso nuevo** (`Paciente.proceso`:
+primero, segundo, tercero…) y `resolver_sesion_real()` tomaba el **máximo de
+TODA la historia**, no el del proceso en curso. Un paciente que terminó su
+primer proceso (sesión 6) hace 90 días y ya va en la sesión 2 de su segundo
+proceso aparecía como "sesión 6, cerrado hace 90 días" — es decir, se veía
+como backlog viejo cuando en realidad recién está empezando de nuevo.
+
+Verificado en producción, recalculando la cola completa con el criterio
+correcto (el número de la cita asistida MÁS RECIENTE, no el más alto):
+
+| | Antes (bug) | Corregido |
+|---|---|---|
+| Hoy | 2 | 2 |
+| Vencidos | 31 | 34 |
+| Próximos | 11 | 12 |
+| Sin próxima cita | 78 | 81 |
+| Continuó sin decisión | 73 | 72 |
+| **Cierres antiguos (backlog)** | **265** | **155** |
+| **Total en la cola** | **460** | **356** |
+
+**104 pacientes salieron de la cola por completo** (estaban ahí solo por el
+error de cálculo: en realidad van bien, recién empezando un proceso nuevo).
+Y 17 pacientes que el bug tenía escondidos en "backlog" (baja prioridad)
+resultaron ser casos urgentes de verdad — la mayoría pasó a "vencido" o
+"próximo", uno incluso debería haberse visto como "cierra hoy". El bug no solo
+inflaba la cola: escondía casos reales detrás de ruido histórico.
+
+Arreglado en `core/continuidad.py`: `resolver_sesion_real()` ahora usa el N°
+de sesión de la cita MÁS RECIENTE (no el máximo histórico), y `_fecha_de_cierre()`
+solo busca dentro del tramo del proceso actual (`_tramo_proceso_actual()`) —
+sin esto último, la búsqueda de "la cita que cierra el bloque" podía encontrar
+la del proceso ANTERIOR si compartía el mismo número (dos "sesión 6", una de
+cada proceso).
+
 ## Lo que sigue siendo decisión de Gaby / Dirección Clínica, no de código
 
 - Si el backlog heredado (277 casos, casi todos de antes del 15 jul) se cierra
