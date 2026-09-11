@@ -3,7 +3,7 @@
     python manage.py seed_plantillas
 
 Idempotente: solo crea las plantillas que falten (por clave); no pisa las editadas.
-Variables disponibles: {nombre} {psicologo} {fecha} {hora} {n_sesion} {sede} {clinica}
+Variables disponibles: {nombre} {psicologo} {fecha} {hora} {n_sesion} {sede} {clinica} {coordinadora}
 """
 from django.core.management.base import BaseCommand
 
@@ -37,6 +37,36 @@ PLANTILLAS = [
      "¡Feliz cumpleaños, {nombre}! 🎉🎂 En {clinica} te deseamos un día lleno de bienestar y "
      "momentos felices. Gracias por confiar en nosotros para cuidar tu salud emocional. "
      "¡Un fuerte abrazo! 🌿"),
+    # --- Contacto desde el Centro de Continuidad ---
+    # Una por motivo: no es lo mismo escribirle a quien se quedó en la sesión 3
+    # que a quien está por cerrar su proceso. El sistema elige según la condición
+    # detectada; coordinación puede editar el texto antes de enviarlo.
+    # Todas las firma quien escribe ({coordinadora}).
+    ("continuidad_sin_cita", "Continuidad · sin próxima cita",
+     "Hola {nombre} \U0001F60A\n\nSoy {coordinadora}, del equipo de {clinica}.\n\n"
+     "Queríamos saber cómo continúas con tu proceso psicológico y si deseas "
+     "agendar tu próxima sesión.\n\n¿Te gustaría que revisemos horarios disponibles?"),
+    ("continuidad_riesgo_s3", "Continuidad · riesgo de abandono (S3)",
+     "Hola {nombre} \U0001F60A\n\nSoy {coordinadora}, del equipo de {clinica}.\n\n"
+     "Queríamos saber cómo te has sentido estos días y si deseas continuar con "
+     "tus sesiones. Los primeros encuentros suelen ser los más difíciles, y "
+     "estamos aquí para acompañarte a tu ritmo.\n\n"
+     "¿Te gustaría que veamos juntos un horario para tu próxima sesión?"),
+    ("continuidad_pre_cierre", "Continuidad · cerca del cierre de bloque",
+     "Hola {nombre} \U0001F60A\n\nSoy {coordinadora}, del equipo de {clinica}.\n\n"
+     "Estás por llegar a un momento importante de tu proceso con {psicologo}, "
+     "y queríamos coordinar contigo la sesión de cierre para conversar cómo "
+     "continúa tu acompañamiento.\n\n¿Qué día te queda mejor?"),
+    ("continuidad_proceso_anterior", "Continuidad · retomar proceso anterior",
+     "Hola {nombre} \U0001F60A\n\nSoy {coordinadora}, del equipo de {clinica}.\n\n"
+     "Esperamos que estés bien. Queríamos saber cómo te encuentras y si te "
+     "gustaría retomar tu espacio terapéutico. Tu proceso sigue aquí cuando "
+     "decidas continuarlo.\n\n¿Te gustaría que revisemos horarios disponibles?"),
+    # Texto genérico de respaldo (el que usaba la primera versión del módulo).
+    ("continuidad_confirmar", "Continuidad · confirmación general",
+     "Hola {nombre} \U0001F60A\n\nSoy {coordinadora}, del equipo de {clinica}.\n\n"
+     "Queríamos saber cómo continúas con tu proceso psicológico y si deseas "
+     "agendar tu próxima sesión.\n\n¿Te gustaría que revisemos horarios disponibles?"),
     # Acompañamiento "Eli" (mismas que la migración mensajes 0005).
     ("eli_recontacto", "Eli · Recontacto lead",
      "Hola {nombre} ✨ gracias por escribirnos. Sabemos que no siempre es fácil buscar ayuda, y valoramos "

@@ -18,14 +18,18 @@ async function req(url, options = {}) {
   const res = await fetch(url, { credentials: "same-origin", ...options, headers });
   if (!res.ok) {
     let detalle = `Error ${res.status}`;
+    let data = null;
     try {
-      const data = await res.json();
+      data = await res.json();
       detalle = data.detail || JSON.stringify(data);
     } catch {
       // respuesta sin cuerpo JSON
     }
     const err = new Error(detalle);
     err.status = res.status;
+    // El cuerpo completo, para quien necesite más que el mensaje (por ejemplo,
+    // el texto listo para copiar cuando la sede no tiene línea de WhatsApp).
+    err.data = data;
     throw err;
   }
   if (res.status === 204) return null;
@@ -194,6 +198,17 @@ export const api = {
   // mismo detalle que continuidadCaso, ya actualizado.
   continuidadGuardarGestion: (id, datos) =>
     req(`/api/continuidad/caso/${id}/gestion/`, { method: "PATCH", body: JSON.stringify(datos) }),
+  // Contacto por WhatsApp del caso. El GET solo muestra lo que se enviaría
+  // (motivo, línea de la sede, plantilla ya rellenada): no escribe ni envía.
+  continuidadContactoPreview: (id) => req(`/api/continuidad/caso/${id}/whatsapp/`),
+  continuidadEnviarWhatsapp: (id, datos) =>
+    req(`/api/continuidad/caso/${id}/whatsapp/`, { method: "POST", body: JSON.stringify(datos) }),
+  // La coordinadora clasifica lo que contestó el paciente; el sistema no lo interpreta.
+  continuidadRegistrarRespuesta: (id, respuesta) =>
+    req(`/api/continuidad/caso/${id}/whatsapp/respuesta/`, { method: "POST", body: JSON.stringify({ respuesta }) }),
+  // Sin línea conectada: deja rastro de que el mensaje se copió para enviarlo a mano.
+  continuidadRegistrarCopiado: (id) =>
+    req(`/api/continuidad/caso/${id}/whatsapp/copiado/`, { method: "POST" }),
   marcarEliminacionRevisada: (id) => req(`/api/eliminaciones/${id}/revisar/`, { method: "POST" }),
   marcarTodasEliminacionesRevisadas: () => req("/api/eliminaciones/revisar-todas/", { method: "POST" }),
   gerenciaResumen: (periodo, sede) => req(`/api/gerencia/resumen/?periodo=${periodo || "mes"}${sede ? `&sede=${sede}` : ""}`),

@@ -3757,6 +3757,552 @@ const gestionAForm = (g) => (g ? {
   responsable: g.responsable || "", observacion_operativa: g.observacion_operativa || "",
 } : GESTION_VACIA);
 
+// ── Compositor de WhatsApp ──────────────────────────────────────────────────
+// El marco es Conversemos (celeste, superficies blancas, líneas suaves). Los
+// colores de WhatsApp viven SOLO dentro de la previsualización: ahí sirven para
+// que la coordinadora reconozca al instante que eso es lo que verá la paciente.
+// Fuera de ese recuadro, la pantalla es del sistema.
+const WA_CSS = `
+.wam-fondo{position:fixed;inset:0;background:rgba(52,52,52,.42);display:flex;
+  align-items:center;justify-content:center;z-index:140;padding:18px}
+.wam{background:var(--surface);border-radius:14px;width:100%;max-width:860px;
+  max-height:92vh;display:flex;flex-direction:column;overflow:hidden;
+  border:1px solid var(--line);box-shadow:0 16px 44px rgba(10,125,146,.16)}
+
+/* Cabecera: a quién le escribo y por dónde sale. Es lo que evita el error caro. */
+.wam-top{background:var(--accent-soft);border-bottom:1px solid var(--line);
+  padding:13px 16px;display:flex;align-items:flex-start;gap:12px}
+.wam-top-t{font-size:15px;font-weight:600;color:var(--ink);line-height:1.2}
+.wam-top-sub{font-size:12.5px;color:var(--ink-soft);margin-top:3px;line-height:1.5}
+.wam-top-sub strong{color:var(--ink);font-weight:600}
+.wam-x{background:none;border:none;color:var(--muted);cursor:pointer;padding:4px;
+  border-radius:7px;flex-shrink:0;display:flex}
+.wam-x:hover{background:rgba(255,255,255,.7);color:var(--ink)}
+
+/* Dos columnas en escritorio; una sola en móvil, compositor primero. */
+.wam-grid{display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:0;
+  overflow:hidden;flex:1;min-height:0}
+.wam-col{padding:15px 16px;overflow-y:auto}
+.wam-col.prev{background:var(--bg);border-left:1px solid var(--line)}
+@media (max-width:820px){
+  .wam-grid{grid-template-columns:1fr;overflow-y:auto}
+  .wam-col{overflow:visible}
+  .wam-col.prev{border-left:none;border-top:1px solid var(--line)}
+}
+
+.wam-rot{font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;
+  color:var(--muted);margin-bottom:6px}
+.wam-motivo{background:var(--hover);border:1px solid var(--line);border-radius:9px;
+  padding:9px 11px;font-size:12.6px;line-height:1.5;color:var(--ink-soft);margin-bottom:14px}
+.wam-txt{width:100%;resize:vertical;font-family:inherit;font-size:13.2px;line-height:1.55;
+  padding:11px 12px;border:1px solid var(--line);border-radius:9px;background:var(--surface);
+  color:var(--ink)}
+.wam-txt:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(10,125,146,.12)}
+.wam-cuenta{display:flex;justify-content:space-between;align-items:center;
+  font-size:11.5px;color:var(--muted);margin-top:5px}
+
+/* Adjunto */
+.wam-adj{display:flex;align-items:center;gap:8px;margin-top:12px;flex-wrap:wrap}
+.wam-chip{display:flex;align-items:center;gap:8px;border:1px solid var(--line);
+  border-radius:9px;padding:6px 8px;background:var(--surface)}
+.wam-chip img{width:38px;height:38px;border-radius:6px;object-fit:cover;display:block}
+.wam-chip-n{font-size:12.3px;color:var(--ink);line-height:1.3}
+.wam-chip-m{font-size:11px;color:var(--muted)}
+
+/* Previsualización: aquí SÍ mandan los códigos de WhatsApp. */
+.wam-tel{border:1px solid var(--line);border-radius:12px;overflow:hidden;background:#fff}
+.wam-tel-top{background:#F0F2F5;border-bottom:1px solid #E1E4E7;padding:9px 11px;
+  display:flex;align-items:center;gap:9px}
+.wam-av{width:32px;height:32px;border-radius:50%;background:var(--accent);color:#fff;
+  display:flex;align-items:center;justify-content:center;font-size:12.5px;font-weight:600;flex-shrink:0}
+.wam-tel-n{font-size:13px;font-weight:600;color:#111B21;line-height:1.2}
+.wam-tel-s{font-size:11px;color:#667781}
+.wam-chat{background:#EFE7DE;
+  background-image:radial-gradient(rgba(0,0,0,.035) 1px,transparent 1px);
+  background-size:14px 14px;padding:13px 11px;min-height:190px;
+  display:flex;flex-direction:column;align-items:flex-end;gap:6px}
+.wam-burb{background:#D9FDD3;border-radius:8px 8px 3px 8px;padding:7px 9px 5px;
+  max-width:88%;box-shadow:0 1px 1px rgba(0,0,0,.09)}
+.wam-burb-img{width:100%;border-radius:5px;margin-bottom:5px;display:block}
+.wam-burb-t{font-size:12.8px;line-height:1.5;color:#111B21;white-space:pre-wrap;word-break:break-word}
+.wam-burb-h{display:flex;align-items:center;justify-content:flex-end;gap:3px;
+  font-size:10.5px;color:#667781;margin-top:3px}
+.wam-check{color:#53BDEB}
+.wam-vacio{align-self:center;color:#667781;font-size:12.3px;padding:22px 10px;text-align:center}
+.wam-nota{font-size:11.3px;color:var(--muted);line-height:1.5;margin-top:9px}
+
+/* Pie: la confirmación de destino va pegada al botón que envía. */
+.wam-pie{border-top:1px solid var(--line);padding:12px 16px;background:var(--surface);
+  display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.wam-destino{flex:1;min-width:180px;font-size:12.3px;color:var(--ink-soft);line-height:1.45}
+.wam-destino strong{color:var(--ink)}
+.wam-enviar{background:var(--accent);border:1px solid var(--accent);color:#fff;
+  border-radius:9px;padding:9px 16px;font-size:13.5px;font-weight:600;cursor:pointer;
+  display:flex;align-items:center;gap:7px;font-family:inherit}
+.wam-enviar:hover:not(:disabled){background:#0b6b7c}
+.wam-enviar:disabled{opacity:.45;cursor:not-allowed}
+
+/* Resultado y últimos mensajes */
+.wam-ok{background:var(--wa-soft);border:1px solid #BFE3CE;border-radius:9px;
+  padding:10px 12px;margin-bottom:13px}
+.wam-ok-t{display:flex;align-items:center;gap:7px;font-size:13px;font-weight:600;color:#2F6B48}
+.wam-ok-d{font-size:11.6px;color:var(--ink-soft);line-height:1.6;margin-top:5px;
+  font-family:ui-monospace,monospace;word-break:break-all}
+.wam-err{background:#FBEDEC;border:1px solid #EBC9C6;border-radius:9px;padding:10px 12px;
+  margin-bottom:13px;font-size:12.5px;line-height:1.5;color:#9C4646}
+.wam-hist{border-top:1px solid var(--line);margin-top:14px;padding-top:12px}
+.wam-hist-i{display:flex;gap:8px;font-size:12.3px;line-height:1.5;padding:6px 0;
+  border-bottom:1px solid var(--line)}
+.wam-hist-i:last-child{border-bottom:none}
+.wam-hist-m{color:var(--muted);font-size:11.5px}
+
+/* Biblioteca de imágenes */
+.wam-bib{background:var(--surface);border-radius:14px;width:100%;max-width:640px;
+  max-height:86vh;display:flex;flex-direction:column;border:1px solid var(--line);
+  box-shadow:0 16px 44px rgba(10,125,146,.18);overflow:hidden}
+.wam-bib-top{padding:13px 16px;border-bottom:1px solid var(--line);display:flex;
+  align-items:center;gap:10px}
+.wam-bib-cuerpo{padding:14px 16px;overflow-y:auto;flex:1}
+.wam-rej{display:grid;grid-template-columns:repeat(auto-fill,minmax(138px,1fr));gap:11px}
+.wam-item{border:1px solid var(--line);border-radius:10px;overflow:hidden;cursor:pointer;
+  background:var(--surface);text-align:left;padding:0;font-family:inherit;transition:border-color .12s}
+.wam-item:hover{border-color:var(--accent)}
+.wam-item.sel{border-color:var(--accent);box-shadow:0 0 0 2px rgba(10,125,146,.18)}
+.wam-item img{width:100%;height:92px;object-fit:cover;display:block;background:var(--hover)}
+.wam-item-p{padding:7px 8px}
+.wam-item-n{font-size:12px;color:var(--ink);line-height:1.3;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap}
+.wam-item-m{font-size:10.8px;color:var(--muted);margin-top:2px}
+`;
+
+// Biblioteca de imágenes. Hoy son piezas de ejemplo generadas en el navegador
+// —se ven como marcadores, no como fotos reales, para que nadie las confunda
+// con material de la clínica—. Cuando exista el storage (Drive o bucket propio)
+// se sustituye SOLO esta función por la llamada al endpoint: el resto del
+// compositor no se entera.
+function bibliotecaImagenes() {
+  const pieza = (titulo, color) =>
+    "data:image/svg+xml;utf8," + encodeURIComponent(
+      `<svg xmlns="http://www.w3.org/2000/svg" width="300" height="200">
+        <rect width="300" height="200" fill="${color}"/>
+        <rect x="10" y="10" width="280" height="180" fill="none" stroke="#ffffff"
+          stroke-opacity="0.55" stroke-dasharray="7 5"/>
+        <text x="150" y="96" font-family="Inter,sans-serif" font-size="15" font-weight="600"
+          fill="#ffffff" text-anchor="middle">${titulo}</text>
+        <text x="150" y="118" font-family="Inter,sans-serif" font-size="11"
+          fill="#ffffff" fill-opacity="0.8" text-anchor="middle">imagen de ejemplo</text>
+      </svg>`);
+  return [
+    { id: "horarios", nombre: "horarios-disponibles.png", meta: "Coordinación · 8 sep",
+      url: pieza("Horarios disponibles", "#0A7D92") },
+    { id: "sede-piura", nombre: "ubicacion-sede-piura.png", meta: "Coordinación · 2 sep",
+      url: pieza("Ubicación · Piura", "#0E93AB") },
+    { id: "sede-lima", nombre: "ubicacion-sede-lima.png", meta: "Coordinación · 2 sep",
+      url: pieza("Ubicación · Lima", "#127F94") },
+    { id: "zoom", nombre: "como-entrar-a-zoom.png", meta: "Coordinación · 28 ago",
+      url: pieza("Cómo entrar a Zoom", "#1B6F80") },
+    { id: "tarifas", nombre: "tarifas-2026.png", meta: "Gerencia · 20 ago",
+      url: pieza("Tarifas 2026", "#0A6273") },
+    { id: "equipo", nombre: "nuestro-equipo.png", meta: "Marketing · 14 ago",
+      url: pieza("Nuestro equipo", "#15889C") },
+    { id: "pagos", nombre: "medios-de-pago.png", meta: "Coordinación · 10 ago",
+      url: pieza("Medios de pago", "#0D7386") },
+    { id: "politicas", nombre: "politicas-de-atencion.png", meta: "Gerencia · 1 ago",
+      url: pieza("Políticas de atención", "#11697A") },
+  ];
+}
+
+// Biblioteca visual: buscar → ver → seleccionar → adjuntar.
+function SelectorImagen({ onElegir, onCerrar }) {
+  const [q, setQ] = useState("");
+  const [sel, setSel] = useState(null);
+  const todas = useMemo(() => bibliotecaImagenes(), []);
+  const filtradas = todas.filter((i) => i.nombre.toLowerCase().includes(q.trim().toLowerCase()));
+
+  return createPortal(
+    <div className="wam-fondo" style={{ zIndex: 150 }}
+      onMouseDown={(e) => { if (e.target === e.currentTarget) onCerrar(); }}>
+      <div className="wam-bib" role="dialog" aria-modal="true" aria-label="Seleccionar imagen">
+        <div className="wam-bib-top">
+          <div style={{ flex: 1 }}>
+            <div className="wam-top-t">Seleccionar imagen</div>
+            <div className="wam-top-sub">Material que Coordinación puede enviar al paciente.</div>
+          </div>
+          <button className="wam-x" onClick={onCerrar} aria-label="Cerrar">
+            <X size={18} strokeWidth={2} />
+          </button>
+        </div>
+        <div className="wam-bib-cuerpo">
+          <div style={{ position: "relative", marginBottom: 13 }}>
+            <Search size={15} strokeWidth={2} style={{ position: "absolute", left: 11, top: 11, color: "var(--muted)" }} />
+            <input className="ca-input" style={{ width: "100%", paddingLeft: 33 }}
+              placeholder="Buscar imagen…" value={q} onChange={(e) => setQ(e.target.value)} autoFocus />
+          </div>
+          {filtradas.length === 0 ? (
+            <div className="ca-empty">No hay imágenes que coincidan con «{q}».</div>
+          ) : (
+            <div className="wam-rej">
+              {filtradas.map((i) => (
+                <button key={i.id} className={"wam-item" + (sel?.id === i.id ? " sel" : "")}
+                  onClick={() => setSel(i)} onDoubleClick={() => onElegir(i)}>
+                  <img src={i.url} alt="" />
+                  <div className="wam-item-p">
+                    <div className="wam-item-n" title={i.nombre}>{i.nombre}</div>
+                    <div className="wam-item-m">{i.meta}</div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+        <div className="wam-pie">
+          <div className="wam-destino">
+            {sel ? <>Seleccionada: <strong>{sel.nombre}</strong></> : "Elige una imagen de la biblioteca."}
+          </div>
+          <button className="ca-mini" onClick={onCerrar}>Cancelar</button>
+          <button className="wam-enviar" disabled={!sel} onClick={() => onElegir(sel)}>
+            Seleccionar
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+// Compositor: motivo → plantilla → mensaje editable → adjunto, con la
+// previsualización al lado actualizándose mientras escribe.
+function WhatsappModal({ id, datos, onCerrar, onEnviado, showToast }) {
+  const [clave, setClave] = useState(datos.plantilla?.clave || "");
+  const [texto, setTexto] = useState(datos.texto_sugerido || "");
+  const [imagen, setImagen] = useState(null);
+  const [biblioteca, setBiblioteca] = useState(false);
+  const [enviando, setEnviando] = useState(false);
+  const [resultado, setResultado] = useState(null);
+  const [confirmar, setConfirmar] = useState(false);
+
+  const pac = datos.paciente || {};
+  const canal = datos.canal || {};
+  const plantillas = datos.plantillas || [];
+  const enviados = datos.enviados || [];
+  const hora = new Date().toLocaleTimeString("es-PE", { hour: "2-digit", minute: "2-digit" });
+  const iniciales = (pac.nombre || "?").split(" ").filter(Boolean).slice(0, 2)
+    .map((p) => p[0]).join("").toUpperCase();
+  const nombrePlantilla = plantillas.find((p) => p.clave === clave)?.nombre || "";
+  const yaEnviado = resultado?.estado === "enviado";
+
+  function elegirPlantilla(nueva) {
+    setClave(nueva);
+    const p = plantillas.find((x) => x.clave === nueva);
+    if (p) setTexto(p.texto);
+  }
+
+  function enviar() {
+    if (enviando || !texto.trim()) return;
+    setEnviando(true);
+    api.continuidadEnviarWhatsapp(id, { texto, plantilla_clave: clave, confirmado: confirmar })
+      .then((d) => {
+        setResultado(d.envio || {});
+        if (d.envio?.estado === "enviado") showToast("WhatsApp enviado");
+        else showToast("No se pudo enviar: " + (d.envio?.detalle || "revisa la línea"));
+        onEnviado(d);
+      })
+      .catch((e) => {
+        if (e.status === 400 && e.data?.requiere_confirmacion) {
+          setConfirmar(true); showToast(e.message);
+        } else {
+          setResultado({ estado: "fallido", detalle: e.message, bloqueo: e.data?.bloqueo });
+        }
+      })
+      .finally(() => setEnviando(false));
+  }
+
+  return createPortal(
+    <div className="wam-fondo" onMouseDown={(e) => { if (e.target === e.currentTarget) onCerrar(); }}>
+      <style>{WA_CSS}</style>
+      <div className="wam" role="dialog" aria-modal="true" aria-label="Enviar WhatsApp">
+        <div className="wam-top">
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="wam-top-t">Enviar WhatsApp</div>
+            <div className="wam-top-sub">
+              <strong>{pac.nombre || "Paciente"}</strong>
+              {pac.sede_label ? ` · ${pac.sede_label}` : ""}
+              {pac.telefono_mascara ? ` · ${pac.telefono_mascara}` : ""}
+            </div>
+            <div className="wam-top-sub" style={{ marginTop: 1 }}>
+              Sale desde <strong>{canal.canal || "sin línea"}</strong>
+              {canal.instancia ? ` · ${canal.instancia}` : ""}
+            </div>
+          </div>
+          <button className="wam-x" onClick={onCerrar} aria-label="Cerrar">
+            <X size={19} strokeWidth={2} />
+          </button>
+        </div>
+
+        <div className="wam-grid">
+          {/* ── Compositor ── */}
+          <div className="wam-col">
+            {resultado && (resultado.estado === "enviado" ? (
+              <div className="wam-ok">
+                <div className="wam-ok-t"><Check size={15} strokeWidth={2.5} /> WhatsApp enviado</div>
+                <div className="wam-ok-d">
+                  {resultado.proveedor && <div>proveedor: {resultado.proveedor}</div>}
+                  {resultado.instancia && <div>línea: {resultado.instancia}</div>}
+                  {resultado.external_message_id && <div>id: {resultado.external_message_id}</div>}
+                  <div>hora: {hora}</div>
+                </div>
+              </div>
+            ) : (
+              <div className="wam-err">
+                <strong>No se pudo enviar.</strong><br />{resultado.detalle}
+              </div>
+            ))}
+
+            {!canal.linea_configurada && !resultado && (
+              <div className="wam-err" style={{ background: "#FDF6EC", borderColor: "#EBD9BE", color: "#8A6224" }}>
+                La línea de {pac.sede_label || "esta sede"} no está conectada. El sistema no podrá enviarlo.
+              </div>
+            )}
+
+            {datos.motivo?.porque && (
+              <>
+                <div className="wam-rot">Motivo del contacto</div>
+                <div className="wam-motivo">{datos.motivo.porque}</div>
+              </>
+            )}
+
+            <div className="wam-rot">Plantilla</div>
+            <select className="ca-input" style={{ width: "100%", marginBottom: 14 }}
+              value={clave} disabled={yaEnviado} onChange={(e) => elegirPlantilla(e.target.value)}>
+              {plantillas.map((p) => (
+                <option key={p.clave} value={p.clave}>
+                  {p.nombre}{p.sugerida ? " · sugerida" : ""}
+                </option>
+              ))}
+            </select>
+
+            <div className="wam-rot">Mensaje</div>
+            <textarea className="wam-txt" rows={8} value={texto} disabled={yaEnviado}
+              onChange={(e) => setTexto(e.target.value)}
+              placeholder="Escribe el mensaje que recibirá el paciente…" />
+            <div className="wam-cuenta">
+              <span>{texto.length} caracteres</span>
+              <span>Puedes editarlo antes de enviar</span>
+            </div>
+
+            <div className="wam-adj">
+              {imagen ? (
+                <div className="wam-chip">
+                  <img src={imagen.url} alt="" />
+                  <div>
+                    <div className="wam-chip-n">{imagen.nombre}</div>
+                    <div className="wam-chip-m">{imagen.meta}</div>
+                  </div>
+                  <button className="ca-mini" onClick={() => setImagen(null)} disabled={yaEnviado}>
+                    <Trash2 size={13} strokeWidth={2} /> Quitar
+                  </button>
+                </div>
+              ) : (
+                <button className="ca-mini" onClick={() => setBiblioteca(true)} disabled={yaEnviado}>
+                  <Paperclip size={13} strokeWidth={2} /> Adjuntar imagen
+                </button>
+              )}
+            </div>
+            {imagen && (
+              <div className="wam-nota">
+                El envío de imágenes por WhatsApp todavía no está conectado: se enviará
+                solo el texto. La imagen se ve aquí para preparar el mensaje.
+              </div>
+            )}
+
+            {/* Últimos mensajes: se integra con el historial que ya existe. */}
+            {enviados.length > 0 && (
+              <div className="wam-hist">
+                <div className="wam-rot" style={{ marginBottom: 4 }}>Últimos mensajes</div>
+                {enviados.slice(0, 3).map((m) => (
+                  <div key={m.id} className="wam-hist-i">
+                    <Check size={14} strokeWidth={2.5}
+                      style={{ color: m.estado === "fallido" ? "var(--muted)" : "var(--wa)", flexShrink: 0, marginTop: 2 }} />
+                    <div>
+                      <div>{m.estado_label}{m.enviado_por ? ` · ${m.enviado_por}` : ""}</div>
+                      <div className="wam-hist-m">{fechaHoraCorta(m.fecha)}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* ── Previsualización ── */}
+          <div className="wam-col prev">
+            <div className="wam-rot">Vista previa</div>
+            <div className="wam-tel">
+              <div className="wam-tel-top">
+                <div className="wam-av">{iniciales}</div>
+                <div style={{ minWidth: 0 }}>
+                  <div className="wam-tel-n">{pac.nombre || "Paciente"}</div>
+                  <div className="wam-tel-s">{pac.telefono_mascara || ""}</div>
+                </div>
+              </div>
+              <div className="wam-chat">
+                {texto.trim() || imagen ? (
+                  <div className="wam-burb">
+                    {imagen && <img className="wam-burb-img" src={imagen.url} alt="" />}
+                    {texto.trim() && <div className="wam-burb-t">{texto}</div>}
+                    <div className="wam-burb-h">
+                      {hora}
+                      <Check size={13} strokeWidth={3} className="wam-check" style={{ marginLeft: -3 }} />
+                      <Check size={13} strokeWidth={3} className="wam-check" style={{ marginLeft: -9 }} />
+                    </div>
+                  </div>
+                ) : (
+                  <div className="wam-vacio">Escribe el mensaje para ver cómo lo recibirá</div>
+                )}
+              </div>
+            </div>
+            <div className="wam-nota">
+              Así se verá en su teléfono. El mensaje sale a nombre de Coordinación,
+              desde el número de {pac.sede_label || "la sede"}.
+            </div>
+          </div>
+        </div>
+
+        <div className="wam-pie">
+          <div className="wam-destino">
+            {yaEnviado
+              ? <>Enviado a <strong>{pac.nombre}</strong> · {hora}</>
+              : confirmar
+                ? <>Ya se le escribió hace menos de 24 h. Pulsa otra vez para confirmar.</>
+                : <>El mensaje se enviará a <strong>{pac.nombre}</strong>
+                    {nombrePlantilla ? ` · ${nombrePlantilla}` : ""}</>}
+          </div>
+          <button className="ca-mini" onClick={onCerrar}>{yaEnviado ? "Cerrar" : "Cancelar"}</button>
+          {!yaEnviado && (
+            <button className="wam-enviar" onClick={enviar} disabled={enviando || !texto.trim()}>
+              <Send size={15} strokeWidth={2} />
+              {enviando ? "Enviando…" : confirmar ? "Sí, enviar igual" : "Enviar WhatsApp"}
+            </button>
+          )}
+        </div>
+      </div>
+
+      {biblioteca && (
+        <SelectorImagen
+          onCerrar={() => setBiblioteca(false)}
+          onElegir={(i) => { setImagen(i); setBiblioteca(false); }} />
+      )}
+    </div>,
+    document.body
+  );
+}
+
+// Contactar por WhatsApp desde el caso. No es un chat: sale de una condición
+// detectada, con motivo, plantilla y responsable, y todo queda en el historial.
+// El envío lo hace el SISTEMA por la línea de la sede: aquí no se abre WhatsApp
+// Web ni hay enlaces wa.me. Si la sede aún no tiene línea, se ofrece copiar el
+// mensaje (y queda registrado que se copió), nada más.
+function ContactarWhatsappPanel({ id, contacto, onActualizado, showToast }) {
+  const [abierto, setAbierto] = useState(false);
+  const [datos, setDatos] = useState(null);     // preview que arma el servidor
+  const [cargando, setCargando] = useState(false);
+
+  const c = contacto || {};
+  const bloqueoDato = c.bloqueo && c.bloqueo !== "sin_linea";   // sede / teléfono
+  const lineaLista = !!c.canal?.linea_configurada;
+
+  // Abrir pide el preview al servidor; hasta que llega no se muestra el modal.
+  function abrir() {
+    if (cargando) return;
+    setCargando(true);
+    api.continuidadContactoPreview(id)
+      .then((d) => { setDatos(d); setAbierto(true); })
+      .catch((e) => showToast("No se pudo preparar el mensaje: " + e.message))
+      .finally(() => setCargando(false));
+  }
+
+  function responder(clave) {
+    api.continuidadRegistrarRespuesta(id, clave)
+      .then((d) => { showToast("Respuesta registrada"); onActualizado(d); })
+      .catch((e) => showToast("No se pudo registrar: " + e.message));
+  }
+
+  if (!c.puede_contactar && !(c.enviados || []).length) return null;
+
+  const estadoContacto = (c.enviados || []).length
+    ? `Contactado · ${c.ultimo.estado_label}`
+    : "Pendiente de contacto";
+
+  return (
+    <div style={{ marginTop: 14, paddingTop: 12, borderTop: "1px solid var(--line)" }}>
+      <div className="ca-label" style={{ marginBottom: 8 }}>Contactar por WhatsApp</div>
+
+      {/* Ficha corta: quién lo lleva y en qué va */}
+      <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "4px 10px", fontSize: 12.5, marginBottom: 9 }}>
+        <span style={{ color: "var(--muted)" }}>Responsable</span>
+        <span>{c.canal?.responsable || "—"}</span>
+        <span style={{ color: "var(--muted)" }}>Estado</span>
+        <span>{estadoContacto}</span>
+        {(c.enviados || []).length > 0 && (
+          <>
+            <span style={{ color: "var(--muted)" }}>Último envío</span>
+            <span>
+              {fechaHoraCorta(c.ultimo.fecha)}{c.ultimo.enviado_por ? ` · ${c.ultimo.enviado_por}` : ""}
+              {c.enviados.length > 1 && <span style={{ color: "var(--muted)" }}> · {c.enviados.length} contactos</span>}
+            </span>
+          </>
+        )}
+      </div>
+
+      {/* Lo que contestó la paciente: se muestra tal cual, lo clasifica una persona */}
+      {(c.respuestas_entrantes || []).length > 0 && (
+        <div style={{ background: "#F4FBFD", border: "1px solid #CDE8F0", borderRadius: 9, padding: "9px 11px", marginBottom: 9 }}>
+          <div className="ca-label" style={{ marginBottom: 5 }}>Respondió</div>
+          {c.respuestas_entrantes.map((m) => (
+            <div key={m.id} style={{ fontSize: 12.8, lineHeight: 1.45, marginBottom: 4 }}>
+              <span style={{ color: "var(--muted)" }}>{fechaHoraCorta(m.fecha)}</span> · {m.texto}
+            </div>
+          ))}
+          {c.puede_contactar && (
+            <>
+              <div style={{ fontSize: 11.5, color: "var(--muted)", margin: "7px 0 5px" }}>
+                ¿Qué respondió? Lo clasificas tú: el sistema no interpreta el mensaje.
+              </div>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {(c.respuestas || []).map((r) => (
+                  <button key={r.clave} className="ca-mini" title={r.siguiente} onClick={() => responder(r.clave)}>
+                    {r.icono} {r.etiqueta}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {bloqueoDato ? (
+        <div style={{ background: "#F7ECDD", color: "#9C6B2E", borderRadius: 8, padding: "9px 11px", fontSize: 12.5, lineHeight: 1.45, display: "flex", gap: 7 }}>
+          <AlertTriangle size={14} strokeWidth={2} style={{ flexShrink: 0, marginTop: 1 }} />
+          <span>{c.bloqueo_texto} Quedó registrado en el historial del caso.</span>
+        </div>
+      ) : !c.puede_contactar ? (
+        <div style={{ fontSize: 12, color: "var(--muted)" }}>Tu perfil no contacta pacientes.</div>
+      ) : (
+        <button className="ca-btn" style={{ width: "100%", background: "var(--wa)", borderColor: "var(--wa)", color: "#fff" }}
+          onClick={abrir} disabled={cargando}>
+          <MessageCircle size={14} strokeWidth={2} /> {cargando ? "Preparando…" : "Enviar WhatsApp"}
+        </button>
+      )}
+
+      {abierto && datos && (
+        <WhatsappModal
+          id={id} datos={datos} showToast={showToast}
+          onCerrar={() => { setAbierto(false); setDatos(null); }}
+          onEnviado={(d) => onActualizado(d)} />
+      )}
+    </div>
+  );
+}
+
 function ContinuidadDetalle({ id, onCerrar, onOpen, showToast, onGestionGuardada }) {
   const [caso, setCaso] = useState(null);
   const [error, setError] = useState("");
@@ -3968,6 +4514,14 @@ function ContinuidadDetalle({ id, onCerrar, onOpen, showToast, onGestionGuardada
               )}
             </div>
           </div>
+
+          {/* Contactar por WhatsApp: parte del mismo flujo, no una pantalla aparte. */}
+          <ContactarWhatsappPanel
+            id={id} contacto={caso.contacto} showToast={showToast}
+            onActualizado={(d) => {
+              setCaso(d); setGestion(gestionAForm(d.gestion));
+              onGestionGuardada?.(id, d.gestion, d.en_cola);
+            }} />
 
           {/* Historial de gestión: qué pasó, quién y cuándo. Solo códigos: la
               observación aparece como "actualizada", nunca con su texto. */}
@@ -8565,6 +9119,7 @@ function LineasEvolution({ showToast }) {
       <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 14, lineHeight: 1.5 }}>
         Cada sede envía por su propia línea. Estas líneas las atiende Coordinación:
         el sistema registra y manda las automatizaciones, pero <strong>no responde solo</strong>.
+        Una línea marcada <em>Pruebas</em> nunca le escribe a un paciente.
       </div>
 
       {!data.servidor_configurado && (
@@ -8588,11 +9143,16 @@ function LineasEvolution({ showToast }) {
               <code style={{ fontFamily: "ui-monospace, monospace", fontSize: 12.5, color: "var(--ink-soft)" }}>
                 {l.instancia}
               </code>
+              {!l.es_oficial && pill("Pruebas", "#F7ECDD", "#9C6B2E")}
               {l.activo ? pill("Activa", "#E9F1ED", "#3E7A65") : pill("Apagada", "var(--hover)", "var(--muted)")}
               {est && pill(est.texto, est.fondo, est.color)}
+              {!est && !l.conexion && pill("Pendiente QR", "var(--hover)", "var(--muted)")}
               {l.conexion && !l.conexion.ok && !est && pill("Sin respuesta", "var(--hover)", "var(--muted)")}
             </div>
             <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 7, lineHeight: 1.6 }}>
+              Responsable: <strong style={{ color: "var(--ink-soft)" }}>{l.responsable || "—"}</strong>
+              {l.perfil?.numero && <> · Número: <strong style={{ color: "var(--ink-soft)" }}>{l.perfil.numero}</strong>{l.perfil.perfil ? ` (${l.perfil.perfil})` : ""}</>}
+              <br />
               Proveedor: Evolution API · Respuestas automáticas:{" "}
               <strong>{l.respuestas_automaticas ? "encendidas" : "apagadas"}</strong>
               <br />

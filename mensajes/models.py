@@ -17,6 +17,11 @@ class Mensaje(ModeloTenant):
         # Respuesta que el sistema envía solo a un lead que preguntó por WhatsApp
         # (precios, tipos de terapia, ubicación…): leads/whatsapp_auto.py.
         AUTOMATICO = "automatico", "Respuesta automática"
+        # Contacto que coordinación hace desde el Centro de Continuidad para
+        # preguntarle al paciente si sigue con su proceso. Lo escribe una
+        # persona (revisa la plantilla antes de enviar) y sale por la línea de
+        # SU sede, igual que un recordatorio.
+        CONTINUIDAD = "continuidad", "Contacto de continuidad"
         MANUAL = "manual", "Mensaje manual"
 
     class Estado(models.TextChoices):
@@ -80,6 +85,20 @@ class Mensaje(ModeloTenant):
     external_message_id = models.CharField(max_length=180, blank=True, default="")
     error_codigo = models.CharField(max_length=40, blank=True, default="")
     actualizado_en = models.DateTimeField(auto_now=True)
+    # Qué plantilla se usó y qué decía ANTES de que la editaran. Si nadie tocó
+    # el texto, `texto_original` queda vacío (no se guarda dos veces lo mismo).
+    # Así la auditoría muestra lo que el sistema propuso y lo que la persona
+    # realmente envió, aunque después alguien edite la plantilla.
+    plantilla_clave = models.CharField(max_length=40, blank=True, default="")
+    texto_original = models.TextField(blank=True, default="")
+    # Caso del Centro de Continuidad que motivó el contacto. Solo lo llenan los
+    # mensajes enviados desde ahí: así el panel puede mostrar qué se le escribió
+    # a este paciente por ESTE caso, sin partir en dos la bitácora (el historial
+    # de WhatsApp del paciente sigue siendo uno solo, en su ficha).
+    gestion_continuidad = models.ForeignKey(
+        "pacientes.GestionContinuidad", on_delete=models.SET_NULL,
+        related_name="mensajes", null=True, blank=True,
+    )
 
     class Meta:
         verbose_name = "Mensaje"
@@ -88,6 +107,7 @@ class Mensaje(ModeloTenant):
         indexes = [
             models.Index(fields=["clinica", "-creado_en"]),
             models.Index(fields=["clinica", "external_message_id"]),
+            models.Index(fields=["clinica", "gestion_continuidad"]),
         ]
         constraints = [
             # La deduplicación la sostiene la BASE DE DATOS, no un `if` en Python:
@@ -164,11 +184,17 @@ class PlantillaMensaje(ModeloTenant):
         return self.nombre
 
 
-VARIABLES_PLANTILLA = ["nombre", "psicologo", "fecha", "hora", "n_sesion", "sede", "clinica"]
+VARIABLES_PLANTILLA = ["nombre", "psicologo", "fecha", "hora", "n_sesion", "sede", "clinica",
+                       "coordinadora"]
 
 
-def valores_plantilla(paciente=None, cita=None, clinica=None):
-    """Devuelve el dict de variables {nombre, psicologo, fecha, …} con sus valores."""
+def valores_plantilla(paciente=None, cita=None, clinica=None, usuario=None):
+    """Devuelve el dict de variables {nombre, psicologo, fecha, …} con sus valores.
+
+    `usuario` (opcional) llena {coordinadora} con el primer nombre de quien
+    envía: un mensaje de continuidad lo firma la persona que escribe, no "el
+    sistema". Si no se pasa, queda vacío y las plantillas de siempre no cambian.
+    """
     from django.utils import timezone
 
     nombre = (paciente.nombre.split(" ")[0] if paciente and paciente.nombre else "")
@@ -193,15 +219,20 @@ def valores_plantilla(paciente=None, cita=None, clinica=None):
         n_sesion = str(sesion_real_de_paciente(paciente))
     sede = paciente.get_sede_display() if (paciente and paciente.sede) else ""
     cl = clinica or (paciente.clinica if paciente else None) or (cita.clinica if cita else None)
+    coordinadora = ""
+    if usuario is not None:
+        completo = (getattr(usuario, "nombre", "") or "").strip()
+        coordinadora = completo.split(" ")[0] if completo else ""
     return {
         "nombre": nombre, "psicologo": psicologo, "fecha": fecha, "hora": hora,
         "n_sesion": n_sesion, "sede": sede, "clinica": cl.nombre if cl else "",
+        "coordinadora": coordinadora,
     }
 
 
-def render_plantilla(texto, paciente=None, cita=None, clinica=None):
+def render_plantilla(texto, paciente=None, cita=None, clinica=None, usuario=None):
     """Sustituye las variables {...} de una plantilla con datos del paciente/cita."""
-    repl = valores_plantilla(paciente=paciente, cita=cita, clinica=clinica)
+    repl = valores_plantilla(paciente=paciente, cita=cita, clinica=clinica, usuario=usuario)
     out = texto or ""
     for k, v in repl.items():
         out = out.replace("{" + k + "}", v)

@@ -41,6 +41,9 @@ def instancia_para(clinica, sede="", automatico=False):
     respaldo. Nunca se elige la línea de la OTRA sede: un paciente de Piura no
     debe recibir un mensaje desde el número de Lima.
 
+    Solo se eligen líneas OFICIALES: una instancia marcada como ambiente de
+    pruebas jamás le escribe a un paciente, aunque esté activa y tenga sede.
+
     `automatico=True` son las respuestas que el sistema escribe SOLO (las
     preguntas frecuentes que se le contestan a un lead). Esas únicamente salen
     por una línea que lo tenga permitido a propósito
@@ -52,7 +55,8 @@ def instancia_para(clinica, sede="", automatico=False):
     from core.models import InstanciaEvolution
 
     qs = (InstanciaEvolution.objects
-          .filter(clinica=clinica, activo=True)
+          .filter(clinica=clinica, activo=True,
+                  entorno=InstanciaEvolution.Entorno.OFICIAL)
           .exclude(nombre_instancia="")
           .order_by("id"))
     if automatico:

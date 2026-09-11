@@ -19,6 +19,7 @@ from rest_framework.permissions import IsAuthenticated
 
 from core import continuidad as continuidad_mod
 from core.permisos import (
+    PuedeContactarPacientes,
     PuedeGestionarContinuidad, es_solo_lectura, puede_gestionar_continuidad, ve_finanzas,
 )
 from core.tenant import get_clinica_actual
@@ -546,6 +547,7 @@ class ContinuidadCasoView(APIView):
     def payload(request, paciente, visibles):
         """El detalle completo de un caso. Lo usan GET y el PATCH de gestión,
         para que la pantalla reciba lo mismo después de guardar."""
+        from core import contacto_continuidad as cc
         from core import gestion_continuidad as gc
 
         cola = continuidad_mod.cola_de_continuidad(
@@ -586,10 +588,10 @@ class ContinuidadCasoView(APIView):
             "gestion": gc.serializar(gestion, fila),
             "historial_gestion": gc.serializar_historial(gestion),
             "puede_gestionar": puede_gestionar_continuidad(request.user),
-            # Hueco reservado para la iteración de WhatsApp (último contacto y
-            # estado del mensaje). Se llenará desde mensajes.Mensaje; aquí no se
-            # consulta ni se envía nada todavía.
-            "contacto": None,
+            # Contacto por WhatsApp del caso: por qué línea saldría, qué se
+            # envió ya y qué contestó el paciente. Solo lectura: enviar es un
+            # POST aparte. Ver core/contacto_continuidad.py.
+            "contacto": cc.serializar_contacto(paciente, gestion, request.user),
         }
 
     def get(self, request, pk):
@@ -635,6 +637,156 @@ class ContinuidadGestionView(APIView):
             return Response({"detail": "Nada que guardar."}, status=status.HTTP_400_BAD_REQUEST)
         try:
             gc.guardar(paciente, request.user, datos)
+        except gc.SinCondicion as e:
+            return Response({"detail": str(e)}, status=status.HTTP_409_CONFLICT)
+        except ValueError as e:
+            return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(ContinuidadCasoView.payload(request, paciente, visibles))
+
+
+class ContinuidadWhatsappView(APIView):
+    """El contacto por WhatsApp de un caso del Centro de Continuidad.
+
+    GET  /api/continuidad/caso/<paciente_id>/whatsapp/ — qué se enviaría (motivo,
+         línea de la sede, plantilla ya rellenada, contactos anteriores). No
+         escribe ni envía nada.
+    POST /api/continuidad/caso/<paciente_id>/whatsapp/ — envía. Acepta `texto`
+         (editado por quien escribe), `observacion` y `confirmado` (para volver
+         a escribirle antes de las 24 h).
+
+    Permisos propios: coordinación y gerencia. El psicólogo y la analista
+    gestionan el caso pero no contactan pacientes (ver ROLES_CONTACTAN_PACIENTES).
+    El alcance sigue siendo `pacientes_del_rol`.
+
+    Enviar nunca deja el caso "resuelto": como mucho "en seguimiento". Y el
+    envío sale siempre desde el sistema por la línea de la sede: no se abre
+    WhatsApp Web ni se devuelven enlaces wa.me.
+    """
+
+    permission_classes = [IsAuthenticated, PuedeContactarPacientes]
+
+    def _paciente(self, request, pk):
+        visibles = continuidad_mod.pacientes_del_rol(
+            Paciente.objects.del_tenant_actual(), request.user)
+        return visibles.filter(pk=pk).first(), visibles
+
+    def get(self, request, pk):
+        from core import contacto_continuidad as cc
+        from core import gestion_continuidad as gc
+
+        if get_clinica_actual() is None:
+            return Response({"detail": "Sin clínica en contexto."}, status=status.HTTP_400_BAD_REQUEST)
+        paciente, _ = self._paciente(request, pk)
+        if paciente is None:
+            return Response({"detail": "No encontrado."}, status=status.HTTP_404_NOT_FOUND)
+        fila = gc.fila_de(paciente)
+        gestion = gc.gestion_de(fila) if fila is not None else gc.ultima_gestion(paciente)
+        return Response(cc.preview(paciente, request.user, fila, gestion))
+
+    def post(self, request, pk):
+        from core import contacto_continuidad as cc
+        from core import gestion_continuidad as gc
+
+        if get_clinica_actual() is None:
+            return Response({"detail": "Sin clínica en contexto."}, status=status.HTTP_400_BAD_REQUEST)
+        paciente, visibles = self._paciente(request, pk)
+        if paciente is None:
+            return Response({"detail": "No encontrado."}, status=status.HTTP_404_NOT_FOUND)
+        texto = str(request.data.get("texto") or "")
+        try:
+            _, resultado = cc.enviar(
+                paciente, request.user, texto=texto,
+                observacion=str(request.data.get("observacion") or ""),
+                confirmado=bool(request.data.get("confirmado")),
+                plantilla_clave=str(request.data.get("plantilla_clave") or ""),
+            )
+        except cc.ContactoBloqueado as e:
+            # 422: la petición es válida, pero falta un dato o la línea. Cuando
+            # lo que falta es la línea, se devuelve el texto listo para que la
+            # coordinadora lo copie y lo mande a mano — sin abrir WhatsApp Web ni
+            # enlaces wa.me: el sistema no escribe desde otro número.
+            cuerpo = {"detail": str(e), "bloqueo": e.codigo}
+            if e.codigo == "sin_linea":
+                cuerpo["texto_para_copiar"] = texto.strip() or cc.texto_sugerido(
+                    paciente.clinica, paciente, request.user, gc.fila_de(paciente))[0]
+            return Response(cuerpo, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+        except gc.SinCondicion as e:
+            return Response({"detail": str(e)}, status=status.HTTP_409_CONFLICT)
+        except ValueError as e:
+            return Response({"detail": str(e), "requiere_confirmacion": True},
+                            status=status.HTTP_400_BAD_REQUEST)
+        datos = ContinuidadCasoView.payload(request, paciente, visibles)
+        # Lo que el modal muestra al terminar: por dónde salió y con qué id, para
+        # que la coordinadora vea el resultado sin ir a buscarlo a la bitácora.
+        ultimo = (datos.get("contacto") or {}).get("ultimo") or {}
+        datos["envio"] = {
+            "estado": resultado.get("estado"),
+            "detalle": resultado.get("detalle", ""),
+            "proveedor": ultimo.get("proveedor", ""),
+            "instancia": resultado.get("instancia") or ultimo.get("instancia", ""),
+            "external_message_id": ultimo.get("external_message_id", ""),
+            "fecha": ultimo.get("fecha", ""),
+        }
+        return Response(datos)
+
+
+class ContinuidadCopiadoView(APIView):
+    """POST /api/continuidad/caso/<paciente_id>/whatsapp/copiado/
+
+    La sede no tiene línea conectada y la coordinadora copió el mensaje para
+    mandarlo desde su propio WhatsApp. Aquí solo queda el rastro (quién, cuándo,
+    qué plantilla): el sistema no envió nada. Es el respaldo temporal hasta que
+    las líneas de Lima y Piura estén conectadas.
+    """
+
+    permission_classes = [IsAuthenticated, PuedeContactarPacientes]
+
+    def post(self, request, pk):
+        from core import contacto_continuidad as cc
+        from core import gestion_continuidad as gc
+
+        if get_clinica_actual() is None:
+            return Response({"detail": "Sin clínica en contexto."}, status=status.HTTP_400_BAD_REQUEST)
+        visibles = continuidad_mod.pacientes_del_rol(
+            Paciente.objects.del_tenant_actual(), request.user)
+        paciente = visibles.filter(pk=pk).first()
+        if paciente is None:
+            return Response({"detail": "No encontrado."}, status=status.HTTP_404_NOT_FOUND)
+        try:
+            cc.registrar_copia_manual(paciente, request.user)
+        except gc.SinCondicion as e:
+            return Response({"detail": str(e)}, status=status.HTTP_409_CONFLICT)
+        return Response(ContinuidadCasoView.payload(request, paciente, visibles))
+
+
+class ContinuidadRespuestaView(APIView):
+    """POST /api/continuidad/caso/<paciente_id>/whatsapp/respuesta/
+
+    La coordinadora clasifica lo que contestó el paciente (continua /
+    mas_adelante / no_continua / sin_respuesta). El sistema NO interpreta el
+    texto: solo guarda lo que una persona decidió que significaba.
+
+    Ninguna respuesta cierra el caso. "No continuará" queda como resultado
+    operativo y el caso sigue en seguimiento hasta que la Agenda registre el DP
+    de cierre — ahí `reconciliar` lo cierra solo.
+    """
+
+    permission_classes = [IsAuthenticated, PuedeContactarPacientes]
+
+    def post(self, request, pk):
+        from core import contacto_continuidad as cc
+        from core import gestion_continuidad as gc
+
+        if get_clinica_actual() is None:
+            return Response({"detail": "Sin clínica en contexto."}, status=status.HTTP_400_BAD_REQUEST)
+        visibles = continuidad_mod.pacientes_del_rol(
+            Paciente.objects.del_tenant_actual(), request.user)
+        paciente = visibles.filter(pk=pk).first()
+        if paciente is None:
+            return Response({"detail": "No encontrado."}, status=status.HTTP_404_NOT_FOUND)
+        try:
+            cc.registrar_respuesta(paciente, request.user,
+                                   str(request.data.get("respuesta") or ""))
         except gc.SinCondicion as e:
             return Response({"detail": str(e)}, status=status.HTTP_409_CONFLICT)
         except ValueError as e:

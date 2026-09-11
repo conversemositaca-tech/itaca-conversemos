@@ -35,3 +35,8 @@ auditorias_continuidad/
 auditorias_continuidad_notas/
 revision_continuidad_*.csv
 revision_continuidad_*.txt
+
+# Skills de marketing instaladas por el usuario (paquete externo de 51 carpetas).
+# El contexto de negocio SI se versiona: .claude/product-marketing.md
+.claude/skills/
+skills-lock.json
