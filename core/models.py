@@ -397,11 +397,24 @@ class InstanciaEvolution(ModeloTenant):
         PIURA = "piura", "Piura"
         AMBAS = "ambas", "Ambas sedes"
 
+    class Entorno(models.TextChoices):
+        OFICIAL = "oficial", "Línea oficial de sede"
+        PRUEBA = "prueba", "Ambiente de pruebas"
+
     sede = models.CharField(max_length=10, choices=Sede.choices, blank=True, default="")
     nombre_instancia = models.CharField(
         "Instancia de Evolution", max_length=120,
         help_text="Nombre EXACTO de la instancia en Evolution API (ej. conversemoslima).",
     )
+    # Una línea de PRUEBAS nunca le escribe a un paciente: `instancia_para` solo
+    # devuelve las oficiales. Sin esta marca, registrar la instancia de pruebas
+    # con sede=piura —por conveniencia, para probar algo— haría que los
+    # pacientes de Piura recibieran mensajes desde un número que no es el de la
+    # clínica. Las que ya existían quedan como oficiales (es lo que eran).
+    entorno = models.CharField(max_length=10, choices=Entorno.choices, default=Entorno.OFICIAL)
+    # Quién atiende esa línea (Ayvi en Lima, Yazmín en Piura). Es para que
+    # gerencia no dependa de que alguien recuerde de quién es cada número.
+    responsable = models.CharField(max_length=120, blank=True, default="")
     activo = models.BooleanField(default=True)
     # Apagado a propósito: estas líneas son de Coordinación (Lima: Ayvi, Piura:
     # Yazmín). El sistema registra y manda automatizaciones autorizadas, pero no
@@ -426,7 +439,8 @@ class InstanciaEvolution(ModeloTenant):
             # al azar y el paciente recibiría el mensaje desde el número de la otra
             # coordinadora. "ambas" y la sede vacía quedan fuera (son de respaldo).
             models.UniqueConstraint(
-                fields=["clinica", "sede"], condition=models.Q(activo=True, sede__in=["lima", "piura"]),
+                fields=["clinica", "sede"],
+                condition=models.Q(activo=True, entorno="oficial", sede__in=["lima", "piura"]),
                 name="uniq_evolution_sede_activa",
             ),
         ]
@@ -434,4 +448,10 @@ class InstanciaEvolution(ModeloTenant):
 
     def __str__(self):
         etiqueta = self.get_sede_display() if self.sede else "Evolution"
+        if self.entorno == self.Entorno.PRUEBA:
+            etiqueta = "Pruebas"
         return f"{etiqueta} · {self.nombre_instancia}"
+
+    @property
+    def es_oficial(self):
+        return self.entorno == self.Entorno.OFICIAL

@@ -271,17 +271,19 @@ class HistorialTests(_ConContacto):
         p = self._caso_s3()
         self._enviar_ok(p)
         textos = [h["texto"] for h in gc.serializar_historial(G.objects.get(paciente=p))]
-        self.assertTrue(any("WhatsApp enviado · Confirmación de continuidad" in t for t in textos))
+        self.assertTrue(any("WhatsApp enviado · Riesgo de abandono (S3)" in t for t in textos))
+        self.assertEqual(Mensaje.objects.get(paciente=p).plantilla_clave, "continuidad_riesgo_s3")
 
     def test_un_envio_fallido_tambien_queda_registrado(self):
-        """Sin Evolution configurado el mensaje no sale, pero el intento consta."""
+        """Sin credenciales de Evolution el mensaje no sale, pero el intento consta.
+        Y NO se devuelve ningún enlace wa.me: el sistema no abre WhatsApp Web."""
         p = self._caso_s3()
         with self.settings(EVOLUTION_API_URL="", EVOLUTION_API_KEY=""):
             r = self._enviar(self.admin, p)
         self.assertEqual(r.status_code, 200)
         self.assertIn(Ev.WHATSAPP_FALLIDO, self._eventos(p))
-        # Y queda el enlace manual de respaldo, como en el resto del sistema.
-        self.assertTrue(r.json()["envio"]["wa_url"])
+        self.assertNotIn("wa_url", r.json()["envio"])
+        self.assertEqual(r.json()["envio"]["estado"], "no_configurado")
         self.assertEqual(Mensaje.objects.get(paciente=p).estado, Mensaje.Estado.NO_CONFIGURADO)
 
     def test_el_contacto_aparece_en_el_detalle_del_caso(self):
@@ -497,3 +499,172 @@ class NoRompeNadaTests(_ConContacto):
             r = self._enviar(self.admin, p)
         self.assertEqual(r.status_code, 409)
         post.assert_not_called()
+
+
+# ── CRM · plantilla por motivo, auditoría y modo respaldo ────────────────────
+
+class PlantillaPorMotivoTests(_ConContacto):
+    """Cada condición detectada propone su propio mensaje."""
+
+    def _clave(self, paciente):
+        return self._preview(self.admin, paciente).json()["plantilla"]["clave"]
+
+    def test_riesgo_s3(self):
+        self.assertEqual(self._clave(self._caso_s3()), "continuidad_riesgo_s3")
+
+    def test_pre_cierre(self):
+        p = self._paciente("Pre cierre", sede="piura", telefono="987654321")
+        self._asistidas(p, 5, ultima_hace=4)           # a una sesión de cerrar, sin agendar
+        self.assertEqual(self._clave(p), "continuidad_pre_cierre")
+
+    def test_cierre_vencido_usa_sin_cita(self):
+        p = self._paciente("Vencido", sede="piura", telefono="987654321")
+        self._asistidas(p, 6, ultima_hace=10)
+        self.assertEqual(self._clave(p), "continuidad_sin_cita")
+
+    def test_si_la_plantilla_del_motivo_no_existe_cae_a_la_generica(self):
+        PlantillaMensaje.objects.create(
+            clinica=self.clinica, clave=cc.CLAVE_PLANTILLA, nombre="Genérica",
+            texto="Genérica para {nombre}")
+        d = self._preview(self.admin, self._caso_s3()).json()
+        self.assertEqual(d["plantilla"]["clave"], cc.CLAVE_PLANTILLA)
+        self.assertEqual(d["texto_sugerido"], "Genérica para Damaris")
+
+    def test_la_plantilla_del_motivo_gana_sobre_la_generica(self):
+        PlantillaMensaje.objects.create(
+            clinica=self.clinica, clave=cc.CLAVE_PLANTILLA, nombre="Genérica", texto="Genérica")
+        PlantillaMensaje.objects.create(
+            clinica=self.clinica, clave="continuidad_riesgo_s3", nombre="S3",
+            texto="Hola {nombre}, soy {coordinadora} de {sede}")
+        d = self._preview(self.coord, self._caso_s3()).json()
+        self.assertEqual(d["plantilla"]["clave"], "continuidad_riesgo_s3")
+        self.assertEqual(d["texto_sugerido"], "Hola Damaris, soy Yazmín de Piura")
+
+
+class AuditoriaDelTextoTests(_ConContacto):
+    """Queda lo que el sistema propuso y lo que la persona envió de verdad."""
+
+    def _enviar_ok(self, p, **body):
+        with self.settings(EVOLUTION_API_URL="https://evo.example", EVOLUTION_API_KEY="k"):
+            with self._con_evolution():
+                return self._enviar(self.admin, p, **body)
+
+    def test_si_editan_el_texto_se_guarda_el_original(self):
+        p = self._caso_s3()
+        propuesto = self._preview(self.admin, p).json()["texto_sugerido"]
+        editado = propuesto + "\n\nQuedo atenta 🙂"
+        self.assertNotEqual(propuesto, editado)
+        self.assertEqual(self._enviar_ok(p, texto=editado).status_code, 200)
+        m = Mensaje.objects.get(paciente=p)
+        self.assertEqual(m.texto, editado)
+        self.assertEqual(m.texto_original, propuesto)
+        self.assertEqual(m.plantilla_clave, "continuidad_riesgo_s3")
+
+    def test_si_no_editan_no_se_duplica_el_texto(self):
+        p = self._caso_s3()
+        self._enviar_ok(p)                       # sin `texto`: va la plantilla tal cual
+        m = Mensaje.objects.get(paciente=p)
+        self.assertEqual(m.texto_original, "")
+        self.assertTrue(m.texto.startswith("Hola Damaris"))
+
+    def test_el_registro_dice_quien_cuando_y_que_plantilla(self):
+        p = self._caso_s3()
+        self._enviar_ok(p)
+        m = Mensaje.objects.get(paciente=p)
+        self.assertEqual(m.enviado_por_id, self.admin.id)
+        self.assertIsNotNone(m.creado_en)
+        self.assertEqual(m.plantilla_clave, "continuidad_riesgo_s3")
+        self.assertEqual(m.tipo, Mensaje.Tipo.CONTINUIDAD)
+
+    def test_la_respuesta_nunca_trae_wa_url(self):
+        p = self._caso_s3()
+        r = self._enviar_ok(p)
+        self.assertNotIn("wa_url", r.content.decode())
+
+
+class SinLineaTests(_ConContacto):
+    """La sede no tiene línea oficial: no se envía ni se abre nada. Se copia."""
+
+    def setUp(self):
+        super().setUp()
+        # Piura se queda sin línea oficial.
+        self.piura.delete()
+
+    def test_sin_linea_no_envia_y_devuelve_el_texto_para_copiar(self):
+        p = self._caso_s3(sede="piura")
+        with self.settings(EVOLUTION_API_URL="https://evo.example", EVOLUTION_API_KEY="k"):
+            with self._con_evolution() as post:
+                r = self._enviar(self.admin, p, texto="Hola Damaris, ¿seguimos?")
+        self.assertEqual(r.status_code, 422)
+        self.assertEqual(r.json()["bloqueo"], "sin_linea")
+        self.assertEqual(r.json()["texto_para_copiar"], "Hola Damaris, ¿seguimos?")
+        self.assertNotIn("wa.me", r.content.decode())
+        post.assert_not_called()
+        self.assertEqual(Mensaje.objects.count(), 0)
+        self.assertIn(Ev.CONTACTO_BLOQUEADO, self._eventos(p))
+
+    def test_sin_texto_editado_devuelve_la_plantilla_lista(self):
+        p = self._caso_s3(sede="piura")
+        r = self._enviar(self.admin, p)
+        self.assertEqual(r.status_code, 422)
+        self.assertTrue(r.json()["texto_para_copiar"].startswith("Hola Damaris"))
+
+    def test_copiar_deja_rastro_de_envio_manual(self):
+        p = self._caso_s3(sede="piura")
+        self.client.force_login(self.coord)
+        r = self.client.post(f"/api/continuidad/caso/{p.id}/whatsapp/copiado/",
+                             content_type="application/json")
+        self.assertEqual(r.status_code, 200)
+        self.assertIn(Ev.CONTACTO_MANUAL, self._eventos(p))
+        g = G.objects.get(paciente=p)
+        self.assertEqual(g.estado_revision, G.Revision.EN_SEGUIMIENTO)
+        self.assertTrue(g.abierta)                          # nunca resuelto
+        self.assertEqual(Mensaje.objects.count(), 0)        # el sistema no envió nada
+        textos = [h["texto"] for h in gc.serializar_historial(g)]
+        self.assertTrue(any("Mensaje copiado para envío manual" in t for t in textos))
+
+    def test_copiar_es_solo_de_quien_contacta(self):
+        p = self._caso_s3(sede="piura")
+        self.client.force_login(self.analista)
+        r = self.client.post(f"/api/continuidad/caso/{p.id}/whatsapp/copiado/",
+                             content_type="application/json")
+        self.assertEqual(r.status_code, 403)
+
+    def test_el_preview_avisa_que_no_hay_linea(self):
+        p = self._caso_s3(sede="piura")
+        canal = self._preview(self.admin, p).json()["canal"]
+        self.assertFalse(canal["linea_configurada"])
+        self.assertEqual(canal["instancia"], "")
+
+
+class LineaDePruebasTests(_ConContacto):
+    """Una instancia de pruebas (vibery) nunca le escribe a un paciente."""
+
+    def test_la_linea_de_pruebas_no_se_elige_aunque_tenga_sede(self):
+        from mensajes.evolution import instancia_para
+
+        self.piura.delete()
+        InstanciaEvolution.objects.create(
+            clinica=self.clinica, sede="piura", nombre_instancia="vibery",
+            entorno=InstanciaEvolution.Entorno.PRUEBA, responsable="Desarrollo")
+        self.assertIsNone(instancia_para(self.clinica, "piura"))
+        p = self._caso_s3(sede="piura")
+        with self.settings(EVOLUTION_API_URL="https://evo.example", EVOLUTION_API_KEY="k"):
+            with self._con_evolution() as post:
+                r = self._enviar(self.admin, p)
+        self.assertEqual(r.status_code, 422)
+        self.assertEqual(r.json()["bloqueo"], "sin_linea")
+        post.assert_not_called()
+
+    def test_prueba_y_oficial_conviven_en_la_misma_sede(self):
+        """El constraint de 'una activa por sede' solo mira las oficiales."""
+        from mensajes.evolution import instancia_para
+
+        InstanciaEvolution.objects.create(
+            clinica=self.clinica, sede="piura", nombre_instancia="vibery",
+            entorno=InstanciaEvolution.Entorno.PRUEBA)
+        self.assertEqual(instancia_para(self.clinica, "piura").nombre_instancia, "conversemospiura")
+
+    def test_las_lineas_existentes_siguen_siendo_oficiales(self):
+        self.assertTrue(self.lima.es_oficial)
+        self.assertEqual(self.lima.entorno, InstanciaEvolution.Entorno.OFICIAL)

@@ -390,11 +390,15 @@ def resumen(g, fila=None):
 _MOTIVO_BLOQUEO = {
     "sin_sede": "el paciente no tiene sede asignada",
     "sin_telefono": "el paciente no tiene teléfono registrado",
-    "sin_linea": "no hay línea de WhatsApp para esa sede",
+    "sin_linea": "la sede todavía no tiene una línea de WhatsApp conectada",
 }
 
 _PLANTILLA_LABEL = {
     "continuidad_confirmar": "Confirmación de continuidad",
+    "continuidad_sin_cita": "Sin próxima cita",
+    "continuidad_riesgo_s3": "Riesgo de abandono (S3)",
+    "continuidad_pre_cierre": "Cerca del cierre de bloque",
+    "continuidad_proceso_anterior": "Retomar proceso anterior",
 }
 
 _LABEL = {
@@ -433,6 +437,8 @@ def _texto_historial(h):
         return f"Respuesta del paciente → {_LABEL['resultado_operativo'].get(h.despues, h.despues or '—')}"
     if e == Evento.CONTACTO_BLOQUEADO:
         return f"Contacto bloqueado · {_MOTIVO_BLOQUEO.get(h.despues, h.despues or 'sin detalle')}"
+    if e == Evento.CONTACTO_MANUAL:
+        return f"Mensaje copiado para envío manual · {_PLANTILLA_LABEL.get(h.despues, h.despues or 'mensaje')}"
     return h.get_evento_display()
 
 

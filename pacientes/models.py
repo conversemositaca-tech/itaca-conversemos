@@ -991,6 +991,10 @@ class HistorialContinuidad(ModeloTenant):
         WHATSAPP_FALLIDO = "whatsapp_fallido", "WhatsApp no se pudo enviar"
         RESPUESTA_PACIENTE = "respuesta_paciente", "Respuesta del paciente"
         CONTACTO_BLOQUEADO = "contacto_bloqueado", "Contacto bloqueado"
+        # La sede no tenía línea conectada y la coordinadora copió el mensaje
+        # para enviarlo desde su propio WhatsApp. El sistema no envió nada, pero
+        # el contacto ocurrió: sin este registro se perdería.
+        CONTACTO_MANUAL = "contacto_manual", "Mensaje copiado (envío manual)"
 
     class Origen(models.TextChoices):
         USUARIO = "usuario", "Usuario"

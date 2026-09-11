@@ -34,10 +34,30 @@ from pacientes.models import GestionContinuidad, HistorialContinuidad
 Evento = HistorialContinuidad.Evento
 Resultado = GestionContinuidad.Resultado
 
-# Clave de la plantilla en `mensajes.PlantillaMensaje`. Gerencia y coordinación
-# la editan desde la pantalla de plantillas; si no existe se usa el texto de
-# abajo para que el módulo funcione igual.
-CLAVE_PLANTILLA = "continuidad_confirmar"
+# Qué plantilla corresponde a cada condición detectada. No es lo mismo
+# escribirle a quien se quedó en la sesión 3 que a quien está por cerrar su
+# proceso. Las edita gerencia/coordinación desde la pantalla de plantillas; si
+# alguna no existe, se usa el texto de respaldo de abajo.
+CLAVE_PLANTILLA = "continuidad_confirmar"          # respaldo genérico
+
+PLANTILLA_POR_ESTADO = {
+    cont.EstadoCierre.RIESGO_S3: "continuidad_riesgo_s3",
+    cont.EstadoCierre.SIN_AGENDAR: "continuidad_pre_cierre",
+    cont.EstadoCierre.PROXIMO: "continuidad_pre_cierre",
+    cont.EstadoCierre.PROCESO_ANTERIOR: "continuidad_proceso_anterior",
+    cont.EstadoCierre.VENCIDO: "continuidad_sin_cita",
+    cont.EstadoCierre.HOY: "continuidad_sin_cita",
+    cont.EstadoCierre.CONTINUO_SIN_DECISION: "continuidad_sin_cita",
+    cont.EstadoCierre.DATO_INCOMPLETO: "continuidad_sin_cita",
+    cont.EstadoCierre.BACKLOG: "continuidad_sin_cita",
+}
+
+
+def clave_plantilla(fila):
+    """La plantilla que toca según la condición detectada."""
+    if fila is None:
+        return CLAVE_PLANTILLA
+    return PLANTILLA_POR_ESTADO.get(fila.get("estado") or "", "continuidad_sin_cita")
 
 TEXTO_POR_DEFECTO = (
     "Hola {nombre} 😊\n\n"
@@ -152,17 +172,65 @@ def canal_de(paciente):
         # El nombre de la instancia, no el número: no guardamos números y no
         # hacen falta para operar.
         "instancia": instancia.nombre_instancia if instancia else "",
-        # Sin línea registrada el envío cae al respaldo de siempre (wa.me). Se
-        # avisa, pero no bloquea: el enlace manual sigue siendo útil.
+        "responsable": instancia.responsable if instancia else "",
+        # Sin línea oficial registrada para esa sede no se envía: el sistema
+        # ofrece copiar el mensaje, pero nunca escribe desde otro número.
         "linea_configurada": instancia is not None,
     }
 
 
-def texto_sugerido(clinica, paciente, usuario):
-    """El mensaje ya con los datos puestos, listo para que lo revise una persona."""
-    plantilla = plantilla_por_clave(clinica, CLAVE_PLANTILLA)
+def telefono_mascara(paciente):
+    """Los últimos 3 dígitos, el resto tapado.
+
+    La coordinadora necesita confirmar que le escribe a la persona correcta sin
+    que el número completo quede a la vista de quien mire la pantalla.
+    """
+    d = "".join(c for c in (paciente.telefono or "") if c.isdigit())
+    if not d:
+        return ""
+    return "•" * max(len(d) - 3, 0) + d[-3:]
+
+
+def plantillas_disponibles(clinica, paciente, usuario, fila=None):
+    """Las plantillas de continuidad que la coordinadora puede elegir, ya
+    rellenadas con los datos del caso. La del motivo detectado va primera."""
+    sugerida = clave_plantilla(fila)
+    claves = [sugerida] + [c for c in PLANTILLA_POR_ESTADO.values() if c != sugerida]
+    claves += [CLAVE_PLANTILLA]
+    vistas, salida = set(), []
+    for clave in claves:
+        if clave in vistas:
+            continue
+        vistas.add(clave)
+        pl = plantilla_por_clave(clinica, clave)
+        base = pl.texto if pl else (TEXTO_POR_DEFECTO if clave == sugerida else "")
+        if not base:
+            continue
+        salida.append({
+            "clave": clave,
+            "nombre": pl.nombre if pl else "Confirmación de continuidad",
+            "texto": render_plantilla(base, paciente=paciente, clinica=clinica, usuario=usuario),
+            "sugerida": clave == sugerida,
+        })
+    return salida
+
+
+def texto_sugerido(clinica, paciente, usuario, fila=None):
+    """El mensaje ya con los datos puestos, listo para que lo revise una persona.
+
+    Devuelve (texto, plantilla, clave). Si la plantilla del motivo no existe
+    todavía, cae a la genérica y, en último término, al texto del módulo: el
+    botón nunca se queda sin mensaje que proponer.
+    """
+    clave = clave_plantilla(fila)
+    plantilla = plantilla_por_clave(clinica, clave)
+    if plantilla is None:
+        plantilla = plantilla_por_clave(clinica, CLAVE_PLANTILLA)
+        if plantilla is not None:
+            clave = CLAVE_PLANTILLA
     base = plantilla.texto if plantilla else TEXTO_POR_DEFECTO
-    return render_plantilla(base, paciente=paciente, clinica=clinica, usuario=usuario), plantilla
+    texto = render_plantilla(base, paciente=paciente, clinica=clinica, usuario=usuario)
+    return texto, plantilla, clave
 
 
 # --- historial de contactos ---------------------------------------------------
@@ -173,6 +241,8 @@ def _serializar_mensaje(m):
         "fecha": timezone.localtime(m.creado_en).isoformat(),
         "direccion": m.direccion,
         "estado": m.estado,
+        "proveedor": m.proveedor,
+        "external_message_id": m.external_message_id,
         "estado_label": m.get_estado_display(),
         "texto": m.texto,
         "instancia": m.instancia,
@@ -258,25 +328,39 @@ def serializar_contacto(paciente, gestion, usuario):
 def preview(paciente, usuario, fila, gestion):
     """Todo lo que el panel muestra ANTES de enviar. No escribe nada."""
     datos = serializar_contacto(paciente, gestion, usuario)
-    texto, plantilla = texto_sugerido(paciente.clinica, paciente, usuario)
+    texto, plantilla, clave = texto_sugerido(paciente.clinica, paciente, usuario, fila)
     datos["motivo"] = motivo_del_contacto(fila)
     datos["texto_sugerido"] = texto
     datos["plantilla"] = {
-        "clave": CLAVE_PLANTILLA,
+        "clave": clave,
         "nombre": plantilla.nombre if plantilla else "Confirmación de continuidad",
         "editable": plantilla is not None,
+    }
+    # Todo lo que el modal necesita para pintarse sin pedir nada más.
+    datos["plantillas"] = plantillas_disponibles(paciente.clinica, paciente, usuario, fila)
+    datos["paciente"] = {
+        "nombre": paciente.nombre,
+        "sede": paciente.sede or "",
+        "sede_label": paciente.get_sede_display() if paciente.sede else "",
+        "telefono_mascara": telefono_mascara(paciente),
     }
     return datos
 
 
 # --- enviar -------------------------------------------------------------------
 
-def enviar(paciente, usuario, *, texto="", observacion="", confirmado=False):
-    """Manda el WhatsApp del caso y deja todo registrado.
+def enviar(paciente, usuario, *, texto="", observacion="", confirmado=False,
+           plantilla_clave=""):
+    """Manda el WhatsApp del caso por la línea de su sede y lo deja registrado.
 
-    Devuelve (gestion, resultado, wa_url). Levanta:
+    El envío sale SIEMPRE desde el sistema: no se abre WhatsApp Web ni se
+    devuelve ningún enlace wa.me. Si la sede no tiene línea oficial, se levanta
+    ContactoBloqueado("sin_linea") y la pantalla ofrece copiar el mensaje — pero
+    el sistema nunca escribe desde un número que no sea el de esa sede.
+
+    Devuelve (gestion, resultado). Levanta:
       - gc.SinCondicion   si el caso ya no está pendiente,
-      - ContactoBloqueado si falta la sede o el teléfono (queda incidencia),
+      - ContactoBloqueado si falta sede, teléfono o línea (queda incidencia),
       - ValueError        si hace falta confirmar el reenvío y no se confirmó.
     """
     fila = gc.fila_de(paciente)
@@ -286,9 +370,14 @@ def enviar(paciente, usuario, *, texto="", observacion="", confirmado=False):
 
     try:
         canal = canal_de(paciente)
+        if not canal["linea_configurada"]:
+            # La sede no tiene línea oficial. No se improvisa con otra: sería
+            # escribirle al paciente desde un número que no es el de su sede.
+            raise ContactoBloqueado("sin_linea")
     except ContactoBloqueado as e:
-        # Incidencia operativa: alguien tiene que completar el dato. Queda en el
-        # historial del caso, no en un aviso que se pierde al cerrar la pantalla.
+        # Incidencia operativa: alguien tiene que completar el dato o conectar la
+        # línea. Queda en el historial del caso, no en un aviso que se pierde al
+        # cerrar la pantalla.
         gc.registrar_evento(gestion, Evento.CONTACTO_BLOQUEADO, despues=e.codigo, usuario=usuario)
         raise
 
@@ -302,21 +391,25 @@ def enviar(paciente, usuario, *, texto="", observacion="", confirmado=False):
                 f"Este paciente ya fue contactado hace {horas} h por este caso. "
                 "Confirma si quieres enviarle otro mensaje.")
 
-    cuerpo = (texto or "").strip()
-    if not cuerpo:
-        cuerpo, _ = texto_sugerido(paciente.clinica, paciente, usuario)
+    propuesto, _plantilla, clave = texto_sugerido(paciente.clinica, paciente, usuario, fila)
+    # Si la coordinadora eligió otra plantilla en el modal, esa es la que consta.
+    if plantilla_clave:
+        clave = plantilla_clave[:40]
+    cuerpo = (texto or "").strip() or propuesto
+    # Solo se guarda el original cuando de verdad lo editaron: si no, sería
+    # guardar dos veces el mismo texto.
+    original = propuesto if cuerpo != propuesto else ""
 
-    mensaje, resultado, wa_url = registrar_y_enviar(
+    mensaje, resultado, _ = registrar_y_enviar(
         paciente.clinica, telefono=paciente.telefono, texto=cuerpo,
         tipo=Mensaje.Tipo.CONTINUIDAD, paciente=paciente, usuario=usuario,
-        sede=canal["sede"],
+        sede=canal["sede"], plantilla_clave=clave, texto_original=original,
+        gestion_continuidad=gestion,
     )
-    mensaje.gestion_continuidad = gestion
-    mensaje.save(update_fields=["gestion_continuidad"])
 
     if resultado.get("estado") == "enviado":
         gc.registrar_evento(gestion, Evento.WHATSAPP_ENVIADO,
-                            despues=CLAVE_PLANTILLA, usuario=usuario)
+                            despues=clave, usuario=usuario)
     else:
         # Queda el rastro igual: no salió, pero se intentó. El detalle del
         # proveedor cabe en 60 caracteres; el completo está en la bitácora.
@@ -328,7 +421,23 @@ def enviar(paciente, usuario, *, texto="", observacion="", confirmado=False):
     gc.marcar_en_seguimiento(gestion, usuario)
     if observacion.strip():
         gc.guardar(paciente, usuario, {"observacion_operativa": observacion.strip()})
-    return gestion, resultado, wa_url
+    return gestion, resultado
+
+
+def registrar_copia_manual(paciente, usuario, texto=""):
+    """Deja constancia de que el mensaje se copió para enviarlo a mano.
+
+    Es el respaldo mientras la sede no tiene línea conectada. Sin este registro
+    se perdería justo lo que hace útil al módulo: quién contactó y cuándo. No
+    crea un Mensaje en la bitácora porque el sistema no envió nada — lo mandó
+    una persona desde su propio WhatsApp.
+    """
+    fila = gc.fila_de(paciente)
+    gestion = gc.asegurar_gestion(paciente, usuario, fila)
+    gc.registrar_evento(gestion, Evento.CONTACTO_MANUAL,
+                        despues=clave_plantilla(fila), usuario=usuario)
+    gc.marcar_en_seguimiento(gestion, usuario)
+    return gestion
 
 
 # --- clasificar lo que contestó el paciente -----------------------------------

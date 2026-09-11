@@ -658,7 +658,9 @@ class ContinuidadWhatsappView(APIView):
     gestionan el caso pero no contactan pacientes (ver ROLES_CONTACTAN_PACIENTES).
     El alcance sigue siendo `pacientes_del_rol`.
 
-    Enviar nunca deja el caso "resuelto": como mucho "en seguimiento".
+    Enviar nunca deja el caso "resuelto": como mucho "en seguimiento". Y el
+    envío sale siempre desde el sistema por la línea de la sede: no se abre
+    WhatsApp Web ni se devuelven enlaces wa.me.
     """
 
     permission_classes = [IsAuthenticated, PuedeContactarPacientes]
@@ -690,27 +692,71 @@ class ContinuidadWhatsappView(APIView):
         paciente, visibles = self._paciente(request, pk)
         if paciente is None:
             return Response({"detail": "No encontrado."}, status=status.HTTP_404_NOT_FOUND)
+        texto = str(request.data.get("texto") or "")
         try:
-            _, resultado, wa_url = cc.enviar(
-                paciente, request.user,
-                texto=str(request.data.get("texto") or ""),
+            _, resultado = cc.enviar(
+                paciente, request.user, texto=texto,
                 observacion=str(request.data.get("observacion") or ""),
                 confirmado=bool(request.data.get("confirmado")),
+                plantilla_clave=str(request.data.get("plantilla_clave") or ""),
             )
         except cc.ContactoBloqueado as e:
-            # 422: la petición es válida, pero al paciente le falta un dato.
-            return Response({"detail": str(e), "bloqueo": e.codigo},
-                            status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+            # 422: la petición es válida, pero falta un dato o la línea. Cuando
+            # lo que falta es la línea, se devuelve el texto listo para que la
+            # coordinadora lo copie y lo mande a mano — sin abrir WhatsApp Web ni
+            # enlaces wa.me: el sistema no escribe desde otro número.
+            cuerpo = {"detail": str(e), "bloqueo": e.codigo}
+            if e.codigo == "sin_linea":
+                cuerpo["texto_para_copiar"] = texto.strip() or cc.texto_sugerido(
+                    paciente.clinica, paciente, request.user, gc.fila_de(paciente))[0]
+            return Response(cuerpo, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
         except gc.SinCondicion as e:
             return Response({"detail": str(e)}, status=status.HTTP_409_CONFLICT)
         except ValueError as e:
             return Response({"detail": str(e), "requiere_confirmacion": True},
                             status=status.HTTP_400_BAD_REQUEST)
         datos = ContinuidadCasoView.payload(request, paciente, visibles)
-        datos["envio"] = {"estado": resultado.get("estado"),
-                          "detalle": resultado.get("detalle", ""),
-                          "wa_url": wa_url}
+        # Lo que el modal muestra al terminar: por dónde salió y con qué id, para
+        # que la coordinadora vea el resultado sin ir a buscarlo a la bitácora.
+        ultimo = (datos.get("contacto") or {}).get("ultimo") or {}
+        datos["envio"] = {
+            "estado": resultado.get("estado"),
+            "detalle": resultado.get("detalle", ""),
+            "proveedor": ultimo.get("proveedor", ""),
+            "instancia": resultado.get("instancia") or ultimo.get("instancia", ""),
+            "external_message_id": ultimo.get("external_message_id", ""),
+            "fecha": ultimo.get("fecha", ""),
+        }
         return Response(datos)
+
+
+class ContinuidadCopiadoView(APIView):
+    """POST /api/continuidad/caso/<paciente_id>/whatsapp/copiado/
+
+    La sede no tiene línea conectada y la coordinadora copió el mensaje para
+    mandarlo desde su propio WhatsApp. Aquí solo queda el rastro (quién, cuándo,
+    qué plantilla): el sistema no envió nada. Es el respaldo temporal hasta que
+    las líneas de Lima y Piura estén conectadas.
+    """
+
+    permission_classes = [IsAuthenticated, PuedeContactarPacientes]
+
+    def post(self, request, pk):
+        from core import contacto_continuidad as cc
+        from core import gestion_continuidad as gc
+
+        if get_clinica_actual() is None:
+            return Response({"detail": "Sin clínica en contexto."}, status=status.HTTP_400_BAD_REQUEST)
+        visibles = continuidad_mod.pacientes_del_rol(
+            Paciente.objects.del_tenant_actual(), request.user)
+        paciente = visibles.filter(pk=pk).first()
+        if paciente is None:
+            return Response({"detail": "No encontrado."}, status=status.HTTP_404_NOT_FOUND)
+        try:
+            cc.registrar_copia_manual(paciente, request.user)
+        except gc.SinCondicion as e:
+            return Response({"detail": str(e)}, status=status.HTTP_409_CONFLICT)
+        return Response(ContinuidadCasoView.payload(request, paciente, visibles))
 
 
 class ContinuidadRespuestaView(APIView):

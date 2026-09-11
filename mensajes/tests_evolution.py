@@ -445,13 +445,24 @@ class MonitorEvolutionTests(_Base):
             "url": f"https://testserver/api/webhook/evolution/{token}/",
             "events": ["MESSAGES_UPSERT", "MESSAGES_UPDATE", "CONNECTION_UPDATE"],
         })
+        # Por cada linea el monitor consulta, en este orden: estado de conexion,
+        # perfil (numero y nombre; trae tambien el token de la instancia) y webhook.
+        respuesta_perfil = RespuestaFalsa(data=[{
+            "name": "conversemoslima", "connectionStatus": "open",
+            "ownerJid": "51987000111@s.whatsapp.net", "profileName": "Itaca Lima",
+            "token": "TOKEN-DE-INSTANCIA-SECRETO",
+        }])
         with self.settings(EVOLUTION_API_URL="https://evo.example", EVOLUTION_API_KEY="k"):
             with patch("mensajes.monitor_evolution.requests.get",
                        side_effect=[RespuestaFalsa(data={"instance": {"state": "open"}}),
-                                    respuesta_webhook] * 2):
+                                    respuesta_perfil, respuesta_webhook] * 2):
                 r = self.client.get(reverse("evolution-estado"))
         cuerpo = r.content.decode()
         self.assertNotIn(token, cuerpo)
+        # El token de la instancia que devuelve fetchInstances tampoco sale.
+        self.assertNotIn("TOKEN-DE-INSTANCIA-SECRETO", cuerpo)
+        self.assertEqual(r.json()["instancias"][0]["perfil"]["numero"], "+51987000111")
+        self.assertEqual(r.json()["instancias"][0]["perfil"]["perfil"], "Itaca Lima")
         webhook = r.json()["instancias"][0]["webhook"]
         self.assertTrue(webhook["configurado"])
         self.assertTrue(webhook["apunta_aqui"])

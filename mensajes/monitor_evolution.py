@@ -55,6 +55,10 @@ def _instancia_dict(i):
         "sede": i.sede,
         "sede_display": i.get_sede_display() if i.sede else "",
         "instancia": i.nombre_instancia,
+        "entorno": i.entorno,
+        "entorno_display": i.get_entorno_display(),
+        "es_oficial": i.es_oficial,
+        "responsable": i.responsable,
         "activo": i.activo,
         "proveedor": "evolution",
         "proveedor_display": "Evolution API",
@@ -89,6 +93,38 @@ def _consultar_estado(url, key, nombre):
         return {"ok": False, "estado": "", "detalle": "Respuesta ilegible de Evolution."}
     estado = ((data.get("instance") or {}) if isinstance(data, dict) else {}).get("state") or ""
     return {"ok": True, "estado": str(estado), "detalle": ""}
+
+
+def _consultar_perfil(url, key, nombre):
+    """GET /instance/fetchInstances?instanceName= → número y nombre de perfil.
+
+    El número NO se guarda en nuestra base: se lee de Evolution cada vez, así
+    siempre es el que de verdad está conectado. La respuesta trae también el
+    `token` de la instancia: se descarta aquí y no sale de este módulo.
+    """
+    try:
+        r = requests.get(
+            url.rstrip("/") + "/instance/fetchInstances",
+            params={"instanceName": nombre}, headers={"apikey": key}, timeout=TIMEOUT,
+        )
+    except requests.RequestException:
+        return {"numero": "", "perfil": ""}
+    if r.status_code not in (200, 201):
+        return {"numero": "", "perfil": ""}
+    try:
+        data = r.json()
+    except ValueError:
+        return {"numero": "", "perfil": ""}
+    if isinstance(data, list):
+        data = data[0] if data else {}
+    if not isinstance(data, dict):
+        return {"numero": "", "perfil": ""}
+    jid = str(data.get("ownerJid") or "")
+    numero = jid.split("@")[0].split(":")[0] if "@s.whatsapp.net" in jid else ""
+    return {
+        "numero": ("+" + numero) if numero else "",
+        "perfil": str(data.get("profileName") or "").strip(),
+    }
 
 
 def _consultar_webhook(url, key, nombre, host_esperado):
@@ -166,6 +202,7 @@ class EvolutionEstadoView(APIView):
         for i in instancias:
             fila = _instancia_dict(i)
             fila["conexion"] = _consultar_estado(url, key, i.nombre_instancia)
+            fila["perfil"] = _consultar_perfil(url, key, i.nombre_instancia)
             fila["webhook"] = _consultar_webhook(url, key, i.nombre_instancia, host)
             salida.append(fila)
         return Response({

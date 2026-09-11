@@ -85,6 +85,12 @@ class Mensaje(ModeloTenant):
     external_message_id = models.CharField(max_length=180, blank=True, default="")
     error_codigo = models.CharField(max_length=40, blank=True, default="")
     actualizado_en = models.DateTimeField(auto_now=True)
+    # Qué plantilla se usó y qué decía ANTES de que la editaran. Si nadie tocó
+    # el texto, `texto_original` queda vacío (no se guarda dos veces lo mismo).
+    # Así la auditoría muestra lo que el sistema propuso y lo que la persona
+    # realmente envió, aunque después alguien edite la plantilla.
+    plantilla_clave = models.CharField(max_length=40, blank=True, default="")
+    texto_original = models.TextField(blank=True, default="")
     # Caso del Centro de Continuidad que motivó el contacto. Solo lo llenan los
     # mensajes enviados desde ahí: así el panel puede mostrar qué se le escribió
     # a este paciente por ESTE caso, sin partir en dos la bitácora (el historial

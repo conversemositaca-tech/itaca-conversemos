@@ -20,8 +20,8 @@ class InstanciaEvolutionAdmin(admin.ModelAdmin):
     a una sede es una decisión de Coordinación, no algo para tocar de paso.
     """
 
-    list_display = ("nombre_instancia", "sede", "clinica", "activo",
+    list_display = ("nombre_instancia", "sede", "entorno", "responsable", "clinica", "activo",
                     "respuestas_automaticas", "ultimo_estado", "ultimo_evento_en")
-    list_filter = ("clinica", "sede", "activo")
+    list_filter = ("clinica", "sede", "entorno", "activo")
     search_fields = ("nombre_instancia",)
     readonly_fields = ("ultimo_estado", "ultimo_evento_en", "creado_en")
