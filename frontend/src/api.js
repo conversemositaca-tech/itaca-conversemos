@@ -194,6 +194,14 @@ export const api = {
   // mismo detalle que continuidadCaso, ya actualizado.
   continuidadGuardarGestion: (id, datos) =>
     req(`/api/continuidad/caso/${id}/gestion/`, { method: "PATCH", body: JSON.stringify(datos) }),
+  // Contacto por WhatsApp del caso. El GET solo muestra lo que se enviaría
+  // (motivo, línea de la sede, plantilla ya rellenada): no escribe ni envía.
+  continuidadContactoPreview: (id) => req(`/api/continuidad/caso/${id}/whatsapp/`),
+  continuidadEnviarWhatsapp: (id, datos) =>
+    req(`/api/continuidad/caso/${id}/whatsapp/`, { method: "POST", body: JSON.stringify(datos) }),
+  // La coordinadora clasifica lo que contestó el paciente; el sistema no lo interpreta.
+  continuidadRegistrarRespuesta: (id, respuesta) =>
+    req(`/api/continuidad/caso/${id}/whatsapp/respuesta/`, { method: "POST", body: JSON.stringify({ respuesta }) }),
   marcarEliminacionRevisada: (id) => req(`/api/eliminaciones/${id}/revisar/`, { method: "POST" }),
   marcarTodasEliminacionesRevisadas: () => req("/api/eliminaciones/revisar-todas/", { method: "POST" }),
   gerenciaResumen: (periodo, sede) => req(`/api/gerencia/resumen/?periodo=${periodo || "mes"}${sede ? `&sede=${sede}` : ""}`),

@@ -3757,6 +3757,165 @@ const gestionAForm = (g) => (g ? {
   responsable: g.responsable || "", observacion_operativa: g.observacion_operativa || "",
 } : GESTION_VACIA);
 
+// Contactar por WhatsApp desde el caso. No es un chat: sale de una condición
+// detectada, con motivo, plantilla y responsable, y todo queda en el historial.
+function ContactarWhatsappPanel({ id, contacto, onActualizado, showToast }) {
+  const [abierto, setAbierto] = useState(false);
+  const [datos, setDatos] = useState(null);     // preview que arma el servidor
+  const [texto, setTexto] = useState("");
+  const [observacion, setObservacion] = useState("");
+  const [enviando, setEnviando] = useState(false);
+  const [confirmar, setConfirmar] = useState(false);
+
+  const c = contacto || {};
+  const bloqueado = !!c.bloqueo;
+
+  function abrir() {
+    setAbierto(true);
+    if (datos) return;
+    api.continuidadContactoPreview(id)
+      .then((d) => { setDatos(d); setTexto(d.texto_sugerido || ""); })
+      .catch((e) => showToast("No se pudo preparar el mensaje: " + e.message));
+  }
+
+  function enviar(confirmado) {
+    if (enviando) return;
+    setEnviando(true);
+    api.continuidadEnviarWhatsapp(id, { texto, observacion, confirmado })
+      .then((d) => {
+        setAbierto(false); setConfirmar(false); setObservacion("");
+        // Sin línea conectada, el sistema devuelve el enlace manual de respaldo.
+        if (d.envio?.wa_url) {
+          window.open(d.envio.wa_url, "_blank", "noopener");
+          showToast("WhatsApp no está conectado: se abrió el envío manual");
+        } else {
+          showToast("WhatsApp enviado");
+        }
+        onActualizado(d);
+      })
+      .catch((e) => {
+        // El backend pide confirmar cuando ya se le escribió hace menos de 24 h.
+        if (/ya fue contactado/i.test(e.message)) setConfirmar(true);
+        showToast(e.message);
+      })
+      .finally(() => setEnviando(false));
+  }
+
+  function responder(clave) {
+    api.continuidadRegistrarRespuesta(id, clave)
+      .then((d) => { showToast("Respuesta registrada"); onActualizado(d); })
+      .catch((e) => showToast("No se pudo registrar: " + e.message));
+  }
+
+  if (!c.puede_contactar && !(c.enviados || []).length) return null;
+
+  return (
+    <div style={{ marginTop: 14, paddingTop: 12, borderTop: "1px solid var(--line)" }}>
+      <div className="ca-label" style={{ marginBottom: 8 }}>Contacto por WhatsApp</div>
+
+      {/* Lo que ya se le escribió por ESTE caso. */}
+      {(c.enviados || []).length > 0 && (
+        <div style={{ fontSize: 12.5, color: "var(--ink-soft)", lineHeight: 1.5, marginBottom: 9 }}>
+          Último contacto: <strong>{fechaHoraCorta(c.ultimo.fecha)}</strong>
+          {c.ultimo.enviado_por ? ` · ${c.ultimo.enviado_por}` : ""} · {c.ultimo.estado_label}
+          {c.enviados.length > 1 && <span style={{ color: "var(--muted)" }}> · {c.enviados.length} contactos</span>}
+        </div>
+      )}
+
+      {/* Lo que contestó el paciente. Se muestra tal cual: lo clasifica una persona. */}
+      {(c.respuestas_entrantes || []).length > 0 && (
+        <div style={{ background: "#F4FBFD", border: "1px solid #CDE8F0", borderRadius: 9, padding: "9px 11px", marginBottom: 9 }}>
+          <div className="ca-label" style={{ marginBottom: 5 }}>Respondió</div>
+          {c.respuestas_entrantes.map((m) => (
+            <div key={m.id} style={{ fontSize: 12.8, lineHeight: 1.45, marginBottom: 4 }}>
+              <span style={{ color: "var(--muted)" }}>{fechaHoraCorta(m.fecha)}</span> · {m.texto}
+            </div>
+          ))}
+          {c.puede_contactar && (
+            <>
+              <div style={{ fontSize: 11.5, color: "var(--muted)", margin: "7px 0 5px" }}>
+                ¿Qué respondió? Lo clasificas tú: el sistema no interpreta el mensaje.
+              </div>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {(c.respuestas || []).map((r) => (
+                  <button key={r.clave} className="ca-mini" title={r.siguiente} onClick={() => responder(r.clave)}>
+                    {r.icono} {r.etiqueta}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {bloqueado ? (
+        <div style={{ background: "#F7ECDD", color: "#9C6B2E", borderRadius: 8, padding: "9px 11px", fontSize: 12.5, lineHeight: 1.45, display: "flex", gap: 7 }}>
+          <AlertTriangle size={14} strokeWidth={2} style={{ flexShrink: 0, marginTop: 1 }} />
+          <span>{c.bloqueo_texto} Quedó registrado en el historial del caso.</span>
+        </div>
+      ) : !c.puede_contactar ? (
+        <div style={{ fontSize: 12, color: "var(--muted)" }}>Tu perfil no contacta pacientes.</div>
+      ) : !abierto ? (
+        <button className="ca-btn" style={{ width: "100%", background: "var(--wa)", borderColor: "var(--wa)", color: "#fff" }} onClick={abrir}>
+          <MessageCircle size={14} strokeWidth={2} /> Contactar WhatsApp
+        </button>
+      ) : !datos ? (
+        <div className="ca-empty">Preparando el mensaje…</div>
+      ) : (
+        <div style={{ border: "1px solid var(--line)", borderRadius: 10, padding: "12px 13px" }}>
+          {/* 1 · Por qué contactamos */}
+          <div className="ca-label" style={{ marginBottom: 4 }}>¿Por qué contactamos?</div>
+          <div style={{ fontSize: 12.8, lineHeight: 1.5, marginBottom: 4 }}>{datos.motivo?.porque}</div>
+          <div style={{ fontSize: 12.3, color: "#9C6B2E", marginBottom: 10 }}>{datos.motivo?.condicion}</div>
+
+          {/* 2 · Por qué línea sale */}
+          <div className="ca-label" style={{ marginBottom: 4 }}>Enviar desde</div>
+          <div style={{ fontSize: 12.8, lineHeight: 1.5, marginBottom: 10 }}>
+            <strong>{datos.canal?.canal}</strong>
+            {datos.canal?.instancia && <span style={{ color: "var(--muted)" }}> · Instancia: {datos.canal.instancia}</span>}
+            {!datos.canal?.linea_configurada && (
+              <div style={{ color: "#9C6B2E", fontSize: 11.8, marginTop: 3 }}>
+                Esa línea aún no está conectada: se abrirá el envío manual.
+              </div>
+            )}
+          </div>
+
+          {/* 3 · El mensaje, editable antes de enviar */}
+          <div className="ca-label" style={{ marginBottom: 4 }}>
+            Mensaje{datos.plantilla?.nombre ? ` · ${datos.plantilla.nombre}` : ""}
+          </div>
+          <textarea className="ca-input" rows={7} value={texto} onChange={(e) => setTexto(e.target.value)}
+            style={{ width: "100%", resize: "vertical", fontFamily: "inherit", fontSize: 12.8 }} />
+
+          {/* 5 · Observación del responsable */}
+          <textarea className="ca-input" rows={2} placeholder="Observación (opcional)"
+            value={observacion} onChange={(e) => setObservacion(e.target.value)}
+            style={{ marginTop: 7, width: "100%", resize: "vertical", fontFamily: "inherit" }} />
+
+          {confirmar && (
+            <div style={{ background: "#F7ECDD", color: "#9C6B2E", borderRadius: 8, padding: "8px 10px", fontSize: 12.3, lineHeight: 1.45, marginTop: 8 }}>
+              Este paciente ya fue contactado hace {c.horas_desde_ultimo} h por este caso.
+              ¿Enviar otro mensaje igual?
+            </div>
+          )}
+
+          <div style={{ display: "flex", gap: 7, marginTop: 9 }}>
+            <button className="ca-btn" style={{ flex: 1, background: "var(--wa)", borderColor: "var(--wa)", color: "#fff" }}
+              disabled={enviando || !texto.trim()} onClick={() => enviar(confirmar)}>
+              <Send size={14} strokeWidth={2} /> {enviando ? "Enviando…" : confirmar ? "Sí, enviar igual" : "Enviar WhatsApp"}
+            </button>
+            <button className="ca-mini" onClick={() => { setAbierto(false); setConfirmar(false); }}>Cancelar</button>
+          </div>
+          <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 7, lineHeight: 1.45 }}>
+            El envío deja el caso <strong>en seguimiento</strong>; no lo marca como resuelto.
+            Eso solo pasa cuando la Agenda registra la próxima cita o el DP de cierre.
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ContinuidadDetalle({ id, onCerrar, onOpen, showToast, onGestionGuardada }) {
   const [caso, setCaso] = useState(null);
   const [error, setError] = useState("");
@@ -3968,6 +4127,14 @@ function ContinuidadDetalle({ id, onCerrar, onOpen, showToast, onGestionGuardada
               )}
             </div>
           </div>
+
+          {/* Contactar por WhatsApp: parte del mismo flujo, no una pantalla aparte. */}
+          <ContactarWhatsappPanel
+            id={id} contacto={caso.contacto} showToast={showToast}
+            onActualizado={(d) => {
+              setCaso(d); setGestion(gestionAForm(d.gestion));
+              onGestionGuardada?.(id, d.gestion, d.en_cola);
+            }} />
 
           {/* Historial de gestión: qué pasó, quién y cuándo. Solo códigos: la
               observación aparece como "actualizada", nunca con su texto. */}

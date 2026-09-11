@@ -193,6 +193,76 @@ def guardar(paciente, usuario, datos):
     return g
 
 
+@transaction.atomic
+def asegurar_gestion(paciente, usuario, fila):
+    """La gestión del caso, creándola si todavía no existía.
+
+    La usa el contacto por WhatsApp: escribirle al paciente (o intentarlo y no
+    poder) es un acto explícito que tiene que quedar registrado, aunque nadie
+    haya pulsado antes "Guardar seguimiento". Abrir el panel sigue sin escribir
+    nada: esto solo corre cuando alguien actúa.
+    """
+    if fila is None:
+        raise SinCondicion("Este caso ya no está pendiente: la fuente oficial lo resolvió.")
+    g = gestion_de(fila)
+    if g is not None and g.abierta:
+        return g
+    ev = fila["evento"]
+    if g is None:
+        g = GestionContinuidad.objects.create(
+            clinica=paciente.clinica, paciente=paciente, tipo=ev["tipo"], meta=ev["meta"],
+            cita_referencia_id=ev["cita_referencia"],
+            revisado_por=usuario, revisado_en=timezone.now(),
+        )
+        _hist(g, Evento.REVISION_INICIADA, usuario=usuario)
+        return g
+    # Estaba cerrada y alguien vuelve a actuar sobre ella: se reabre con rastro,
+    # igual que hace `guardar`.
+    antes = g.estado_revision
+    g.estado_revision = Revision.SIN_REVISAR
+    g.resuelto_en, g.resuelto_por = None, None
+    g.actualizado_en = timezone.now()
+    g.save(update_fields=["estado_revision", "resuelto_en", "resuelto_por", "actualizado_en"])
+    _hist(g, Evento.REABIERTO, antes, Revision.SIN_REVISAR, usuario=usuario)
+    return g
+
+
+def registrar_evento(g, evento, antes="", despues="", usuario=None, origen=Origen.USUARIO):
+    """Deja una línea en el historial de la gestión. Append-only, como el resto."""
+    return _hist(g, evento, antes, despues, usuario=usuario, origen=origen)
+
+
+@transaction.atomic
+def marcar_en_seguimiento(g, usuario, resultado=""):
+    """Mueve el caso a "en seguimiento" y, si se da, fija el resultado operativo.
+
+    Es lo máximo que puede hacer un contacto por WhatsApp: NUNCA "resuelto".
+    Que el paciente diga que no sigue no apaga la condición — eso solo pasa
+    cuando la Agenda registra el DP de cierre, y entonces `reconciliar` cierra
+    la gestión sola. Ver la alerta de `serializar`.
+    """
+    campos = []
+    if g.estado_revision != Revision.EN_SEGUIMIENTO:
+        antes = g.estado_revision
+        g.estado_revision = Revision.EN_SEGUIMIENTO
+        campos.append("estado_revision")
+        # Pasar a "en seguimiento" deshace una resolución previa: el caso volvió
+        # a estar vivo porque alguien lo está trabajando.
+        if g.resuelto_en is not None:
+            g.resuelto_en, g.resuelto_por = None, None
+            campos += ["resuelto_en", "resuelto_por"]
+        _hist(g, Evento.ESTADO, antes, Revision.EN_SEGUIMIENTO, usuario=usuario)
+    if resultado and resultado != g.resultado_operativo:
+        antes = g.resultado_operativo
+        g.resultado_operativo = resultado
+        campos.append("resultado_operativo")
+        _hist(g, Evento.RESULTADO, antes, resultado, usuario=usuario)
+    if campos:
+        g.actualizado_por, g.actualizado_en = usuario, timezone.now()
+        g.save(update_fields=campos + ["actualizado_por", "actualizado_en"])
+    return g
+
+
 # --- reconciliar (la fuente oficial cambió) -----------------------------------
 
 def _motivo(g, paciente, fila):
@@ -316,6 +386,17 @@ def resumen(g, fila=None):
     }
 
 
+# Por qué no se pudo contactar (va en `despues` del evento contacto_bloqueado).
+_MOTIVO_BLOQUEO = {
+    "sin_sede": "el paciente no tiene sede asignada",
+    "sin_telefono": "el paciente no tiene teléfono registrado",
+    "sin_linea": "no hay línea de WhatsApp para esa sede",
+}
+
+_PLANTILLA_LABEL = {
+    "continuidad_confirmar": "Confirmación de continuidad",
+}
+
 _LABEL = {
     "estado_revision": dict(GestionContinuidad.Revision.choices),
     "resultado_operativo": dict(GestionContinuidad.Resultado.choices),
@@ -344,6 +425,14 @@ def _texto_historial(h):
         return "Condición reabierta" + (" por cambio en fuente oficial" if h.origen == Origen.SISTEMA else "")
     if e == Evento.NUEVA_CONDICION:
         return "Nueva condición detectada"
+    if e == Evento.WHATSAPP_ENVIADO:
+        return f"WhatsApp enviado · {_PLANTILLA_LABEL.get(h.despues, h.despues or 'mensaje')}"
+    if e == Evento.WHATSAPP_FALLIDO:
+        return f"WhatsApp no se pudo enviar · {h.despues or 'sin detalle'}"
+    if e == Evento.RESPUESTA_PACIENTE:
+        return f"Respuesta del paciente → {_LABEL['resultado_operativo'].get(h.despues, h.despues or '—')}"
+    if e == Evento.CONTACTO_BLOQUEADO:
+        return f"Contacto bloqueado · {_MOTIVO_BLOQUEO.get(h.despues, h.despues or 'sin detalle')}"
     return h.get_evento_display()
 
 

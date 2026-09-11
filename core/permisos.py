@@ -64,6 +64,35 @@ class PuedeGestionarContinuidad(BasePermission):
                     and puede_gestionar_continuidad(request.user))
 
 
+# Roles que pueden ESCRIBIRLE a un paciente desde el Centro de Continuidad.
+# Es más estrecho que ROLES_GESTION_CONTINUIDAD a propósito:
+#   - la analista gestiona casos pero nunca contacta pacientes (solo lectura,
+#     y `registrar_y_enviar` ya la rechaza),
+#   - el psicólogo no ve el teléfono de sus pacientes (ROLES_SIN_CONTACTO):
+#     mal podría mandarle un WhatsApp.
+# Contactar es tarea de coordinación; gerencia entra porque cubre a coordinación.
+ROLES_CONTACTAN_PACIENTES = ("admin", "asistente")
+
+
+def puede_contactar_pacientes(user):
+    return getattr(user, "rol", None) in ROLES_CONTACTAN_PACIENTES
+
+
+class PuedeContactarPacientes(BasePermission):
+    """Escribirle al paciente por WhatsApp desde el Centro de Continuidad.
+
+    Se declara en las vistas de contacto, así que reemplaza a las globales solo
+    ahí. Ver ROLES_CONTACTAN_PACIENTES para por qué deja fuera al psicólogo y a
+    la analista, que sí pueden gestionar el caso.
+    """
+
+    message = "Tu perfil no puede contactar pacientes."
+
+    def has_permission(self, request, view):
+        return bool(request.user and request.user.is_authenticated
+                    and puede_contactar_pacientes(request.user))
+
+
 class BloqueoEscrituraAnalista(BasePermission):
     """Cierra POST/PUT/PATCH/DELETE para los roles de solo lectura.
 

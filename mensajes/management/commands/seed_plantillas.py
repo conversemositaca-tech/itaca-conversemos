@@ -3,7 +3,7 @@
     python manage.py seed_plantillas
 
 Idempotente: solo crea las plantillas que falten (por clave); no pisa las editadas.
-Variables disponibles: {nombre} {psicologo} {fecha} {hora} {n_sesion} {sede} {clinica}
+Variables disponibles: {nombre} {psicologo} {fecha} {hora} {n_sesion} {sede} {clinica} {coordinadora}
 """
 from django.core.management.base import BaseCommand
 
@@ -37,6 +37,18 @@ PLANTILLAS = [
      "¡Feliz cumpleaños, {nombre}! 🎉🎂 En {clinica} te deseamos un día lleno de bienestar y "
      "momentos felices. Gracias por confiar en nosotros para cuidar tu salud emocional. "
      "¡Un fuerte abrazo! 🌿"),
+    # Contacto desde el Centro de Continuidad: coordinación le pregunta al
+    # paciente si sigue con su proceso. Lo firma quien escribe ({coordinadora}).
+    ("continuidad_confirmar", "Confirmación de continuidad",
+     "Hola {nombre} 😊
+
+Soy {coordinadora}, del equipo de {clinica}.
+
+"
+     "Queríamos saber cómo continúas con tu proceso psicológico y si deseas "
+     "agendar tu próxima sesión.
+
+¿Te gustaría que revisemos horarios disponibles?"),
     # Acompañamiento "Eli" (mismas que la migración mensajes 0005).
     ("eli_recontacto", "Eli · Recontacto lead",
      "Hola {nombre} ✨ gracias por escribirnos. Sabemos que no siempre es fácil buscar ayuda, y valoramos "

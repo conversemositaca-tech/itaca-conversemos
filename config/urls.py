@@ -8,7 +8,8 @@ from core.buzon import SugerenciaViewSet
 from core.recursos import RecursoViewSet
 from core.gerencia import (
     ClinicaConfigView, ContinuidadCasoView, ContinuidadGestionView,
-    ContinuidadPendientesView, EliminacionRevisarView, EliminacionesRevisarTodasView,
+    ContinuidadPendientesView, ContinuidadRespuestaView, ContinuidadWhatsappView,
+    EliminacionRevisarView, EliminacionesRevisarTodasView,
     GerenciaResumenView, HoyResumenView,
 )
 from core.integraciones import (
@@ -118,6 +119,9 @@ urlpatterns = [
     path("api/continuidad/pendientes/", ContinuidadPendientesView.as_view(), name="continuidad-pendientes"),
     path("api/continuidad/caso/<int:pk>/", ContinuidadCasoView.as_view(), name="continuidad-caso"),
     path("api/continuidad/caso/<int:pk>/gestion/", ContinuidadGestionView.as_view(), name="continuidad-gestion"),
+    # Contacto por WhatsApp del caso. La ruta específica va ANTES de la general.
+    path("api/continuidad/caso/<int:pk>/whatsapp/respuesta/", ContinuidadRespuestaView.as_view(), name="continuidad-respuesta"),
+    path("api/continuidad/caso/<int:pk>/whatsapp/", ContinuidadWhatsappView.as_view(), name="continuidad-whatsapp"),
     path("api/eliminaciones/<int:pk>/revisar/", EliminacionRevisarView.as_view(), name="eliminacion-revisar"),
     path("api/eliminaciones/revisar-todas/", EliminacionesRevisarTodasView.as_view(), name="eliminaciones-revisar-todas"),
     path("api/clinica/", ClinicaConfigView.as_view(), name="clinica-config"),

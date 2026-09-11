@@ -885,6 +885,15 @@ class GestionContinuidad(ModeloTenant):
         YA_ACTUALIZADO = "ya_actualizado", "Ya actualizado"
         REQUIERE_CORRECCION = "requiere_correccion", "Requiere corrección"
         REQUIERE_CONFIRMAR = "requiere_confirmar", "Requiere confirmar"
+        # Lo que dijo el paciente cuando coordinación lo contactó. Los clasifica
+        # una persona leyendo la respuesta, nunca el sistema interpretando el
+        # texto: qué quiso decir alguien en proceso psicológico no se adivina.
+        # Ninguno cierra el caso — la condición solo desaparece cuando la Agenda
+        # registra lo que corresponde (la próxima cita, o el DP de cierre).
+        PACIENTE_CONTINUA = "paciente_continua", "Paciente desea continuar"
+        PAUSA_TEMPORAL = "pausa_temporal", "Pausa temporal (más adelante)"
+        NO_CONTINUARA = "no_continuara", "No continuará (cierre administrativo)"
+        SIN_RESPUESTA = "sin_respuesta", "Contactado, sin respuesta"
 
     class Responsable(models.TextChoices):
         COORDINACION = "coordinacion", "Coordinación"
@@ -975,6 +984,13 @@ class HistorialContinuidad(ModeloTenant):
         AUTO_RESUELTO = "auto_resuelto", "Condición resuelta automáticamente"
         REABIERTO = "reabierto", "Condición reabierta"
         NUEVA_CONDICION = "nueva_condicion", "Nueva condición detectada"
+        # Contacto por WhatsApp desde el Centro de Continuidad. `despues` lleva
+        # la clave de la plantilla o el código del resultado, nunca el texto:
+        # el mensaje completo vive en la bitácora (mensajes.Mensaje).
+        WHATSAPP_ENVIADO = "whatsapp_enviado", "WhatsApp enviado"
+        WHATSAPP_FALLIDO = "whatsapp_fallido", "WhatsApp no se pudo enviar"
+        RESPUESTA_PACIENTE = "respuesta_paciente", "Respuesta del paciente"
+        CONTACTO_BLOQUEADO = "contacto_bloqueado", "Contacto bloqueado"
 
     class Origen(models.TextChoices):
         USUARIO = "usuario", "Usuario"
