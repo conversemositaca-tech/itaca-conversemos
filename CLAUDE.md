@@ -536,3 +536,38 @@ los feriados de Perú. Zona horaria por defecto: `America/Lima` (GMT-5).
      segunda instancia sin tocar la que ya corre.
    - **Pendiente**: medir qué tamaño de payload aguanta EasyPanel/Railway antes de subir
      el límite de 2 MB; la prueba manual controlada con la línea `vibery`.
+33. ✓ El sitio web vive en la misma app (rama `feature/sitio-publico`, 2026-09-12).
+   Las cinco páginas principales de conversemos.itaca.com.pe se rehicieron dentro del
+   frontend que ya corre en Railway, con el marco y el sistema visual del agendamiento:
+   `/` · `/quienes-somos` · `/psicologos` · `/terapias-online` · `/preguntas`. El catch-all
+   de `config/urls.py` ya las servía; `main.jsx` las enruta con `esRutaSitio()`.
+   - **Backend**: `core/sitio.py` = `GET /api/sitio/` (público, sin token en la URL) con
+     clínica, `token_agenda`, servicios reservables y equipo; y `GET /api/sitio/foto/<pk>/`
+     para las fotos (Django sigue sin publicar /media · Ley 29733). La clínica sale de
+     `SITIO_CLINICA_TOKEN`; con una sola clínica activa se resuelve sola y **con varias
+     responde 404 en vez de adivinar** (aislamiento). Tests: `core/tests_sitio.py` (6).
+   - **Frontend**: `Sitio.jsx` (páginas + estilos `.st-*`), `rutas.js` (menú, navegación sin
+     recarga con `history.pushState`, `propsEnlace`) y `sitio-textos.js` (los textos del
+     equipo, copiados del WordPress; solo se corrigieron tildes). En `App.jsx` el marco
+     (`AgendaTop`/`AgendaPie`/`AgendaWa`/`agendaFaq`/`AGENDA_CSS`) pasó a exportarse y el
+     menú dejó de apuntar al WordPress: ahora navega por dentro, marca la página actual y
+     suma el botón "Pide tu cita". Blog y los tres test siguen en WordPress, marcados como
+     enlaces externos (no se migran todavía).
+   - **La página de Psicólogos sale de la base**: 15 activos con foto, colegiatura, enfoque
+     y frase, con filtro por sede. La web vieja mostraba 7, tres de ellos ya inactivos
+     (Katia Briones, Verónica León, Pamela Revilla). Los precios de "Terapias online" y el
+     de la primera consulta en el FAQ salen del catálogo (`Servicio` reservable).
+   - **Datos NO publicados a propósito**: las cifras de la portada del WordPress ("300+
+     vidas cambiadas", "2,000+ personas", "21,600+ horas conversando") contradicen la base
+     (2.833 atenciones registradas), así que quedaron fuera; sí se conservaron las frases
+     que las acompañaban. El teléfono de Piura del pie del WordPress (947709108) **no
+     coincide** con el del sistema (983 292 173): se usó el del sistema.
+   - Verificado con Playwright (escritorio 1366 y móvil 390, las 5 páginas): sin errores de
+     consola, sin peticiones fallidas, sin enlaces rotos, un solo `<h1>` por página, foco
+     visible, menú navegable en móvil y sin desborde horizontal. `manage.py check` limpio,
+     46 tests (sitio + pacientes) OK, build de Vite OK y ESLint sin avisos nuevos en los
+     archivos nuevos (App.jsx suma 3 advertencias de `react-refresh`, solo de desarrollo).
+   - **Pendiente (acción del usuario)**: apuntar el dominio conversemos.itaca.com.pe a
+     Railway (y renovar su certificado, vencido el 6 ene 2026), decidir si se migran el blog
+     (10 entradas, la última de enero de 2022) y los tres test psicológicos, y confirmar qué
+     número de Piura es el vigente.
