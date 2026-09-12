@@ -572,3 +572,26 @@ class AlertaUsaSesionRealTests(TestCase):
                              inicio=timezone.now() - timedelta(days=1))
         r = self.client.get(f"/api/pacientes/{p.id}/")
         self.assertEqual(r.json()["sesion_real"], 0)
+
+
+class AgendamientoPublicoTests(TestCase):
+    """La página pública /agendar/<token> muestra el N° de colegiatura de cada
+    psicólogo, como lo hace el sitio web: el endpoint de info debe exponerlo."""
+
+    def setUp(self):
+        self.clinica = Clinica.objects.create(nombre="Conversemos", slug="conversemos-pub")
+        self.token = self.clinica.asegurar_token_captacion()
+        self.psico = Usuario.objects.create_user(
+            email="psico-pub@test.pe", password="x", clinica=self.clinica, rol=Usuario.Rol.MEDICO,
+        )
+        Profesional.objects.create(
+            clinica=self.clinica, nombre="Lic. Gabriela Rentería", colegiatura="45307",
+            usuario=self.psico, horario_semanal={"1": [10, 11]},
+        )
+
+    def test_info_expone_colegiatura(self):
+        r = self.client.get(f"/api/agendamiento/{self.token}/")
+        self.assertEqual(r.status_code, 200)
+        profs = r.json()["profesionales"]
+        self.assertEqual(len(profs), 1)
+        self.assertEqual(profs[0]["colegiatura"], "45307")
