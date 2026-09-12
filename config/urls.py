@@ -9,7 +9,7 @@ from core.recursos import RecursoViewSet
 from core.gerencia import (
     ClinicaConfigView, ContinuidadCasoView, ContinuidadGestionView,
     ContinuidadCopiadoView, ContinuidadPendientesView, ContinuidadRespuestaView,
-    ContinuidadWhatsappView,
+    ContinuidadReintentoView, ContinuidadWhatsappView,
     EliminacionRevisarView, EliminacionesRevisarTodasView,
     GerenciaResumenView, HoyResumenView,
 )
@@ -49,6 +49,7 @@ from leads.captacion import (
     RegenerarTokenView,
 )
 from mensajes.api import MensajeViewSet, PlantillaMensajeViewSet
+from mensajes.materiales import MaterialViewSet
 from mensajes.monitor_evolution import EvolutionEstadoView, EvolutionInstanciasView
 from mensajes.webhook_evolution import EvolutionWebhookView
 from pacientes.api import AdjuntoViewSet, AplicacionEscalaViewSet, AtencionViewSet, BloqueoAgendaViewSet, CitaViewSet, ContactoProfesionalViewSet, ObjetivoTerapeuticoViewSet, PacienteViewSet, RespuestaNPSViewSet, TareaViewSet, TranscribirView
@@ -96,6 +97,7 @@ router.register(r"metricas", MetricaMensualViewSet, basename="metrica")
 router.register(r"reportes-semanales", ReporteSemanalViewSet, basename="reporte-semanal")
 router.register(r"mensajes", MensajeViewSet, basename="mensaje")
 router.register(r"plantillas", PlantillaMensajeViewSet, basename="plantilla")
+router.register(r"materiales", MaterialViewSet, basename="material")
 router.register(r"consentimientos", ConsentimientoViewSet, basename="consentimiento")
 router.register(r"leads", LeadViewSet, basename="lead")
 router.register(r"sugerencias", SugerenciaViewSet, basename="sugerencia")
@@ -123,6 +125,7 @@ urlpatterns = [
     # Contacto por WhatsApp del caso. La ruta específica va ANTES de la general.
     path("api/continuidad/caso/<int:pk>/whatsapp/respuesta/", ContinuidadRespuestaView.as_view(), name="continuidad-respuesta"),
     path("api/continuidad/caso/<int:pk>/whatsapp/copiado/", ContinuidadCopiadoView.as_view(), name="continuidad-copiado"),
+    path("api/continuidad/caso/<int:pk>/whatsapp/reintentar/", ContinuidadReintentoView.as_view(), name="continuidad-reintento"),
     path("api/continuidad/caso/<int:pk>/whatsapp/", ContinuidadWhatsappView.as_view(), name="continuidad-whatsapp"),
     path("api/eliminaciones/<int:pk>/revisar/", EliminacionRevisarView.as_view(), name="eliminacion-revisar"),
     path("api/eliminaciones/revisar-todas/", EliminacionesRevisarTodasView.as_view(), name="eliminaciones-revisar-todas"),

@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import {
   Home, Calendar, Users, Receipt, Search, Plus, Clock, ChevronLeft, ChevronDown,
@@ -10,6 +10,7 @@ import {
   Building2, DoorOpen, ChevronRight, Compass, Send,
   Shield, Target, Heart, Leaf, Trophy, Award, Sparkles, Landmark,
   FileSpreadsheet, Presentation, FileDown,
+  Smile, Upload, ArrowUp, ArrowDown, RotateCcw,
 } from "lucide-react";
 import { api } from "./api";
 import { modeloReporte, modeloTabla, exportarExcel, exportarWord, exportarPowerPoint, exportarPDF, exportarCSV } from "./exportGerencia";
@@ -3763,233 +3764,853 @@ const gestionAForm = (g) => (g ? {
 // que la coordinadora reconozca al instante que eso es lo que verá la paciente.
 // Fuera de ese recuadro, la pantalla es del sistema.
 const WA_CSS = `
-.wam-fondo{position:fixed;inset:0;background:rgba(52,52,52,.42);display:flex;
-  align-items:center;justify-content:center;z-index:140;padding:18px}
-.wam{background:var(--surface);border-radius:14px;width:100%;max-width:860px;
-  max-height:92vh;display:flex;flex-direction:column;overflow:hidden;
-  border:1px solid var(--line);box-shadow:0 16px 44px rgba(10,125,146,.16)}
+/* El compositor vive en document.body (createPortal), FUERA de .clinica-app,
+   que es donde el sistema declara sus variables y su tipografía. Por eso la
+   paleta se redeclara aquí: sin esto el modal se queda sin fondo, sin bordes y
+   con la serif del navegador. Los valores son los mismos del sistema. */
+.wa-compose-overlay{
+  --wa-surface:#FFFFFF; --wa-bg:#F4FBFD; --wa-ink:#343434; --wa-ink-soft:#555555;
+  --wa-muted:#6E6E6E; --wa-line:#DCEBEF; --wa-accent:#0A7D92; --wa-accent-soft:#D7F4FA;
+  --wa-hover:#EAF9FC; --wa-verde:#2F8F5B; --wa-verde-soft:#E6F4EC;
+  font-family:'Inter',-apple-system,system-ui,'Segoe UI',sans-serif;
+  letter-spacing:-0.01em; -webkit-font-smoothing:antialiased;
+  position:fixed; inset:0; background:rgba(52,52,52,.45);
+  display:flex; align-items:center; justify-content:center; padding:18px; z-index:140;
+}
+.wa-compose-overlay *{box-sizing:border-box; font-family:inherit}
 
-/* Cabecera: a quién le escribo y por dónde sale. Es lo que evita el error caro. */
-.wam-top{background:var(--accent-soft);border-bottom:1px solid var(--line);
-  padding:13px 16px;display:flex;align-items:flex-start;gap:12px}
-.wam-top-t{font-size:15px;font-weight:600;color:var(--ink);line-height:1.2}
-.wam-top-sub{font-size:12.5px;color:var(--ink-soft);margin-top:3px;line-height:1.5}
-.wam-top-sub strong{color:var(--ink);font-weight:600}
-.wam-x{background:none;border:none;color:var(--muted);cursor:pointer;padding:4px;
-  border-radius:7px;flex-shrink:0;display:flex}
-.wam-x:hover{background:rgba(255,255,255,.7);color:var(--ink)}
+.wa-compose-modal,.wam{background:#FFFFFF; color:var(--wa-ink);
+  border:1px solid var(--wa-line); border-radius:14px; width:100%; max-width:880px;
+  max-height:92vh; display:flex; flex-direction:column; overflow:hidden;
+  box-shadow:0 16px 44px rgba(10,125,146,.18)}
 
-/* Dos columnas en escritorio; una sola en móvil, compositor primero. */
-.wam-grid{display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:0;
-  overflow:hidden;flex:1;min-height:0}
-.wam-col{padding:15px 16px;overflow-y:auto}
-.wam-col.prev{background:var(--bg);border-left:1px solid var(--line)}
-@media (max-width:820px){
-  .wam-grid{grid-template-columns:1fr;overflow-y:auto}
-  .wam-col{overflow:visible}
-  .wam-col.prev{border-left:none;border-top:1px solid var(--line)}
+.wa-compose-header{background:#D7F4FA; border-bottom:1px solid var(--wa-line);
+  padding:13px 16px; display:flex; align-items:flex-start; gap:12px; flex-shrink:0}
+.wa-compose-title{font-size:15px; font-weight:600; line-height:1.2; color:var(--wa-ink)}
+.wa-compose-meta{font-size:12.5px; color:var(--wa-ink-soft); margin-top:3px; line-height:1.5}
+.wa-compose-meta strong{color:var(--wa-ink); font-weight:600}
+.wa-compose-x{background:none; border:none; color:var(--wa-muted); cursor:pointer;
+  padding:4px; border-radius:7px; flex-shrink:0; display:flex; line-height:0}
+.wa-compose-x:hover{background:rgba(255,255,255,.75); color:var(--wa-ink)}
+
+.wa-compose-body{display:grid; grid-template-columns:minmax(0,1fr) 336px;
+  flex:1; min-height:0; overflow:hidden; background:#FFFFFF}
+.wa-compose-left{padding:15px 16px; overflow-y:auto; min-width:0; background:#FFFFFF}
+.wa-compose-right{padding:15px 16px; overflow-y:auto; background:#FFFFFF;
+  border-left:1px solid var(--wa-line); min-width:0}
+@media (max-width:840px){
+  .wa-compose-body{grid-template-columns:1fr; overflow-y:auto}
+  .wa-compose-left,.wa-compose-right{overflow:visible}
+  .wa-compose-right{border-left:none; border-top:1px solid var(--wa-line)}
 }
 
-.wam-rot{font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;
-  color:var(--muted);margin-bottom:6px}
-.wam-motivo{background:var(--hover);border:1px solid var(--line);border-radius:9px;
-  padding:9px 11px;font-size:12.6px;line-height:1.5;color:var(--ink-soft);margin-bottom:14px}
-.wam-txt{width:100%;resize:vertical;font-family:inherit;font-size:13.2px;line-height:1.55;
-  padding:11px 12px;border:1px solid var(--line);border-radius:9px;background:var(--surface);
-  color:var(--ink)}
-.wam-txt:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(10,125,146,.12)}
-.wam-cuenta{display:flex;justify-content:space-between;align-items:center;
-  font-size:11.5px;color:var(--muted);margin-top:5px}
+.wa-compose-label{font-size:11px; font-weight:600; letter-spacing:.05em;
+  text-transform:uppercase; color:var(--wa-muted); margin-bottom:6px}
+.wa-compose-note{background:var(--wa-hover); border:1px solid var(--wa-line);
+  border-radius:9px; padding:9px 11px; font-size:12.6px; line-height:1.5;
+  color:var(--wa-ink-soft); margin-bottom:14px}
 
-/* Adjunto */
-.wam-adj{display:flex;align-items:center;gap:8px;margin-top:12px;flex-wrap:wrap}
-.wam-chip{display:flex;align-items:center;gap:8px;border:1px solid var(--line);
-  border-radius:9px;padding:6px 8px;background:var(--surface)}
-.wam-chip img{width:38px;height:38px;border-radius:6px;object-fit:cover;display:block}
-.wam-chip-n{font-size:12.3px;color:var(--ink);line-height:1.3}
-.wam-chip-m{font-size:11px;color:var(--muted)}
+/* Campos propios: las clases del sistema (.ca-input, .ca-mini) también usan las
+   variables de .clinica-app, así que aquí no sirven. */
+.wa-compose-field{width:100%; font-size:13.2px; line-height:1.5; padding:9px 11px;
+  border:1px solid var(--wa-line); border-radius:9px; background:#FFFFFF;
+  color:var(--wa-ink); margin-bottom:14px; display:block}
+.wa-compose-field:focus{outline:none; border-color:var(--wa-accent);
+  box-shadow:0 0 0 3px rgba(10,125,146,.13)}
+.wa-compose-textarea{width:100%; resize:vertical; font-size:13.2px; line-height:1.55;
+  padding:11px 12px; border:1px solid var(--wa-line); border-radius:9px;
+  background:#FFFFFF; color:var(--wa-ink); display:block; min-height:120px}
+.wa-compose-textarea:focus{outline:none; border-color:var(--wa-accent);
+  box-shadow:0 0 0 3px rgba(10,125,146,.13)}
+.wa-compose-count{display:flex; justify-content:space-between; align-items:center;
+  gap:10px; font-size:11.5px; color:var(--wa-muted); margin-top:5px}
 
-/* Previsualización: aquí SÍ mandan los códigos de WhatsApp. */
-.wam-tel{border:1px solid var(--line);border-radius:12px;overflow:hidden;background:#fff}
-.wam-tel-top{background:#F0F2F5;border-bottom:1px solid #E1E4E7;padding:9px 11px;
-  display:flex;align-items:center;gap:9px}
-.wam-av{width:32px;height:32px;border-radius:50%;background:var(--accent);color:#fff;
-  display:flex;align-items:center;justify-content:center;font-size:12.5px;font-weight:600;flex-shrink:0}
-.wam-tel-n{font-size:13px;font-weight:600;color:#111B21;line-height:1.2}
-.wam-tel-s{font-size:11px;color:#667781}
-.wam-chat{background:#EFE7DE;
-  background-image:radial-gradient(rgba(0,0,0,.035) 1px,transparent 1px);
-  background-size:14px 14px;padding:13px 11px;min-height:190px;
-  display:flex;flex-direction:column;align-items:flex-end;gap:6px}
-.wam-burb{background:#D9FDD3;border-radius:8px 8px 3px 8px;padding:7px 9px 5px;
-  max-width:88%;box-shadow:0 1px 1px rgba(0,0,0,.09)}
-.wam-burb-img{width:100%;border-radius:5px;margin-bottom:5px;display:block}
-.wam-burb-t{font-size:12.8px;line-height:1.5;color:#111B21;white-space:pre-wrap;word-break:break-word}
-.wam-burb-h{display:flex;align-items:center;justify-content:flex-end;gap:3px;
-  font-size:10.5px;color:#667781;margin-top:3px}
-.wam-check{color:#53BDEB}
-.wam-vacio{align-self:center;color:#667781;font-size:12.3px;padding:22px 10px;text-align:center}
-.wam-nota{font-size:11.3px;color:var(--muted);line-height:1.5;margin-top:9px}
+.wa-compose-btn{border:1px solid var(--wa-line); background:#FFFFFF;
+  color:var(--wa-ink-soft); border-radius:8px; padding:7px 11px; font-size:12.5px;
+  cursor:pointer; display:inline-flex; align-items:center; gap:6px; line-height:1.2}
+.wa-compose-btn:hover:not(:disabled){background:var(--wa-hover); color:var(--wa-ink)}
+.wa-compose-btn:disabled{color:#A9B4B8; border-color:#EDF3F5; cursor:not-allowed}
+.wa-compose-primary{background:var(--wa-accent); border:1px solid var(--wa-accent);
+  color:#fff; border-radius:9px; padding:9px 16px; font-size:13.5px; font-weight:600;
+  cursor:pointer; display:inline-flex; align-items:center; gap:7px; line-height:1.2}
+.wa-compose-primary:hover:not(:disabled){background:#0b6b7c}
+.wa-compose-primary:disabled{background:#9CC7D0; border-color:#9CC7D0; cursor:not-allowed}
 
-/* Pie: la confirmación de destino va pegada al botón que envía. */
-.wam-pie{border-top:1px solid var(--line);padding:12px 16px;background:var(--surface);
-  display:flex;align-items:center;gap:12px;flex-wrap:wrap}
-.wam-destino{flex:1;min-width:180px;font-size:12.3px;color:var(--ink-soft);line-height:1.45}
-.wam-destino strong{color:var(--ink)}
-.wam-enviar{background:var(--accent);border:1px solid var(--accent);color:#fff;
-  border-radius:9px;padding:9px 16px;font-size:13.5px;font-weight:600;cursor:pointer;
-  display:flex;align-items:center;gap:7px;font-family:inherit}
-.wam-enviar:hover:not(:disabled){background:#0b6b7c}
-.wam-enviar:disabled{opacity:.45;cursor:not-allowed}
+/* --- Adjuntos: lista ordenable ------------------------------------------- */
+.wa-compose-attach{margin-top:14px}
+.wa-compose-adj{display:flex; align-items:center; gap:10px; border:1px solid var(--wa-line);
+  border-radius:10px; padding:7px 9px; background:#FFFFFF; margin-bottom:7px}
+.wa-compose-adj img{width:42px; height:42px; border-radius:7px; object-fit:cover;
+  display:block; flex-shrink:0; background:var(--wa-hover)}
+.wa-compose-adj-n{font-size:12.6px; color:var(--wa-ink); line-height:1.35;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.wa-compose-adj-m{font-size:11px; color:var(--wa-muted); margin-top:1px}
+.wa-compose-adj-orden{width:22px; height:22px; border-radius:50%; background:var(--wa-accent-soft);
+  color:#0A6273; font-size:11px; font-weight:700; display:flex; align-items:center;
+  justify-content:center; flex-shrink:0}
+.wa-compose-flechas{display:flex; flex-direction:column; gap:2px; flex-shrink:0}
+.wa-compose-flecha{border:1px solid var(--wa-line); background:#FFFFFF; color:var(--wa-ink-soft);
+  border-radius:6px; width:24px; height:19px; display:flex; align-items:center;
+  justify-content:center; cursor:pointer; padding:0; line-height:0}
+.wa-compose-flecha:hover:not(:disabled){background:var(--wa-hover); color:var(--wa-accent)}
+.wa-compose-flecha:disabled{color:#C3D2D6; border-color:#EDF3F5; cursor:not-allowed}
+.wa-compose-acciones{display:flex; gap:8px; flex-wrap:wrap; margin-top:9px}
 
-/* Resultado y últimos mensajes */
-.wam-ok{background:var(--wa-soft);border:1px solid #BFE3CE;border-radius:9px;
-  padding:10px 12px;margin-bottom:13px}
-.wam-ok-t{display:flex;align-items:center;gap:7px;font-size:13px;font-weight:600;color:#2F6B48}
-.wam-ok-d{font-size:11.6px;color:var(--ink-soft);line-height:1.6;margin-top:5px;
-  font-family:ui-monospace,monospace;word-break:break-all}
-.wam-err{background:#FBEDEC;border:1px solid #EBC9C6;border-radius:9px;padding:10px 12px;
-  margin-bottom:13px;font-size:12.5px;line-height:1.5;color:#9C4646}
-.wam-hist{border-top:1px solid var(--line);margin-top:14px;padding-top:12px}
-.wam-hist-i{display:flex;gap:8px;font-size:12.3px;line-height:1.5;padding:6px 0;
-  border-bottom:1px solid var(--line)}
-.wam-hist-i:last-child{border-bottom:none}
-.wam-hist-m{color:var(--muted);font-size:11.5px}
+/* Previsualización: aquí SÍ mandan los códigos de WhatsApp, porque su función
+   es que se reconozca de un vistazo que esto es lo que verá la paciente. */
+.wa-compose-preview{border:1px solid var(--wa-line); border-radius:12px;
+  overflow:hidden; background:#fff}
+.wa-compose-preview-top{background:#F0F2F5; border-bottom:1px solid #E1E4E7;
+  padding:9px 11px; display:flex; align-items:center; gap:9px}
+.wa-compose-avatar{width:32px; height:32px; border-radius:50%; background:var(--wa-accent);
+  color:#fff; display:flex; align-items:center; justify-content:center;
+  font-size:12.5px; font-weight:600; flex-shrink:0}
+.wa-compose-preview-n{font-size:13px; font-weight:600; color:#111B21; line-height:1.2}
+.wa-compose-preview-s{font-size:11px; color:#667781}
+.wa-compose-chat{background:#EFE7DE;
+  background-image:radial-gradient(rgba(0,0,0,.04) 1px,transparent 1px);
+  background-size:14px 14px; padding:13px 11px; min-height:190px; max-height:420px;
+  overflow-y:auto; display:flex; flex-direction:column; align-items:flex-end; gap:6px}
+.wa-compose-bubble{background:#D9FDD3; border-radius:8px 8px 3px 8px;
+  padding:7px 9px 5px; max-width:88%; box-shadow:0 1px 1px rgba(0,0,0,.09)}
+.wa-compose-bubble img{width:100%; border-radius:5px; display:block}
+.wa-compose-bubble-t{font-size:12.8px; line-height:1.5; color:#111B21;
+  white-space:pre-wrap; word-break:break-word}
+.wa-compose-bubble img + .wa-compose-bubble-t{margin-top:5px}
+.wa-compose-bubble-h{display:flex; align-items:center; justify-content:flex-end;
+  gap:3px; font-size:10.5px; color:#667781; margin-top:3px}
+.wa-compose-tick{color:#53BDEB}
+.wa-compose-empty{align-self:center; color:#667781; font-size:12.3px;
+  padding:22px 10px; text-align:center; line-height:1.5}
+.wa-compose-hint{font-size:11.3px; color:var(--wa-muted); line-height:1.5; margin-top:9px}
 
-/* Biblioteca de imágenes */
-.wam-bib{background:var(--surface);border-radius:14px;width:100%;max-width:640px;
-  max-height:86vh;display:flex;flex-direction:column;border:1px solid var(--line);
-  box-shadow:0 16px 44px rgba(10,125,146,.18);overflow:hidden}
-.wam-bib-top{padding:13px 16px;border-bottom:1px solid var(--line);display:flex;
-  align-items:center;gap:10px}
-.wam-bib-cuerpo{padding:14px 16px;overflow-y:auto;flex:1}
-.wam-rej{display:grid;grid-template-columns:repeat(auto-fill,minmax(138px,1fr));gap:11px}
-.wam-item{border:1px solid var(--line);border-radius:10px;overflow:hidden;cursor:pointer;
-  background:var(--surface);text-align:left;padding:0;font-family:inherit;transition:border-color .12s}
-.wam-item:hover{border-color:var(--accent)}
-.wam-item.sel{border-color:var(--accent);box-shadow:0 0 0 2px rgba(10,125,146,.18)}
-.wam-item img{width:100%;height:92px;object-fit:cover;display:block;background:var(--hover)}
-.wam-item-p{padding:7px 8px}
-.wam-item-n{font-size:12px;color:var(--ink);line-height:1.3;overflow:hidden;
-  text-overflow:ellipsis;white-space:nowrap}
-.wam-item-m{font-size:10.8px;color:var(--muted);margin-top:2px}
+.wa-compose-footer{border-top:1px solid var(--wa-line); padding:12px 16px;
+  background:#FFFFFF; display:flex; align-items:center; gap:10px;
+  flex-wrap:wrap; flex-shrink:0}
+.wa-compose-dest{flex:1; min-width:190px; font-size:12.3px; color:var(--wa-ink-soft);
+  line-height:1.45}
+.wa-compose-dest strong{color:var(--wa-ink)}
+
+.wa-compose-ok{background:var(--wa-verde-soft); border:1px solid #BFE3CE;
+  border-radius:9px; padding:10px 12px; margin-bottom:13px}
+.wa-compose-ok-t{display:flex; align-items:center; gap:7px; font-size:13px;
+  font-weight:600; color:#2F6B48}
+.wa-compose-ok-d{font-size:11.6px; color:var(--wa-ink-soft); line-height:1.7;
+  margin-top:5px; font-family:ui-monospace,'Cascadia Mono',monospace; word-break:break-all}
+.wa-compose-alert{border-radius:9px; padding:10px 12px; margin-bottom:13px;
+  font-size:12.5px; line-height:1.5}
+.wa-compose-alert.err{background:#FBEDEC; border:1px solid #EBC9C6; color:#9C4646}
+.wa-compose-alert.warn{background:#FDF6EC; border:1px solid #EBD9BE; color:#8A6224}
+
+/* Fallo parcial: lo más importante es distinguir qué llegó de lo que no. */
+.wa-compose-partes{list-style:none; margin:8px 0 0; padding:0}
+.wa-compose-parte{display:flex; align-items:center; gap:7px; font-size:12.3px;
+  line-height:1.6; color:var(--wa-ink-soft)}
+.wa-compose-parte.ok{color:#2F6B48}
+.wa-compose-parte.no{color:#9C4646}
+.wa-compose-parte.esp{color:var(--wa-muted)}
+
+/* Modo de prueba: tiene que verse DISTINTO de todo lo demás para que nadie lo
+   confunda con un envío normal desde la línea de la sede. */
+.wa-compose-test{background:#FFF4E0; border:1px dashed #D9A441; border-radius:9px;
+  padding:9px 11px; margin-bottom:13px; font-size:12.4px; line-height:1.5; color:#8A6224}
+.wa-compose-test b{display:block; font-size:12.8px; margin-bottom:2px; color:#7A5418}
+
+.wa-compose-hist{border-top:1px solid var(--wa-line); margin-top:14px; padding-top:12px}
+.wa-compose-hist-i{display:flex; gap:8px; font-size:12.3px; line-height:1.5;
+  padding:6px 0; border-bottom:1px solid var(--wa-line)}
+.wa-compose-hist-i:last-child{border-bottom:none}
+.wa-compose-hist-m{color:var(--wa-muted); font-size:11.5px}
+
+/* --- Biblioteca de imágenes ---------------------------------------------- */
+.wa-compose-lib{background:#FFFFFF; color:var(--wa-ink);
+  border:1px solid var(--wa-line); border-radius:14px; width:100%; max-width:720px;
+  max-height:88vh; display:flex; flex-direction:column; overflow:hidden;
+  box-shadow:0 16px 44px rgba(10,125,146,.2)}
+.wa-compose-lib-top{padding:13px 16px; border-bottom:1px solid var(--wa-line);
+  display:flex; align-items:flex-start; gap:10px; flex-shrink:0; background:#FFFFFF}
+.wa-compose-lib-body{padding:14px 16px; overflow-y:auto; flex:1; background:#FFFFFF}
+.wa-compose-search{position:relative; margin-bottom:11px}
+.wa-compose-search input{width:100%; padding:9px 11px 9px 33px; font-size:13.2px;
+  border:1px solid var(--wa-line); border-radius:9px; background:#FFFFFF;
+  color:var(--wa-ink)}
+.wa-compose-search input:focus{outline:none; border-color:var(--wa-accent);
+  box-shadow:0 0 0 3px rgba(10,125,146,.13)}
+.wa-compose-cats{display:flex; gap:6px; flex-wrap:wrap; margin-bottom:13px}
+.wa-compose-cat{border:1px solid var(--wa-line); background:#FFFFFF; color:var(--wa-ink-soft);
+  border-radius:99px; padding:5px 11px; font-size:12px; cursor:pointer; line-height:1.2}
+.wa-compose-cat:hover{background:var(--wa-hover)}
+.wa-compose-cat.on{background:var(--wa-accent-soft); border-color:#A8DDE7; color:#0A6273;
+  font-weight:600}
+.wa-compose-grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(140px,1fr));
+  gap:11px}
+.wa-compose-item{border:1px solid var(--wa-line); border-radius:10px; overflow:hidden;
+  cursor:pointer; background:#FFFFFF; text-align:left; padding:0; position:relative;
+  transition:border-color .12s, box-shadow .12s}
+.wa-compose-item:hover{border-color:var(--wa-accent)}
+.wa-compose-item.sel{border-color:var(--wa-accent); box-shadow:0 0 0 2px rgba(10,125,146,.22)}
+.wa-compose-item.ya{cursor:default}
+.wa-compose-item.ya img{opacity:.45}
+.wa-compose-item img{width:100%; height:96px; object-fit:cover; display:block;
+  background:var(--wa-hover)}
+.wa-compose-item-p{padding:7px 8px}
+.wa-compose-item-n{font-size:12px; color:var(--wa-ink); line-height:1.3;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.wa-compose-item-m{font-size:10.8px; color:var(--wa-muted); margin-top:2px}
+.wa-compose-tick-box{position:absolute; top:7px; left:7px; width:21px; height:21px;
+  border-radius:6px; border:1.5px solid #FFFFFF; background:rgba(52,52,52,.35);
+  display:flex; align-items:center; justify-content:center; color:#FFFFFF;
+  box-shadow:0 1px 3px rgba(0,0,0,.25)}
+.wa-compose-item.sel .wa-compose-tick-box{background:var(--wa-accent); border-color:#FFFFFF}
+.wa-compose-item.ya .wa-compose-tick-box{background:#8FB9C2}
+.wa-compose-vacio{color:var(--wa-muted); font-size:12.8px; text-align:center;
+  padding:26px 10px; line-height:1.5}
+
+/* Subir una imagen nueva */
+.wa-compose-subir{border:1px solid var(--wa-line); border-radius:11px; padding:13px;
+  background:var(--wa-bg); margin-bottom:13px}
+.wa-compose-subir-t{font-size:13px; font-weight:600; color:var(--wa-ink); margin-bottom:9px}
+.wa-compose-subir-fila{display:flex; gap:11px; align-items:flex-start; flex-wrap:wrap}
+.wa-compose-subir-prev{width:84px; height:84px; border-radius:9px; object-fit:cover;
+  border:1px solid var(--wa-line); display:block; background:#FFFFFF; flex-shrink:0}
+.wa-compose-subir-campos{flex:1; min-width:190px}
+.wa-compose-subir-campos .wa-compose-field{margin-bottom:8px}
+.wa-compose-drop{border:1.5px dashed #A8DDE7; border-radius:11px; padding:18px 14px;
+  text-align:center; background:var(--wa-bg); color:var(--wa-ink-soft); font-size:12.6px;
+  line-height:1.55; cursor:pointer; margin-bottom:13px}
+.wa-compose-drop:hover{background:var(--wa-hover); border-color:var(--wa-accent)}
+.wa-compose-drop b{display:block; color:var(--wa-ink); font-size:13.2px; margin-bottom:3px}
+
+/* --- Selector de emojis --------------------------------------------------- */
+/* Va en su propio portal con posición fija: el compositor tiene columnas con
+   overflow, y dentro de ellas un popover absoluto quedaría recortado. */
+.wa-emoji-pop{position:fixed; z-index:180; width:328px; max-width:calc(100vw - 24px);
+  background:#FFFFFF; border:1px solid #DCEBEF; border-radius:12px;
+  box-shadow:0 12px 34px rgba(10,125,146,.22); overflow:hidden;
+  font-family:'Inter',-apple-system,system-ui,'Segoe UI',sans-serif;
+  display:flex; flex-direction:column; max-height:340px}
+.wa-emoji-pop *{box-sizing:border-box; font-family:inherit}
+.wa-emoji-buscar{padding:9px 10px 7px; border-bottom:1px solid #DCEBEF; flex-shrink:0}
+.wa-emoji-buscar input{width:100%; padding:7px 10px; font-size:12.8px; color:#343434;
+  border:1px solid #DCEBEF; border-radius:8px; background:#FFFFFF}
+.wa-emoji-buscar input:focus{outline:none; border-color:#0A7D92;
+  box-shadow:0 0 0 3px rgba(10,125,146,.13)}
+.wa-emoji-tabs{display:flex; gap:2px; padding:6px 8px; border-bottom:1px solid #DCEBEF;
+  overflow-x:auto; flex-shrink:0; background:#FFFFFF}
+.wa-emoji-tab{border:none; background:none; cursor:pointer; font-size:15px; line-height:1;
+  padding:5px 7px; border-radius:7px; flex-shrink:0}
+.wa-emoji-tab:hover{background:#EAF9FC}
+.wa-emoji-tab.on{background:#D7F4FA}
+.wa-emoji-body{overflow-y:auto; padding:9px 8px 11px; flex:1; background:#FFFFFF}
+.wa-emoji-titulo{font-size:10.5px; font-weight:600; letter-spacing:.05em;
+  text-transform:uppercase; color:#6E6E6E; margin:2px 0 6px 3px}
+.wa-emoji-grid{display:grid; grid-template-columns:repeat(8,1fr); gap:1px}
+.wa-emoji{border:none; background:none; cursor:pointer; font-size:20px; line-height:1;
+  padding:5px 0; border-radius:7px; text-align:center}
+.wa-emoji:hover,.wa-emoji:focus-visible{background:#EAF9FC; outline:none}
+.wa-emoji-vacio{color:#6E6E6E; font-size:12.4px; text-align:center; padding:20px 10px;
+  line-height:1.5}
+@media (max-width:560px){
+  /* En pantalla angosta, panel inferior: un popover pequeño no se maneja bien
+     con el pulgar y se sale del borde. */
+  .wa-emoji-pop{left:0 !important; right:0; top:auto !important; bottom:0;
+    width:100%; max-width:100%; max-height:52vh; border-radius:14px 14px 0 0}
+  .wa-emoji-grid{grid-template-columns:repeat(auto-fill,minmax(38px,1fr))}
+}
 `;
 
-// Biblioteca de imágenes. Hoy son piezas de ejemplo generadas en el navegador
-// —se ven como marcadores, no como fotos reales, para que nadie las confunda
-// con material de la clínica—. Cuando exista el storage (Drive o bucket propio)
-// se sustituye SOLO esta función por la llamada al endpoint: el resto del
-// compositor no se entera.
-function bibliotecaImagenes() {
-  const pieza = (titulo, color) =>
-    "data:image/svg+xml;utf8," + encodeURIComponent(
-      `<svg xmlns="http://www.w3.org/2000/svg" width="300" height="200">
-        <rect width="300" height="200" fill="${color}"/>
-        <rect x="10" y="10" width="280" height="180" fill="none" stroke="#ffffff"
-          stroke-opacity="0.55" stroke-dasharray="7 5"/>
-        <text x="150" y="96" font-family="Inter,sans-serif" font-size="15" font-weight="600"
-          fill="#ffffff" text-anchor="middle">${titulo}</text>
-        <text x="150" y="118" font-family="Inter,sans-serif" font-size="11"
-          fill="#ffffff" fill-opacity="0.8" text-anchor="middle">imagen de ejemplo</text>
-      </svg>`);
-  return [
-    { id: "horarios", nombre: "horarios-disponibles.png", meta: "Coordinación · 8 sep",
-      url: pieza("Horarios disponibles", "#0A7D92") },
-    { id: "sede-piura", nombre: "ubicacion-sede-piura.png", meta: "Coordinación · 2 sep",
-      url: pieza("Ubicación · Piura", "#0E93AB") },
-    { id: "sede-lima", nombre: "ubicacion-sede-lima.png", meta: "Coordinación · 2 sep",
-      url: pieza("Ubicación · Lima", "#127F94") },
-    { id: "zoom", nombre: "como-entrar-a-zoom.png", meta: "Coordinación · 28 ago",
-      url: pieza("Cómo entrar a Zoom", "#1B6F80") },
-    { id: "tarifas", nombre: "tarifas-2026.png", meta: "Gerencia · 20 ago",
-      url: pieza("Tarifas 2026", "#0A6273") },
-    { id: "equipo", nombre: "nuestro-equipo.png", meta: "Marketing · 14 ago",
-      url: pieza("Nuestro equipo", "#15889C") },
-    { id: "pagos", nombre: "medios-de-pago.png", meta: "Coordinación · 10 ago",
-      url: pieza("Medios de pago", "#0D7386") },
-    { id: "politicas", nombre: "politicas-de-atencion.png", meta: "Gerencia · 1 ago",
-      url: pieza("Políticas de atención", "#11697A") },
-  ];
+// --- Emojis ------------------------------------------------------------------
+// Catálogo propio, en Unicode y con nombres en español. No se instala ninguna
+// librería: las conocidas (emoji-mart y compañía) pesan cientos de kB, traen
+// miles de emojis que aquí no se usan y buscan solo en inglés. Esto es una
+// lista curada de lo que Coordinación necesita, con sus palabras: "aplausos",
+// "calendario", "ubicación", "celebración".
+const EMOJIS = [
+  { clave: "caras", nombre: "Caras y emociones", icono: "😊", lista: [
+    ["😀", "sonrisa cara feliz"], ["😃", "sonrisa grande alegre"], ["😄", "sonrisa alegre ojos"],
+    ["😁", "sonrisa dientes"], ["😊", "sonrisa contenta amable timida"], ["🙂", "sonrisa leve"],
+    ["😌", "aliviada tranquila calma"], ["😇", "angel inocente"], ["🥰", "enamorada cariño corazones"],
+    ["😍", "enamorada ojos corazon"], ["😘", "beso besito"], ["😗", "beso"],
+    ["🤗", "abrazo abrazar"], ["🙃", "al reves boba"], ["😉", "guiño guiñar"],
+    ["😋", "rica sabrosa lengua"], ["😎", "gafas genial sol"], ["🤓", "nerd lentes"],
+    ["🧐", "monoculo curiosa"], ["🤔", "pensando duda pensativa"], ["🤨", "ceja duda"],
+    ["😐", "neutral seria"], ["😴", "dormida sueño"], ["😪", "sueño cansada"],
+    ["😢", "triste llorar lagrima"], ["😭", "llorar triste mucho"], ["😥", "preocupada triste"],
+    ["😔", "decaida pena"], ["😞", "decepcionada"], ["😟", "preocupada"],
+    ["😕", "confundida"], ["🙁", "triste"], ["😣", "esfuerzo"],
+    ["😖", "angustia"], ["😫", "cansada agotada"], ["😩", "cansada frustrada"],
+    ["🥺", "suplicante porfa ojitos"], ["😳", "sorprendida sonrojada"], ["😮", "sorprendida boca abierta"],
+    ["😲", "asombrada"], ["😱", "grito susto miedo"], ["😨", "miedo asustada"],
+    ["😰", "ansiedad nervios"], ["😅", "nerviosa risa sudor"], ["😂", "risa llorar carcajada"],
+    ["🤣", "carcajada risa"], ["🙄", "fastidio ojos arriba"], ["😤", "enojada resoplar"],
+    ["😠", "enojada molesta"], ["😡", "furiosa enojada"], ["🥳", "fiesta celebracion cumpleaños"],
+    ["🤩", "emocionada estrellas"], ["🥹", "emocionada conmovida"], ["😷", "mascarilla enferma"],
+    ["🤒", "enferma fiebre"], ["🤯", "asombro explotar mente"],
+  ]},
+  { clave: "gestos", nombre: "Personas y gestos", icono: "👋", lista: [
+    ["👋", "saludo hola adios"], ["🤚", "mano"], ["✋", "mano alto"],
+    ["👌", "ok perfecto"], ["🤏", "poquito"], ["✌️", "paz victoria"],
+    ["🤞", "dedos cruzados suerte"], ["🤟", "te quiero"], ["🤙", "llamame"],
+    ["👈", "izquierda dedo"], ["👉", "derecha dedo"], ["👆", "arriba dedo"],
+    ["👇", "abajo dedo"], ["☝️", "arriba indice"], ["👍", "pulgar arriba bien ok"],
+    ["👎", "pulgar abajo mal"], ["✊", "puño"], ["👊", "puño choque"],
+    ["👏", "aplausos aplaudir felicitaciones bravo"], ["🙌", "manos arriba celebracion"],
+    ["👐", "manos abiertas"], ["🤲", "manos juntas"], ["🤝", "apreton manos acuerdo trato"],
+    ["🙏", "gracias por favor rezar"], ["💪", "fuerza animo musculo"], ["🧠", "cerebro mente"],
+    ["👀", "ojos mirar"], ["👤", "persona"], ["👥", "personas"],
+    ["🧑‍⚕️", "profesional salud"], ["👩‍⚕️", "psicologa doctora"], ["🧑‍💻", "computadora trabajo"],
+    ["👨‍👩‍👧", "familia"], ["🧘", "meditacion calma yoga"], ["🚶", "caminar"],
+    ["💃", "bailar"], ["🤦", "facepalm"], ["🤷", "no se hombros"],
+  ]},
+  { clave: "corazones", nombre: "Corazones y símbolos", icono: "❤️", lista: [
+    ["❤️", "corazon rojo amor"], ["🧡", "corazon naranja"], ["💛", "corazon amarillo"],
+    ["💚", "corazon verde"], ["💙", "corazon azul"], ["💜", "corazon morado"],
+    ["🤍", "corazon blanco"], ["🤎", "corazon marron"], ["🖤", "corazon negro"],
+    ["💖", "corazon brillante"], ["💗", "corazon creciendo"], ["💓", "corazon latiendo"],
+    ["💕", "dos corazones"], ["💞", "corazones girando"], ["💘", "corazon flecha"],
+    ["💝", "corazon regalo"], ["💔", "corazon roto"], ["✨", "brillos destellos magia"],
+    ["⭐", "estrella"], ["🌟", "estrella brillante"], ["💫", "estrella"],
+    ["🔥", "fuego"], ["💡", "idea bombilla"], ["✅", "check listo correcto"],
+    ["☑️", "casilla marcada"], ["❌", "equis error no"], ["⚠️", "advertencia atencion cuidado"],
+    ["❗", "exclamacion importante"], ["❓", "pregunta duda"], ["💬", "mensaje chat globo"],
+    ["💭", "pensamiento globo"], ["🔔", "campana aviso notificacion"], ["🔒", "candado seguro privado"],
+    ["🆗", "ok"], ["♻️", "reciclar"],
+  ]},
+  { clave: "actividades", nombre: "Actividades", icono: "🎉", lista: [
+    ["🎉", "celebracion fiesta confeti"], ["🎊", "confeti celebracion"], ["🎁", "regalo"],
+    ["🎂", "pastel cumpleaños torta"], ["🎈", "globo"], ["🏆", "trofeo logro"],
+    ["🥇", "medalla oro primero"], ["🎯", "objetivo meta diana"], ["🎓", "graduacion estudios"],
+    ["📚", "libros estudiar"], ["✍️", "escribir"], ["🎨", "arte pintar"],
+    ["🎵", "musica nota"], ["🎶", "musica notas"], ["⚽", "futbol pelota"],
+    ["🏃", "correr"], ["🧩", "rompecabezas piezas"], ["🎮", "videojuego"],
+    ["🛌", "descanso dormir cama"], ["🧘‍♀️", "meditar yoga relajar"], ["🤸", "ejercicio"],
+  ]},
+  { clave: "objetos", nombre: "Objetos", icono: "📅", lista: [
+    ["📱", "celular telefono movil"], ["☎️", "telefono"], ["📞", "telefono llamada"],
+    ["📲", "celular llamada"], ["💻", "computadora laptop"], ["🖥️", "monitor computadora"],
+    ["⌚", "reloj pulsera"], ["⏰", "reloj alarma despertador hora"], ["⏳", "reloj arena tiempo espera"],
+    ["📅", "calendario fecha agenda"], ["📆", "calendario fecha"], ["🗓️", "calendario agenda"],
+    ["📋", "portapapeles lista"], ["📝", "nota escribir apunte"], ["📄", "documento hoja"],
+    ["📑", "documentos"], ["📎", "clip adjunto"], ["📌", "chincheta marcar"],
+    ["📍", "ubicacion pin lugar direccion"], ["✉️", "sobre correo"], ["📧", "correo email"],
+    ["💳", "tarjeta pago"], ["💰", "dinero"], ["💵", "billete dinero"],
+    ["🧾", "recibo boleta factura"], ["🔑", "llave"], ["🔍", "lupa buscar"],
+    ["📷", "camara foto"], ["🖼️", "imagen foto cuadro"], ["📢", "megafono anuncio"],
+    ["🩺", "estetoscopio salud"], ["💊", "pastilla medicina"],
+  ]},
+  { clave: "lugares", nombre: "Viajes y lugares", icono: "🏠", lista: [
+    ["🏠", "casa hogar"], ["🏡", "casa jardin"], ["🏢", "edificio oficina"],
+    ["🏥", "hospital clinica"], ["🏫", "escuela colegio"], ["🏬", "tienda"],
+    ["🚗", "auto carro"], ["🚕", "taxi"], ["🚌", "bus"],
+    ["🚲", "bicicleta"], ["✈️", "avion viaje"], ["🛵", "moto scooter"],
+    ["🗺️", "mapa"], ["🧭", "brujula"], ["🌍", "mundo tierra planeta"],
+    ["🏖️", "playa"], ["⛰️", "montaña"], ["🌆", "ciudad atardecer"],
+    ["🛣️", "carretera camino"], ["🚏", "paradero parada"],
+  ]},
+  { clave: "naturaleza", nombre: "Naturaleza", icono: "🌿", lista: [
+    ["🌞", "sol"], ["☀️", "sol dia"], ["🌤️", "sol nubes"],
+    ["⛅", "nublado"], ["☁️", "nube"], ["🌧️", "lluvia"],
+    ["⛈️", "tormenta"], ["🌈", "arcoiris"], ["❄️", "nieve frio"],
+    ["🌙", "luna noche"], ["🌱", "brote planta crecer"], ["🌿", "hoja planta"],
+    ["🍀", "trebol suerte"], ["🌳", "arbol"], ["🌷", "tulipan flor"],
+    ["🌸", "flor cerezo"], ["🌼", "flor margarita"], ["🌻", "girasol flor"],
+    ["💐", "ramo flores"], ["🐶", "perro"], ["🐱", "gato"],
+    ["🦋", "mariposa"], ["🐢", "tortuga"], ["🌊", "ola mar agua"],
+  ]},
+  { clave: "banderas", nombre: "Banderas", icono: "🇵🇪", lista: [
+    ["🇵🇪", "peru bandera"], ["🇦🇷", "argentina"], ["🇧🇴", "bolivia"],
+    ["🇧🇷", "brasil"], ["🇨🇱", "chile"], ["🇨🇴", "colombia"],
+    ["🇪🇨", "ecuador"], ["🇪🇸", "españa"], ["🇲🇽", "mexico"],
+    ["🇺🇾", "uruguay"], ["🇺🇸", "estados unidos"], ["🇻🇪", "venezuela"],
+    ["🏁", "meta cuadros"],
+  ]},
+];
+
+const EMOJI_RECIENTES_KEY = "conversemos.emojis.recientes";
+const EMOJI_MAX_RECIENTES = 20;
+
+// Sin tildes y en minúscula: quien escribe "corazon" con prisa debe encontrar
+// "corazón".
+function sinTildes(s) {
+  return (s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 }
 
-// Biblioteca visual: buscar → ver → seleccionar → adjuntar.
-function SelectorImagen({ onElegir, onCerrar }) {
+// En localStorage van SOLO los caracteres de los emojis usados. Ningún dato del
+// paciente sale del servidor: ni nombre, ni teléfono, ni el texto del mensaje.
+function leerRecientes() {
+  try {
+    const crudo = JSON.parse(window.localStorage.getItem(EMOJI_RECIENTES_KEY) || "[]");
+    return Array.isArray(crudo)
+      ? crudo.filter((e) => typeof e === "string" && e.length <= 12).slice(0, EMOJI_MAX_RECIENTES)
+      : [];
+  } catch {
+    return [];   // modo privado, almacenamiento bloqueado: se sigue sin recientes
+  }
+}
+
+function guardarReciente(emoji, actuales) {
+  const lista = [emoji, ...actuales.filter((e) => e !== emoji)].slice(0, EMOJI_MAX_RECIENTES);
+  try {
+    window.localStorage.setItem(EMOJI_RECIENTES_KEY, JSON.stringify(lista));
+  } catch {
+    // Si no se puede guardar, la sesión sigue funcionando sin recientes.
+  }
+  return lista;
+}
+
+function nombreEmoji(emoji) {
+  for (const cat of EMOJIS) {
+    const hallado = cat.lista.find(([e]) => e === emoji);
+    if (hallado) return hallado[1].split(" ")[0];
+  }
+  return "emoji";
+}
+
+// Popover de emojis. Se ancla al botón con posición fija (las columnas del
+// compositor tienen overflow y recortarían un popover absoluto) y en pantalla
+// angosta se convierte en panel inferior.
+function SelectorEmoji({ ancla, onElegir, onCerrar }) {
   const [q, setQ] = useState("");
-  const [sel, setSel] = useState(null);
-  const todas = useMemo(() => bibliotecaImagenes(), []);
-  const filtradas = todas.filter((i) => i.nombre.toLowerCase().includes(q.trim().toLowerCase()));
+  const [cat, setCat] = useState("recientes");
+  const [recientes, setRecientes] = useState(leerRecientes);
+  const cajaRef = useRef(null);
+
+  const rect = ancla?.getBoundingClientRect?.();
+  const alto = 340, ancho = 328;
+  const estilo = rect
+    ? {
+        // Se abre hacia arriba si abajo no cabe: el botón vive al pie del
+        // compositor y ahí casi nunca hay sitio debajo.
+        top: rect.bottom + alto + 12 < window.innerHeight
+          ? rect.bottom + 6
+          : Math.max(8, rect.top - alto - 6),
+        left: Math.min(Math.max(8, rect.left), window.innerWidth - ancho - 8),
+      }
+    : { top: 80, left: 40 };
+
+  useEffect(() => {
+    function fuera(e) {
+      if (cajaRef.current && !cajaRef.current.contains(e.target)
+          && !(ancla && ancla.contains(e.target))) onCerrar();
+    }
+    function tecla(e) { if (e.key === "Escape") { e.stopPropagation(); onCerrar(); } }
+    document.addEventListener("mousedown", fuera);
+    document.addEventListener("keydown", tecla, true);
+    return () => {
+      document.removeEventListener("mousedown", fuera);
+      document.removeEventListener("keydown", tecla, true);
+    };
+  }, [ancla, onCerrar]);
+
+  function elegir(emoji) {
+    setRecientes(guardarReciente(emoji, recientes));
+    onElegir(emoji);
+  }
+
+  const busca = sinTildes(q.trim());
+  const grupos = useMemo(() => {
+    if (busca) {
+      const hallados = [];
+      EMOJIS.forEach((c) => c.lista.forEach(([e, nombre]) => {
+        if (sinTildes(nombre).includes(busca)) hallados.push([e, nombre]);
+      }));
+      return [{ clave: "busqueda", nombre: `Resultados para «${q.trim()}»`, lista: hallados }];
+    }
+    if (cat === "recientes") {
+      return [{
+        clave: "recientes", nombre: "Recientes",
+        lista: recientes.map((e) => [e, nombreEmoji(e)]),
+      }];
+    }
+    const c = EMOJIS.find((x) => x.clave === cat);
+    return c ? [c] : [];
+  }, [busca, q, cat, recientes]);
+
+  const vacio = grupos.every((g) => g.lista.length === 0);
 
   return createPortal(
-    <div className="wam-fondo" style={{ zIndex: 150 }}
-      onMouseDown={(e) => { if (e.target === e.currentTarget) onCerrar(); }}>
-      <div className="wam-bib" role="dialog" aria-modal="true" aria-label="Seleccionar imagen">
-        <div className="wam-bib-top">
-          <div style={{ flex: 1 }}>
-            <div className="wam-top-t">Seleccionar imagen</div>
-            <div className="wam-top-sub">Material que Coordinación puede enviar al paciente.</div>
-          </div>
-          <button className="wam-x" onClick={onCerrar} aria-label="Cerrar">
-            <X size={18} strokeWidth={2} />
-          </button>
+    <div className="wa-emoji-pop" ref={cajaRef} style={estilo}
+      role="dialog" aria-label="Seleccionar emoji">
+      <div className="wa-emoji-buscar">
+        <input value={q} onChange={(e) => setQ(e.target.value)} autoFocus
+          placeholder="Buscar: sonrisa, corazón, calendario…"
+          aria-label="Buscar emoji" />
+      </div>
+      {!busca && (
+        <div className="wa-emoji-tabs" role="tablist">
+          <button className={"wa-emoji-tab" + (cat === "recientes" ? " on" : "")}
+            onClick={() => setCat("recientes")} title="Recientes"
+            role="tab" aria-selected={cat === "recientes"} aria-label="Recientes">🕘</button>
+          {EMOJIS.map((c) => (
+            <button key={c.clave} className={"wa-emoji-tab" + (cat === c.clave ? " on" : "")}
+              onClick={() => setCat(c.clave)} title={c.nombre}
+              role="tab" aria-selected={cat === c.clave} aria-label={c.nombre}>{c.icono}</button>
+          ))}
         </div>
-        <div className="wam-bib-cuerpo">
-          <div style={{ position: "relative", marginBottom: 13 }}>
-            <Search size={15} strokeWidth={2} style={{ position: "absolute", left: 11, top: 11, color: "var(--muted)" }} />
-            <input className="ca-input" style={{ width: "100%", paddingLeft: 33 }}
-              placeholder="Buscar imagen…" value={q} onChange={(e) => setQ(e.target.value)} autoFocus />
+      )}
+      <div className="wa-emoji-body">
+        {vacio ? (
+          <div className="wa-emoji-vacio">
+            {cat === "recientes" && !busca
+              ? "Aquí aparecerán los emojis que uses más seguido."
+              : `No hay emojis para «${q.trim()}».`}
           </div>
-          {filtradas.length === 0 ? (
-            <div className="ca-empty">No hay imágenes que coincidan con «{q}».</div>
-          ) : (
-            <div className="wam-rej">
-              {filtradas.map((i) => (
-                <button key={i.id} className={"wam-item" + (sel?.id === i.id ? " sel" : "")}
-                  onClick={() => setSel(i)} onDoubleClick={() => onElegir(i)}>
-                  <img src={i.url} alt="" />
-                  <div className="wam-item-p">
-                    <div className="wam-item-n" title={i.nombre}>{i.nombre}</div>
-                    <div className="wam-item-m">{i.meta}</div>
-                  </div>
-                </button>
+        ) : grupos.map((g) => (
+          <div key={g.clave}>
+            <div className="wa-emoji-titulo">{g.nombre}</div>
+            <div className="wa-emoji-grid">
+              {g.lista.map(([e, nombre], i) => (
+                <button key={e + i} className="wa-emoji" onClick={() => elegir(e)}
+                  title={nombre} aria-label={nombre} type="button">{e}</button>
               ))}
             </div>
-          )}
-        </div>
-        <div className="wam-pie">
-          <div className="wam-destino">
-            {sel ? <>Seleccionada: <strong>{sel.nombre}</strong></> : "Elige una imagen de la biblioteca."}
           </div>
-          <button className="ca-mini" onClick={onCerrar}>Cancelar</button>
-          <button className="wam-enviar" disabled={!sel} onClick={() => onElegir(sel)}>
-            Seleccionar
-          </button>
-        </div>
+        ))}
       </div>
     </div>,
     document.body
   );
 }
 
-// Compositor: motivo → plantilla → mensaje editable → adjunto, con la
+// --- Biblioteca de imágenes --------------------------------------------------
+
+const CATEGORIAS_MATERIAL = [
+  { clave: "", nombre: "Todas" },
+  { clave: "ubicaciones", nombre: "Ubicaciones" },
+  { clave: "horarios", nombre: "Horarios" },
+  { clave: "tarifas", nombre: "Tarifas" },
+  { clave: "pagos", nombre: "Medios de pago" },
+  { clave: "online", nombre: "Sesiones online" },
+  { clave: "politicas", nombre: "Políticas" },
+  { clave: "pacientes", nombre: "Material para pacientes" },
+  { clave: "otros", nombre: "Otros" },
+];
+
+const TIPOS_IMAGEN = ["image/png", "image/jpeg", "image/webp"];
+
+// Formulario de subida. Valida en el navegador para avisar rápido; quien manda
+// es el servidor, que además comprueba el tipo real del archivo.
+function SubirImagen({ limites, onSubida, onCancelar, showToast }) {
+  const [archivo, setArchivo] = useState(null);
+  const [vista, setVista] = useState("");
+  const [nombre, setNombre] = useState("");
+  const [categoria, setCategoria] = useState("otros");
+  const [sede, setSede] = useState("");
+  const [error, setError] = useState("");
+  const [subiendo, setSubiendo] = useState(false);
+  const inputRef = useRef(null);
+
+  const maxMb = limites?.max_mb || 2;
+  const maxLado = limites?.max_lado_px || 4000;
+
+  useEffect(() => () => { if (vista) URL.revokeObjectURL(vista); }, [vista]);
+
+  function elegirArchivo(f) {
+    setError("");
+    if (!f) return;
+    if (!TIPOS_IMAGEN.includes(f.type)) {
+      setError("Solo se pueden subir imágenes PNG, JPG o WEBP.");
+      return;
+    }
+    if (f.size > maxMb * 1024 * 1024) {
+      setError(`La imagen pesa ${(f.size / 1048576).toFixed(1)} MB. El máximo es ${maxMb} MB.`);
+      return;
+    }
+    const url = URL.createObjectURL(f);
+    const img = new Image();
+    img.onload = () => {
+      if (img.naturalWidth > maxLado || img.naturalHeight > maxLado) {
+        URL.revokeObjectURL(url);
+        setError(`La imagen mide ${img.naturalWidth}×${img.naturalHeight} px. `
+          + `El máximo es ${maxLado} px por lado.`);
+        return;
+      }
+      setArchivo(f);
+      setVista(url);
+      setNombre((n) => n || f.name.replace(/\.[^.]+$/, "").slice(0, 60));
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); setError("No se pudo leer la imagen."); };
+    img.src = url;
+  }
+
+  function subir() {
+    if (!archivo || subiendo) return;
+    setSubiendo(true);
+    const form = new FormData();
+    form.append("archivo", archivo);
+    form.append("nombre", nombre.trim() || archivo.name);
+    form.append("categoria", categoria);
+    if (sede) form.append("sede", sede);
+    api.subirMaterial(form)
+      .then((m) => {
+        if (m?.duplicada) showToast("Esa imagen ya estaba en la biblioteca");
+        else showToast("Imagen agregada a la biblioteca");
+        onSubida(m, !!m?.duplicada);
+      })
+      .catch((e) => setError(e.message))
+      .finally(() => setSubiendo(false));
+  }
+
+  return (
+    <div className="wa-compose-subir">
+      <div className="wa-compose-subir-t">Subir una imagen nueva</div>
+      <input ref={inputRef} type="file" accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp"
+        style={{ display: "none" }}
+        onChange={(e) => elegirArchivo(e.target.files?.[0])} />
+
+      {!archivo ? (
+        <div className="wa-compose-drop" onClick={() => inputRef.current?.click()}
+          role="button" tabIndex={0}
+          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") inputRef.current?.click(); }}>
+          <b>Elegir una imagen de tu computadora</b>
+          PNG, JPG o WEBP · hasta {maxMb} MB · máximo {maxLado} px por lado
+        </div>
+      ) : (
+        <div className="wa-compose-subir-fila">
+          <img className="wa-compose-subir-prev" src={vista} alt="" />
+          <div className="wa-compose-subir-campos">
+            <input className="wa-compose-field" value={nombre} maxLength={200}
+              onChange={(e) => setNombre(e.target.value)}
+              placeholder="Nombre de la imagen" aria-label="Nombre de la imagen" />
+            <select className="wa-compose-field" value={categoria} aria-label="Categoría"
+              onChange={(e) => setCategoria(e.target.value)}>
+              {CATEGORIAS_MATERIAL.filter((c) => c.clave).map((c) => (
+                <option key={c.clave} value={c.clave}>{c.nombre}</option>
+              ))}
+            </select>
+            <select className="wa-compose-field" value={sede} aria-label="Sede"
+              onChange={(e) => setSede(e.target.value)}>
+              <option value="">Sirve para ambas sedes</option>
+              <option value="lima">Solo Lima</option>
+              <option value="piura">Solo Piura</option>
+            </select>
+          </div>
+        </div>
+      )}
+
+      {error && <div className="wa-compose-alert err" style={{ marginBottom: 9 }}>{error}</div>}
+
+      <div className="wa-compose-acciones">
+        <button className="wa-compose-btn" onClick={onCancelar} disabled={subiendo}>Cancelar</button>
+        {archivo && (
+          <button className="wa-compose-btn" disabled={subiendo}
+            onClick={() => { setArchivo(null); setVista(""); setError(""); }}>
+            Elegir otra
+          </button>
+        )}
+        <button className="wa-compose-primary" onClick={subir} disabled={!archivo || subiendo}>
+          <Upload size={14} strokeWidth={2} />
+          {subiendo ? "Subiendo…" : "Subir"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// Biblioteca: buscar → filtrar → marcar varias → agregarlas todas de una vez.
+// Las imágenes vienen del servidor (/api/materiales/), no del navegador: lo que
+// se sube queda guardado y se puede reutilizar mañana.
+function SelectorImagen({ yaElegidas, maximo, limites, onAgregar, onCerrar, showToast }) {
+  const [q, setQ] = useState("");
+  const [cat, setCat] = useState("");
+  const [lista, setLista] = useState(null);       // null = cargando
+  const [sel, setSel] = useState([]);             // ids marcados, en orden
+  const [subiendo, setSubiendo] = useState(false);
+  const [error, setError] = useState("");
+
+  const yaIds = useMemo(() => new Set((yaElegidas || []).map((m) => m.id)), [yaElegidas]);
+  const cupo = Math.max(0, (maximo || 10) - yaIds.size);
+
+  useEffect(() => {
+    let vivo = true;
+    api.materiales()
+      .then((d) => { if (vivo) setLista(d || []); })
+      .catch((e) => { if (vivo) { setLista([]); setError(e.message); } });
+    return () => { vivo = false; };
+  }, []);
+
+  const filtradas = useMemo(() => {
+    const texto = sinTildes(q.trim());
+    return (lista || []).filter((m) =>
+      (!cat || m.categoria === cat) && (!texto || sinTildes(m.nombre).includes(texto)));
+  }, [lista, q, cat]);
+
+  function alternar(m) {
+    if (yaIds.has(m.id)) return;                  // ya está adjunta: no se duplica
+    setSel((s) => {
+      if (s.includes(m.id)) return s.filter((x) => x !== m.id);
+      if (s.length >= cupo) {
+        showToast(`Puedes enviar hasta ${maximo} imágenes por mensaje`);
+        return s;
+      }
+      return [...s, m.id];
+    });
+  }
+
+  function agregar() {
+    const porId = new Map((lista || []).map((m) => [m.id, m]));
+    onAgregar(sel.map((id) => porId.get(id)).filter(Boolean));
+  }
+
+  return createPortal(
+    <div className="wa-compose-overlay" style={{ zIndex: 150 }}
+      onMouseDown={(e) => { if (e.target === e.currentTarget) onCerrar(); }}>
+      <div className="wa-compose-lib" role="dialog" aria-modal="true"
+        aria-label="Seleccionar imágenes">
+        <div className="wa-compose-lib-top">
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="wa-compose-title">Seleccionar imágenes</div>
+            <div className="wa-compose-meta">
+              Material que Coordinación puede enviar al paciente.
+              {cupo < (maximo || 10) && ` Puedes agregar ${cupo} más.`}
+            </div>
+          </div>
+          <button className="wa-compose-x" onClick={onCerrar} aria-label="Cerrar">
+            <X size={18} strokeWidth={2} />
+          </button>
+        </div>
+
+        <div className="wa-compose-lib-body">
+          {subiendo ? (
+            <SubirImagen limites={limites} showToast={showToast}
+              onCancelar={() => setSubiendo(false)}
+              onSubida={(m, duplicada) => {
+                setSubiendo(false);
+                setLista((l) => {
+                  const resto = (l || []).filter((x) => x.id !== m.id);
+                  return [m, ...resto];
+                });
+                // Una imagen recién subida se marca sola: quien la sube es
+                // porque la quiere mandar ahora. Si ya estaba adjunta, no.
+                if (!yaIds.has(m.id)) {
+                  setSel((s) => (s.includes(m.id) || s.length >= cupo ? s : [...s, m.id]));
+                }
+                if (duplicada) { setQ(""); setCat(""); }
+              }} />
+          ) : (
+            <>
+              <div className="wa-compose-search">
+                <Search size={15} strokeWidth={2}
+                  style={{ position: "absolute", left: 11, top: 11, color: "#6E6E6E" }} />
+                <input placeholder="Buscar imagen…" value={q} aria-label="Buscar imagen"
+                  onChange={(e) => setQ(e.target.value)} autoFocus />
+              </div>
+              <div className="wa-compose-cats">
+                {CATEGORIAS_MATERIAL.map((c) => (
+                  <button key={c.clave || "todas"}
+                    className={"wa-compose-cat" + (cat === c.clave ? " on" : "")}
+                    onClick={() => setCat(c.clave)}>{c.nombre}</button>
+                ))}
+                <button className="wa-compose-cat" onClick={() => setSubiendo(true)}>
+                  <Upload size={12} strokeWidth={2} style={{ marginRight: 4, verticalAlign: -1 }} />
+                  Subir nueva imagen
+                </button>
+              </div>
+
+              {error && <div className="wa-compose-alert err">{error}</div>}
+
+              {lista === null ? (
+                <div className="wa-compose-vacio">Cargando la biblioteca…</div>
+              ) : filtradas.length === 0 ? (
+                <div className="wa-compose-vacio">
+                  {(lista || []).length === 0
+                    ? "La biblioteca está vacía. Sube la primera imagen para empezar."
+                    : `No hay imágenes que coincidan con «${q.trim() || "ese filtro"}».`}
+                </div>
+              ) : (
+                <div className="wa-compose-grid">
+                  {filtradas.map((m) => {
+                    const ya = yaIds.has(m.id);
+                    const marcada = sel.includes(m.id);
+                    const pos = sel.indexOf(m.id) + 1;
+                    return (
+                      <button key={m.id} type="button"
+                        className={"wa-compose-item" + (marcada ? " sel" : "") + (ya ? " ya" : "")}
+                        onClick={() => alternar(m)} aria-pressed={marcada || ya}
+                        title={ya ? "Ya está adjunta" : m.nombre}>
+                        <img src={m.url} alt="" loading="lazy" />
+                        <span className="wa-compose-tick-box">
+                          {ya ? <Check size={13} strokeWidth={3} />
+                            : marcada ? <span style={{ fontSize: 11, fontWeight: 700 }}>{pos}</span>
+                              : null}
+                        </span>
+                        <div className="wa-compose-item-p">
+                          <div className="wa-compose-item-n" title={m.nombre}>{m.nombre}</div>
+                          <div className="wa-compose-item-m">
+                            {ya ? "Ya adjunta" : `${m.categoria_label} · ${m.sede_label}`}
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+
+        {!subiendo && (
+          <div className="wa-compose-footer">
+            <div className="wa-compose-dest">
+              {sel.length === 0
+                ? "Marca las imágenes que quieras enviar."
+                : <><strong>{sel.length}</strong> {sel.length === 1 ? "imagen seleccionada" : "imágenes seleccionadas"}</>}
+            </div>
+            <button className="wa-compose-btn" onClick={onCerrar}>Cancelar</button>
+            <button className="wa-compose-primary" disabled={sel.length === 0} onClick={agregar}>
+              {sel.length <= 1 ? "Agregar imagen" : `Agregar ${sel.length} imágenes`}
+            </button>
+          </div>
+        )}
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+// Compositor: motivo → plantilla → mensaje editable → adjuntos, con la
 // previsualización al lado actualizándose mientras escribe.
 function WhatsappModal({ id, datos, onCerrar, onEnviado, showToast }) {
   const [clave, setClave] = useState(datos.plantilla?.clave || "");
   const [texto, setTexto] = useState(datos.texto_sugerido || "");
-  const [imagen, setImagen] = useState(null);
+  const [adjuntos, setAdjuntos] = useState([]);      // Material[], en orden de envío
   const [biblioteca, setBiblioteca] = useState(false);
+  const [anclaEmoji, setAnclaEmoji] = useState(null);   // boton que abrio el popover
   const [enviando, setEnviando] = useState(false);
   const [resultado, setResultado] = useState(null);
   const [confirmar, setConfirmar] = useState(false);
+  const areaRef = useRef(null);
+  const cursorRef = useRef(null);
+  // La línea de pruebas solo llega si el backend la reporta (en producción no
+  // hay ninguna registrada, así que este bloque no aparece allí).
+  const lineaPrueba = datos.instancia_prueba || "";
+  const [modoPrueba, setModoPrueba] = useState(!!lineaPrueba);
 
   const pac = datos.paciente || {};
   const canal = datos.canal || {};
   const plantillas = datos.plantillas || [];
   const enviados = datos.enviados || [];
+  const limites = datos.limites || {};
+  const maxImagenes = limites.max_imagenes || 10;
   const hora = new Date().toLocaleTimeString("es-PE", { hour: "2-digit", minute: "2-digit" });
   const iniciales = (pac.nombre || "?").split(" ").filter(Boolean).slice(0, 2)
     .map((p) => p[0]).join("").toUpperCase();
   const nombrePlantilla = plantillas.find((p) => p.clave === clave)?.nombre || "";
   const yaEnviado = resultado?.estado === "enviado";
+  const parcial = resultado?.comunicacion === "parcial";
+  const bloqueado = yaEnviado || parcial;
+
+  // Tras insertar un emoji, el cursor vuelve justo detrás de él y el foco se
+  // queda en el textarea: la coordinadora sigue escribiendo sin tocar el mouse.
+  useEffect(() => {
+    if (cursorRef.current == null) return;
+    const area = areaRef.current;
+    if (area) {
+      area.focus();
+      area.setSelectionRange(cursorRef.current, cursorRef.current);
+    }
+    cursorRef.current = null;
+  }, [texto]);
 
   function elegirPlantilla(nueva) {
     setClave(nueva);
@@ -3997,14 +4618,39 @@ function WhatsappModal({ id, datos, onCerrar, onEnviado, showToast }) {
     if (p) setTexto(p.texto);
   }
 
+  function insertarEmoji(emoji) {
+    const area = areaRef.current;
+    const ini = area ? area.selectionStart : texto.length;
+    const fin = area ? area.selectionEnd : texto.length;
+    cursorRef.current = ini + emoji.length;
+    setTexto(texto.slice(0, ini) + emoji + texto.slice(fin));
+  }
+
+  function mover(i, paso) {
+    setAdjuntos((a) => {
+      const j = i + paso;
+      if (j < 0 || j >= a.length) return a;
+      const copia = [...a];
+      [copia[i], copia[j]] = [copia[j], copia[i]];
+      return copia;
+    });
+  }
+
   function enviar() {
-    if (enviando || !texto.trim()) return;
+    if (enviando || (!texto.trim() && adjuntos.length === 0)) return;
     setEnviando(true);
-    api.continuidadEnviarWhatsapp(id, { texto, plantilla_clave: clave, confirmado: confirmar })
+    api.continuidadEnviarWhatsapp(id, {
+      texto, plantilla_clave: clave, confirmado: confirmar,
+      materiales: adjuntos.map((m) => m.id),
+      instancia_prueba: modoPrueba ? lineaPrueba : "",
+    })
       .then((d) => {
-        setResultado(d.envio || {});
-        if (d.envio?.estado === "enviado") showToast("WhatsApp enviado");
-        else showToast("No se pudo enviar: " + (d.envio?.detalle || "revisa la línea"));
+        const envio = d.envio || {};
+        setResultado(envio);
+        if (envio.estado === "enviado") showToast("WhatsApp enviado");
+        else if (envio.comunicacion === "parcial")
+          showToast(`Se enviaron ${envio.resumen?.enviadas} de ${envio.resumen?.total} partes`);
+        else showToast("No se pudo enviar: " + (envio.detalle || "revisa la línea"));
         onEnviado(d);
       })
       .catch((e) => {
@@ -4017,63 +4663,137 @@ function WhatsappModal({ id, datos, onCerrar, onEnviado, showToast }) {
       .finally(() => setEnviando(false));
   }
 
+  // Reintentar manda SOLO lo que nunca salió. Lo que ya tiene id de WhatsApp no
+  // se reenvía: el paciente no debe recibir dos veces la misma imagen.
+  function reintentar() {
+    if (enviando || !resultado?.grupo) return;
+    setEnviando(true);
+    api.continuidadReintentarWhatsapp(id, {
+      grupo: resultado.grupo,
+      instancia_prueba: modoPrueba ? lineaPrueba : "",
+    })
+      .then((d) => {
+        const envio = d.envio || {};
+        setResultado(envio);
+        showToast(envio.estado === "enviado"
+          ? "Comunicación completada"
+          : `Siguen faltando ${envio.resumen?.faltan || 0} partes`);
+        onEnviado(d);
+      })
+      .catch((e) => showToast(e.message))
+      .finally(() => setEnviando(false));
+  }
+
+  // Lo que verá el paciente, en el mismo orden en que va a salir: cada imagen
+  // es un mensaje aparte (WhatsApp no tiene álbum), salvo cuando va una sola,
+  // que viaja con el texto como pie.
+  const burbujas = useMemo(() => {
+    const t = texto.trim();
+    if (adjuntos.length === 1) return [{ imagen: adjuntos[0], texto: t }];
+    const lista = adjuntos.map((m) => ({ imagen: m, texto: "" }));
+    if (t) lista.push({ imagen: null, texto: t });
+    return lista;
+  }, [adjuntos, texto]);
+
   return createPortal(
-    <div className="wam-fondo" onMouseDown={(e) => { if (e.target === e.currentTarget) onCerrar(); }}>
+    <div className="wa-compose-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onCerrar(); }}>
       <style>{WA_CSS}</style>
       <div className="wam" role="dialog" aria-modal="true" aria-label="Enviar WhatsApp">
-        <div className="wam-top">
+        <div className="wa-compose-header">
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div className="wam-top-t">Enviar WhatsApp</div>
-            <div className="wam-top-sub">
+            <div className="wa-compose-title">Enviar WhatsApp</div>
+            <div className="wa-compose-meta">
               <strong>{pac.nombre || "Paciente"}</strong>
               {pac.sede_label ? ` · ${pac.sede_label}` : ""}
               {pac.telefono_mascara ? ` · ${pac.telefono_mascara}` : ""}
             </div>
-            <div className="wam-top-sub" style={{ marginTop: 1 }}>
+            <div className="wa-compose-meta" style={{ marginTop: 1 }}>
               Sale desde <strong>{canal.canal || "sin línea"}</strong>
               {canal.instancia ? ` · ${canal.instancia}` : ""}
             </div>
           </div>
-          <button className="wam-x" onClick={onCerrar} aria-label="Cerrar">
+          <button className="wa-compose-x" onClick={onCerrar} aria-label="Cerrar">
             <X size={19} strokeWidth={2} />
           </button>
         </div>
 
-        <div className="wam-grid">
+        <div className="wa-compose-body">
           {/* ── Compositor ── */}
-          <div className="wam-col">
-            {resultado && (resultado.estado === "enviado" ? (
-              <div className="wam-ok">
-                <div className="wam-ok-t"><Check size={15} strokeWidth={2.5} /> WhatsApp enviado</div>
-                <div className="wam-ok-d">
+          <div className="wa-compose-left">
+            {resultado && (yaEnviado ? (
+              <div className="wa-compose-ok">
+                <div className="wa-compose-ok-t"><Check size={15} strokeWidth={2.5} /> WhatsApp enviado</div>
+                <div className="wa-compose-ok-d">
                   {resultado.proveedor && <div>proveedor: {resultado.proveedor}</div>}
                   {resultado.instancia && <div>línea: {resultado.instancia}</div>}
                   {resultado.external_message_id && <div>id: {resultado.external_message_id}</div>}
+                  {resultado.resumen?.total > 1 && (
+                    <div>partes: {resultado.resumen.enviadas} de {resultado.resumen.total}</div>
+                  )}
                   <div>hora: {hora}</div>
                 </div>
               </div>
+            ) : parcial ? (
+              /* Fallo parcial: lo que importa es qué llegó y qué no. */
+              <div className="wa-compose-alert warn">
+                <strong>⚠ Comunicación enviada parcialmente</strong><br />
+                {resultado.resumen?.enviadas} de {resultado.resumen?.total} partes enviadas.
+                <ul className="wa-compose-partes">
+                  {(resultado.partes || []).map((p) => (
+                    <li key={p.id}
+                      className={"wa-compose-parte " + (p.enviada ? "ok" : p.estado === "pendiente" ? "esp" : "no")}>
+                      <span>{p.enviada ? "✓" : p.estado === "pendiente" ? "—" : "✕"}</span>
+                      <span>{p.material_nombre || "El mensaje de texto"}</span>
+                      <span style={{ color: "#6E6E6E" }}>
+                        {p.enviada ? "" : p.estado === "pendiente" ? "no se envió" : "no se pudo enviar"}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+                <button className="wa-compose-btn" style={{ marginTop: 9 }}
+                  onClick={reintentar} disabled={enviando}>
+                  <RotateCcw size={13} strokeWidth={2} />
+                  {enviando ? "Reintentando…" : "Reintentar lo que falta"}
+                </button>
+              </div>
             ) : (
-              <div className="wam-err">
+              <div className="wa-compose-alert err">
                 <strong>No se pudo enviar.</strong><br />{resultado.detalle}
               </div>
             ))}
 
-            {!canal.linea_configurada && !resultado && (
-              <div className="wam-err" style={{ background: "#FDF6EC", borderColor: "#EBD9BE", color: "#8A6224" }}>
+            {lineaPrueba && !resultado && (
+              <div className="wa-compose-test">
+                <b>🧪 Modo de prueba</b>
+                {modoPrueba ? (
+                  <>El mensaje se enviará desde <strong>{lineaPrueba}</strong>, la línea de
+                  pruebas — <strong>no</strong> desde la línea oficial de {pac.sede_label || "la sede"}.{" "}
+                  <button className="wa-compose-btn" style={{ marginTop: 6 }}
+                    onClick={() => setModoPrueba(false)}>Usar la línea oficial</button></>
+                ) : (
+                  <>Se usará la línea oficial de {pac.sede_label || "la sede"}.{" "}
+                  <button className="wa-compose-btn" style={{ marginTop: 6 }}
+                    onClick={() => setModoPrueba(true)}>Volver al modo de prueba</button></>
+                )}
+              </div>
+            )}
+
+            {!canal.linea_configurada && !modoPrueba && !resultado && (
+              <div className="wa-compose-alert warn">
                 La línea de {pac.sede_label || "esta sede"} no está conectada. El sistema no podrá enviarlo.
               </div>
             )}
 
             {datos.motivo?.porque && (
               <>
-                <div className="wam-rot">Motivo del contacto</div>
-                <div className="wam-motivo">{datos.motivo.porque}</div>
+                <div className="wa-compose-label">Motivo del contacto</div>
+                <div className="wa-compose-note">{datos.motivo.porque}</div>
               </>
             )}
 
-            <div className="wam-rot">Plantilla</div>
-            <select className="ca-input" style={{ width: "100%", marginBottom: 14 }}
-              value={clave} disabled={yaEnviado} onChange={(e) => elegirPlantilla(e.target.value)}>
+            <div className="wa-compose-label">Plantilla</div>
+            <select className="wa-compose-field"
+              value={clave} disabled={bloqueado} onChange={(e) => elegirPlantilla(e.target.value)}>
               {plantillas.map((p) => (
                 <option key={p.clave} value={p.clave}>
                   {p.nombre}{p.sugerida ? " · sugerida" : ""}
@@ -4081,51 +4801,86 @@ function WhatsappModal({ id, datos, onCerrar, onEnviado, showToast }) {
               ))}
             </select>
 
-            <div className="wam-rot">Mensaje</div>
-            <textarea className="wam-txt" rows={8} value={texto} disabled={yaEnviado}
-              onChange={(e) => setTexto(e.target.value)}
+            <div className="wa-compose-label">Mensaje</div>
+            <textarea ref={areaRef} className="wa-compose-textarea" rows={8} value={texto}
+              disabled={bloqueado} onChange={(e) => setTexto(e.target.value)}
               placeholder="Escribe el mensaje que recibirá el paciente…" />
-            <div className="wam-cuenta">
+            <div className="wa-compose-count">
               <span>{texto.length} caracteres</span>
-              <span>Puedes editarlo antes de enviar</span>
+              <button className="wa-compose-btn" disabled={bloqueado}
+                aria-label="Agregar emoji" aria-expanded={!!anclaEmoji}
+                onClick={(e) => setAnclaEmoji((a) => (a ? null : e.currentTarget))}>
+                <Smile size={14} strokeWidth={2} /> Emoji
+              </button>
             </div>
 
-            <div className="wam-adj">
-              {imagen ? (
-                <div className="wam-chip">
-                  <img src={imagen.url} alt="" />
-                  <div>
-                    <div className="wam-chip-n">{imagen.nombre}</div>
-                    <div className="wam-chip-m">{imagen.meta}</div>
+            {/* ── Adjuntos ── */}
+            <div className="wa-compose-attach">
+              {adjuntos.length > 0 && (
+                <>
+                  <div className="wa-compose-label">
+                    Adjuntos ({adjuntos.length}{adjuntos.length >= maxImagenes ? " · máximo" : ""})
                   </div>
-                  <button className="ca-mini" onClick={() => setImagen(null)} disabled={yaEnviado}>
-                    <Trash2 size={13} strokeWidth={2} /> Quitar
-                  </button>
-                </div>
-              ) : (
-                <button className="ca-mini" onClick={() => setBiblioteca(true)} disabled={yaEnviado}>
-                  <Paperclip size={13} strokeWidth={2} /> Adjuntar imagen
+                  {adjuntos.map((m, i) => (
+                    <div key={m.id} className="wa-compose-adj">
+                      <span className="wa-compose-adj-orden">{i + 1}</span>
+                      <img src={m.url} alt="" />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div className="wa-compose-adj-n" title={m.nombre}>{m.nombre}</div>
+                        <div className="wa-compose-adj-m">{m.categoria_label}</div>
+                      </div>
+                      <div className="wa-compose-flechas">
+                        <button className="wa-compose-flecha" onClick={() => mover(i, -1)}
+                          disabled={i === 0 || bloqueado} aria-label={`Subir ${m.nombre}`}>
+                          <ArrowUp size={12} strokeWidth={2.5} />
+                        </button>
+                        <button className="wa-compose-flecha" onClick={() => mover(i, 1)}
+                          disabled={i === adjuntos.length - 1 || bloqueado}
+                          aria-label={`Bajar ${m.nombre}`}>
+                          <ArrowDown size={12} strokeWidth={2.5} />
+                        </button>
+                      </div>
+                      <button className="wa-compose-btn" disabled={bloqueado}
+                        onClick={() => setAdjuntos((a) => a.filter((x) => x.id !== m.id))}>
+                        <Trash2 size={13} strokeWidth={2} /> Quitar
+                      </button>
+                    </div>
+                  ))}
+                </>
+              )}
+              <div className="wa-compose-acciones">
+                <button className="wa-compose-btn" disabled={bloqueado || adjuntos.length >= maxImagenes}
+                  onClick={() => setBiblioteca(true)}>
+                  <Paperclip size={13} strokeWidth={2} />
+                  {adjuntos.length ? "Agregar más imágenes" : "Adjuntar imágenes"}
                 </button>
+              </div>
+              {adjuntos.length > 1 && !bloqueado && (
+                <div className="wa-compose-hint">
+                  Se enviarán como {adjuntos.length} mensajes seguidos y el texto al final.
+                  WhatsApp no permite mandarlas como un álbum.
+                </div>
               )}
             </div>
-            {imagen && (
-              <div className="wam-nota">
-                El envío de imágenes por WhatsApp todavía no está conectado: se enviará
-                solo el texto. La imagen se ve aquí para preparar el mensaje.
-              </div>
-            )}
 
             {/* Últimos mensajes: se integra con el historial que ya existe. */}
             {enviados.length > 0 && (
-              <div className="wam-hist">
-                <div className="wam-rot" style={{ marginBottom: 4 }}>Últimos mensajes</div>
+              <div className="wa-compose-hist">
+                <div className="wa-compose-label" style={{ marginBottom: 4 }}>Últimos mensajes</div>
                 {enviados.slice(0, 3).map((m) => (
-                  <div key={m.id} className="wam-hist-i">
+                  <div key={m.id} className="wa-compose-hist-i">
                     <Check size={14} strokeWidth={2.5}
-                      style={{ color: m.estado === "fallido" ? "var(--muted)" : "var(--wa)", flexShrink: 0, marginTop: 2 }} />
+                      style={{ color: m.estado === "fallido" ? "#6E6E6E" : "#2F8F5B", flexShrink: 0, marginTop: 2 }} />
                     <div>
-                      <div>{m.estado_label}{m.enviado_por ? ` · ${m.enviado_por}` : ""}</div>
-                      <div className="wam-hist-m">{fechaHoraCorta(m.fecha)}</div>
+                      <div>
+                        {m.resumen?.total > 1
+                          ? `${m.resumen.imagenes} ${m.resumen.imagenes === 1 ? "imagen" : "imágenes"}`
+                            + (m.resumen.textos ? " y 1 mensaje" : "")
+                            + (m.resumen.faltan ? ` · ${m.resumen.enviadas} de ${m.resumen.total} enviadas` : "")
+                          : m.estado_label}
+                        {m.enviado_por ? ` · ${m.enviado_por}` : ""}
+                      </div>
+                      <div className="wa-compose-hist-m">{fechaHoraCorta(m.fecha)}</div>
                     </div>
                   </div>
                 ))}
@@ -4134,51 +4889,57 @@ function WhatsappModal({ id, datos, onCerrar, onEnviado, showToast }) {
           </div>
 
           {/* ── Previsualización ── */}
-          <div className="wam-col prev">
-            <div className="wam-rot">Vista previa</div>
-            <div className="wam-tel">
-              <div className="wam-tel-top">
-                <div className="wam-av">{iniciales}</div>
+          <div className="wa-compose-right">
+            <div className="wa-compose-label">Vista previa</div>
+            <div className="wa-compose-preview">
+              <div className="wa-compose-preview-top">
+                <div className="wa-compose-avatar">{iniciales}</div>
                 <div style={{ minWidth: 0 }}>
-                  <div className="wam-tel-n">{pac.nombre || "Paciente"}</div>
-                  <div className="wam-tel-s">{pac.telefono_mascara || ""}</div>
+                  <div className="wa-compose-preview-n">{pac.nombre || "Paciente"}</div>
+                  <div className="wa-compose-preview-s">{pac.telefono_mascara || ""}</div>
                 </div>
               </div>
-              <div className="wam-chat">
-                {texto.trim() || imagen ? (
-                  <div className="wam-burb">
-                    {imagen && <img className="wam-burb-img" src={imagen.url} alt="" />}
-                    {texto.trim() && <div className="wam-burb-t">{texto}</div>}
-                    <div className="wam-burb-h">
+              <div className="wa-compose-chat">
+                {burbujas.length === 0 ? (
+                  <div className="wa-compose-empty">Escribe el mensaje para ver cómo lo recibirá</div>
+                ) : burbujas.map((b, i) => (
+                  <div className="wa-compose-bubble" key={b.imagen ? `i${b.imagen.id}` : `t${i}`}>
+                    {b.imagen && <img src={b.imagen.url} alt={b.imagen.nombre} />}
+                    {b.texto && <div className="wa-compose-bubble-t">{b.texto}</div>}
+                    <div className="wa-compose-bubble-h">
                       {hora}
-                      <Check size={13} strokeWidth={3} className="wam-check" style={{ marginLeft: -3 }} />
-                      <Check size={13} strokeWidth={3} className="wam-check" style={{ marginLeft: -9 }} />
+                      <Check size={13} strokeWidth={3} className="wa-compose-tick" style={{ marginLeft: -3 }} />
+                      <Check size={13} strokeWidth={3} className="wa-compose-tick" style={{ marginLeft: -9 }} />
                     </div>
                   </div>
-                ) : (
-                  <div className="wam-vacio">Escribe el mensaje para ver cómo lo recibirá</div>
-                )}
+                ))}
               </div>
             </div>
-            <div className="wam-nota">
+            <div className="wa-compose-hint">
               Así se verá en su teléfono. El mensaje sale a nombre de Coordinación,
               desde el número de {pac.sede_label || "la sede"}.
             </div>
           </div>
         </div>
 
-        <div className="wam-pie">
-          <div className="wam-destino">
+        <div className="wa-compose-footer">
+          <div className="wa-compose-dest">
             {yaEnviado
               ? <>Enviado a <strong>{pac.nombre}</strong> · {hora}</>
-              : confirmar
-                ? <>Ya se le escribió hace menos de 24 h. Pulsa otra vez para confirmar.</>
-                : <>El mensaje se enviará a <strong>{pac.nombre}</strong>
-                    {nombrePlantilla ? ` · ${nombrePlantilla}` : ""}</>}
+              : parcial
+                ? <>Faltan <strong>{resultado.resumen?.faltan}</strong> de {resultado.resumen?.total} partes.</>
+                : confirmar
+                  ? <>Ya se le escribió hace menos de 24 h. Pulsa otra vez para confirmar.</>
+                  : <>El mensaje se enviará a <strong>{pac.nombre}</strong>
+                      {adjuntos.length ? ` · ${adjuntos.length} ${adjuntos.length === 1 ? "imagen" : "imágenes"}` : ""}
+                      {nombrePlantilla ? ` · ${nombrePlantilla}` : ""}
+                      {modoPrueba && lineaPrueba
+                        ? <> · <strong>🧪 desde {lineaPrueba}</strong></> : ""}</>}
           </div>
-          <button className="ca-mini" onClick={onCerrar}>{yaEnviado ? "Cerrar" : "Cancelar"}</button>
-          {!yaEnviado && (
-            <button className="wam-enviar" onClick={enviar} disabled={enviando || !texto.trim()}>
+          <button className="wa-compose-btn" onClick={onCerrar}>{bloqueado ? "Cerrar" : "Cancelar"}</button>
+          {!bloqueado && (
+            <button className="wa-compose-primary" onClick={enviar}
+              disabled={enviando || (!texto.trim() && adjuntos.length === 0)}>
               <Send size={15} strokeWidth={2} />
               {enviando ? "Enviando…" : confirmar ? "Sí, enviar igual" : "Enviar WhatsApp"}
             </button>
@@ -4188,8 +4949,21 @@ function WhatsappModal({ id, datos, onCerrar, onEnviado, showToast }) {
 
       {biblioteca && (
         <SelectorImagen
+          yaElegidas={adjuntos} maximo={maxImagenes} limites={limites} showToast={showToast}
           onCerrar={() => setBiblioteca(false)}
-          onElegir={(i) => { setImagen(i); setBiblioteca(false); }} />
+          onAgregar={(nuevas) => {
+            setAdjuntos((a) => {
+              const vistos = new Set(a.map((m) => m.id));
+              return [...a, ...nuevas.filter((m) => !vistos.has(m.id))].slice(0, maxImagenes);
+            });
+            setBiblioteca(false);
+          }} />
+      )}
+
+      {anclaEmoji && (
+        <SelectorEmoji ancla={anclaEmoji}
+          onCerrar={() => setAnclaEmoji(null)}
+          onElegir={insertarEmoji} />
       )}
     </div>,
     document.body
@@ -4208,7 +4982,6 @@ function ContactarWhatsappPanel({ id, contacto, onActualizado, showToast }) {
 
   const c = contacto || {};
   const bloqueoDato = c.bloqueo && c.bloqueo !== "sin_linea";   // sede / teléfono
-  const lineaLista = !!c.canal?.linea_configurada;
 
   // Abrir pide el preview al servidor; hasta que llega no se muestra el modal.
   function abrir() {

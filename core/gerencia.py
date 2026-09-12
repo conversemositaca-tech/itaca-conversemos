@@ -693,12 +693,41 @@ class ContinuidadWhatsappView(APIView):
         if paciente is None:
             return Response({"detail": "No encontrado."}, status=status.HTTP_404_NOT_FOUND)
         texto = str(request.data.get("texto") or "")
+
+        # Modo de prueba: el frontend puede PEDIR una línea de pruebas, pero
+        # quien decide es el backend. Se valida que exista, que sea de entorno
+        # `prueba`, que esté activa y que Evolution la reporte conectada. Si
+        # falla cualquiera de las cuatro, no se envía: nunca se cae de vuelta a
+        # la línea oficial de la sede por un modo de prueba mal pedido.
+        instancia_prueba = ""
+        pedida = str(request.data.get("instancia_prueba") or "").strip()
+        if pedida:
+            from mensajes.evolution import instancia_de_prueba
+
+            inst, motivo = instancia_de_prueba(paciente.clinica, pedida)
+            if inst is None:
+                return Response({"detail": f"No se puede usar el modo de prueba: {motivo}.",
+                                 "bloqueo": "prueba_invalida"},
+                                status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+            instancia_prueba = inst.nombre_instancia
+
+        # Las imágenes llegan como ids de la biblioteca, nunca como archivos ni
+        # como base64: lo que se envía sale del disco del servidor, de una pieza
+        # que ya fue validada al subirse. `cc.materiales_validos` se encarga de
+        # que sean de ESTA clínica y de respetar el orden que eligió la
+        # coordinadora.
+        materiales = request.data.get("materiales") or []
+        if not isinstance(materiales, (list, tuple)):
+            materiales = [materiales]
+
         try:
             _, resultado = cc.enviar(
                 paciente, request.user, texto=texto,
                 observacion=str(request.data.get("observacion") or ""),
                 confirmado=bool(request.data.get("confirmado")),
                 plantilla_clave=str(request.data.get("plantilla_clave") or ""),
+                instancia_prueba=instancia_prueba,
+                materiales=materiales,
             )
         except cc.ContactoBloqueado as e:
             # 422: la petición es válida, pero falta un dato o la línea. Cuando
@@ -722,10 +751,88 @@ class ContinuidadWhatsappView(APIView):
         datos["envio"] = {
             "estado": resultado.get("estado"),
             "detalle": resultado.get("detalle", ""),
-            "proveedor": ultimo.get("proveedor", ""),
+            "proveedor": resultado.get("proveedor") or ultimo.get("proveedor", ""),
             "instancia": resultado.get("instancia") or ultimo.get("instancia", ""),
-            "external_message_id": ultimo.get("external_message_id", ""),
+            "external_message_id": (resultado.get("external_message_id")
+                                    or ultimo.get("external_message_id", "")),
             "fecha": ultimo.get("fecha", ""),
+            # Con imágenes, una comunicación son varias partes: aquí va cuántas
+            # salieron de verdad, para que la pantalla no diga "enviado" cuando
+            # faltó la mitad.
+            "comunicacion": resultado.get("comunicacion", "enviado"),
+            "grupo": resultado.get("grupo", ""),
+            "resumen": resultado.get("resumen") or {},
+            "partes": resultado.get("partes") or [],
+        }
+        return Response(datos)
+
+
+class ContinuidadReintentoView(APIView):
+    """POST /api/continuidad/caso/<paciente_id>/whatsapp/reintentar/
+
+    Reenvía SOLO las partes de una comunicación que nunca salieron. Las que
+    tienen `external_message_id` ya le llegaron al paciente —ese id lo puso
+    WhatsApp— y no se vuelven a mandar bajo ninguna circunstancia: es la única
+    garantía real de que "reintentar" no le duplique una imagen.
+
+    Nunca se dispara solo. Lo pulsa la coordinadora después de ver qué llegó.
+    """
+
+    permission_classes = [IsAuthenticated, PuedeContactarPacientes]
+
+    def post(self, request, pk):
+        from core import contacto_continuidad as cc
+        from core import gestion_continuidad as gc
+
+        if get_clinica_actual() is None:
+            return Response({"detail": "Sin clínica en contexto."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        visibles = continuidad_mod.pacientes_del_rol(
+            Paciente.objects.del_tenant_actual(), request.user)
+        paciente = visibles.filter(pk=pk).first()
+        if paciente is None:
+            return Response({"detail": "No encontrado."}, status=status.HTTP_404_NOT_FOUND)
+
+        # El identificador se valida aquí: un uuid mal formado no debe llegar
+        # como filtro a la base de datos.
+        import uuid as uuid_mod
+
+        try:
+            grupo = uuid_mod.UUID(str(request.data.get("grupo") or "").strip())
+        except (ValueError, AttributeError, TypeError):
+            return Response({"detail": "Falta la comunicación a reintentar."},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        # El modo de prueba se revalida igual que en el envío: no basta con que
+        # la comunicación original haya salido por ahí.
+        instancia_prueba = ""
+        pedida = str(request.data.get("instancia_prueba") or "").strip()
+        if pedida:
+            from mensajes.evolution import instancia_de_prueba
+
+            inst, motivo = instancia_de_prueba(paciente.clinica, pedida)
+            if inst is None:
+                return Response({"detail": f"No se puede usar el modo de prueba: {motivo}.",
+                                 "bloqueo": "prueba_invalida"},
+                                status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+            instancia_prueba = inst.nombre_instancia
+
+        try:
+            _, resultado = cc.reintentar(paciente, request.user, grupo,
+                                         instancia_prueba=instancia_prueba)
+        except gc.SinCondicion as e:
+            return Response({"detail": str(e)}, status=status.HTTP_409_CONFLICT)
+        except ValueError as e:
+            return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+        datos = ContinuidadCasoView.payload(request, paciente, visibles)
+        datos["envio"] = {
+            "estado": resultado.get("estado"),
+            "detalle": resultado.get("detalle", ""),
+            "comunicacion": resultado.get("comunicacion", ""),
+            "grupo": resultado.get("grupo", ""),
+            "resumen": resultado.get("resumen") or {},
+            "partes": resultado.get("partes") or [],
         }
         return Response(datos)
 
