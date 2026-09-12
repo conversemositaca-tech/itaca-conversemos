@@ -8,6 +8,7 @@ Lo que se prueba aquí es lo que puede salir caro en producción:
 - que el archivo se valide por su CONTENIDO, no por su nombre;
 - que una pieza de otra clínica no se pueda enviar (Ley 29733).
 """
+import base64
 import io
 import shutil
 import struct
@@ -29,8 +30,93 @@ from usuarios.models import Usuario
 MEDIA_TMP = tempfile.mkdtemp(prefix="itaca-material-")
 
 
+# --- fixtures de imagen -------------------------------------------------------
+# JPEG, PNG y WEBP REALES, producidos por un encoder de verdad (ffmpeg: libjpeg,
+# libpng, libwebp) y empotrados en base64 para que la prueba no dependa de
+# ningún archivo del disco.
+#
+# El JPEG es el fixture que importa. Tiene cabecera JFIF y tablas de
+# cuantización reales, así que su SOF —el marcador donde están el ancho y el
+# alto— cae en el byte 293. Esa es exactamente la forma que tiene cualquier foto
+# de teléfono, y el caso que el validador rechazaba con un "puede estar dañada"
+# que era falso. Una imagen sintética mínima NO lo reproduce: en ella el SOF cae
+# en el byte 20 y la prueba pasa aunque el código esté roto.
+JPEG_SOF_OFFSET = 293
+
+JPEG_REAL_B64 = """\
+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"""
+
+PNG_REAL_B64 = """\
+iVBORw0KGgoAAAANSUhEUgAAADAAAAAgCAIAAADbtmxLAAAACXBIWXMAAAABAAAAAQBPJcTWAAAA9klEQVR4
+nNWYAQ6CMAxFf5N/D/CmehOv4k3gJDVjAoOSYaaM8tIQXdbup21Ih8CgZkUUKotlsV66XrN7bGx7Fje81mrU
+nFWISggkamV8LUiyzmWoSCYsK6vZ1bRfssqwfnrySeIpauYeNwddoWRSJT2RoW56qQzp396ChUlyn6HTIZxB
+OINwBuEMwhmEMwhnEM4gnEE4FyRbQ9OhrMeP8K9d2kvCs0GHj911/t3DOgQTJJtS6+dNj8ShCXG64CPP1MF9
+yU6HcAbhDIaBNfbTyNT0t7H/7VS7/bEhtqvZM4VP4wxXiVZThyio+BKOHyi82x+kKR/wDeFmZe30sYI3AAAA
+AElFTkSuQmCC"""
+
+WEBP_REAL_B64 = """\
+UklGRjACAABXRUJQVlA4ICQCAACwDgCdASowACAAPnkykkekoyGhOrzIAJAPCWwAnTlBWh34/K/x35AlwPwD
+8I/vH5Lf4DgAP0P3AH6zfsB7AH+Z/x3YAfrt1gHoAfwD+cdZl+2Ho0XeF9VsgHx6cQBj8mYB+tw5Oz4RFxND
+a2Lx7OjC8uoPiti3/ycMJQnsfQAA/v4WurRUM71qE0pPinw/Ty+FUN9sDeZkSg+VQl1FRHolT9Xl6Xr71+Uj
+PDOWkDyAgQcJkv4T6V75vqz0+LHyquazUYeNzrrQxULv/qPZWkSPaQ3/rJa15+D8VV/+zoerK08W0WHl/68Y
+HQn65B+lB/14wOhP/rkH6SLTZ86ry/tMTzNrH/Ov7TCpgK7Ls5OfHRuYJd/pMZXDvwj3JXmaLmkb8+f931xI
+Xduvajx92ienssDSuR/r0/HEBUQlHVgEautPnkTe8oFW95V762Y5cP9ZJ/ORbyaxiXnKBy3aVwsLAwd33Yf1
+7VV2PKHh8+W2P+reF9iIi8GROtdrVpP0/fs7cMLv51v0T/G8zd60//f11RzBLf201TPiDM7n8sP//qNI7qxR
+WjK3EVPOYGaPaeLqv0wNoiNZHKM53/S07073jiyKLpMpjK+5dZ/pZ1/OY8iXU6SHdS1iuwws4ESfP0A+ejES
+6lu0S+Za84NIUUiN+uRggGdmpiDb7wBc/JlTqSV/Ug5v/B38lO4V7MxezYsagrFcu/kX+P/+19wXnMLg7MAA
+AA=="""
+
+
+def jpeg_real(ancho=None, alto=None):
+    """El JPEG de ffmpeg (64x48 px).
+
+    Con `ancho` o `alto` se reescriben las medidas declaradas en su SOF, para
+    poder probar los topes de tamaño sin empotrar un archivo de varios MB. Todo
+    lo demás sigue siendo el archivo real.
+    """
+    datos = bytearray(base64.b64decode(JPEG_REAL_B64))
+    if ancho is None and alto is None:
+        return bytes(datos)
+    i = datos.index(b"\xff\xc0")
+    alto_actual, ancho_actual = struct.unpack(">HH", datos[i + 5:i + 9])
+    datos[i + 5:i + 9] = struct.pack(">HH", alto or alto_actual, ancho or ancho_actual)
+    return bytes(datos)
+
+
+def png_real():
+    return base64.b64decode(PNG_REAL_B64)
+
+
+def webp_real():
+    return base64.b64decode(WEBP_REAL_B64)
+
+
 def png(ancho=300, alto=200):
-    """Un PNG real y mínimo, con su IHDR bien formado."""
+    """Un PNG sintético del tamaño que haga falta, con su IHDR bien formado."""
     def trozo(tipo, datos):
         return (struct.pack(">I", len(datos)) + tipo + datos
                 + struct.pack(">I", zlib.crc32(tipo + datos) & 0xFFFFFFFF))
@@ -46,23 +132,56 @@ def subida(nombre="pieza.png", contenido=None, tipo="image/png"):
 
 
 class LeerCabeceraTests(TestCase):
-    """El tipo y las dimensiones salen del contenido, no del nombre."""
+    """El tipo y las dimensiones salen del CONTENIDO, no del nombre.
 
-    def test_png_da_tipo_y_medidas(self):
-        self.assertEqual(mat.inspeccionar(png(640, 480)[:64]), ("image/png", 640, 480))
+    Se le pasa el archivo entero, que es lo que hace el endpoint: recortarlo
+    reconocía el formato pero perdía las medidas de todo JPEG real.
+    """
 
-    def test_jpeg_se_reconoce(self):
-        # SOI + SOF0 con alto 120 y ancho 250.
-        jpeg = (b"\xff\xd8\xff\xe0" + struct.pack(">H", 16) + b"JFIF\x00" + b"\x00" * 9
-                + b"\xff\xc0" + struct.pack(">H", 17) + b"\x08"
-                + struct.pack(">HH", 120, 250) + b"\x03" + b"\x00" * 9)
-        self.assertEqual(mat.inspeccionar(jpeg[:64]), ("image/jpeg", 250, 120))
+    def test_jpeg_real_con_sof_despues_del_byte_64(self):
+        """Regresión del bug de produccion.
+
+        El SOF de este JPEG está en el byte 293. Con la versión que leía solo
+        una cabecera de 64 bytes, esto devolvía ("image/jpeg", 0, 0) y el
+        endpoint contestaba "puede estar dañada" a una imagen perfecta.
+        """
+        datos = jpeg_real()
+        self.assertGreater(JPEG_SOF_OFFSET, 64)
+        self.assertEqual(mat.inspeccionar(datos), ("image/jpeg", 64, 48))
+
+    def test_una_cabecera_recortada_no_alcanza_para_jpeg(self):
+        """Deja constancia de POR QUÉ hay que pasar el archivo entero."""
+        self.assertEqual(mat.inspeccionar(jpeg_real()[:64]), ("image/jpeg", 0, 0))
+
+    def test_png_real_da_tipo_y_medidas(self):
+        self.assertEqual(mat.inspeccionar(png_real()), ("image/png", 48, 32))
+
+    def test_webp_real_da_tipo_y_medidas(self):
+        self.assertEqual(mat.inspeccionar(webp_real()), ("image/webp", 48, 32))
+
+    def test_png_sintetico_de_cualquier_medida(self):
+        self.assertEqual(mat.inspeccionar(png(640, 480)), ("image/png", 640, 480))
 
     def test_webp_lossy_se_reconoce(self):
         cuerpo = (b"VP8 " + struct.pack("<I", 20) + b"\x00" * 3
                   + b"\x9d\x01\x2a" + struct.pack("<HH", 400, 300))
         webp = b"RIFF" + struct.pack("<I", len(cuerpo) + 4) + b"WEBP" + cuerpo
-        self.assertEqual(mat.inspeccionar(webp[:64]), ("image/webp", 400, 300))
+        self.assertEqual(mat.inspeccionar(webp), ("image/webp", 400, 300))
+
+    def test_jpeg_truncado_antes_del_sof_no_pasa(self):
+        """Un archivo cortado a la mitad se reconoce pero no da medidas."""
+        self.assertEqual(mat.inspeccionar(jpeg_real()[:200]), ("image/jpeg", 0, 0))
+
+    def test_jpeg_con_longitudes_corruptas_no_cuelga(self):
+        """Longitudes de segmento imposibles: se descarta, no se recorre entero."""
+        roto = bytearray(jpeg_real())
+        roto[4:6] = b"\x00\x00"          # el APP0 declara largo 0
+        self.assertEqual(mat.inspeccionar(bytes(roto)), ("image/jpeg", 0, 0))
+
+    def test_jpeg_de_basura_no_recorre_el_archivo_entero(self):
+        """Firma de JPEG y detrás un megabyte de ruido: se corta enseguida."""
+        basura = b"\xff\xd8\xff" + b"\x37" * (1024 * 1024)
+        self.assertEqual(mat.inspeccionar(basura), ("image/jpeg", 0, 0))
 
     def test_un_pdf_renombrado_a_png_no_pasa(self):
         """Renombrar la extensión no convierte un archivo en imagen."""
@@ -71,6 +190,12 @@ class LeerCabeceraTests(TestCase):
     def test_un_script_renombrado_a_jpg_no_pasa(self):
         self.assertEqual(mat.inspeccionar(b"<?php system($_GET['c']); ?>")[0], None)
 
+    def test_heic_y_avif_se_rechazan_con_claridad(self):
+        """Un iPhone puede dar HEIC. No se acepta, pero el motivo es honesto:
+        no es un formato soportado, no es que esté dañado."""
+        for cabecera in (b"\x00\x00\x00\x18ftypheic" + b"\x00" * 40,
+                         b"\x00\x00\x00\x1cftypavif" + b"\x00" * 40):
+            self.assertEqual(mat.inspeccionar(cabecera)[0], None)
 
 @override_settings(MEDIA_ROOT=MEDIA_TMP)
 class BibliotecaTests(TestCase):
@@ -140,6 +265,73 @@ class BibliotecaTests(TestCase):
         r = self._subir(archivo=subida("gordo.png", relleno))
         self.assertEqual(r.status_code, 400)
         self.assertIn("MB", r.json()["detail"])
+
+    # --- el endpoint completo, con imágenes de un encoder real ---------------
+
+    def test_subir_un_jpeg_real_por_el_endpoint(self):
+        """Regresión del bug de producción, de punta a punta.
+
+        Es el caso exacto que falló: una foto de WhatsApp, cuyo SOF está pasado
+        el byte 64. Antes devolvía 400 "puede estar dañada".
+        """
+        r = self._subir(archivo=subida("WhatsApp Image 2026-09-10 at 15.51.47.jpeg",
+                                       jpeg_real(), "image/jpeg"))
+        self.assertEqual(r.status_code, 201, r.content[:300])
+        m = Material.objects.get()
+        self.assertEqual((m.mime, m.ancho, m.alto), ("image/jpeg", 64, 48))
+        self.assertTrue(m.archivo.name.endswith(".jpg"))
+
+    def test_subir_un_png_real_por_el_endpoint(self):
+        r = self._subir(archivo=subida("pieza.png", png_real(), "image/png"))
+        self.assertEqual(r.status_code, 201, r.content[:300])
+        m = Material.objects.get()
+        self.assertEqual((m.mime, m.ancho, m.alto), ("image/png", 48, 32))
+
+    def test_subir_un_webp_real_por_el_endpoint(self):
+        r = self._subir(archivo=subida("pieza.webp", webp_real(), "image/webp"))
+        self.assertEqual(r.status_code, 201, r.content[:300])
+        m = Material.objects.get()
+        self.assertEqual((m.mime, m.ancho, m.alto), ("image/webp", 48, 32))
+
+    def test_un_jpeg_con_extension_y_tipo_equivocados_se_guarda_como_jpeg(self):
+        """Manda el CONTENIDO, no el nombre ni lo que declare el navegador.
+
+        Se acepta porque es una imagen de verdad, y en disco queda con la
+        extensión que le corresponde a su tipo real.
+        """
+        r = self._subir(archivo=subida("captura.png", jpeg_real(), "image/png"))
+        self.assertEqual(r.status_code, 201, r.content[:300])
+        m = Material.objects.get()
+        self.assertEqual(m.mime, "image/jpeg")
+        self.assertTrue(m.archivo.name.endswith(".jpg"))
+
+    def test_rechaza_un_jpeg_corrupto(self):
+        """Cortado antes del SOF: aquí el mensaje de "dañada" sí es cierto."""
+        r = self._subir(archivo=subida("rota.jpg", jpeg_real()[:200], "image/jpeg"))
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("dañada", r.json()["detail"])
+        self.assertEqual(Material.objects.count(), 0)
+
+    def test_rechaza_un_ejecutable_con_firma_de_jpeg(self):
+        """Los tres bytes de la firma no bastan: sin SOF no hay imagen."""
+        disfraz = b"\xff\xd8\xff" + b"MZ\x90\x00 ejecutable" * 200
+        r = self._subir(archivo=subida("foto.jpg", disfraz, "image/jpeg"))
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(Material.objects.count(), 0)
+
+    def test_rechaza_un_jpeg_enorme_de_lado(self):
+        r = self._subir(archivo=subida("panoramica.jpg", jpeg_real(ancho=4200),
+                                       "image/jpeg"))
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("4000", r.json()["detail"])
+        self.assertEqual(Material.objects.count(), 0)
+
+    def test_rechaza_un_jpeg_que_pesa_de_mas(self):
+        gordo = jpeg_real() + b"\x00" * (mat.MAX_MB * 1024 * 1024)
+        r = self._subir(archivo=subida("gorda.jpg", gordo, "image/jpeg"))
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("MB", r.json()["detail"])
+        self.assertEqual(Material.objects.count(), 0)
 
     def test_retirar_es_baja_logica(self):
         """Borrar de verdad rompería el historial de lo ya enviado."""
