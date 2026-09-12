@@ -13394,6 +13394,194 @@ function _profSirveServicio(prof, nombreServicio) {
   return kw.some((k) => pob.includes(k));
 }
 
+// Señas del sitio público (conversemos.itaca.com.pe), tomadas del propio sitio:
+// menú, redes, WhatsApp, correo y la frase del pie. Con ellas esta página se lee
+// como una más del sitio y no como un formulario suelto en otro dominio. Todos los
+// enlaces abren en pestaña nueva para no perder una reserva a medias.
+const AGENDA_SITIO = {
+  base: "https://conversemos.itaca.com.pe",
+  menu: [
+    ["Quienes Somos", "/quienes-somos/"],
+    ["Psicólogos", "/psicologos/"],
+    ["Terapias Online", "/terapias-online/"],
+    ["Preguntas", "/preguntas-frecuentes/"],
+    ["Blog", "/blog/"],
+  ],
+  tests: [
+    ["Test de Ansiedad", "/test-de-ansiedad/"],
+    ["Test de Dependencia Emocional", "/test-de-dependencia-emocional/"],
+    ["Test de Depresión", "/test-de-depresion/"],
+  ],
+  instagram: "https://www.instagram.com/itaca.conversemos/",
+  facebook: "https://www.facebook.com/people/%C3%8Dtaca-Conversemos-Salud-Mental/100084447923643/",
+  whatsapp: "https://api.whatsapp.com/send?phone=51961350844&text=Bienvenid%40%20a%20Itaca%20Conversemos",
+  correo: "conversemos.itaca@gmail.com",
+  telefono: "965 337 290",
+  lema: "Hablamos de salud mental en un espacio seguro para sanar, brindando terapia presencial y online.",
+};
+
+// Preguntas frecuentes del sitio, con el texto del equipo (no reescrito). `precio`
+// es el de la primera consulta según el catálogo real; si no hay, el del sitio.
+function agendaFaq(precio) {
+  const sitio = AGENDA_SITIO.base;
+  const ext = { target: "_blank", rel: "noopener" };
+  return [
+    { id: "que-es", q: "¿Qué es Conversemos?",
+      a: "Conversemos es una plataforma dedicada a trabajar la salud mental de forma integral, en la que se brindan terapias psicológicas en línea segura, de manera económicamente accesible. Nuestra misión es ayudarte a recuperar la calma contigo mismo. Nuestros psicoterapeutas tienen formación en psicología clínica y están capacitados para poder brindar terapia psicológica virtual. Todo nuestro equipo de profesionales pasa por un exhaustivo proceso de selección, por lo que nos caracterizamos por nuestra excelencia profesional." },
+    { id: "online", q: "¿Cómo sé que la terapia online es para mí?",
+      a: "La terapia online permite recibir la misma atención psicológica que recibirías en un consultorio tradicional, pero de forma remota. Al conversar con tu terapeuta por videollamada recibirás las herramientas que te permitan afrontar tus dificultades y tendrás un espacio tuyo para enfocarte en ti, de una manera fácil y conveniente. El significado de “estar bien” es diferente para cada persona: para algunos puede ser comunicarse mejor, para otros vivir de forma saludable y para algunos otros puede ser tener a alguien con quien hablar de lo que les sucede. La terapia online es para ti por el simple hecho de ser humano, porque uno quiere crecer, ser escuchado y ser constante en sus cambios." },
+    { id: "costo", q: "¿Cuánto dura cada sesión y cuánto cuesta?",
+      a: `La primera consulta tiene una duración de entre 30 y 45 minutos y una inversión de ${precio}. Nuestra finalidad es que en este primer encuentro conozcas al psicólogo o psicóloga que te acompañará durante tu proceso de sanar. En esta reunión sabrás cuál es tu plan de terapia.\n\nLas sesiones psicológicas duran aproximadamente 50 minutos o 1 hora. La inversión de estas sesiones depende de tu plan de terapia. Antes de tener un tratamiento debemos identificar qué necesitas, por eso recomendamos iniciar con la primera consulta y luego conversar con tu asesor comercial asignado para que te ayude a encontrar el mejor paquete y facilidades de pago que se adecúen a ti y tu presupuesto.` },
+    { id: "frecuencia", q: "¿Con cuánta frecuencia tendré que hacer terapia?",
+      a: "Tu psicólogo recomendará la frecuencia de las sesiones dependiendo de la complejidad de tus necesidades a trabajar (usualmente iniciamos con una o dos veces por semana). En Conversemos la finalidad es que obtengas las herramientas para continuar tu camino tú solo, por lo que dependiendo de tu progreso, necesidades y preferencias, iremos ajustando la frecuencia de las sesiones. Ten en cuenta que el éxito de tus sesiones terapéuticas depende de tu compromiso con el desarrollo de las mismas." },
+    { id: "duracion", q: "¿Cuánto tiempo tendré que estar haciendo terapia?",
+      a: "Nos encantaría poder darte una respuesta, pero lo cierto es que esto varía dependiendo de cada persona. Algunos buscan trabajar sobre un tema puntual y para solucionarlo les resulta suficiente tener algunas sesiones; también hay quienes buscan y necesitan un apoyo a largo plazo. Lo que sí te podemos asegurar es que nuestro compromiso es total: haremos tanto como podamos para trabajar de forma eficaz contigo y así poder avanzar en el menor tiempo posible." },
+    { id: "contacto-fuera", q: "¿Podré tener contacto con mi psicóloga más allá de la sesión de terapia?",
+      a: "Sí, podrás contactarla para comentar cualquier asunto relacionado con la terapia, pero no se realizará terapia fuera de la sesión y siempre se respetará la disponibilidad de tu psicólogo para contestar al contacto externo." },
+    { id: "confidencial", q: "¿Alguien más sabrá lo que yo le cuente a mi psicóloga en terapia?",
+      a: "No. Los psicólogos de Conversemos están obligados por ley a mantener el secreto profesional y a ofrecer una garantía total y absoluta de confidencialidad. Nuestros psicólogos están comprometidos contigo a cuidar tus datos e historia." },
+    { id: "elegir", q: "¿Puedo elegir a mi psicóloga?",
+      a: <>Sí, puedes seleccionar a tu psicólogo y reservar tu cita directamente con él o ella. O puedes acudir a nuestro servicio de atención al cliente, comentarle lo que deseas trabajar en terapia y te recomendará al mejor psicólogo para ti. Puedes revisar información sobre nuestros psicólogos <a href={`${sitio}/psicologos/`} {...ext}>haciendo clic aquí</a>.</> },
+    { id: "conexion", q: "Ya estoy en terapia pero no siento conexión con mi psicóloga, ¿qué puedo hacer?",
+      a: "Si ya estás llevando terapia y sientes que no acabas de conectar con tu terapeuta, si no notas avances o simplemente te sientes más cómoda cambiando de profesional, te asignaremos otra psicóloga. Lo más importante es que te sientas a gusto y todo fluya de manera natural; solo así podremos garantizar el éxito de la terapia. Del mismo modo, si no estuviste conforme con tu psicólogo en la primera consulta, te podemos cambiar de especialista sin costo adicional." },
+    { id: "reservar", q: "¿Cómo puedo reservar una sesión?",
+      a: "Desde esta misma página: elige tu sede, el psicólogo y un horario libre, y déjanos tu nombre y teléfono. Coordinación te escribe para confirmar; no pagas nada hasta entonces." },
+    { id: "cambiar", q: "Una vez reservada mi sesión, ¿puedo cambiar el día y la hora, o cancelarla?",
+      a: "Sí, es posible reprogramar tu cita comunicándote con tu asesor de las sesiones (la persona que te brinda el link de ingreso todas las semanas) o directamente con tu psicólogo. Es importante saber que los profesionales esperarán un máximo de 15 minutos desde la hora de inicio de la sesión; pasado este tiempo, si no te has presentado, daremos por anulada la sesión." },
+    { id: "problemas", q: "¿Se pueden tratar todo tipo de problemas en las terapias?",
+      a: "Sí, contamos con diferentes profesionales que tienen experiencia en una amplia variedad de problemáticas, por lo que todas tus necesidades pueden ser atendidas de forma integral." },
+    { id: "dia", q: "Ya tengo mi cita, ¿con quién tengo que contactar ese día? ¿Me llaman o llamo yo?",
+      a: "Si tu sesión es virtual, el día de tu sesión te enviaremos un link de Zoom para que puedas ingresar a la sala personal de tu psicólogo. A la hora agendada, tu psicólogo abrirá la sala y te permitirá el ingreso.\n\nSi es presencial, te esperamos en la sede que elegiste a la hora reservada." },
+    { id: "mas", q: "Tengo más preguntas, ¿qué puedo hacer?",
+      a: <>Puedes escribirnos a <a href={`mailto:${AGENDA_SITIO.correo}`}>{AGENDA_SITIO.correo}</a> o comunicarte a este número: <a href={`tel:+51${AGENDA_SITIO.telefono.replace(/\s/g, "")}`}>{AGENDA_SITIO.telefono}</a>. Estamos dispuestos a resolver todas tus dudas.</> },
+  ];
+}
+
+// Una duda plegable (<details> nativo: funciona con teclado y sin JS).
+function AgendaDuda({ item }) {
+  return (
+    <details className="ag-duda">
+      <summary>{item.q}<ChevronDown size={17} strokeWidth={2} /></summary>
+      {typeof item.a === "string"
+        ? item.a.split("\n\n").map((p, i) => <p key={i} className="ag-duda-txt">{p}</p>)
+        : <p className="ag-duda-txt">{item.a}</p>}
+    </details>
+  );
+}
+
+// Las dudas que frenan en ESE paso, al pie de la acción (la acción primero).
+function AgendaDudas({ faq, ids, titulo = "¿Tienes dudas?" }) {
+  const items = ids.map((id) => faq.find((f) => f.id === id)).filter(Boolean);
+  if (!items.length) return null;
+  return (
+    <div className="ag-dudas">
+      <h3 className="ag-rotulo">{titulo}</h3>
+      {items.map((it) => <AgendaDuda key={it.id} item={it} />)}
+    </div>
+  );
+}
+
+const AGENDA_LOGO = `${import.meta.env.BASE_URL}itaca-logo-h.png`;
+const _ext = { target: "_blank", rel: "noopener" };
+
+// Cabecera del sitio: el logo y el mismo menú de conversemos.itaca.com.pe. Es un
+// sello de "sigues en Ítaca", no una invitación a irse: 62px de alto, texto quieto.
+function AgendaTop() {
+  return (
+    <header className="ag-top">
+      <div className="ag-top-in">
+        <a className="ag-top-logo" href={AGENDA_SITIO.base} {..._ext} aria-label="Ítaca Conversemos · ir al sitio">
+          <img src={AGENDA_LOGO} alt="Ítaca Conversemos" onError={(e) => { e.currentTarget.style.display = "none"; }} />
+        </a>
+        <nav aria-label="Sitio de Ítaca Conversemos">
+          <ul className="ag-menu">
+            {AGENDA_SITIO.menu.map(([l, p]) => (
+              <li key={p}><a href={AGENDA_SITIO.base + p} {..._ext}>{l}</a></li>
+            ))}
+          </ul>
+          <a className="ag-menu-sitio" href={AGENDA_SITIO.base} {..._ext}>
+            conversemos.itaca.com.pe <ExternalLink size={13} strokeWidth={2} />
+          </a>
+        </nav>
+      </div>
+    </header>
+  );
+}
+
+// Pie del sitio: sedes, contacto, redes y los test. Claro, no negro como el del
+// sitio: un bloque negro cierra de golpe una página pensada para alguien nervioso.
+function AgendaPie() {
+  const tel = (t) => `tel:${t.replace(/\s/g, "")}`;
+  return (
+    <footer className="ag-pie">
+      <div className="ag-pie-in">
+        <div className="ag-pie-cols">
+          <div>
+            <div className="ag-pie-logo">
+              <img src={AGENDA_LOGO} alt="Ítaca Conversemos" onError={(e) => { e.currentTarget.style.display = "none"; }} />
+            </div>
+            <p className="ag-pie-txt">{AGENDA_SITIO.lema}</p>
+            <div className="ag-redes">
+              <a href={AGENDA_SITIO.instagram} {..._ext} aria-label="Instagram">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <rect width="20" height="20" x="2" y="2" rx="5" ry="5" /><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z" /><line x1="17.5" x2="17.51" y1="6.5" y2="6.5" />
+                </svg>
+              </a>
+              <a href={AGENDA_SITIO.facebook} {..._ext} aria-label="Facebook">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z" />
+                </svg>
+              </a>
+              <a href={AGENDA_SITIO.whatsapp} {..._ext} aria-label="WhatsApp">
+                <MessageCircle size={17} strokeWidth={2} aria-hidden="true" />
+              </a>
+            </div>
+          </div>
+          <div>
+            <h3>Sedes</h3>
+            <ul>
+              {Object.entries(AGENDA_SEDES).map(([k, se]) => (
+                <li key={k} className="ag-pie-sede">
+                  <strong>{se.label}</strong>
+                  {se.direccion}<br />
+                  <a href={tel(se.telefono)}>{se.telefono}</a>
+                </li>
+              ))}
+            </ul>
+          </div>
+          <div>
+            <h3>Contacto</h3>
+            <ul>
+              <li><a href={`mailto:${AGENDA_SITIO.correo}`}>{AGENDA_SITIO.correo}</a></li>
+              <li><a href={AGENDA_SITIO.whatsapp} {..._ext}>WhatsApp · +51 961 350 844</a></li>
+              <li><a href={`${AGENDA_SITIO.base}/quienes-somos/`} {..._ext}>Quiénes somos</a></li>
+            </ul>
+            <h3>Nuestros test</h3>
+            <ul>
+              {AGENDA_SITIO.tests.map(([l, p]) => (
+                <li key={p}><a href={AGENDA_SITIO.base + p} {..._ext}>{l}</a></li>
+              ))}
+            </ul>
+          </div>
+        </div>
+        <div className="ag-pie-legal">
+          <span>© {new Date().getFullYear()} Ítaca Conversemos · Salud mental</span>
+          <span>Tus datos se guardan con confidencialidad · Ley 29733</span>
+        </div>
+      </div>
+    </footer>
+  );
+}
+
+// WhatsApp flotante, como en todas las páginas del sitio (mismo número y saludo).
+function AgendaWa() {
+  return (
+    <a className="ag-wa" href={AGENDA_SITIO.whatsapp} {..._ext} aria-label="Escríbenos por WhatsApp" title="Escríbenos por WhatsApp">
+      <MessageCircle size={26} strokeWidth={2} aria-hidden="true" />
+    </a>
+  );
+}
+
 // Estilos de la página pública de agendamiento (/agendar/<token>).
 // Vive fuera de .clinica-app: no hereda nada del panel interno, así que define
 // su propio sistema. Una sola familia tipográfica, un solo acento, y separación
@@ -13419,11 +13607,11 @@ const AGENDA_CSS = `
   --curva:cubic-bezier(.2,.8,.3,1);
   font-family:'Inter',-apple-system,system-ui,sans-serif;
   background:var(--papel); color:var(--tinta);
-  min-height:100vh; letter-spacing:-0.011em;
+  min-height:100vh; display:flex; flex-direction:column; letter-spacing:-0.011em;
   -webkit-font-smoothing:antialiased;
 }
 .ag *, .ag *::before, .ag *::after { box-sizing:border-box; }
-.ag-wrap { max-width:620px; margin:0 auto; padding:clamp(24px,6vw,56px) clamp(18px,5vw,28px) 80px; }
+.ag-wrap { width:100%; flex:1; max-width:620px; margin:0 auto; padding:clamp(24px,6vw,56px) clamp(18px,5vw,28px) 80px; }
 
 /* ── Tipografía ─────────────────────────────────────────────────────── */
 .ag-h1 {
@@ -13444,15 +13632,12 @@ const AGENDA_CSS = `
   color:var(--acento); margin:0 0 20px;
 }
 .ag-marca-sm { margin:0 0 24px; }
-.ag-logo { display:block; height:46px; width:auto; max-width:100%; margin:0 0 26px; }
-.ag-logo-sm { height:32px; margin:0 0 22px; opacity:.9; }
 .ag-rotulo {
   font-size:11px; font-weight:600; letter-spacing:.11em; text-transform:uppercase;
   color:var(--tinta-3); margin:0 0 10px;
 }
 .ag-cargando { color:var(--tinta-3); font-size:15px; padding:8px 0; }
 .ag-portada { margin-bottom:38px; }
-.ag-cabecera { margin-bottom:8px; }
 .ag-paso { margin-top:8px; }
 
 /* ── Progreso: una línea fina, sin cinco etiquetas apretadas ────────── */
@@ -13670,6 +13855,109 @@ const AGENDA_CSS = `
   outline:2px solid var(--acento); outline-offset:3px; border-radius:8px;
 }
 
+/* ── Marco del sitio: cabecera, pie y WhatsApp ─────────────────────── */
+/* La página se monta dentro del #root del panel (ancho máximo y 18px de
+   aire). Para que cabecera y pie corran de borde a borde, como en el sitio,
+   se anulan solo cuando el root contiene esta página. */
+#root:has(.ag) { max-width:none; padding:0; }
+.ag-top {
+  position:sticky; top:0; z-index:40;
+  background:rgba(255,254,252,.9); backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px);
+  border-bottom:1px solid var(--linea);
+}
+.ag-top-in, .ag-pie-in {
+  max-width:1080px; margin:0 auto;
+  padding-left:clamp(18px,4vw,36px); padding-right:clamp(18px,4vw,36px);
+}
+.ag-top-in { height:62px; display:flex; align-items:center; justify-content:space-between; gap:20px; }
+.ag-top-logo { display:flex; align-items:center; flex-shrink:0; }
+.ag-top-logo img { height:36px; width:auto; display:block; }
+.ag-menu { display:flex; align-items:center; gap:clamp(14px,2.6vw,30px); margin:0; padding:0; list-style:none; }
+.ag-menu a {
+  position:relative; display:block; padding:6px 0; white-space:nowrap; text-decoration:none;
+  font-size:14.5px; font-weight:500; color:var(--tinta-2); transition:color .14s;
+}
+.ag-menu a::after {
+  content:''; position:absolute; left:0; right:0; bottom:1px; height:1.5px; background:var(--acento);
+  transform:scaleX(0); transform-origin:left; transition:transform .2s var(--curva);
+}
+.ag-menu a:hover { color:var(--acento); }
+.ag-menu a:hover::after { transform:scaleX(1); }
+.ag-menu-sitio {
+  display:none; align-items:center; gap:5px; text-decoration:none;
+  font-size:13px; font-weight:500; color:var(--tinta-2);
+}
+
+/* Señas de confianza en la portada: tres hechos del sitio, sin tarjetas. */
+.ag-senas { display:flex; flex-wrap:wrap; gap:9px 22px; margin:22px 0 0; padding:0; list-style:none; }
+.ag-senas li { display:flex; align-items:center; gap:8px; font-size:13.5px; font-weight:500; color:var(--tinta-2); }
+.ag-senas svg { color:var(--acento); flex-shrink:0; }
+
+/* Preguntas: un <details> por duda. Las contextuales van al pie de cada paso;
+   la lista completa, solo en la portada. */
+.ag-dudas { margin-top:30px; }
+.ag-dudas .ag-rotulo { margin-bottom:2px; }
+.ag-duda { border-top:1px solid var(--linea); }
+.ag-duda:last-of-type { border-bottom:1px solid var(--linea); }
+.ag-duda summary {
+  list-style:none; cursor:pointer; display:flex; align-items:center; justify-content:space-between;
+  gap:14px; padding:13px 0; font-size:14.5px; font-weight:500; color:var(--tinta);
+  text-wrap:balance; transition:color .14s;
+}
+.ag-duda summary::-webkit-details-marker { display:none; }
+.ag-duda summary:hover { color:var(--acento); }
+.ag-duda summary svg { flex-shrink:0; color:var(--tinta-3); transition:transform .2s var(--curva); }
+.ag-duda[open] summary svg { transform:rotate(180deg); color:var(--acento); }
+.ag-duda-txt { font-size:14px; line-height:1.65; color:var(--tinta-2); margin:0 0 14px; max-width:58ch; }
+.ag-duda-txt:last-child { margin-bottom:18px; }
+.ag-duda-txt a { color:var(--acento); }
+.ag-faq { margin-top:60px; padding-top:34px; border-top:1px solid var(--linea); }
+.ag-faq .ag-sub { margin-bottom:6px; }
+
+/* Pie: claro, sobre la misma superficie de las tarjetas. */
+.ag-pie { background:var(--superficie); border-top:1px solid var(--linea); margin-top:auto; }
+.ag-pie-in { padding-top:44px; padding-bottom:30px; }
+.ag-pie-cols { display:grid; grid-template-columns:1.4fr 1fr 1fr; gap:36px; }
+.ag-pie-logo img { height:32px; width:auto; display:block; margin-bottom:14px; }
+.ag-pie-txt { font-size:14px; line-height:1.6; color:var(--tinta-2); margin:0; max-width:34ch; }
+.ag-pie h3 { font-size:11px; font-weight:600; letter-spacing:.11em; text-transform:uppercase; color:var(--tinta-3); margin:0 0 12px; }
+.ag-pie ul + h3 { margin-top:24px; }
+.ag-pie ul { list-style:none; margin:0; padding:0; }
+.ag-pie li { margin-bottom:9px; font-size:14px; line-height:1.5; color:var(--tinta-2); }
+.ag-pie a { color:var(--tinta-2); text-decoration:none; transition:color .14s; }
+.ag-pie a:hover { color:var(--acento); }
+.ag-pie-sede strong { display:block; color:var(--tinta); font-weight:600; }
+.ag-pie-sede a { color:var(--acento); font-weight:500; }
+.ag-redes { display:flex; gap:10px; margin-top:16px; }
+.ag-redes a {
+  width:38px; height:38px; border-radius:50%; display:flex; align-items:center; justify-content:center;
+  background:var(--arena); color:var(--tinta); transition:background .15s, color .15s;
+}
+.ag-redes a:hover { background:var(--acento); color:#fff; }
+.ag-pie-legal {
+  margin-top:34px; padding-top:18px; border-top:1px solid var(--linea);
+  display:flex; flex-wrap:wrap; justify-content:space-between; gap:6px 18px;
+  font-size:12.5px; color:var(--tinta-3);
+}
+
+/* WhatsApp flotante, como en todas las páginas del sitio: la salida de quien
+   se traba, para que escriba en vez de irse. */
+.ag-wa {
+  position:fixed; right:18px; bottom:18px; z-index:50; width:54px; height:54px; border-radius:50%;
+  display:flex; align-items:center; justify-content:center; background:#25D366; color:#fff;
+  box-shadow:0 6px 18px rgba(37,211,102,.38); transition:transform .16s var(--curva), box-shadow .16s;
+}
+.ag-wa:hover { transform:translateY(-2px); box-shadow:0 10px 24px rgba(37,211,102,.42); }
+
+@media (max-width:760px) {
+  .ag-menu { display:none; }
+  .ag-menu-sitio { display:inline-flex; }
+  .ag-top-in { height:58px; }
+  .ag-top-logo img { height:32px; }
+  .ag-pie-cols { grid-template-columns:1fr; gap:28px; }
+  .ag-pie-legal { padding-right:64px; } /* que el botón de WhatsApp no tape el texto */
+}
+
 @media (max-width:520px) {
   .ag-fila { grid-template-columns:1fr; gap:0; }
   .ag-prof { padding:18px; }
@@ -13704,6 +13992,14 @@ export function AgendarPublico({ token }) {
   const setF = (k) => (e) => setForm((p) => ({ ...p, [k]: e.target.value }));
 
   useEffect(() => { api.agendaInfo(token).then(setInfo).catch((e) => setErr(e.message)); }, [token]);
+
+  // La pestaña del navegador es del paciente, no del panel: título e idioma propios.
+  useEffect(() => {
+    const prevTitle = document.title, prevLang = document.documentElement.lang;
+    document.title = "Reserva tu cita · Ítaca Conversemos";
+    document.documentElement.lang = "es";
+    return () => { document.title = prevTitle; document.documentElement.lang = prevLang; };
+  }, []);
 
   useEffect(() => {
     if (!prof) return;
@@ -13750,28 +14046,36 @@ export function AgendarPublico({ token }) {
 
   const pila = <style>{AGENDA_CSS}</style>;
 
-  if (err && !info) return (
+  // Precio de la primera consulta desde el catálogo real (si está publicado);
+  // si no, el que dice el sitio. Así la respuesta nunca contradice al formulario.
+  const servConsulta = (info?.servicios || []).find((x) => /consulta|inicial|primera/i.test(x.nombre) && Number(x.precio) > 0);
+  const faq = agendaFaq(servConsulta ? `S/ ${Number(servConsulta.precio).toFixed(0)}` : "S/ 50");
+
+  // Marco del sitio (cabecera, pie y WhatsApp) alrededor de cada pantalla. Es una
+  // función y no un componente: si fuera componente, React lo remontaría en cada
+  // render y los inputs perderían el foco al escribir.
+  const marco = (children, extra = null) => (
     <div className="ag">{pila}
-      <main className="ag-wrap">
-        <div className="ag-aviso ag-aviso-mal" style={{ marginTop: 40 }}>
-          <h1 className="ag-h2">Este enlace no está disponible</h1>
-          <p style={{ margin: "6px 0 0" }}>{err}</p>
-        </div>
-      </main>
+      <AgendaTop />
+      <main className="ag-wrap">{children}</main>
+      <AgendaPie />
+      <AgendaWa />
+      {extra}
     </div>
   );
-  if (!info) return (
-    <div className="ag">{pila}
-      <main className="ag-wrap"><div className="ag-cargando">Cargando…</div></main>
+
+  if (err && !info) return marco(
+    <div className="ag-aviso ag-aviso-mal" style={{ marginTop: 40 }}>
+      <h1 className="ag-h2">Este enlace no está disponible</h1>
+      <p style={{ margin: "6px 0 0" }}>{err}</p>
     </div>
   );
+  if (!info) return marco(<div className="ag-cargando">Cargando…</div>);
 
   // ── Pantalla final: pre-reserva registrada ────────────────────────────
   if (hecho) {
     const sedesContacto = AGENDA_SEDES[hecho.sede] ? [hecho.sede] : ["piura", "lima"];
-    return (
-      <div className="ag">{pila}
-        <main className="ag-wrap">
+    return marco(
           <div className="ag-entra">
             <div className="ag-ok-marca"><Check size={26} strokeWidth={2.5} /></div>
             <h1 className="ag-h1 ag-h1-sm">Tu hora quedó apartada</h1>
@@ -13815,12 +14119,12 @@ export function AgendarPublico({ token }) {
               })}
             </section>
 
+            <AgendaDudas faq={faq} ids={["dia", "cambiar", "contacto-fuera"]} titulo="Lo que suelen preguntarnos después de reservar" />
+
             <p className="ag-cierre">
               Nos alegra acompañarte en este primer paso.
             </p>
           </div>
-        </main>
-      </div>
     );
   }
 
@@ -13865,7 +14169,7 @@ export function AgendarPublico({ token }) {
         <div className="ag-prof-id">
           <h3 className="ag-prof-nombre">{p.nombre}</h3>
           <p className="ag-prof-meta">
-            {[p.titulo, p.sede_label, p.modalidad_label].filter(Boolean).join(" · ")}
+            {[p.titulo, p.colegiatura ? `C.Ps.P. N° ${p.colegiatura}` : "", p.sede_label, p.modalidad_label].filter(Boolean).join(" · ")}
           </p>
         </div>
       </div>
@@ -13878,16 +14182,12 @@ export function AgendarPublico({ token }) {
     </article>
   );
 
-  return (
-    <div className="ag">{pila}
-      <main className="ag-wrap">
+  return marco(
+    <>
         {/* ── Portada ── */}
         {showSede ? (
           <header className="ag-portada ag-entra">
-            {/* El logo de verdad, no el nombre en mayúsculas. Si no cargara, se
-                oculta y queda el nombre de la clínica debajo. */}
-            <img className="ag-logo" src={`${import.meta.env.BASE_URL}itaca-logo-h.png`}
-              alt={info.clinica} onError={(e) => { e.currentTarget.style.display = "none"; }} />
+            {/* Sin logo aquí: la cabecera del sitio ya lleva la marca en cada pantalla. */}
             <h1 className="ag-h1">
               Todos necesitamos de un<br /><em>sincero conversemos</em>
             </h1>
@@ -13900,13 +14200,15 @@ export function AgendarPublico({ token }) {
               Gracias por estar aquí. Creemos que todos, en algún momento, necesitamos un
               espacio seguro para conversar y entender lo que sentimos.
             </p>
+            {/* Tres hechos del sitio que responden los tres miedos antes del
+                primer clic: ¿es serio?, ¿se enteran?, ¿cuánto me compromete? */}
+            <ul className="ag-senas" aria-label="Lo que puedes esperar">
+              <li><GraduationCap size={16} strokeWidth={1.9} aria-hidden="true" /> Psicólogos colegiados</li>
+              <li><Shield size={16} strokeWidth={1.9} aria-hidden="true" /> Confidencial por secreto profesional</li>
+              <li><Clock size={16} strokeWidth={1.9} aria-hidden="true" /> Primera consulta de 30 a 45 min</li>
+            </ul>
           </header>
-        ) : (
-          <header className="ag-cabecera">
-            <img className="ag-logo ag-logo-sm" src={`${import.meta.env.BASE_URL}itaca-logo-h.png`}
-              alt={info.clinica} onError={(e) => { e.currentTarget.style.display = "none"; }} />
-          </header>
-        )}
+        ) : null}
 
         {/* ── Progreso ── */}
         {info.hay_agenda && (
@@ -13952,6 +14254,15 @@ export function AgendarPublico({ token }) {
           </section>
         )}
 
+        {/* ── Preguntas frecuentes (todas), solo en la portada ── */}
+        {showSede && (
+          <section className="ag-faq ag-entra" id="preguntas" aria-labelledby="ag-faq-t">
+            <h2 className="ag-h2" id="ag-faq-t">Preguntas frecuentes</h2>
+            <p className="ag-sub">Lo que más nos preguntan antes de una primera consulta.</p>
+            {faq.map((it) => <AgendaDuda key={it.id} item={it} />)}
+          </section>
+        )}
+
         {/* ── Paso 2: con quién ── */}
         {showVia && (
           <section className="ag-paso ag-entra">
@@ -13971,6 +14282,7 @@ export function AgendarPublico({ token }) {
                 </button>
               ))}
             </div>
+            <AgendaDudas faq={faq} ids={["elegir", "conexion"]} titulo="Si te preocupa elegir mal" />
           </section>
         )}
 
@@ -14006,6 +14318,7 @@ export function AgendarPublico({ token }) {
                 Escríbenos por WhatsApp y te ayudamos a agendar.
               </div>
             ) : <div className="ag-profs">{profsMostrar.map((p) => ProfCard(p))}</div>}
+            <AgendaDudas faq={faq} ids={["conexion", "problemas"]} />
           </section>
         )}
 
@@ -14039,6 +14352,7 @@ export function AgendarPublico({ token }) {
                   </div>
                 </div>
               ))}
+            <AgendaDudas faq={faq} ids={["costo", "cambiar"]} titulo="Sobre el horario" />
           </section>
         )}
 
@@ -14121,12 +14435,12 @@ export function AgendarPublico({ token }) {
             <p className="ag-nota-suave ag-centro">
               No pagas nada ahora. Te contactamos para confirmar y recién ahí te enviamos los medios de pago.
             </p>
+            <AgendaDudas faq={faq} ids={["confidencial", "dia"]} titulo="Antes de enviar tus datos" />
           </section>
         )}
-      </main>
-
-      {/* ── Modal: perfil del psicólogo ── */}
-      {perfil && (
+    </>,
+    /* ── Modal: perfil del psicólogo ── */
+    perfil && (
         <div className="ag-modal-fondo" onClick={() => setPerfil(null)} role="dialog" aria-modal="true">
           <div className="ag-modal" onClick={(e) => e.stopPropagation()}>
             <button className="ag-cerrar" onClick={() => setPerfil(null)} aria-label="Cerrar">
@@ -14137,7 +14451,7 @@ export function AgendarPublico({ token }) {
               <div className="ag-prof-id">
                 <h2 className="ag-prof-nombre">{perfil.nombre}</h2>
                 <p className="ag-prof-meta">
-                  {[perfil.titulo, perfil.sede_label, perfil.modalidad_label].filter(Boolean).join(" · ")}
+                  {[perfil.titulo, perfil.colegiatura ? `C.Ps.P. N° ${perfil.colegiatura}` : "", perfil.sede_label, perfil.modalidad_label].filter(Boolean).join(" · ")}
                 </p>
               </div>
             </div>
@@ -14157,7 +14471,6 @@ export function AgendarPublico({ token }) {
             </button>
           </div>
         </div>
-      )}
-    </div>
+      )
   );
 }

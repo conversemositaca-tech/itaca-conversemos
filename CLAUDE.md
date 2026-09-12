@@ -460,6 +460,29 @@ los feriados de Perú. Zona horaria por defecto: `America/Lima` (GMT-5).
      WhatsApp desde Continuidad: iteración separada (hueco `contacto` en el detalle).
    - Dev: el preview corre contra una base demo aislada (`DATABASE_URL` → sqlite en el
      scratchpad); `db.sqlite3` local tiene 3 migraciones pendientes (0033, 0034, usuarios 0012).
+31. ✓ Agendamiento público como página del sitio (rama `feature/agendar-pagina-sitio`,
+   2026-09-11). `/agendar/<token>` lleva ahora el **marco de conversemos.itaca.com.pe**:
+   cabecera fija con el logo y el menú real del sitio (Quienes Somos · Psicólogos · Terapias
+   Online · Preguntas · Blog; abren en pestaña nueva para no perder una reserva a medias), pie
+   claro con sedes, contacto, redes y los test, y el botón flotante de WhatsApp del sitio
+   (+51 961 350 844). Las **Preguntas frecuentes** del sitio (texto del equipo, `agendaFaq`)
+   van como `<details>`: las que frenan en cada paso, al pie de ese paso (`AgendaDudas`); la
+   lista completa, solo en la portada. El precio de la primera consulta sale del catálogo real
+   (`Servicio` reservable cuyo nombre contenga consulta/inicial/primera); si no hay, S/ 50 (el
+   del sitio). Portada con tres señas de confianza (colegiados, confidencial, 30-45 min) y sin
+   logo propio (la cabecera ya lleva la marca). El endpoint público expone `colegiatura` y se
+   muestra como "C.Ps.P. N°" en tarjeta y perfil. Título de pestaña e idioma propios. Todo en
+   `frontend/src/App.jsx` (`AGENDA_SITIO`, `AgendaTop`, `AgendaPie`, `AgendaWa`);
+   `#root:has(.ag)` anula el padding del panel para que cabecera y pie corran de borde a borde.
+   - **Acción del usuario**: apuntar los botones "Pide tu terapia" / "Pedir tu cita" del
+     WordPress al enlace de Railway, y **renovar el certificado SSL del sitio** (venció el
+     6 ene 2026: el navegador marca "No seguro" y nadie deja su DNI ahí). Confirmar qué número
+     es el vigente para "Tengo más preguntas" (el sitio dice 965 337 290; el botón de WhatsApp
+     del sitio usa 961 350 844).
+   - Verificado: `manage.py check`, 11/11 tests de `pacientes` (nuevo `AgendamientoPublicoTests`),
+     build de Vite, ESLint sin errores y recorrido completo con Playwright (escritorio y móvil)
+     contra una base demo aislada en el scratchpad.
+
 32. ⏳ Biblioteca de imágenes del compositor de WhatsApp (rama
    `feature/contactabilidad-continuidad`, 2026-09-11, SIN desplegar). Coordinación puede
    adjuntar varias imágenes reales al mensaje del Centro de Continuidad, subir piezas
