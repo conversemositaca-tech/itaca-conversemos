@@ -27,8 +27,11 @@ from django.utils import timezone
 from core import continuidad as cont
 from core import gestion_continuidad as gc
 from mensajes.evolution import instancia_para
-from mensajes.models import Mensaje, render_plantilla
-from mensajes.services import plantilla_por_clave, registrar_y_enviar
+from mensajes.materiales import MAX_LADO_PX, MAX_MB, MAX_POR_COMUNICACION
+from mensajes.models import Material, Mensaje, render_plantilla
+from mensajes.services import (enviar_comunicacion, partes_del_grupo,
+                               plantilla_por_clave, reintentar_comunicacion,
+                               resumen_comunicacion, serializar_partes)
 from pacientes.models import GestionContinuidad, HistorialContinuidad
 
 Evento = HistorialContinuidad.Evento
@@ -267,13 +270,80 @@ def _entrantes_desde(paciente, desde):
     return [_serializar_mensaje(m) for m in qs]
 
 
+def materiales_validos(clinica, ids):
+    """Las piezas de la biblioteca que corresponden a esos ids, EN ESE ORDEN.
+
+    El orden lo elige la coordinadora con las flechas del compositor y es el
+    orden en que el paciente las va a recibir, así que no puede quedar a merced
+    del que devuelva la base de datos. Solo entran piezas activas de SU clínica:
+    un id de otra clínica simplemente no aparece (aislamiento, Ley 29733).
+    """
+    ids = [int(i) for i in (ids or []) if str(i).strip().isdigit()][:MAX_POR_COMUNICACION]
+    if not ids:
+        return []
+    por_id = {m.id: m for m in Material.objects.filter(
+        clinica=clinica, id__in=ids, activo=True)}
+    # Sin duplicados: la misma imagen dos veces en una comunicación siempre es
+    # un error de manejo, nunca una intención.
+    vistos, salida = set(), []
+    for i in ids:
+        if i in por_id and i not in vistos:
+            vistos.add(i)
+            salida.append(por_id[i])
+    return salida
+
+
+def _agrupar(mensajes):
+    """Junta las partes de una misma comunicación en una sola entrada.
+
+    Tres imágenes y un texto son cuatro filas en la bitácora porque WhatsApp no
+    tiene álbum, pero para Coordinación fueron UN contacto. La bitácora conserva
+    el detalle; la pantalla muestra el hecho.
+    """
+    grupos, orden = {}, []
+    for m in mensajes:
+        clave = str(m.grupo_envio) if m.grupo_envio else f"m{m.id}"
+        if clave not in grupos:
+            grupos[clave] = []
+            orden.append(clave)
+        grupos[clave].append(m)
+
+    salida = []
+    for clave in orden:
+        partes = sorted(grupos[clave], key=lambda m: (m.orden, m.id))
+        cabeza = partes[0]
+        resumen = resumen_comunicacion(partes)
+        fila = _serializar_mensaje(cabeza)
+        fila.update({
+            "grupo": str(cabeza.grupo_envio) if cabeza.grupo_envio else "",
+            "resumen": resumen,
+            "partes": serializar_partes(partes) if len(partes) > 1 else [],
+            "imagenes": [m.material.nombre for m in partes if m.material_id],
+            "texto": next((m.texto for m in partes if not m.material_id), ""),
+            # Reintentar solo tiene sentido cuando falta alguna parte Y la
+            # comunicación es de varias: un mensaje suelto se vuelve a enviar
+            # con el botón de siempre.
+            "puede_reintentar": bool(cabeza.grupo_envio) and resumen["faltan"] > 0,
+        })
+        # El estado que se muestra es el de la comunicación entera, no el de su
+        # primera parte: dos de cuatro partes enviadas NO es "enviado".
+        fila["estado_comunicacion"] = resumen["estado"]
+        salida.append(fila)
+    return salida
+
+
 def contactos_de(gestion):
-    """Los WhatsApp enviados por ESTE caso, del más reciente al más antiguo."""
+    """Los WhatsApp enviados por ESTE caso, del más reciente al más antiguo.
+
+    Agrupados por comunicación: si se mandaron tres imágenes y un texto, es una
+    entrada con cuatro partes, no cuatro entradas.
+    """
     if gestion is None:
         return []
     qs = (Mensaje.objects.filter(gestion_continuidad=gestion)
-          .select_related("enviado_por").order_by("-creado_en")[:MAX_CONTACTOS])
-    return [_serializar_mensaje(m) for m in qs]
+          .select_related("enviado_por", "material")
+          .order_by("-creado_en")[:MAX_CONTACTOS * 4])
+    return _agrupar(list(qs))[:MAX_CONTACTOS]
 
 
 def serializar_contacto(paciente, gestion, usuario):
@@ -338,6 +408,21 @@ def preview(paciente, usuario, fila, gestion):
     }
     # Todo lo que el modal necesita para pintarse sin pedir nada más.
     datos["plantillas"] = plantillas_disponibles(paciente.clinica, paciente, usuario, fila)
+    # Modo de prueba: solo aparece si esta clínica tiene una línea marcada como
+    # ambiente de pruebas. En producción no hay ninguna, así que el bloque no se
+    # pinta nunca — sin necesidad de detectar el entorno desde el frontend.
+    from core.models import InstanciaEvolution
+    prueba = (InstanciaEvolution.objects
+              .filter(clinica=paciente.clinica, activo=True,
+                      entorno=InstanciaEvolution.Entorno.PRUEBA)
+              .exclude(nombre_instancia="").first())
+    datos["instancia_prueba"] = prueba.nombre_instancia if prueba else ""
+    datos["limites"] = {
+        "max_imagenes": MAX_POR_COMUNICACION,
+        "max_mb": MAX_MB,
+        "max_lado_px": MAX_LADO_PX,
+        "categorias": [{"clave": c.value, "nombre": c.label} for c in Material.Categoria],
+    }
     datos["paciente"] = {
         "nombre": paciente.nombre,
         "sede": paciente.sede or "",
@@ -350,7 +435,7 @@ def preview(paciente, usuario, fila, gestion):
 # --- enviar -------------------------------------------------------------------
 
 def enviar(paciente, usuario, *, texto="", observacion="", confirmado=False,
-           plantilla_clave=""):
+           plantilla_clave="", instancia_prueba="", materiales=()):
     """Manda el WhatsApp del caso por la línea de su sede y lo deja registrado.
 
     El envío sale SIEMPRE desde el sistema: no se abre WhatsApp Web ni se
@@ -370,6 +455,10 @@ def enviar(paciente, usuario, *, texto="", observacion="", confirmado=False,
 
     try:
         canal = canal_de(paciente)
+        if instancia_prueba:
+            # En modo de prueba no se exige línea oficial de la sede: se envía
+            # por la de pruebas, que la vista ya validó.
+            canal["linea_configurada"] = True
         if not canal["linea_configurada"]:
             # La sede no tiene línea oficial. No se improvisa con otra: sería
             # escribirle al paciente desde un número que no es el de su sede.
@@ -400,14 +489,21 @@ def enviar(paciente, usuario, *, texto="", observacion="", confirmado=False,
     # guardar dos veces el mismo texto.
     original = propuesto if cuerpo != propuesto else ""
 
-    mensaje, resultado, _ = registrar_y_enviar(
-        paciente.clinica, telefono=paciente.telefono, texto=cuerpo,
-        tipo=Mensaje.Tipo.CONTINUIDAD, paciente=paciente, usuario=usuario,
-        sede=canal["sede"], plantilla_clave=clave, texto_original=original,
-        gestion_continuidad=gestion,
-    )
+    # Las piezas de la biblioteca, en el orden que eligió la coordinadora. Se
+    # validan aquí y no en la vista porque este es el único camino por el que
+    # una imagen llega al paciente.
+    piezas = materiales_validos(paciente.clinica, materiales)
 
-    if resultado.get("estado") == "enviado":
+    partes, resumen = enviar_comunicacion(
+        paciente.clinica, telefono=paciente.telefono, texto=cuerpo,
+        tipo=Mensaje.Tipo.CONTINUIDAD, materiales=piezas, paciente=paciente,
+        usuario=usuario, sede=canal["sede"], plantilla_clave=clave,
+        texto_original=original, gestion_continuidad=gestion,
+        instancia_prueba=instancia_prueba,
+    )
+    resultado = _resultado_de(partes, resumen)
+
+    if resumen["estado"] == "enviado":
         gc.registrar_evento(gestion, Evento.WHATSAPP_ENVIADO,
                             despues=clave, usuario=usuario)
     else:
@@ -422,6 +518,63 @@ def enviar(paciente, usuario, *, texto="", observacion="", confirmado=False,
     if observacion.strip():
         gc.guardar(paciente, usuario, {"observacion_operativa": observacion.strip()})
     return gestion, resultado
+
+
+def _resultado_de(partes, resumen):
+    """El resultado que espera la pantalla, mirando la comunicación entera.
+
+    Una comunicación a medias NO es "enviado": si se le informara como tal, la
+    coordinadora daría por hecho que el paciente recibió una imagen que nunca
+    le llegó.
+    """
+    cabeza = partes[0] if partes else None
+    detalle = resumen.get("detalle") or (cabeza.detalle if cabeza else "")
+    if resumen["estado"] == "parcial":
+        detalle = (f"Se enviaron {resumen['enviadas']} de {resumen['total']} partes. "
+                   + (detalle or ""))
+    if resumen["estado"] == "enviado":
+        estado = "enviado"
+    else:
+        # El estado que se informa es el de la primera parte que no salió: "sin
+        # WhatsApp configurado" y "el envío falló" piden acciones distintas y la
+        # pantalla tiene que poder distinguirlas.
+        fallida = next((m for m in partes if not m.external_message_id), None)
+        estado = fallida.estado if fallida is not None else "fallido"
+    return {
+        "estado": estado,
+        "comunicacion": resumen["estado"],
+        "detalle": detalle,
+        "proveedor": cabeza.proveedor if cabeza else "",
+        "instancia": cabeza.instancia if cabeza else "",
+        "external_message_id": cabeza.external_message_id if cabeza else "",
+        "grupo": str(cabeza.grupo_envio) if (cabeza and cabeza.grupo_envio) else "",
+        "resumen": resumen,
+        "partes": serializar_partes(partes) if len(partes) > 1 else [],
+    }
+
+
+def reintentar(paciente, usuario, grupo, *, instancia_prueba=""):
+    """Reenvía SOLO las partes que nunca salieron de una comunicación.
+
+    Las que tienen `external_message_id` ya llegaron al paciente y no se vuelven
+    a mandar: ese id lo puso WhatsApp, no nosotros. Nunca se reintenta solo —
+    esto se dispara desde el botón que pulsa la coordinadora.
+    """
+    fila = gc.fila_de(paciente)
+    gestion = gc.asegurar_gestion(paciente, usuario, fila)
+    partes = partes_del_grupo(paciente.clinica, grupo)
+    # Un grupo de otro paciente o de otro caso no se toca.
+    if not partes or any(m.paciente_id != paciente.id for m in partes):
+        raise ValueError("Esa comunicación no pertenece a este paciente.")
+
+    partes, resumen = reintentar_comunicacion(
+        paciente.clinica, grupo, usuario=usuario, instancia_prueba=instancia_prueba)
+    evento = (Evento.WHATSAPP_ENVIADO if resumen["estado"] == "enviado"
+              else Evento.WHATSAPP_FALLIDO)
+    gc.registrar_evento(gestion, evento,
+                        despues=f"reintento {resumen['enviadas']}/{resumen['total']}"[:60],
+                        usuario=usuario)
+    return gestion, _resultado_de(partes, resumen)
 
 
 def registrar_copia_manual(paciente, usuario, texto=""):

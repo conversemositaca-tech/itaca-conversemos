@@ -460,3 +460,56 @@ los feriados de Perú. Zona horaria por defecto: `America/Lima` (GMT-5).
      WhatsApp desde Continuidad: iteración separada (hueco `contacto` en el detalle).
    - Dev: el preview corre contra una base demo aislada (`DATABASE_URL` → sqlite en el
      scratchpad); `db.sqlite3` local tiene 3 migraciones pendientes (0033, 0034, usuarios 0012).
+32. ⏳ Biblioteca de imágenes del compositor de WhatsApp (rama
+   `feature/contactabilidad-continuidad`, 2026-09-11, SIN desplegar). Coordinación puede
+   adjuntar varias imágenes reales al mensaje del Centro de Continuidad, subir piezas
+   nuevas y poner emojis sin depender del teclado del sistema.
+   - **Modelo** `mensajes.Material` (migración 0010): nombre, archivo, categoría (8),
+     sede, mime REAL, tamaño, ancho/alto, hash SHA-256, subido_por, activo. Es la
+     biblioteca **compartible** de la clínica (ubicaciones, horarios, tarifas, medios de
+     pago, sesiones online, políticas, material para pacientes, otros) y está **separada
+     a propósito** de `pacientes.Adjunto`, que es material clínico de UN paciente: así una
+     ecografía no puede aparecer nunca en el selector del compositor. Dedupe por
+     `UniqueConstraint(clinica, hash)` sobre `activo=True`; retirar es baja lógica y
+     volver a subir la misma pieza la reactiva. `Mensaje` += `grupo_envio` (UUID),
+     `orden`, `material`, y el estado nuevo `pendiente`.
+   - **Almacenamiento**: `FileField` en `MEDIA_ROOT` (el volumen persistente de Railway
+     que ya usan los adjuntos), ruta `material/clinica_<id>/<uuid>.<ext>` — el nombre del
+     archivo del usuario NO decide la ruta. Se sirve solo por
+     `GET /api/materiales/<id>/imagen/`, autenticado y con scope de clínica; **no** hay
+     URL pública de media. Sin dependencias nuevas: el tipo real y las dimensiones se
+     leen de la **cabecera binaria** (`mensajes/materiales.py::inspeccionar`, firmas de
+     PNG/JPEG/WEBP), así que un PDF renombrado a `.png` se rechaza y no hace falta Pillow.
+     Límites de esta versión: **2 MB** (provisional, falta medir EasyPanel), 4000 px por
+     lado, 10 imágenes por comunicación.
+   - **Envío** (`mensajes/services.py::enviar_comunicacion`): Evolution 2.3.7 **no tiene
+     álbum** —sus 13 rutas de envío mandan un archivo por petición—, así que una imagen
+     sola viaja con el texto como `caption` (un mensaje, como lo mandaría una persona) y
+     varias van como N `sendMedia` sin pie + el texto al final, con ~1 s entre partes para
+     conservar el orden. `mensajes/evolution.py::enviar_media` manda el archivo en
+     **base64**: una URL obligaría a publicar media sin sesión. Las imágenes salen
+     siempre por Evolution, nunca por Meta (formato distinto; el paciente recibiría la
+     comunicación desde dos números). Un mensaje sin imágenes conserva intacta la cascada
+     Meta → Evolution de siempre.
+   - **Fallo parcial**: las partes se crean ANTES de enviar (estado `pendiente`), el
+     despacho **se detiene en el primer fallo** y no hay reintento automático.
+     `external_message_id` es la prueba de que esa parte salió —lo pone WhatsApp— y una
+     parte que lo tiene **nunca** se reenvía: eso es lo que impide que "Reintentar lo que
+     falta" (`POST …/whatsapp/reintentar/`) le duplique una imagen al paciente.
+   - **Frontend** (`App.jsx`): biblioteca con multiselección por checkbox y numeración,
+     buscador, filtros por categoría, contador, "Agregar N imágenes", subida real
+     (validada también en el navegador), lista de adjuntos reordenable con ↑ ↓, quitar
+     individual, y preview de WhatsApp con **todas** las piezas en su orden. **Selector
+     de emojis propio** (`SelectorEmoji`): ~250 emojis Unicode curados con nombres en
+     español (busca "corazon" sin tilde), 9 categorías + Recientes en `localStorage`
+     (máx. 20, solo los caracteres — ningún dato del paciente), inserción en la posición
+     del cursor conservando el foco. Sin librería: emoji-mart y similares pesan cientos
+     de kB y solo buscan en inglés. El popover va en su propio portal con posición fija
+     (las columnas del compositor tienen overflow y lo recortarían) y en móvil se abre
+     como panel inferior. El verde de WhatsApp sigue confinado al preview.
+   - Verificado: 36 tests nuevos (`mensajes/tests_materiales.py`), `manage.py check`,
+     build de Vite y ESLint limpio en el bloque del compositor. **Sin desplegar y sin
+     ningún envío real.** `vite.config.js` acepta `VITE_API_TARGET` para levantar una
+     segunda instancia sin tocar la que ya corre.
+   - **Pendiente**: medir qué tamaño de payload aguanta EasyPanel/Railway antes de subir
+     el límite de 2 MB; la prueba manual controlada con la línea `vibery`.

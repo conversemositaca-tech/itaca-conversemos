@@ -12,7 +12,9 @@ export default defineConfig(({ command }) => ({
     // Permite abrir la app a través del túnel temporal (cloudflared) para demos.
     allowedHosts: ['.trycloudflare.com'],
     proxy: {
-      '/api': { target: 'http://127.0.0.1:8001', changeOrigin: true },
+      // El destino se puede cambiar con VITE_API_TARGET para levantar una
+      // segunda instancia (revision, demo) sin tocar la que ya corre.
+      '/api': { target: process.env.VITE_API_TARGET || 'http://127.0.0.1:8001', changeOrigin: true },
     },
   },
 }))

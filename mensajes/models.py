@@ -1,3 +1,5 @@
+import uuid
+
 from django.conf import settings
 from django.db import models
 
@@ -30,6 +32,10 @@ class Mensaje(ModeloTenant):
         ENVIADO = "enviado", "Enviado"
         FALLIDO = "fallido", "Falló"
         NO_CONFIGURADO = "no_configurado", "Sin WhatsApp"
+        # Parte de una comunicación con imágenes que todavía no se intentó. Las
+        # partes se crean ANTES de empezar a enviar: si algo se corta a mitad,
+        # esta fila es la que sabe qué faltaba. Un mensaje suelto nunca la usa.
+        PENDIENTE = "pendiente", "Pendiente de envío"
         # Los que agrega el webhook de Evolution: el ciclo de vida real del
         # mensaje (lo que se ve como ✓, ✓✓ y ✓✓ azul en el celular).
         RECIBIDO = "recibido", "Recibido"
@@ -100,6 +106,20 @@ class Mensaje(ModeloTenant):
         related_name="mensajes", null=True, blank=True,
     )
 
+    # --- Una comunicación puede necesitar varios mensajes ---------------------
+    # WhatsApp no tiene álbum: tres imágenes y un texto son CUATRO mensajes para
+    # el proveedor. `grupo_envio` los une para que Coordinación vea una sola
+    # comunicación en el historial, y para que "reintentar lo que falta" sepa
+    # qué partes ya salieron. Un mensaje suelto lo deja en null: la bitácora
+    # vieja no cambia.
+    grupo_envio = models.UUIDField(null=True, blank=True, db_index=True)
+    orden = models.PositiveSmallIntegerField(default=0)
+    # Qué pieza de la biblioteca se envió en esta parte (vacío si es el texto).
+    material = models.ForeignKey(
+        "mensajes.Material", on_delete=models.SET_NULL,
+        related_name="mensajes", null=True, blank=True,
+    )
+
     class Meta:
         verbose_name = "Mensaje"
         verbose_name_plural = "Mensajes"
@@ -147,6 +167,95 @@ class Mensaje(ModeloTenant):
             campos.append("error_codigo")
         self.save(update_fields=campos)
         return True
+
+
+# --- Biblioteca de material compartible ---------------------------------------
+# Las piezas que Coordinación manda por WhatsApp (ubicación, horarios, tarifas,
+# medios de pago, cómo entrar a la sesión online). NO es material clínico: los
+# estudios e informes de un paciente viven en pacientes.Adjunto, con otro
+# control de acceso (Ley 29733). Están separados a propósito, para que una
+# ecografía no pueda aparecer nunca en el selector del compositor.
+
+TIPOS_MATERIAL = {
+    "image/png": "png",
+    "image/jpeg": "jpg",
+    "image/webp": "webp",
+}
+
+
+def ruta_material(instance, filename):
+    """Ruta en disco, aislada por clínica y con nombre propio.
+
+    El nombre que traía el archivo del PC de la coordinadora no se usa como
+    ruta: se guarda aparte, en `nombre`, y en disco va un uuid. Así ni un
+    nombre con acentos, espacios o barras toca el sistema de archivos.
+    """
+    ext = TIPOS_MATERIAL.get(getattr(instance, "mime", ""), "bin")
+    return f"material/clinica_{instance.clinica_id}/{uuid.uuid4().hex}.{ext}"
+
+
+class Material(ModeloTenant):
+    """Una pieza de la biblioteca compartible de la clínica."""
+
+    class Categoria(models.TextChoices):
+        UBICACIONES = "ubicaciones", "Ubicaciones"
+        HORARIOS = "horarios", "Horarios"
+        TARIFAS = "tarifas", "Tarifas"
+        PAGOS = "pagos", "Medios de pago"
+        ONLINE = "online", "Sesiones online"
+        POLITICAS = "politicas", "Políticas"
+        PACIENTES = "pacientes", "Material para pacientes"
+        OTROS = "otros", "Otros"
+
+    nombre = models.CharField(max_length=200)
+    archivo = models.FileField(upload_to=ruta_material)
+    categoria = models.CharField(max_length=20, choices=Categoria.choices,
+                                 default=Categoria.OTROS)
+    # "" = sirve para las dos sedes. No restringe el envío: es una ayuda para
+    # encontrar la pieza correcta, no un candado.
+    sede = models.CharField(max_length=10, blank=True, default="")
+    # El tipo REAL, leído de la cabecera del archivo (mensajes/materiales.py),
+    # no el Content-Type que manda el navegador.
+    mime = models.CharField(max_length=40)
+    tamano = models.PositiveIntegerField(default=0)
+    ancho = models.PositiveSmallIntegerField(default=0)
+    alto = models.PositiveSmallIntegerField(default=0)
+    # SHA-256 del contenido: es lo que impide subir dos veces la misma imagen.
+    hash = models.CharField(max_length=64, db_index=True)
+    subido_por = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
+                                   related_name="materiales", null=True, blank=True)
+    # Baja lógica: una pieza retirada no puede desaparecer, porque los mensajes
+    # ya enviados la referencian y el historial dejaría de cuadrar.
+    activo = models.BooleanField(default=True)
+
+    class Meta:
+        verbose_name = "Material de WhatsApp"
+        verbose_name_plural = "Materiales de WhatsApp"
+        ordering = ["categoria", "nombre"]
+        indexes = [
+            models.Index(fields=["clinica", "categoria", "activo"]),
+            models.Index(fields=["clinica", "activo"]),
+        ]
+        constraints = [
+            # La deduplicación la sostiene la base, no un `if`: dos coordinadoras
+            # subiendo la misma pieza a la vez pasarían cualquier chequeo previo.
+            models.UniqueConstraint(
+                fields=["clinica", "hash"], condition=models.Q(activo=True),
+                name="uniq_material_hash",
+            ),
+        ]
+
+    def __str__(self):
+        return self.nombre
+
+    @property
+    def sede_label(self):
+        return {"lima": "Lima", "piura": "Piura"}.get(self.sede, "Ambas sedes")
+
+    def leer_bytes(self):
+        with self.archivo.open("rb") as f:
+            return f.read()
+
 
 
 class PlantillaMensaje(ModeloTenant):

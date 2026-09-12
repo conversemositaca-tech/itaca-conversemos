@@ -209,6 +209,24 @@ export const api = {
   // Sin línea conectada: deja rastro de que el mensaje se copió para enviarlo a mano.
   continuidadRegistrarCopiado: (id) =>
     req(`/api/continuidad/caso/${id}/whatsapp/copiado/`, { method: "POST" }),
+  // Reenvía SOLO las partes que nunca salieron de una comunicación. Las que ya
+  // tienen id de WhatsApp no se vuelven a mandar: el paciente no debe recibir
+  // dos veces la misma imagen.
+  continuidadReintentarWhatsapp: (id, datos) =>
+    req(`/api/continuidad/caso/${id}/whatsapp/reintentar/`, { method: "POST", body: JSON.stringify(datos) }),
+
+  // --- Biblioteca de material compartible (lo que Coordinación manda por
+  // WhatsApp: ubicación, horarios, tarifas…). No es material clínico: los
+  // archivos de un paciente van por `adjuntos`, con otro control de acceso.
+  materiales: (params = {}) => {
+    const q = Object.entries(params).filter(([, v]) => v !== "" && v != null)
+      .map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join("&");
+    return req(`/api/materiales/${q ? `?${q}` : ""}`);
+  },
+  subirMaterial: (form) => req("/api/materiales/", { method: "POST", body: form }),
+  // Baja lógica: la pieza sale de la biblioteca pero el historial de lo ya
+  // enviado sigue cuadrando.
+  retirarMaterial: (id) => req(`/api/materiales/${id}/`, { method: "DELETE" }),
   marcarEliminacionRevisada: (id) => req(`/api/eliminaciones/${id}/revisar/`, { method: "POST" }),
   marcarTodasEliminacionesRevisadas: () => req("/api/eliminaciones/revisar-todas/", { method: "POST" }),
   gerenciaResumen: (periodo, sede) => req(`/api/gerencia/resumen/?periodo=${periodo || "mes"}${sede ? `&sede=${sede}` : ""}`),
