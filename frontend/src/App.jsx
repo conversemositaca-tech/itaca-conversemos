@@ -13,6 +13,7 @@ import {
   Smile, Upload, ArrowUp, ArrowDown, RotateCcw,
 } from "lucide-react";
 import { api } from "./api";
+import { MENU_SITIO, TESTS_SITIO, propsEnlace, rutaAgendar, normalizarRuta } from "./rutas";
 import { modeloReporte, modeloTabla, exportarExcel, exportarWord, exportarPowerPoint, exportarPDF, exportarCSV } from "./exportGerencia";
 import Login from "./Login";
 
@@ -13362,7 +13363,7 @@ export function ConsentimientoPublico({ token }) {
 // elige psicólogo y un horario libre y reserva. Nuevo → lead + cita tentativa;
 // existente (match por teléfono/DNI) → cita directa en la agenda.
 // Sedes de Ítaca Conversemos (dirección + teléfono para el mensaje de pre-reserva).
-const AGENDA_SEDES = {
+export const AGENDA_SEDES = {
   lima: { label: "Lima", direccion: "Av. Arequipa 4130, Of. 205 — Miraflores, Lima", telefono: "+51 980 453 832" },
   piura: { label: "Piura", direccion: "Av. Bolognesi 582, Of. 201 — Piura", telefono: "+51 983 292 173" },
 };
@@ -13394,24 +13395,12 @@ function _profSirveServicio(prof, nombreServicio) {
   return kw.some((k) => pob.includes(k));
 }
 
-// Señas del sitio público (conversemos.itaca.com.pe), tomadas del propio sitio:
-// menú, redes, WhatsApp, correo y la frase del pie. Con ellas esta página se lee
-// como una más del sitio y no como un formulario suelto en otro dominio. Todos los
-// enlaces abren en pestaña nueva para no perder una reserva a medias.
-const AGENDA_SITIO = {
+// Señas de Ítaca Conversemos tomadas de su propio sitio: redes, WhatsApp, correo
+// y la frase del pie. El menú vive en `rutas.js`, porque estas mismas páginas ya
+// se sirven desde aquí. Las redes y el WhatsApp sí abren en pestaña nueva, para
+// no perder una reserva a medias.
+export const AGENDA_SITIO = {
   base: "https://conversemos.itaca.com.pe",
-  menu: [
-    ["Quienes Somos", "/quienes-somos/"],
-    ["Psicólogos", "/psicologos/"],
-    ["Terapias Online", "/terapias-online/"],
-    ["Preguntas", "/preguntas-frecuentes/"],
-    ["Blog", "/blog/"],
-  ],
-  tests: [
-    ["Test de Ansiedad", "/test-de-ansiedad/"],
-    ["Test de Dependencia Emocional", "/test-de-dependencia-emocional/"],
-    ["Test de Depresión", "/test-de-depresion/"],
-  ],
   instagram: "https://www.instagram.com/itaca.conversemos/",
   facebook: "https://www.facebook.com/people/%C3%8Dtaca-Conversemos-Salud-Mental/100084447923643/",
   whatsapp: "https://api.whatsapp.com/send?phone=51961350844&text=Bienvenid%40%20a%20Itaca%20Conversemos",
@@ -13422,9 +13411,7 @@ const AGENDA_SITIO = {
 
 // Preguntas frecuentes del sitio, con el texto del equipo (no reescrito). `precio`
 // es el de la primera consulta según el catálogo real; si no hay, el del sitio.
-function agendaFaq(precio) {
-  const sitio = AGENDA_SITIO.base;
-  const ext = { target: "_blank", rel: "noopener" };
+export function agendaFaq(precio) {
   return [
     { id: "que-es", q: "¿Qué es Conversemos?",
       a: "Conversemos es una plataforma dedicada a trabajar la salud mental de forma integral, en la que se brindan terapias psicológicas en línea segura, de manera económicamente accesible. Nuestra misión es ayudarte a recuperar la calma contigo mismo. Nuestros psicoterapeutas tienen formación en psicología clínica y están capacitados para poder brindar terapia psicológica virtual. Todo nuestro equipo de profesionales pasa por un exhaustivo proceso de selección, por lo que nos caracterizamos por nuestra excelencia profesional." },
@@ -13441,7 +13428,7 @@ function agendaFaq(precio) {
     { id: "confidencial", q: "¿Alguien más sabrá lo que yo le cuente a mi psicóloga en terapia?",
       a: "No. Los psicólogos de Conversemos están obligados por ley a mantener el secreto profesional y a ofrecer una garantía total y absoluta de confidencialidad. Nuestros psicólogos están comprometidos contigo a cuidar tus datos e historia." },
     { id: "elegir", q: "¿Puedo elegir a mi psicóloga?",
-      a: <>Sí, puedes seleccionar a tu psicólogo y reservar tu cita directamente con él o ella. O puedes acudir a nuestro servicio de atención al cliente, comentarle lo que deseas trabajar en terapia y te recomendará al mejor psicólogo para ti. Puedes revisar información sobre nuestros psicólogos <a href={`${sitio}/psicologos/`} {...ext}>haciendo clic aquí</a>.</> },
+      a: <>Sí, puedes seleccionar a tu psicólogo y reservar tu cita directamente con él o ella. O puedes acudir a nuestro servicio de atención al cliente, comentarle lo que deseas trabajar en terapia y te recomendará al mejor psicólogo para ti. Puedes revisar información sobre nuestros psicólogos <a {...propsEnlace("/psicologos")}>haciendo clic aquí</a>.</> },
     { id: "conexion", q: "Ya estoy en terapia pero no siento conexión con mi psicóloga, ¿qué puedo hacer?",
       a: "Si ya estás llevando terapia y sientes que no acabas de conectar con tu terapeuta, si no notas avances o simplemente te sientes más cómoda cambiando de profesional, te asignaremos otra psicóloga. Lo más importante es que te sientas a gusto y todo fluya de manera natural; solo así podremos garantizar el éxito de la terapia. Del mismo modo, si no estuviste conforme con tu psicólogo en la primera consulta, te podemos cambiar de especialista sin costo adicional." },
     { id: "reservar", q: "¿Cómo puedo reservar una sesión?",
@@ -13458,7 +13445,7 @@ function agendaFaq(precio) {
 }
 
 // Una duda plegable (<details> nativo: funciona con teclado y sin JS).
-function AgendaDuda({ item }) {
+export function AgendaDuda({ item }) {
   return (
     <details className="ag-duda">
       <summary>{item.q}<ChevronDown size={17} strokeWidth={2} /></summary>
@@ -13470,7 +13457,7 @@ function AgendaDuda({ item }) {
 }
 
 // Las dudas que frenan en ESE paso, al pie de la acción (la acción primero).
-function AgendaDudas({ faq, ids, titulo = "¿Tienes dudas?" }) {
+export function AgendaDudas({ faq, ids, titulo = "¿Tienes dudas?" }) {
   const items = ids.map((id) => faq.find((f) => f.id === id)).filter(Boolean);
   if (!items.length) return null;
   return (
@@ -13481,27 +13468,32 @@ function AgendaDudas({ faq, ids, titulo = "¿Tienes dudas?" }) {
   );
 }
 
-const AGENDA_LOGO = `${import.meta.env.BASE_URL}itaca-logo-h.png`;
+export const AGENDA_LOGO = `${import.meta.env.BASE_URL}itaca-logo-h.png`;
 const _ext = { target: "_blank", rel: "noopener" };
 
-// Cabecera del sitio: el logo y el mismo menú de conversemos.itaca.com.pe. Es un
-// sello de "sigues en Ítaca", no una invitación a irse: 62px de alto, texto quieto.
-function AgendaTop() {
+// Cabecera del sitio: el logo, el menú y la reserva a un clic. Es un sello de
+// "sigues en Ítaca", no una invitación a irse: 62px de alto, texto quieto.
+// `ruta` marca la página actual; `token` arma el enlace de reservas.
+export function AgendaTop({ ruta = "", token = "" }) {
+  const actual = normalizarRuta(ruta);
   return (
     <header className="ag-top">
       <div className="ag-top-in">
-        <a className="ag-top-logo" href={AGENDA_SITIO.base} {..._ext} aria-label="Ítaca Conversemos · ir al sitio">
+        <a className="ag-top-logo" {...propsEnlace("/")} aria-label="Ítaca Conversemos · inicio">
           <img src={AGENDA_LOGO} alt="Ítaca Conversemos" onError={(e) => { e.currentTarget.style.display = "none"; }} />
         </a>
         <nav aria-label="Sitio de Ítaca Conversemos">
           <ul className="ag-menu">
-            {AGENDA_SITIO.menu.map(([l, p]) => (
-              <li key={p}><a href={AGENDA_SITIO.base + p} {..._ext}>{l}</a></li>
+            {MENU_SITIO.map((m) => (
+              <li key={m.href}>
+                <a {...propsEnlace(m.href, m.externo)}
+                  aria-current={!m.externo && normalizarRuta(m.href) === actual ? "page" : undefined}>
+                  {m.label}{m.externo ? <ExternalLink size={12} strokeWidth={2} aria-hidden="true" /> : null}
+                </a>
+              </li>
             ))}
           </ul>
-          <a className="ag-menu-sitio" href={AGENDA_SITIO.base} {..._ext}>
-            conversemos.itaca.com.pe <ExternalLink size={13} strokeWidth={2} />
-          </a>
+          <a className="ag-top-cta" href={rutaAgendar(token) || AGENDA_SITIO.whatsapp}>Pide tu cita</a>
         </nav>
       </div>
     </header>
@@ -13510,7 +13502,7 @@ function AgendaTop() {
 
 // Pie del sitio: sedes, contacto, redes y los test. Claro, no negro como el del
 // sitio: un bloque negro cierra de golpe una página pensada para alguien nervioso.
-function AgendaPie() {
+export function AgendaPie() {
   const tel = (t) => `tel:${t.replace(/\s/g, "")}`;
   return (
     <footer className="ag-pie">
@@ -13554,12 +13546,13 @@ function AgendaPie() {
             <ul>
               <li><a href={`mailto:${AGENDA_SITIO.correo}`}>{AGENDA_SITIO.correo}</a></li>
               <li><a href={AGENDA_SITIO.whatsapp} {..._ext}>WhatsApp · +51 961 350 844</a></li>
-              <li><a href={`${AGENDA_SITIO.base}/quienes-somos/`} {..._ext}>Quiénes somos</a></li>
+              <li><a {...propsEnlace("/quienes-somos")}>Quiénes somos</a></li>
+              <li><a {...propsEnlace("/preguntas")}>Preguntas frecuentes</a></li>
             </ul>
             <h3>Nuestros test</h3>
             <ul>
-              {AGENDA_SITIO.tests.map(([l, p]) => (
-                <li key={p}><a href={AGENDA_SITIO.base + p} {..._ext}>{l}</a></li>
+              {TESTS_SITIO.map((t) => (
+                <li key={t.href}><a {...propsEnlace(t.href, t.externo)}>{t.label} <ExternalLink size={11} strokeWidth={2} aria-hidden="true" /></a></li>
               ))}
             </ul>
           </div>
@@ -13574,7 +13567,7 @@ function AgendaPie() {
 }
 
 // WhatsApp flotante, como en todas las páginas del sitio (mismo número y saludo).
-function AgendaWa() {
+export function AgendaWa() {
   return (
     <a className="ag-wa" href={AGENDA_SITIO.whatsapp} {..._ext} aria-label="Escríbenos por WhatsApp" title="Escríbenos por WhatsApp">
       <MessageCircle size={26} strokeWidth={2} aria-hidden="true" />
@@ -13586,7 +13579,7 @@ function AgendaWa() {
 // Vive fuera de .clinica-app: no hereda nada del panel interno, así que define
 // su propio sistema. Una sola familia tipográfica, un solo acento, y separación
 // por altura (sombra) en vez de líneas de 1px.
-const AGENDA_CSS = `
+export const AGENDA_CSS = `
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
 .ag {
@@ -13882,11 +13875,17 @@ const AGENDA_CSS = `
   transform:scaleX(0); transform-origin:left; transition:transform .2s var(--curva);
 }
 .ag-menu a:hover { color:var(--acento); }
-.ag-menu a:hover::after { transform:scaleX(1); }
-.ag-menu-sitio {
-  display:none; align-items:center; gap:5px; text-decoration:none;
-  font-size:13px; font-weight:500; color:var(--tinta-2);
+.ag-menu a:hover::after, .ag-menu a[aria-current="page"]::after { transform:scaleX(1); }
+.ag-menu a[aria-current="page"] { color:var(--tinta); font-weight:600; }
+.ag-menu a svg { margin-left:3px; opacity:.5; vertical-align:-1px; }
+/* Reservar, a un clic desde cualquier página: es la acción de todo el sitio. */
+.ag-top-cta {
+  flex-shrink:0; display:inline-flex; align-items:center; text-decoration:none;
+  font-size:13.5px; font-weight:600; color:#fff; background:var(--acento);
+  padding:9px 15px; border-radius:9px; white-space:nowrap;
+  transition:background .15s, transform .15s var(--curva);
 }
+.ag-top-cta:hover { background:#00647A; transform:translateY(-1px); }
 
 /* Señas de confianza en la portada: tres hechos del sitio, sin tarjetas. */
 .ag-senas { display:flex; flex-wrap:wrap; gap:9px 22px; margin:22px 0 0; padding:0; list-style:none; }
@@ -13950,10 +13949,20 @@ const AGENDA_CSS = `
 .ag-wa:hover { transform:translateY(-2px); box-shadow:0 10px 24px rgba(37,211,102,.42); }
 
 @media (max-width:760px) {
-  .ag-menu { display:none; }
-  .ag-menu-sitio { display:inline-flex; }
-  .ag-top-in { height:58px; }
-  .ag-top-logo img { height:32px; }
+  .ag-top-in { height:auto; flex-wrap:wrap; padding-top:9px; padding-bottom:0; gap:10px; }
+  .ag-top-logo img { height:30px; }
+  .ag-top-in nav { order:3; width:100%; display:flex; align-items:center; gap:12px; }
+  .ag-menu {
+    flex:1; gap:16px; overflow-x:auto; scrollbar-width:none;
+    padding:0 2px 7px; margin:0 -2px; scroll-snap-type:x proximity;
+    /* El degradado del borde avisa que la fila sigue: sin él parece cortada. */
+    -webkit-mask-image:linear-gradient(to right,#000 calc(100% - 26px),transparent);
+    mask-image:linear-gradient(to right,#000 calc(100% - 26px),transparent);
+  }
+  .ag-menu::-webkit-scrollbar { display:none; }
+  .ag-menu li { scroll-snap-align:start; }
+  .ag-menu a { font-size:13.5px; }
+  .ag-top-cta { display:none; }      /* en móvil basta el botón de cada página */
   .ag-pie-cols { grid-template-columns:1fr; gap:28px; }
   .ag-pie-legal { padding-right:64px; } /* que el botón de WhatsApp no tape el texto */
 }
@@ -14056,7 +14065,7 @@ export function AgendarPublico({ token }) {
   // render y los inputs perderían el foco al escribir.
   const marco = (children, extra = null) => (
     <div className="ag">{pila}
-      <AgendaTop />
+      <AgendaTop token={token} />
       <main className="ag-wrap">{children}</main>
       <AgendaPie />
       <AgendaWa />
