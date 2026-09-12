@@ -102,7 +102,20 @@ class _ConContacto(_Base):
                     .order_by("id").values_list("evento", flat=True))
 
     def _con_evolution(self, respuesta=None):
-        """Contexto que simula Evolution configurado y devuelve el mock del POST."""
+        """Contexto que simula Evolution configurado y CONECTADO.
+
+        Devuelve el mock del POST. El estado de la línea se simula aparte
+        porque estas pruebas van del envío, no de la conectividad: sin esto
+        saldrían a preguntárselo a Evolution de verdad, y el resultado
+        dependería de la red de quien las corra.
+        """
+        from mensajes import evolution
+
+        evolution.limpiar_memo_estado()
+        self.addCleanup(evolution.limpiar_memo_estado)
+        estado = patch("mensajes.evolution.estado_en_vivo", return_value="open")
+        estado.start()
+        self.addCleanup(estado.stop)
         return patch("mensajes.evolution.requests.post",
                      return_value=respuesta or _RespuestaOK())
 
