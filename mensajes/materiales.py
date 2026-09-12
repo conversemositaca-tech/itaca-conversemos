@@ -13,12 +13,18 @@ introduce.
 
 Validación sin dependencias nuevas
 ----------------------------------
-El tipo real y las dimensiones se leen de la **cabecera del archivo**, no del
+El tipo real y las dimensiones se leen del **contenido binario**, no del
 `Content-Type` que manda el navegador (que se falsifica renombrando la
-extensión). Solo se aceptan las tres firmas de PNG, JPEG y WEBP: si la cabecera
-no es una de esas, el archivo se rechaza aunque se llame `.png`. Hacerlo a mano
+extensión). Solo se aceptan las tres firmas de PNG, JPEG y WEBP: si el archivo
+no empieza por una de esas, se rechaza aunque se llame `.png`. Hacerlo a mano
 evita sumar Pillow al despliegue y, de paso, deja la lista blanca más cerrada
 que la de cualquier librería general.
+
+Ojo con la palabra "cabecera": solo PNG y WEBP guardan sus medidas al principio.
+Un JPEG las pone después de la cabecera JFIF, el bloque EXIF y las tablas de
+cuantización, así que hay que inspeccionar el archivo entero. Darlo por sentado
+costó un bug en producción: toda foto de teléfono se rechazaba con un "puede
+estar dañada" que era falso.
 """
 import hashlib
 import struct
@@ -43,8 +49,13 @@ FIRMA_PNG = b"\x89PNG\r\n\x1a\n"
 FIRMA_JPEG = b"\xff\xd8\xff"
 FIRMA_VP8 = b"\x9d\x01\x2a"
 
+# Cuántos segmentos se recorren en un JPEG antes de rendirse. Un archivo real
+# llega al SOF en menos de diez (JFIF, EXIF y un par de tablas); el tope está
+# para que uno malformado no haga recorrer el archivo entero.
+MAX_SEGMENTOS_JPEG = 64
 
-# --- lectura de la cabecera ---------------------------------------------------
+
+# --- lectura del contenido binario --------------------------------------------
 
 def _dimensiones_png(b):
     # IHDR va siempre en los bytes 16..24, big-endian.
@@ -54,21 +65,44 @@ def _dimensiones_png(b):
 
 
 def _dimensiones_jpeg(b):
-    # Se recorren los marcadores hasta el SOF, que es el que trae alto y ancho.
+    """(ancho, alto) de un JPEG, leídos del marcador SOF.
+
+    El SOF **no** está al principio del archivo: antes van la cabecera JFIF, el
+    bloque EXIF y las tablas de cuantización. En un JPEG de teléfono eso lo
+    empuja más allá del byte 150 (WhatsApp: 158; ffmpeg: 293), así que hay que
+    recibir el archivo entero y recorrer los segmentos saltando por su longitud
+    declarada. Leer solo una cabecera corta no sirve para JPEG, aunque sí baste
+    para PNG y WEBP.
+
+    El recorrido está acotado por los dos lados para que un archivo malformado
+    no lo haga barrer megabytes: solo avanza por longitudes declaradas —nunca
+    byte a byte buscando la sincronía— y se rinde a los MAX_SEGMENTOS_JPEG
+    segmentos. Un JPEG real llega al SOF en menos de diez.
+    """
     i, n = 2, len(b)
-    while i + 9 < n:
-        if b[i] != 0xFF:
+    for _ in range(MAX_SEGMENTOS_JPEG):
+        # Antes de un marcador puede haber bytes de relleno 0xFF.
+        while i + 1 < n and b[i] == 0xFF and b[i + 1] == 0xFF:
             i += 1
-            continue
+        if i + 3 >= n or b[i] != 0xFF:
+            return None                      # aquí no empieza un segmento
         marcador = b[i + 1]
-        if marcador in (0xD8, 0x01) or 0xD0 <= marcador <= 0xD7:
-            i += 2
+        if marcador in (0xD9, 0xDA):
+            # Fin de imagen, o empiezan los datos comprimidos: a partir de aquí
+            # las longitudes ya no describen segmentos y no habrá SOF.
+            return None
+        if marcador == 0x01 or 0xD0 <= marcador <= 0xD7:
+            i += 2                           # marcadores sin carga
             continue
         largo = struct.unpack(">H", b[i + 2:i + 4])[0]
+        if largo < 2:
+            return None                      # longitud imposible: malformado
         # SOF0..SOF15, menos los marcadores que no son de trama (C4, C8, CC).
         if 0xC0 <= marcador <= 0xCF and marcador not in (0xC4, 0xC8, 0xCC):
+            if i + 9 > n:
+                return None                  # el SOF está cortado
             alto, ancho = struct.unpack(">HH", b[i + 5:i + 9])
-            return ancho, alto
+            return (ancho, alto) if (ancho and alto) else None
         i += 2 + largo
     return None
 
@@ -91,13 +125,20 @@ def _dimensiones_webp(b):
     return None
 
 
-def inspeccionar(cabecera):
+def inspeccionar(datos):
     """(mime, ancho, alto) leídos del contenido. (None, 0, 0) si no es imagen.
 
-    Recibe los primeros bytes del archivo. Lo que diga el nombre o el
-    Content-Type no interviene: aquí manda la firma binaria.
+    Recibe el archivo **completo**, no una cabecera recortada. PNG y WEBP
+    guardan sus dimensiones en los primeros 30 bytes, pero un JPEG las pone
+    después de la cabecera JFIF, el EXIF y las tablas de cuantización —por el
+    byte 158 en los de WhatsApp—, así que con una cabecera corta se reconoce el
+    formato y se pierden las medidas. El coste no depende del tamaño: el
+    recorrido salta de segmento en segmento, nunca byte a byte.
+
+    Lo que diga el nombre del archivo o el Content-Type no interviene: aquí
+    manda la firma binaria.
     """
-    b = cabecera
+    b = datos
     if b[:8] == FIRMA_PNG:
         return ("image/png",) + (_dimensiones_png(b) or (0, 0))
     if b[:3] == FIRMA_JPEG:
@@ -165,7 +206,10 @@ class MaterialViewSet(viewsets.ModelViewSet):
                             status=status.HTTP_400_BAD_REQUEST)
 
         datos = archivo.read()
-        mime, ancho, alto = inspeccionar(datos[:64])
+        # El archivo entero, no una cabecera: en un JPEG las dimensiones están
+        # pasado el byte 150 y recortar aquí rechazaba TODA foto de teléfono
+        # con un "puede estar dañada" que era falso.
+        mime, ancho, alto = inspeccionar(datos)
         if mime is None:
             return Response({"detail": "El archivo no es una imagen PNG, JPG o WEBP."},
                             status=status.HTTP_400_BAD_REQUEST)
