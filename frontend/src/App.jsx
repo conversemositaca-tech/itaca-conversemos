@@ -13559,7 +13559,13 @@ export function AgendaPie() {
         </div>
         <div className="ag-pie-legal">
           <span>© {new Date().getFullYear()} Ítaca Conversemos · Salud mental</span>
-          <span>Tus datos se guardan con confidencialidad · Ley 29733</span>
+          <span>
+            Tus datos se guardan con confidencialidad · Ley 29733
+            {" · "}
+            {/* Enlace de servicio para el equipo: navegación real, no del SPA
+                del sitio, porque /gestion monta otra aplicación. */}
+            <a className="ag-interno" href="/gestion">Acceso interno</a>
+          </span>
         </div>
       </div>
     </footer>
@@ -13933,6 +13939,8 @@ export const AGENDA_CSS = `
   background:var(--arena); color:var(--tinta); transition:background .15s, color .15s;
 }
 .ag-redes a:hover { background:var(--acento); color:#fff; }
+.ag-interno { color:var(--tinta-3); text-decoration:underline; text-underline-offset:2px; }
+.ag-interno:hover { color:var(--acento); }
 .ag-pie-legal {
   margin-top:34px; padding-top:18px; border-top:1px solid var(--linea);
   display:flex; flex-wrap:wrap; justify-content:space-between; gap:6px 18px;

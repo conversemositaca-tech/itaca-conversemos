@@ -39,14 +39,27 @@ export const TESTS_SITIO = [
 // en cualquiera de ellas).
 export const RUTAS_SITIO = ["/", "/quienes-somos", "/psicologos", "/terapias-online", "/preguntas"];
 
-export function esRutaSitio(pathname) {
-  const p = (pathname || "/").replace(/\/+$/, "") || "/";
-  return RUTAS_SITIO.includes(p);
-}
-
+// Prefijos que NO son del sitio: el panel interno, las páginas públicas por
+// token y todo lo que resuelve Django. La lista es explícita para que añadir
+// una ruta al sitio no pueda volver a dejar sin puerta al sistema de gestión.
 export function normalizarRuta(pathname) {
   return (pathname || "/").replace(/\/+$/, "") || "/";
 }
+
+export const RESERVADAS = ["/gestion", "/agendar", "/consentimiento", "/api", "/admin", "/static", "/media"];
+
+export function esRutaReservada(pathname) {
+  const p = normalizarRuta(pathname);
+  return RESERVADAS.some((r) => p === r || p.startsWith(`${r}/`));
+}
+
+export function esRutaSitio(pathname) {
+  const p = normalizarRuta(pathname);
+  if (esRutaReservada(p)) return false;
+  return RUTAS_SITIO.includes(p);
+}
+
+
 
 const EVENTO = "sitio:navegar";
 
