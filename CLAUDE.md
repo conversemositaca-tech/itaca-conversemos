@@ -571,3 +571,25 @@ los feriados de Perú. Zona horaria por defecto: `America/Lima` (GMT-5).
      Railway (y renovar su certificado, vencido el 6 ene 2026), decidir si se migran el blog
      (10 entradas, la última de enero de 2022) y los tres test psicológicos, y confirmar qué
      número de Piura es el vigente.
+34. ✓ `/gestion`: el sistema interno recuperó su puerta (2026-09-13, corrección).
+   Al publicar el sitio (ítem 33), `/` pasó a servir la portada pública y el panel
+   interno —que se abría justo ahí— quedó SIN ruta: seguía montado como último
+   recurso, pero el equipo no podía entrar. Ahora `frontend/src/main.jsx` enruta en
+   este orden: `/consentimiento/<token>` · `/agendar/<token>` · **`/gestion[/...]`
+   → `<App />`** · rutas del sitio · resto → `<App />`. `esRutaSitio()` consulta
+   primero `esRutaReservada()` (`/gestion`, `/agendar`, `/consentimiento`, `/api`,
+   `/admin`, `/static`, `/media`), así que añadir una página al sitio no puede
+   volver a tapar el panel. El catch-all de Django ya servía la SPA en `/gestion`:
+   no hizo falta tocar `config/urls.py`. El pie de la web lleva un enlace discreto
+   "Acceso interno" (`/gestion`, navegación real, no del SPA).
+   - Verificado local (16/16): `/` y `/quienes-somos` públicas; `/gestion` sin sesión
+     muestra el login de siempre; login real con cuenta existente entra al sistema;
+     Agenda, Pacientes y Continuidad accesibles; recargar `/gestion` y `/gestion/x`
+     no da 404; cerrar sesión deja el login en `/gestion`; `/agendar/<token>` y
+     `/consentimiento/<token>` siguen; `/api/` responde JSON y `/admin/` HTML de
+     Django (React no los intercepta).
+   - **Bug aparte encontrado y corregido**: `GET /api/hoy/` devolvía 500 para el rol
+     médico (`NameError: name 'ficha' is not defined` en `core/gerencia.py`, bloque
+     de NPS del commit 9fba2fb). Se reusa `continuidad_mod.pacientes_del_rol(...)`,
+     que es la regla de alcance del resto de la vista, en vez de repetirla a mano.
+     Sin cambios de modelo ni de permisos. 258 tests de core+pacientes en verde.
