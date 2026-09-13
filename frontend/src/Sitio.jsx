@@ -23,7 +23,7 @@ const ICONOS_SERVICIO = {
 import {
   AGENDA_CSS, AGENDA_SEDES, AGENDA_SITIO, AgendaDuda, AgendaPie, AgendaTop, AgendaWa, agendaFaq,
 } from "./App.jsx";
-import { alCambiarRuta, normalizarRuta, propsEnlace, rutaAgendar } from "./rutas";
+import { SITE_ROUTES, alCambiarRuta, propsEnlace, rutaCanonica } from "./rutas";
 import { INICIO, PASOS, PREGUNTAS, PSICOLOGOS, QUIENES_SOMOS, TERAPIAS, TESTIMONIOS } from "./sitio-textos";
 
 // Estilos propios de las páginas de contenido. Se apoyan en los tokens del
@@ -304,16 +304,15 @@ const SW_CSS = `
 
 const iniciales = (n) => (n || "?").replace(/^lic\.?\s*/i, "").trim().charAt(0).toUpperCase();
 
-/** Enlace de reserva. Sin token todavía (o si la API falló), ofrece WhatsApp:
- *  una salida que sí funciona, en vez de un botón muerto. */
-function hrefReserva(token) {
-  return rutaAgendar(token) || AGENDA_SITIO.whatsapp;
+/** Enlace de reserva: el mismo para todos los CTA del sitio, sin depender de
+ *  que la API haya respondido. Sale de SITE_ROUTES. */
+function hrefReserva() {
+  return SITE_ROUTES.agendar;
 }
 
 /** Cierre común: la misma invitación al final de cada página. */
-function Cierre({ token, titulo = "¿Damos el primer paso?", texto }) {
-  const hrefCita = hrefReserva(token);
-  const externo = !hrefCita.startsWith("/");
+function Cierre({ titulo = "¿Damos el primer paso?", texto }) {
+  const hrefCita = hrefReserva();
   return (
     <section className="sw-sec sw-celeste">
       <div className="sw-wrap sw-cierre">
@@ -322,10 +321,10 @@ function Cierre({ token, titulo = "¿Damos el primer paso?", texto }) {
           {texto || "Elige sede, psicólogo y horario. Coordinación confirma contigo antes de la sesión y no pagas nada al reservar."}
         </p>
         <div className="sw-acciones">
-          <a className="sw-btn" href={hrefCita} {...(externo ? { target: "_blank", rel: "noopener" } : {})}>
+          <a className="sw-btn" href={hrefCita}>
             Pide tu cita <ArrowRight size={18} strokeWidth={2.2} aria-hidden="true" />
           </a>
-          <a className="sw-btn sw-btn-linea" href={AGENDA_SITIO.whatsapp} target="_blank" rel="noopener">
+          <a className="sw-btn sw-btn-linea" href={AGENDA_SITIO.whatsapp} target="_blank" rel="noopener noreferrer">
             Escríbenos por WhatsApp <MessageCircle size={17} strokeWidth={2} aria-hidden="true" />
           </a>
         </div>
@@ -347,12 +346,11 @@ function Cierre({ token, titulo = "¿Damos el primer paso?", texto }) {
 }
 
 // ── Página: inicio ────────────────────────────────────────────────────────
-function PaginaInicio({ datos, token, faq }) {
+function PaginaInicio({ datos, faq }) {
   const equipo = datos?.equipo || [];
   const conFoto = equipo.filter((x) => x.foto);
   const mosaico = conFoto.slice(0, Math.min(9, Math.floor(conFoto.length / 3) * 3));
-  const hrefCita = hrefReserva(token);
-  const externo = !hrefCita.startsWith("/");
+  const hrefCita = hrefReserva();
   return (
     <>
       <section className="sw-sec sw-hero">
@@ -363,10 +361,10 @@ function PaginaInicio({ datos, token, faq }) {
               <h1 className="sw-h1">Este espacio <em>es para ti</em>.</h1>
               <div className="sw-lee"><p>{INICIO.entrada}</p></div>
               <div className="sw-acciones">
-                <a className="sw-btn" href={hrefCita} {...(externo ? { target: "_blank", rel: "noopener" } : {})}>
+                <a className="sw-btn" href={hrefCita}>
                   Pide tu cita <ArrowRight size={18} strokeWidth={2.2} aria-hidden="true" />
                 </a>
-                <a className="sw-enlace" {...propsEnlace("/quienes-somos")}>
+                <a className="sw-enlace" {...propsEnlace(SITE_ROUTES.quienesSomos)}>
                   Conócenos <ArrowRight size={16} strokeWidth={2.2} aria-hidden="true" />
                 </a>
               </div>
@@ -417,7 +415,7 @@ function PaginaInicio({ datos, token, faq }) {
             </ul>
           )}
           <div className="sw-acciones" style={{ marginTop: 0 }}>
-            <a className="sw-btn sw-btn-linea" {...propsEnlace("/psicologos")}>
+            <a className="sw-btn sw-btn-linea" {...propsEnlace(SITE_ROUTES.psicologos)}>
               Conócelos aquí <ArrowRight size={16} strokeWidth={2.2} aria-hidden="true" />
             </a>
           </div>
@@ -456,23 +454,22 @@ function PaginaInicio({ datos, token, faq }) {
             })}
           </div>
           <p style={{ marginTop: 26 }}>
-            <a className="sw-enlace" {...propsEnlace("/preguntas")}>
+            <a className="sw-enlace" {...propsEnlace(SITE_ROUTES.preguntas)}>
               Ver todas las preguntas <ArrowRight size={16} strokeWidth={2.2} aria-hidden="true" />
             </a>
           </p>
         </div>
       </section>
 
-      <Cierre token={token} titulo={INICIO.procesoFrase} />
+      <Cierre titulo={INICIO.procesoFrase} />
     </>
   );
 }
 
 // ── Página: quiénes somos (sistema visual nuevo) ──────────────────────────
-function PaginaQuienes({ token }) {
+function PaginaQuienes() {
   const q = QUIENES_SOMOS;
-  const hrefCita = hrefReserva(token);
-  const externo = !hrefCita.startsWith("/");
+  const hrefCita = hrefReserva();
   return (
     <>
       {/* 1 · Hero humano */}
@@ -484,10 +481,10 @@ function PaginaQuienes({ token }) {
               <h1 className="sw-h1">{q.titulo}</h1>
               <div className="sw-lee">{q.entrada.map((p, i) => <p key={i}>{p}</p>)}</div>
               <div className="sw-acciones">
-                <a className="sw-btn" href={hrefCita} {...(externo ? { target: "_blank", rel: "noopener" } : {})}>
+                <a className="sw-btn" href={hrefCita}>
                   Pide tu cita <ArrowRight size={18} strokeWidth={2.2} aria-hidden="true" />
                 </a>
-                <a className="sw-enlace" {...propsEnlace("/psicologos")}>
+                <a className="sw-enlace" {...propsEnlace(SITE_ROUTES.psicologos)}>
                   Conoce a nuestros psicólogos <ArrowRight size={16} strokeWidth={2.2} aria-hidden="true" />
                 </a>
               </div>
@@ -579,10 +576,10 @@ function PaginaQuienes({ token }) {
           <h2 className="sw-h2 sw-h2-c">{q.cierreTitulo}</h2>
           <p className="sw-intro sw-intro-c">{q.cierreTexto}</p>
           <div className="sw-acciones">
-            <a className="sw-btn" href={hrefCita} {...(externo ? { target: "_blank", rel: "noopener" } : {})}>
+            <a className="sw-btn" href={hrefCita}>
               Pide tu cita <ArrowRight size={18} strokeWidth={2.2} aria-hidden="true" />
             </a>
-            <a className="sw-btn sw-btn-linea" href={AGENDA_SITIO.whatsapp} target="_blank" rel="noopener">
+            <a className="sw-btn sw-btn-linea" href={AGENDA_SITIO.whatsapp} target="_blank" rel="noopener noreferrer">
               Escríbenos por WhatsApp <MessageCircle size={17} strokeWidth={2} aria-hidden="true" />
             </a>
           </div>
@@ -605,9 +602,8 @@ function PaginaQuienes({ token }) {
 }
 
 // ── Página: psicólogos (la lista sale de la base) ─────────────────────────
-function TarjetaProfesional({ p, token }) {
-  const hrefCita = hrefReserva(token);
-  const externo = !hrefCita.startsWith("/");
+function TarjetaProfesional({ p }) {
+  const hrefCita = hrefReserva();
   const extra = [p.problematicas, p.formacion, p.trayectoria].some(Boolean);
   return (
     <article className="sw-prof">
@@ -642,12 +638,12 @@ function TarjetaProfesional({ p, token }) {
       <div className="sw-prof-pie">
         {p.agendable
           ? (
-            <a className="sw-btn" href={hrefCita} {...(externo ? { target: "_blank", rel: "noopener" } : {})}>
+            <a className="sw-btn" href={hrefCita}>
               Ver sus horarios <ArrowRight size={16} strokeWidth={2.2} aria-hidden="true" />
             </a>
           )
           : (
-            <a className="sw-btn sw-btn-linea" href={AGENDA_SITIO.whatsapp} target="_blank" rel="noopener">
+            <a className="sw-btn sw-btn-linea" href={AGENDA_SITIO.whatsapp} target="_blank" rel="noopener noreferrer">
               Consultar por WhatsApp <MessageCircle size={16} strokeWidth={2} aria-hidden="true" />
             </a>
           )}
@@ -656,7 +652,7 @@ function TarjetaProfesional({ p, token }) {
   );
 }
 
-function PaginaPsicologos({ datos, token, cargando }) {
+function PaginaPsicologos({ datos, cargando }) {
   const [sede, setSede] = useState("");
   const equipo = useMemo(() => datos?.equipo || [], [datos]);
   const mostrados = sede ? equipo.filter((p) => p.sede === sede) : equipo;
@@ -692,24 +688,23 @@ function PaginaPsicologos({ datos, token, cargando }) {
               </div>
             ) : (
               <div className="sw-equipo">
-                {mostrados.map((p) => <TarjetaProfesional key={p.id} p={p} token={token} />)}
+                {mostrados.map((p) => <TarjetaProfesional key={p.id} p={p} />)}
               </div>
             )}
         </div>
       </section>
 
-      <Cierre token={token} titulo="¿Ya sabes con quién quieres atenderte?"
+      <Cierre titulo="¿Ya sabes con quién quieres atenderte?"
         texto="Elige su horario y reserva. Si prefieres que te ayudemos a elegir, cuéntanos qué necesitas y coordinación te acompaña." />
     </>
   );
 }
 
 // ── Página: terapias online ───────────────────────────────────────────────
-function PaginaTerapias({ datos, token }) {
+function PaginaTerapias({ datos }) {
   const t = TERAPIAS;
   const servicios = datos?.servicios || [];
-  const hrefCita = hrefReserva(token);
-  const externo = !hrefCita.startsWith("/");
+  const hrefCita = hrefReserva();
   return (
     <>
       <section className="sw-sec sw-hero">
@@ -718,7 +713,7 @@ function PaginaTerapias({ datos, token }) {
           <h1 className="sw-h1">{t.titulo}</h1>
           <p className="sw-intro" style={{ marginBottom: 0 }}>{t.entradaRotulo}.</p>
           <div className="sw-acciones">
-            <a className="sw-btn" href={hrefCita} {...(externo ? { target: "_blank", rel: "noopener" } : {})}>
+            <a className="sw-btn" href={hrefCita}>
               Pide tu terapia <ArrowRight size={18} strokeWidth={2.2} aria-hidden="true" />
             </a>
           </div>
@@ -795,14 +790,14 @@ function PaginaTerapias({ datos, token }) {
         </div>
       </section>
 
-      <Cierre token={token} titulo="Estás a solo un paso"
+      <Cierre titulo="Estás a solo un paso"
         texto="Empecemos el viaje. Elige sede, psicólogo y horario; nosotros confirmamos contigo antes de tu sesión." />
     </>
   );
 }
 
 // ── Página: preguntas frecuentes ──────────────────────────────────────────
-function PaginaPreguntas({ token, faq }) {
+function PaginaPreguntas({ faq }) {
   return (
     <>
       <section className="sw-sec sw-hero" style={{ paddingBottom: 0 }}>
@@ -821,7 +816,7 @@ function PaginaPreguntas({ token, faq }) {
         </div>
       </section>
 
-      <Cierre token={token} titulo="¿Te quedó alguna duda?"
+      <Cierre titulo="¿Te quedó alguna duda?"
         texto="Escríbenos por WhatsApp y te respondemos. Si ya lo tienes claro, puedes reservar tu primera consulta ahora." />
     </>
   );
@@ -829,19 +824,19 @@ function PaginaPreguntas({ token, faq }) {
 
 // ── Raíz del sitio: ruta, datos y marco ───────────────────────────────────
 const TITULOS = {
-  "/": "Ítaca Conversemos · Terapia psicológica en Lima y Piura",
-  "/quienes-somos": "Quiénes somos · Ítaca Conversemos",
-  "/psicologos": "Nuestros psicólogos · Ítaca Conversemos",
-  "/terapias-online": "Terapias online · Ítaca Conversemos",
-  "/preguntas": "Preguntas frecuentes · Ítaca Conversemos",
+  [SITE_ROUTES.inicio]: "Ítaca Conversemos · Terapia psicológica en Lima y Piura",
+  [SITE_ROUTES.quienesSomos]: "Quiénes somos · Ítaca Conversemos",
+  [SITE_ROUTES.psicologos]: "Nuestros psicólogos · Ítaca Conversemos",
+  [SITE_ROUTES.terapias]: "Terapias online · Ítaca Conversemos",
+  [SITE_ROUTES.preguntas]: "Preguntas frecuentes · Ítaca Conversemos",
 };
 
 export function SitioPublico() {
-  const [ruta, setRuta] = useState(() => normalizarRuta(window.location.pathname));
+  const [ruta, setRuta] = useState(() => rutaCanonica(window.location.pathname));
   const [datos, setDatos] = useState(null);
   const [cargando, setCargando] = useState(true);
 
-  useEffect(() => alCambiarRuta(() => setRuta(normalizarRuta(window.location.pathname))), []);
+  useEffect(() => alCambiarRuta(() => setRuta(rutaCanonica(window.location.pathname))), []);
 
   useEffect(() => {
     let vivo = true;
@@ -854,11 +849,15 @@ export function SitioPublico() {
   }, []);
 
   useEffect(() => {
-    document.title = TITULOS[ruta] || TITULOS["/"];
+    document.title = TITULOS[ruta] || TITULOS[SITE_ROUTES.inicio];
     document.documentElement.lang = "es";
+    // Si se entró por un alias (o con barra final), la barra de direcciones se
+    // queda con la forma canónica, sin añadir una entrada al historial.
+    if (window.location.pathname !== ruta) {
+      window.history.replaceState({}, "", ruta + window.location.search + window.location.hash);
+    }
   }, [ruta]);
 
-  const token = datos?.token_agenda || "";
   // El precio de la primera consulta sale del catálogo real; si no está
   // publicado, el que dice el sitio. Mismo criterio que en el agendamiento.
   const faq = useMemo(() => {
@@ -867,16 +866,16 @@ export function SitioPublico() {
   }, [datos]);
 
   const pagina =
-    ruta === "/quienes-somos" ? <PaginaQuienes token={token} />
-      : ruta === "/psicologos" ? <PaginaPsicologos datos={datos} token={token} cargando={cargando} />
-        : ruta === "/terapias-online" ? <PaginaTerapias datos={datos} token={token} />
-          : ruta === "/preguntas" ? <PaginaPreguntas token={token} faq={faq} />
-            : <PaginaInicio datos={datos} token={token} faq={faq} />;
+    ruta === SITE_ROUTES.quienesSomos ? <PaginaQuienes />
+      : ruta === SITE_ROUTES.psicologos ? <PaginaPsicologos datos={datos} cargando={cargando} />
+        : ruta === SITE_ROUTES.terapias ? <PaginaTerapias datos={datos} />
+          : ruta === SITE_ROUTES.preguntas ? <PaginaPreguntas faq={faq} />
+            : <PaginaInicio datos={datos} faq={faq} />;
 
   return (
     <div className="ag sw-sitio sw-tema">
       <style>{AGENDA_CSS}{SW_CSS}</style>
-      <AgendaTop ruta={ruta} token={token} />
+      <AgendaTop ruta={ruta} />
       <main>{pagina}</main>
       <AgendaPie />
       <AgendaWa />

@@ -641,3 +641,27 @@ los feriados de Perú. Zona horaria por defecto: `America/Lima` (GMT-5).
    - Verificado en las 5 páginas × escritorio y móvil: 0 errores de consola, 0 peticiones
      fallidas, 0 enlaces rotos, un `<h1>` por página, menú móvil accesible y sin desborde.
    - **Pendiente**: publicar (sin desplegar todavía).
+36. ✓ Navegación: una sola fuente de verdad para las rutas (2026-09-13).
+   Cada componente escribía sus destinos a mano y el enlace de reservas dependía del
+   token que devolvía la API, así que convivían `/preguntas` y `/preguntas-frecuentes`,
+   tokens distintos según el entorno y enlaces al WordPress.
+   - **`SITE_ROUTES`** (en `frontend/src/rutas.js`, `Object.freeze`) es ahora el único
+     lugar donde vive un destino interno: inicio · quienesSomos · psicologos · terapias ·
+     preguntas · **agendar** (con el token público `PmFaG9KH…`, fijo: si se regenera
+     desde Captación hay que actualizarlo AHÍ) · gestion. `MENU_SITIO`, `RUTAS_SITIO`,
+     los títulos, la cabecera, el pie, el FAQ y todos los CTA salen de ella.
+   - **La canónica de preguntas pasó a `/preguntas-frecuentes`**; `/preguntas` queda como
+     **alias** (`ALIAS_RUTAS`) porque era la dirección ya publicada. `rutaCanonica()`
+     resuelve alias y barra final, y la URL se normaliza con `replaceState` al entrar.
+   - **Blog y los tres test del WordPress quedaron OCULTOS** (`MOSTRAR_WORDPRESS = false`):
+     el certificado de conversemos.itaca.com.pe venció el 6 ene 2026 y enviar visitantes
+     ahí es mandarlos a una advertencia de sitio no seguro. Se reactivan poniendo esa
+     constante en true cuando se renueve el certificado.
+   - Los externos (Instagram, Facebook, WhatsApp) llevan `rel="noopener noreferrer"`;
+     correo y teléfonos conservan `mailto:`/`tel:`. Ningún enlace interno abre pestaña.
+   - **Auditoría automática**: `scratchpad/auditoria_navegacion.py` inventaría cada enlace
+     visible de las 6 páginas (34 distintos), marca destinos inertes/WordPress/tokens
+     ajenos/rutas desconocidas, hace clic en 13 CTA comprobando el destino contra
+     SITE_ROUTES, y repite la navegación en móvil. Resultado: sin errores.
+   - Verificado: `manage.py check`, 46 tests (core.tests_sitio + pacientes), build de Vite,
+     ESLint sin avisos nuevos (App.jsx bajó de 106 a 105 al quitar una prop sin uso).

@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { Activity, AlertTriangle, ArrowDown, ArrowUp, Award, BarChart3, Bell, BookUser, Building2, Cake, Calendar, Check, ChevronDown, ChevronLeft, ChevronRight, ClipboardList, Clock, Compass, Copy, DoorOpen, Download, ExternalLink, FileDown, FileSpreadsheet, FileText, FolderOpen, GraduationCap, Heart, HeartHandshake, HeartPulse, Home, KeyRound, Landmark, Leaf, Lightbulb, LogOut, MapPin, Megaphone, Menu, MessageCircle, Mic, Paperclip, Pencil, Phone, Pill, Plus, Presentation, Receipt, RotateCcw, Search, Send, Shield, Smile, Sparkles, Target, Trash2, TrendingUp, Trophy, Upload, UserCog, UserPlus, UserRound, Users, X } from "lucide-react";
 import { api } from "./api";
-import { MENU_SITIO, TESTS_SITIO, propsEnlace, rutaAgendar, normalizarRuta } from "./rutas";
+import { MENU_SITIO, SITE_ROUTES, propsEnlace, normalizarRuta } from "./rutas";
 import { modeloReporte, modeloTabla, exportarExcel, exportarWord, exportarPowerPoint, exportarPDF, exportarCSV } from "./exportGerencia";
 import Login from "./Login";
 
@@ -13417,7 +13417,7 @@ export function agendaFaq(precio) {
     { id: "confidencial", q: "¿Alguien más sabrá lo que yo le cuente a mi psicóloga en terapia?",
       a: "No. Los psicólogos de Conversemos están obligados por ley a mantener el secreto profesional y a ofrecer una garantía total y absoluta de confidencialidad. Nuestros psicólogos están comprometidos contigo a cuidar tus datos e historia." },
     { id: "elegir", q: "¿Puedo elegir a mi psicóloga?",
-      a: <>Sí, puedes seleccionar a tu psicólogo y reservar tu cita directamente con él o ella. O puedes acudir a nuestro servicio de atención al cliente, comentarle lo que deseas trabajar en terapia y te recomendará al mejor psicólogo para ti. Puedes revisar información sobre nuestros psicólogos <a {...propsEnlace("/psicologos")}>haciendo clic aquí</a>.</> },
+      a: <>Sí, puedes seleccionar a tu psicólogo y reservar tu cita directamente con él o ella. O puedes acudir a nuestro servicio de atención al cliente, comentarle lo que deseas trabajar en terapia y te recomendará al mejor psicólogo para ti. Puedes revisar información sobre nuestros psicólogos <a {...propsEnlace(SITE_ROUTES.psicologos)}>haciendo clic aquí</a>.</> },
     { id: "conexion", q: "Ya estoy en terapia pero no siento conexión con mi psicóloga, ¿qué puedo hacer?",
       a: "Si ya estás llevando terapia y sientes que no acabas de conectar con tu terapeuta, si no notas avances o simplemente te sientes más cómoda cambiando de profesional, te asignaremos otra psicóloga. Lo más importante es que te sientas a gusto y todo fluya de manera natural; solo así podremos garantizar el éxito de la terapia. Del mismo modo, si no estuviste conforme con tu psicólogo en la primera consulta, te podemos cambiar de especialista sin costo adicional." },
     { id: "reservar", q: "¿Cómo puedo reservar una sesión?",
@@ -13459,15 +13459,15 @@ export function AgendaDudas({ faq, ids, titulo = "¿Tienes dudas?" }) {
 
 export const AGENDA_LOGO = `${import.meta.env.BASE_URL}itaca-logo-h.png`;
 const AGENDA_LOGO_BLANCO = `${import.meta.env.BASE_URL}sitio/itaca-logo-blanco.png`;
-const _ext = { target: "_blank", rel: "noopener" };
+const _ext = { target: "_blank", rel: "noopener noreferrer" };
 
 // Cabecera del sitio: el logo, el menú y la reserva a un clic. Es un sello de
 // "sigues en Ítaca", no una invitación a irse: 62px de alto, texto quieto.
 // `ruta` marca la página actual; `token` arma el enlace de reservas.
-export function AgendaTop({ ruta = "", token = "" }) {
+export function AgendaTop({ ruta = "" }) {
   const actual = normalizarRuta(ruta);
   const [abierto, setAbierto] = useState(false);
-  const hrefCita = rutaAgendar(token) || AGENDA_SITIO.whatsapp;
+  const hrefCita = SITE_ROUTES.agendar;
 
   // El panel se cierra al cambiar de página y con Escape: quien lo abrió con
   // el teclado tiene que poder salir con el teclado.
@@ -13489,7 +13489,7 @@ export function AgendaTop({ ruta = "", token = "" }) {
   return (
     <header className="ag-top">
       <div className="ag-top-in">
-        <a className="ag-top-logo" {...propsEnlace("/")} aria-label="Ítaca Conversemos · inicio">
+        <a className="ag-top-logo" {...propsEnlace(SITE_ROUTES.inicio)} aria-label="Ítaca Conversemos · inicio">
           <img src={AGENDA_LOGO} alt="Ítaca Conversemos" onError={(e) => { e.currentTarget.style.display = "none"; }} />
         </a>
         <nav className="ag-nav" aria-label="Sitio de Ítaca Conversemos">
@@ -13581,7 +13581,7 @@ export function AgendaPie() {
             {" · "}
             {/* Enlace de servicio para el equipo: navegación real, no del SPA
                 del sitio, porque /gestion monta otra aplicación. */}
-            <a className="ag-interno" href="/gestion">Acceso interno</a>
+            <a className="ag-interno" href={SITE_ROUTES.gestion}>Acceso interno</a>
           </span>
         </div>
       </div>
@@ -14140,7 +14140,7 @@ export function AgendarPublico({ token }) {
   // render y los inputs perderían el foco al escribir.
   const marco = (children, extra = null) => (
     <div className="ag">{pila}
-      <AgendaTop token={token} />
+      <AgendaTop />
       <main className="ag-wrap">{children}</main>
       <AgendaPie />
       <AgendaWa />
