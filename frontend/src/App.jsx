@@ -1,17 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
-import {
-  Home, Calendar, Users, Receipt, Search, Plus, Clock, ChevronLeft, ChevronDown,
-  Phone, Cake, X, HeartHandshake, MessageCircle, Check, Pencil, UserPlus, FileText,
-  ClipboardList, BookUser, UserRound,
-  TrendingUp, Download, AlertTriangle, Megaphone, LogOut,
-  Paperclip, Trash2, Activity, Pill, HeartPulse, Copy, BarChart3, UserCog, KeyRound, MapPin,
-  Mic, FolderOpen, Lightbulb, ExternalLink, Bell, GraduationCap,
-  Building2, DoorOpen, ChevronRight, Compass, Send,
-  Shield, Target, Heart, Leaf, Trophy, Award, Sparkles, Landmark,
-  FileSpreadsheet, Presentation, FileDown,
-  Smile, Upload, ArrowUp, ArrowDown, RotateCcw,
-} from "lucide-react";
+import { Activity, AlertTriangle, ArrowDown, ArrowUp, Award, BarChart3, Bell, BookUser, Building2, Cake, Calendar, Check, ChevronDown, ChevronLeft, ChevronRight, ClipboardList, Clock, Compass, Copy, DoorOpen, Download, ExternalLink, FileDown, FileSpreadsheet, FileText, FolderOpen, GraduationCap, Heart, HeartHandshake, HeartPulse, Home, KeyRound, Landmark, Leaf, Lightbulb, LogOut, MapPin, Megaphone, Menu, MessageCircle, Mic, Paperclip, Pencil, Phone, Pill, Plus, Presentation, Receipt, RotateCcw, Search, Send, Shield, Smile, Sparkles, Target, Trash2, TrendingUp, Trophy, Upload, UserCog, UserPlus, UserRound, Users, X } from "lucide-react";
 import { api } from "./api";
 import { MENU_SITIO, TESTS_SITIO, propsEnlace, rutaAgendar, normalizarRuta } from "./rutas";
 import { modeloReporte, modeloTabla, exportarExcel, exportarWord, exportarPowerPoint, exportarPDF, exportarCSV } from "./exportGerencia";
@@ -13469,6 +13458,7 @@ export function AgendaDudas({ faq, ids, titulo = "¿Tienes dudas?" }) {
 }
 
 export const AGENDA_LOGO = `${import.meta.env.BASE_URL}itaca-logo-h.png`;
+const AGENDA_LOGO_BLANCO = `${import.meta.env.BASE_URL}sitio/itaca-logo-blanco.png`;
 const _ext = { target: "_blank", rel: "noopener" };
 
 // Cabecera del sitio: el logo, el menú y la reserva a un clic. Es un sello de
@@ -13476,25 +13466,48 @@ const _ext = { target: "_blank", rel: "noopener" };
 // `ruta` marca la página actual; `token` arma el enlace de reservas.
 export function AgendaTop({ ruta = "", token = "" }) {
   const actual = normalizarRuta(ruta);
+  const [abierto, setAbierto] = useState(false);
+  const hrefCita = rutaAgendar(token) || AGENDA_SITIO.whatsapp;
+
+  // El panel se cierra al cambiar de página y con Escape: quien lo abrió con
+  // el teclado tiene que poder salir con el teclado.
+  useEffect(() => { setAbierto(false); }, [actual]);
+  useEffect(() => {
+    if (!abierto) return undefined;
+    const alTeclear = (e) => { if (e.key === "Escape") setAbierto(false); };
+    window.addEventListener("keydown", alTeclear);
+    return () => window.removeEventListener("keydown", alTeclear);
+  }, [abierto]);
+
+  const enlace = (m, clase) => (
+    <a key={m.href} className={clase} {...propsEnlace(m.href, m.externo)}
+      aria-current={!m.externo && normalizarRuta(m.href) === actual ? "page" : undefined}>
+      {m.label}{m.externo ? <ExternalLink size={13} strokeWidth={2} aria-hidden="true" /> : null}
+    </a>
+  );
+
   return (
     <header className="ag-top">
       <div className="ag-top-in">
         <a className="ag-top-logo" {...propsEnlace("/")} aria-label="Ítaca Conversemos · inicio">
           <img src={AGENDA_LOGO} alt="Ítaca Conversemos" onError={(e) => { e.currentTarget.style.display = "none"; }} />
         </a>
-        <nav aria-label="Sitio de Ítaca Conversemos">
+        <nav className="ag-nav" aria-label="Sitio de Ítaca Conversemos">
           <ul className="ag-menu">
-            {MENU_SITIO.map((m) => (
-              <li key={m.href}>
-                <a {...propsEnlace(m.href, m.externo)}
-                  aria-current={!m.externo && normalizarRuta(m.href) === actual ? "page" : undefined}>
-                  {m.label}{m.externo ? <ExternalLink size={12} strokeWidth={2} aria-hidden="true" /> : null}
-                </a>
-              </li>
-            ))}
+            {MENU_SITIO.map((m) => <li key={m.href}>{enlace(m)}</li>)}
           </ul>
-          <a className="ag-top-cta" href={rutaAgendar(token) || AGENDA_SITIO.whatsapp}>Pide tu cita</a>
+          <a className="ag-top-cta" href={hrefCita}>Pide tu cita</a>
+          <button type="button" className="ag-burger" aria-expanded={abierto} aria-controls="ag-menu-movil"
+            aria-label={abierto ? "Cerrar menú" : "Abrir menú"} onClick={() => setAbierto((v) => !v)}>
+            {abierto ? <X size={22} strokeWidth={2} aria-hidden="true" /> : <Menu size={22} strokeWidth={2} aria-hidden="true" />}
+          </button>
         </nav>
+      </div>
+      <div className="ag-panel" id="ag-menu-movil" hidden={!abierto}>
+        <div className="ag-panel-in">
+          {MENU_SITIO.map((m) => enlace(m))}
+          <a className="ag-top-cta" href={hrefCita}>Pide tu cita</a>
+        </div>
       </div>
     </header>
   );
@@ -13510,7 +13523,7 @@ export function AgendaPie() {
         <div className="ag-pie-cols">
           <div>
             <div className="ag-pie-logo">
-              <img src={AGENDA_LOGO} alt="Ítaca Conversemos" onError={(e) => { e.currentTarget.style.display = "none"; }} />
+              <img src={AGENDA_LOGO_BLANCO} alt="Ítaca Conversemos" onError={(e) => { e.currentTarget.style.display = "none"; }} />
             </div>
             <p className="ag-pie-txt">{AGENDA_SITIO.lema}</p>
             <div className="ag-redes">
@@ -13542,18 +13555,22 @@ export function AgendaPie() {
             </ul>
           </div>
           <div>
+            <h3>Navegación</h3>
+            <ul>
+              {MENU_SITIO.map((m) => (
+                <li key={m.href}>
+                  <a {...propsEnlace(m.href, m.externo)}>
+                    {m.label}{m.externo ? <> <ExternalLink size={11} strokeWidth={2} aria-hidden="true" /></> : null}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </div>
+          <div>
             <h3>Contacto</h3>
             <ul>
               <li><a href={`mailto:${AGENDA_SITIO.correo}`}>{AGENDA_SITIO.correo}</a></li>
               <li><a href={AGENDA_SITIO.whatsapp} {..._ext}>WhatsApp · +51 961 350 844</a></li>
-              <li><a {...propsEnlace("/quienes-somos")}>Quiénes somos</a></li>
-              <li><a {...propsEnlace("/preguntas")}>Preguntas frecuentes</a></li>
-            </ul>
-            <h3>Nuestros test</h3>
-            <ul>
-              {TESTS_SITIO.map((t) => (
-                <li key={t.href}><a {...propsEnlace(t.href, t.externo)}>{t.label} <ExternalLink size={11} strokeWidth={2} aria-hidden="true" /></a></li>
-              ))}
             </ul>
           </div>
         </div>
@@ -13586,7 +13603,7 @@ export function AgendaWa() {
 // su propio sistema. Una sola familia tipográfica, un solo acento, y separación
 // por altura (sombra) en vez de líneas de 1px.
 export const AGENDA_CSS = `
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&display=swap');
 
 .ag {
   /* Los tres colores del logo de Itaca Conversemos, medidos del archivo:
@@ -13602,6 +13619,21 @@ export const AGENDA_CSS = `
   --arena:#EFEAE1; /* bloques destacados: la cita elegida, el resumen */
   --papel:#F7F5F1; --superficie:#FFFEFC; --linea:#E6E1D8;
   --sombra:0 1px 2px rgba(74,54,38,.05), 0 6px 20px rgba(74,54,38,.07);
+
+  /* Sistema visual del sitio (cabecera, pie y páginas de contenido).
+     Convive con los tokens de arriba, que son los del formulario de reservas. */
+  --t-profundo:#0A7D92;   /* turquesa profundo: titulares de acento y botones */
+  --t-hondo:#085E71;      /* petróleo: franjas oscuras y pie (más contraste) */
+  --t-vivo:#00B8D8;       /* turquesa de marca: SOLO superficie, nunca texto */
+  --t-suave:#D7F4FA;      /* celeste suave: fondos de sección y pastillas */
+  --t-sobre-suave:#085E71; /* texto turquesa CUANDO el fondo es celeste */
+  --clinico:#F4FBFD;      /* fondo clínico: el papel del sitio */
+  --crema:#F7F5F1;        /* crema cálido: secciones puntuales */
+  --blanco:#FFFFFF;
+  --txt:#26373A;          /* texto principal */
+  --txt-2:#5C6E71;        /* texto secundario (AA sobre clínico y celeste) */
+  --linea-cl:#DCEBEF;     /* borde sutil sobre fondo clínico */
+  --serif:'Fraunces','Iowan Old Style',Georgia,'Times New Roman',serif;
   --sombra-alta:0 2px 4px rgba(74,54,38,.06), 0 14px 34px rgba(74,54,38,.12);
   --curva:cubic-bezier(.2,.8,.3,1);
   font-family:'Inter',-apple-system,system-ui,sans-serif;
@@ -13859,39 +13891,70 @@ export const AGENDA_CSS = `
    aire). Para que cabecera y pie corran de borde a borde, como en el sitio,
    se anulan solo cuando el root contiene esta página. */
 #root:has(.ag) { max-width:none; padding:0; }
+.ag :where(h1,h2,h3,section,[id]) { scroll-margin-top:96px; }
+
+/* ── Cabecera global ───────────────────────────────────────────────────
+   Una sola fila a 80px: logo · navegación · reservar. El CTA no se envuelve
+   nunca (flex-shrink:0 y nowrap); por debajo de 1000px la navegación se
+   guarda en un panel y queda el botón, que es lo que la gente viene a hacer. */
 .ag-top {
-  position:sticky; top:0; z-index:40;
-  background:rgba(255,254,252,.9); backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px);
-  border-bottom:1px solid var(--linea);
+  position:sticky; top:0; z-index:60;
+  background:rgba(255,255,255,.92); backdrop-filter:saturate(1.6) blur(10px);
+  -webkit-backdrop-filter:saturate(1.6) blur(10px);
+  border-bottom:1px solid rgba(10,125,146,.10);
 }
 .ag-top-in, .ag-pie-in {
-  max-width:1080px; margin:0 auto;
-  padding-left:clamp(18px,4vw,36px); padding-right:clamp(18px,4vw,36px);
+  max-width:1200px; margin:0 auto;
+  padding-left:clamp(20px,4vw,40px); padding-right:clamp(20px,4vw,40px);
 }
-.ag-top-in { height:62px; display:flex; align-items:center; justify-content:space-between; gap:20px; }
-.ag-top-logo { display:flex; align-items:center; flex-shrink:0; }
-.ag-top-logo img { height:36px; width:auto; display:block; }
-.ag-menu { display:flex; align-items:center; gap:clamp(14px,2.6vw,30px); margin:0; padding:0; list-style:none; }
+.ag-top-in { height:80px; display:flex; align-items:center; gap:24px; flex-wrap:nowrap; }
+.ag-top-logo { display:flex; align-items:center; flex-shrink:0; margin-right:auto; }
+.ag-top-logo img { height:44px; width:auto; display:block; }
+.ag-nav { display:flex; align-items:center; gap:4px; min-width:0; }
+.ag-menu { display:flex; align-items:center; gap:2px; margin:0; padding:0; list-style:none; }
 .ag-menu a {
-  position:relative; display:block; padding:6px 0; white-space:nowrap; text-decoration:none;
-  font-size:14.5px; font-weight:500; color:var(--tinta-2); transition:color .14s;
+  display:inline-flex; align-items:center; gap:4px; padding:9px 14px; border-radius:999px;
+  white-space:nowrap; text-decoration:none; font-size:15px; font-weight:500; color:var(--txt-2);
+  transition:color .16s, background .16s;
 }
-.ag-menu a::after {
-  content:''; position:absolute; left:0; right:0; bottom:1px; height:1.5px; background:var(--acento);
-  transform:scaleX(0); transform-origin:left; transition:transform .2s var(--curva);
-}
-.ag-menu a:hover { color:var(--acento); }
-.ag-menu a:hover::after, .ag-menu a[aria-current="page"]::after { transform:scaleX(1); }
-.ag-menu a[aria-current="page"] { color:var(--tinta); font-weight:600; }
-.ag-menu a svg { margin-left:3px; opacity:.5; vertical-align:-1px; }
-/* Reservar, a un clic desde cualquier página: es la acción de todo el sitio. */
+.ag-menu a:hover { color:var(--t-profundo); background:rgba(10,125,146,.06); }
+/* Página actual: una pastilla celeste, no un subrayado suelto. */
+.ag-menu a[aria-current="page"] { color:var(--t-profundo); background:var(--t-suave); font-weight:600; }
+.ag-menu a svg { opacity:.45; }
 .ag-top-cta {
-  flex-shrink:0; display:inline-flex; align-items:center; text-decoration:none;
-  font-size:13.5px; font-weight:600; color:#fff; background:var(--acento);
-  padding:9px 15px; border-radius:9px; white-space:nowrap;
-  transition:background .15s, transform .15s var(--curva);
+  flex-shrink:0; display:inline-flex; align-items:center; white-space:nowrap; text-decoration:none;
+  font-size:14.5px; font-weight:600; color:#fff; background:var(--t-profundo);
+  padding:12px 20px; border-radius:999px; margin-left:8px;
+  transition:background .16s, transform .16s var(--curva), box-shadow .16s var(--curva);
 }
-.ag-top-cta:hover { background:#00647A; transform:translateY(-1px); }
+.ag-top-cta:hover { background:#0B6A7C; transform:translateY(-1px); box-shadow:0 6px 16px rgba(10,125,146,.22); }
+
+/* Botón de menú en móvil */
+.ag-burger {
+  display:none; flex-shrink:0; align-items:center; justify-content:center; gap:0;
+  width:44px; height:44px; padding:0; border:1px solid var(--linea-cl); border-radius:14px;
+  background:var(--blanco); color:var(--t-profundo); cursor:pointer;
+  transition:background .15s, border-color .15s;
+}
+.ag-burger:hover { background:var(--t-suave); border-color:var(--t-suave); }
+.ag-panel {
+  border-top:1px solid var(--linea-cl); background:var(--blanco); border-radius:0;
+  box-shadow:0 14px 28px rgba(8,94,113,.10);
+  animation:ag-baja .18s var(--curva) both;
+}
+.ag-panel-in {
+  max-width:1200px; margin:0 auto; padding:10px clamp(20px,4vw,40px) 20px;
+  display:flex; flex-direction:column;
+}
+.ag-panel a {
+  display:flex; align-items:center; justify-content:space-between; gap:8px;
+  padding:14px 2px; text-decoration:none; font-size:16.5px; font-weight:500; color:var(--txt);
+  border-bottom:1px solid var(--linea-cl);
+}
+.ag-panel a[aria-current="page"] { color:var(--t-profundo); font-weight:600; }
+.ag-panel a svg { opacity:.4; }
+.ag-panel .ag-top-cta { margin:18px 0 0; justify-content:center; padding:15px; font-size:16px; }
+@keyframes ag-baja { from { opacity:0; transform:translateY(-6px); } to { opacity:1; transform:none; } }
 
 /* Señas de confianza en la portada: tres hechos del sitio, sin tarjetas. */
 .ag-senas { display:flex; flex-wrap:wrap; gap:9px 22px; margin:22px 0 0; padding:0; list-style:none; }
@@ -13920,31 +13983,35 @@ export const AGENDA_CSS = `
 .ag-faq .ag-sub { margin-bottom:6px; }
 
 /* Pie: claro, sobre la misma superficie de las tarjetas. */
-.ag-pie { background:var(--superficie); border-top:1px solid var(--linea); margin-top:auto; }
-.ag-pie-in { padding-top:44px; padding-bottom:30px; }
-.ag-pie-cols { display:grid; grid-template-columns:1.4fr 1fr 1fr; gap:36px; }
-.ag-pie-logo img { height:32px; width:auto; display:block; margin-bottom:14px; }
-.ag-pie-txt { font-size:14px; line-height:1.6; color:var(--tinta-2); margin:0; max-width:34ch; }
-.ag-pie h3 { font-size:11px; font-weight:600; letter-spacing:.11em; text-transform:uppercase; color:var(--tinta-3); margin:0 0 12px; }
-.ag-pie ul + h3 { margin-top:24px; }
-.ag-pie ul { list-style:none; margin:0; padding:0; }
-.ag-pie li { margin-bottom:9px; font-size:14px; line-height:1.5; color:var(--tinta-2); }
-.ag-pie a { color:var(--tinta-2); text-decoration:none; transition:color .14s; }
-.ag-pie a:hover { color:var(--acento); }
-.ag-pie-sede strong { display:block; color:var(--tinta); font-weight:600; }
-.ag-pie-sede a { color:var(--acento); font-weight:500; }
-.ag-redes { display:flex; gap:10px; margin-top:16px; }
-.ag-redes a {
-  width:38px; height:38px; border-radius:50%; display:flex; align-items:center; justify-content:center;
-  background:var(--arena); color:var(--tinta); transition:background .15s, color .15s;
+.ag-pie { background:var(--t-hondo); color:#fff; margin-top:auto; }
+.ag-pie-in { padding-top:clamp(48px,6vw,72px); padding-bottom:28px; }
+.ag-pie-cols { display:grid; grid-template-columns:1.5fr 1fr 1.1fr 1.1fr; gap:clamp(28px,4vw,48px); }
+.ag-pie-logo img { height:40px; width:auto; display:block; margin-bottom:16px; }
+.ag-pie-txt { font-size:14.5px; line-height:1.65; color:rgba(255,255,255,.78); margin:0; max-width:32ch; }
+.ag-pie h3 {
+  font-size:11px; font-weight:600; letter-spacing:.14em; text-transform:uppercase;
+  color:rgba(255,255,255,.72); margin:0 0 14px;
 }
-.ag-redes a:hover { background:var(--acento); color:#fff; }
-.ag-interno { color:var(--tinta-3); text-decoration:underline; text-underline-offset:2px; }
-.ag-interno:hover { color:var(--acento); }
+.ag-pie ul { list-style:none; margin:0; padding:0; }
+.ag-pie li { margin-bottom:11px; font-size:14.5px; line-height:1.5; color:rgba(255,255,255,.85); }
+.ag-pie a { color:rgba(255,255,255,.85); text-decoration:none; transition:color .14s; }
+.ag-pie a:hover { color:#fff; text-decoration:underline; text-underline-offset:3px; }
+.ag-pie-sede strong { display:block; color:#fff; font-weight:600; margin-bottom:2px; }
+.ag-pie-sede { color:rgba(255,255,255,.7); }
+.ag-pie-sede a { color:#fff; font-weight:500; }
+.ag-redes { display:flex; gap:10px; margin-top:20px; }
+.ag-redes a {
+  width:36px; height:36px; border-radius:50%; display:flex; align-items:center; justify-content:center;
+  background:rgba(255,255,255,.12); color:#fff; transition:background .15s, transform .15s var(--curva);
+}
+.ag-redes a:hover { background:rgba(255,255,255,.22); transform:translateY(-2px); }
+/* Acceso del equipo: discreto sobre el pie oscuro, pero legible (4.7:1). */
+.ag-interno { color:rgba(255,255,255,.72); text-decoration:underline; text-underline-offset:2px; }
+.ag-interno:hover { color:#fff; }
 .ag-pie-legal {
-  margin-top:34px; padding-top:18px; border-top:1px solid var(--linea);
+  margin-top:clamp(32px,4vw,48px); padding-top:22px; border-top:1px solid rgba(255,255,255,.16);
   display:flex; flex-wrap:wrap; justify-content:space-between; gap:6px 18px;
-  font-size:12.5px; color:var(--tinta-3);
+  font-size:12.5px; color:rgba(255,255,255,.6);
 }
 
 /* WhatsApp flotante, como en todas las páginas del sitio: la salida de quien
@@ -13956,23 +14023,23 @@ export const AGENDA_CSS = `
 }
 .ag-wa:hover { transform:translateY(-2px); box-shadow:0 10px 24px rgba(37,211,102,.42); }
 
+/* Por debajo de 1000px la navegación se guarda tras el botón de menú: así el
+   CTA nunca salta a una segunda fila ni los enlaces se aprietan. */
+@media (max-width:1000px) {
+  .ag-nav .ag-menu { display:none; }
+  .ag-burger { display:inline-flex; }
+}
+@media (min-width:1001px) { .ag-panel { display:none; } }
 @media (max-width:760px) {
-  .ag-top-in { height:auto; flex-wrap:wrap; padding-top:9px; padding-bottom:0; gap:10px; }
-  .ag-top-logo img { height:30px; }
-  .ag-top-in nav { order:3; width:100%; display:flex; align-items:center; gap:12px; }
-  .ag-menu {
-    flex:1; gap:16px; overflow-x:auto; scrollbar-width:none;
-    padding:0 2px 7px; margin:0 -2px; scroll-snap-type:x proximity;
-    /* El degradado del borde avisa que la fila sigue: sin él parece cortada. */
-    -webkit-mask-image:linear-gradient(to right,#000 calc(100% - 26px),transparent);
-    mask-image:linear-gradient(to right,#000 calc(100% - 26px),transparent);
-  }
-  .ag-menu::-webkit-scrollbar { display:none; }
-  .ag-menu li { scroll-snap-align:start; }
-  .ag-menu a { font-size:13.5px; }
-  .ag-top-cta { display:none; }      /* en móvil basta el botón de cada página */
+  .ag-top-in { height:70px; gap:12px; }
+  .ag-top-logo img { height:38px; }
+  .ag-top-cta { padding:11px 16px; font-size:14px; }
   .ag-pie-cols { grid-template-columns:1fr; gap:28px; }
   .ag-pie-legal { padding-right:64px; } /* que el botón de WhatsApp no tape el texto */
+}
+@media (max-width:420px) {
+  .ag-top-cta { padding:10px 13px; font-size:13.5px; }
+  .ag-top-logo img { height:34px; }
 }
 
 @media (max-width:520px) {

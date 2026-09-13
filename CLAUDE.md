@@ -593,3 +593,37 @@ los feriados de Perú. Zona horaria por defecto: `America/Lima` (GMT-5).
      de NPS del commit 9fba2fb). Se reusa `continuidad_mod.pacientes_del_rol(...)`,
      que es la regla de alcance del resto de la vista, en vez de repetirla a mano.
      Sin cambios de modelo ni de permisos. 258 tests de core+pacientes en verde.
+35. ⏳ Dirección visual del sitio · FASE 1 (rama `feature/sitio-diseno`, 2026-09-13,
+   SIN desplegar). El contenido ya estaba, pero el resultado se leía como un wireframe
+   técnico. Esta fase rehace SOLO cabecera, pie y "Quiénes somos"; las otras cuatro
+   páginas siguen intactas (clases `st-*`) hasta que se apruebe el sistema.
+   - **Paleta** (tokens `--t-*` en `.ag`, junto a los del agendamiento, que no se
+     tocan): turquesa profundo #0A7D92, petróleo #085E71, turquesa vivo #00B8D8 solo
+     como superficie, celeste #D7F4FA, fondo clínico #F4FBFD, crema #F7F5F1, texto
+     #26373A y #5C6E71. **Cuatro valores se oscurecieron respecto a lo pedido para
+     cumplir AA**: el secundario #66777A daba 4.47 sobre el clínico; el turquesa como
+     texto sobre celeste, 4.18 (ahí se usa `--t-sobre-suave`); los números 01/02/03 en
+     turquesa vivo, 2.37; los rótulos del pie al 55% de blanco, 3.41.
+   - **Tipografía**: Inter para interfaz y lectura; **Fraunces** (serif humana) solo en
+     titulares y frases emocionales. H1 máx. 56px, lectura 17-18.5px a 63 caracteres.
+   - **Cabecera** (`AgendaTop`): una fila de 80px, logo 44px, menú a la derecha con
+     "Inicio", CTA "Pide tu cita" al extremo que nunca se envuelve; página actual como
+     pastilla celeste. Bajo 1000px la navegación pasa a un panel con botón hamburguesa
+     accesible (`aria-expanded`/`aria-controls`, cierra con Escape) y el CTA se queda.
+   - **Pie** (`AgendaPie`): franja petróleo con el logo blanco de la marca
+     (`public/sitio/itaca-logo-blanco.png`), columnas sedes/navegación/contacto y redes
+     discretas. Conserva el enlace "Acceso interno" del ítem 34, adaptado al fondo.
+   - **Quiénes somos** (`qs-*` en `Sitio.jsx` + `sitio-textos.js`): hero 52/48 con la
+     foto REAL del equipo, servicios 3×2 con iconos lineales, las tres áreas como
+     pilares numerados, modelo integrativo con foto real y cita destacada, franja
+     turquesa de principios y cierre con las sedes en segundo plano. Las fotos salen
+     del propio WordPress (`somos-3` y `000011`), no de IA ni de bancos.
+   - **Ojo**: las descripciones de una línea de los seis servicios NO existían en el
+     WordPress; se redactaron describiendo qué es cada uno (duración y modalidad salen
+     de sus FAQ; la grupal, de su Círculo de Aliados), sin prometer resultados.
+   - Verificado: cabecera de 80px con el CTA en su fila, nada tapado al cargar, saltar a
+     un título lo deja visible (`scroll-margin-top`), sin desborde en 390px, menú móvil
+     accesible, consola limpia, build de Vite y ESLint sin avisos.
+   - **Pendiente**: aprobación para replicar el sistema a Inicio, Psicólogos, Terapias
+     online y Preguntas, y recién entonces publicar (si se publica solo esta fase, las
+     otras cuatro quedan con el marco nuevo y el cuerpo viejo).

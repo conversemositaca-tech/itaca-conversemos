@@ -22,6 +22,7 @@ export function rutaAgendar(token) {
 // Menú del sitio, en el mismo orden que el WordPress. `externo: true` = todavía
 // vive allá.
 export const MENU_SITIO = [
+  { label: "Inicio", href: "/" },
   { label: "Quienes Somos", href: "/quienes-somos" },
   { label: "Psicólogos", href: "/psicologos" },
   { label: "Terapias Online", href: "/terapias-online" },

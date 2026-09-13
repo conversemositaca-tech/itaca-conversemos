@@ -8,7 +8,17 @@
 // El equipo y los precios NO están escritos aquí: salen de `GET /api/sitio/`,
 // o sea de la base del sistema. Si entra o sale un psicólogo, la web cambia sola.
 import { useEffect, useMemo, useState } from "react";
-import { ArrowRight, Check, ChevronDown, Clock, GraduationCap, MapPin, MessageCircle, Shield, Users } from "lucide-react";
+import {
+  ArrowRight, Check, ChevronDown, Clock, Compass, GraduationCap, Heart, HeartHandshake, MapPin,
+  MessageCircle, MessagesSquare, Shield, Sprout, User, Users,
+} from "lucide-react";
+
+// Iconos lineales de los servicios y los principios, en un solo lugar para que
+// el trazo sea el mismo en toda la página.
+const ICONOS_SERVICIO = {
+  individual: User, grupal: Users, pareja: HeartHandshake, vocacional: Compass,
+  desarrollo: Sprout, talleres: MessagesSquare, objetivo: Check, comunidad: Users, aprendizaje: Heart,
+};
 
 import {
   AGENDA_CSS, AGENDA_SEDES, AGENDA_SITIO, AgendaDuda, AgendaPie, AgendaTop, AgendaWa, agendaFaq,
@@ -174,6 +184,155 @@ const SITIO_CSS = `
 }
 `;
 
+// ── Sistema visual nuevo, por ahora solo en "Quiénes somos" ──────────────
+// Vive en clases `qs-*` para no alterar las páginas que todavía no se
+// rediseñan. Ritmo: blanco → celeste → blanco → petróleo → celeste, en vez de
+// una sucesión de tarjetas sobre el mismo fondo.
+const QS_CSS = `
+.qs-tema { background:var(--clinico); color:var(--txt); }
+.qs-wrap { width:100%; max-width:1200px; margin:0 auto; padding-inline:clamp(20px,4vw,40px); }
+.qs-sec { padding-block:clamp(56px,7.5vw,104px); }
+.qs-blanco { background:var(--blanco); }
+.qs-celeste { background:var(--t-suave); }
+.qs-celeste .qs-eyebrow, .qs-celeste .qs-enlace { color:var(--t-sobre-suave); }
+.qs-celeste .qs-btn-linea { color:var(--t-sobre-suave); border-color:rgba(8,94,113,.4); }
+.qs-hondo { background:var(--t-profundo); color:#fff; }
+
+.qs-eyebrow {
+  font-size:12px; font-weight:600; letter-spacing:.18em; text-transform:uppercase;
+  color:var(--t-profundo); margin:0 0 18px;
+}
+.qs-h1 {
+  font-family:var(--serif); font-optical-sizing:auto; font-weight:400;
+  font-size:clamp(34px,4.6vw,56px); line-height:1.08; letter-spacing:-0.015em;
+  color:var(--txt); margin:0 0 22px; max-width:15ch; text-wrap:balance;
+}
+.qs-h2 {
+  font-family:var(--serif); font-optical-sizing:auto; font-weight:400;
+  font-size:clamp(27px,3.2vw,40px); line-height:1.15; letter-spacing:-0.012em;
+  color:var(--txt); margin:0 0 14px; max-width:20ch; text-wrap:balance;
+}
+.qs-h2-c { max-width:24ch; margin-inline:auto; text-align:center; }
+.qs-lee p { font-size:clamp(17px,1.15vw,18.5px); line-height:1.72; color:var(--txt-2); margin:0 0 18px; max-width:63ch; }
+.qs-lee p:last-child { margin-bottom:0; }
+.qs-intro { font-size:17px; line-height:1.7; color:var(--txt-2); margin:0 0 40px; max-width:60ch; }
+.qs-intro-c { text-align:center; margin-inline:auto; }
+
+/* Botones */
+.qs-acciones { display:flex; flex-wrap:wrap; align-items:center; gap:14px 22px; margin-top:34px; }
+.qs-btn {
+  display:inline-flex; align-items:center; gap:9px; text-decoration:none; cursor:pointer;
+  font-family:inherit; font-size:16px; font-weight:600; border:none;
+  padding:16px 28px; border-radius:999px; background:var(--t-profundo); color:#fff;
+  transition:background .16s, transform .16s var(--curva), box-shadow .16s var(--curva);
+}
+.qs-btn:hover { background:#0B6A7C; transform:translateY(-1px); box-shadow:0 8px 20px rgba(10,125,146,.24); }
+.qs-btn svg { transition:transform .16s var(--curva); }
+.qs-btn:hover svg { transform:translateX(3px); }
+.qs-btn-claro { background:#fff; color:var(--t-hondo); }
+.qs-btn-claro:hover { background:#fff; box-shadow:0 8px 20px rgba(0,0,0,.16); }
+.qs-btn-linea {
+  background:transparent; color:var(--t-profundo); border:1.5px solid rgba(10,125,146,.35);
+  padding:14.5px 26px;
+}
+.qs-btn-linea:hover { background:rgba(10,125,146,.06); border-color:var(--t-profundo); box-shadow:none; }
+.qs-enlace {
+  display:inline-flex; align-items:center; gap:7px; font-size:16px; font-weight:600;
+  color:var(--t-profundo); text-decoration:none; border-bottom:1.5px solid rgba(10,125,146,.28);
+  padding-bottom:2px; transition:border-color .16s, gap .16s;
+}
+.qs-enlace:hover { border-color:var(--t-profundo); gap:11px; }
+
+/* 1 · Hero 52/48 con la foto real del equipo */
+.qs-hero { padding-block:clamp(48px,6.5vw,92px); overflow-x:clip; }
+.qs-hero-in { display:grid; gap:clamp(32px,5vw,64px); align-items:center; grid-template-columns:minmax(0,1fr); }
+@media (min-width:940px) { .qs-hero-in { grid-template-columns:52fr 48fr; } }
+.qs-hero-in > * { min-width:0; }
+.qs-foto { position:relative; }
+/* Halo celeste: acompaña a la foto, no la disfraza. */
+.qs-foto::before {
+  content:''; position:absolute; inset:auto -4% -6% -8%; height:72%;
+  background:var(--t-suave); border-radius:48% 52% 46% 54% / 60% 46% 54% 40%; z-index:0;
+}
+.qs-foto img {
+  position:relative; z-index:1; display:block; width:100%; height:auto;
+  border-radius:28px; background:var(--blanco);
+}
+
+/* 2 · Qué hacemos — rejilla 3×2, iconos lineales */
+.qs-serv { display:grid; gap:clamp(18px,2.4vw,30px); grid-template-columns:repeat(auto-fit,minmax(min(260px,100%),1fr)); }
+@media (min-width:900px) { .qs-serv { grid-template-columns:repeat(3,1fr); } }
+.qs-serv li { list-style:none; }
+.qs-serv-ico {
+  width:46px; height:46px; border-radius:14px; display:flex; align-items:center; justify-content:center;
+  background:var(--blanco); color:var(--t-profundo); margin-bottom:14px;
+}
+.qs-serv h3 { font-size:17.5px; font-weight:600; letter-spacing:-0.015em; color:var(--txt); margin:0 0 5px; }
+.qs-serv p { font-size:15px; line-height:1.6; color:var(--txt-2); margin:0; max-width:34ch; }
+
+/* 3 · Áreas — tres pilares numerados, no otra lista con checks */
+.qs-pilares { display:grid; gap:0; margin:0; padding:0; list-style:none; counter-reset:pilar; }
+@media (min-width:880px) { .qs-pilares { grid-template-columns:repeat(3,1fr); } }
+.qs-pilar { position:relative; padding:30px 30px 30px 0; border-top:2px solid var(--t-suave); }
+@media (min-width:880px) {
+  .qs-pilar { padding:34px 34px 10px 0; }
+  .qs-pilar + .qs-pilar { padding-left:34px; }
+}
+.qs-pilar-n {
+  display:block; font-family:var(--serif); font-size:34px; font-weight:400; line-height:1;
+  color:var(--t-profundo); margin-bottom:14px;
+}
+.qs-pilar h3 { font-size:18px; font-weight:600; letter-spacing:-0.015em; color:var(--txt); margin:0 0 7px; max-width:22ch; }
+.qs-pilar p { font-size:15px; line-height:1.6; color:var(--txt-2); margin:0; max-width:32ch; }
+
+/* 4 · Modelo integrativo — composición dividida */
+.qs-modelo { display:grid; gap:clamp(32px,5vw,64px); align-items:center; grid-template-columns:minmax(0,1fr); }
+@media (min-width:940px) { .qs-modelo { grid-template-columns:47fr 53fr; } }
+.qs-modelo > * { min-width:0; }
+.qs-modelo img { display:block; width:100%; height:auto; border-radius:26px; }
+.qs-cita {
+  font-family:var(--serif); font-size:clamp(20px,2.1vw,25px); line-height:1.4; font-weight:400;
+  color:var(--t-profundo); margin:0 0 26px; padding-left:20px; border-left:3px solid var(--t-vivo);
+  max-width:26ch;
+}
+.qs-dims { display:flex; flex-wrap:wrap; gap:9px; margin:26px 0 0; padding:0; list-style:none; }
+.qs-dims li {
+  font-size:14.5px; font-weight:500; color:var(--t-sobre-suave); background:var(--t-suave);
+  border-radius:999px; padding:9px 17px;
+}
+
+/* 5 · En lo que creemos — franja petróleo */
+.qs-creencias { display:grid; gap:0; margin:0; padding:0; list-style:none; }
+@media (min-width:880px) { .qs-creencias { grid-template-columns:repeat(3,1fr); } }
+.qs-creencia { padding:28px 0; border-top:1px solid rgba(255,255,255,.22); }
+@media (min-width:880px) {
+  .qs-creencia { padding:0 34px; border-top:none; border-left:1px solid rgba(255,255,255,.22); }
+  .qs-creencia:first-child { padding-left:0; border-left:none; }
+  .qs-creencia:last-child { padding-right:0; }
+}
+.qs-creencia svg { color:rgba(255,255,255,.85); margin-bottom:16px; }
+.qs-creencia p { font-size:17px; line-height:1.6; color:#fff; margin:0; max-width:28ch; }
+.qs-hondo .qs-h2, .qs-hondo .qs-eyebrow { color:#fff; }
+.qs-hondo .qs-eyebrow { color:rgba(255,255,255,.7); }
+
+/* 6 · Cierre */
+.qs-cierre { text-align:center; }
+.qs-cierre .qs-acciones { justify-content:center; margin-top:30px; }
+.qs-sedes { display:grid; gap:20px; grid-template-columns:repeat(auto-fit,minmax(min(260px,100%),1fr));
+  max-width:720px; margin:44px auto 0; padding-top:26px; border-top:1px solid rgba(10,125,146,.18); }
+.qs-sede { display:flex; gap:11px; text-align:left; justify-content:center; }
+.qs-sede svg { color:var(--t-profundo); flex-shrink:0; margin-top:3px; }
+.qs-sede strong { display:block; font-size:15px; color:var(--txt); letter-spacing:-0.01em; }
+.qs-sede span { display:block; font-size:14px; color:var(--txt-2); line-height:1.5; }
+.qs-sede a { display:inline-block; margin-top:3px; font-size:14px; font-weight:600; color:var(--t-profundo); text-decoration:none; }
+.qs-sede a:hover { text-decoration:underline; }
+
+@media (max-width:600px) {
+  .qs-foto::before { inset:auto -6% -5% -6%; height:60%; }
+  .qs-serv-ico { width:42px; height:42px; }
+}
+`;
+
 const iniciales = (n) => (n || "?").replace(/^lic\.?\s*/i, "").trim().charAt(0).toUpperCase();
 
 /** Enlace de reserva. Sin token todavía (o si la API falló), ofrece WhatsApp:
@@ -334,56 +493,138 @@ function PaginaInicio({ datos, token, faq }) {
   );
 }
 
-// ── Página: quiénes somos ─────────────────────────────────────────────────
+// ── Página: quiénes somos (sistema visual nuevo) ──────────────────────────
 function PaginaQuienes({ token }) {
   const q = QUIENES_SOMOS;
+  const hrefCita = hrefReserva(token);
+  const externo = !hrefCita.startsWith("/");
   return (
     <>
-      <section className="st-hero">
-        <p className="st-rotulo">{q.rotulo}</p>
-        <h1 className="st-h1">{q.titulo}</h1>
-        <div className="st-lee">{q.parrafos.map((p, i) => <p key={i}>{p}</p>)}</div>
-      </section>
-
-      <section className="st-sec st-sec-clara">
-        <div className="st-rej-2">
-          <div>
-            <h2 className="st-h2">{q.queHacemosTitulo}</h2>
-            <p className="st-sub">{q.queHacemosEntrada}</p>
-            <ul className="st-lista">
-              {q.queHacemos.map((x) => (
-                <li key={x}><Check size={17} strokeWidth={2.2} aria-hidden="true" />{x}</li>
-              ))}
-            </ul>
-          </div>
-          <div>
-            <h2 className="st-h2">{q.areasTitulo}</h2>
-            <p className="st-sub">Tres frentes, en este orden.</p>
-            <ul className="st-lista">
-              {q.areas.map((x) => (
-                <li key={x}><Check size={17} strokeWidth={2.2} aria-hidden="true" />{x}</li>
-              ))}
-            </ul>
+      {/* 1 · Hero humano */}
+      <section className="qs-sec qs-hero">
+        <div className="qs-wrap">
+          <div className="qs-hero-in">
+            <div>
+              <p className="qs-eyebrow">{q.eyebrow}</p>
+              <h1 className="qs-h1">{q.titulo}</h1>
+              <div className="qs-lee">{q.entrada.map((p, i) => <p key={i}>{p}</p>)}</div>
+              <div className="qs-acciones">
+                <a className="qs-btn" href={hrefCita} {...(externo ? { target: "_blank", rel: "noopener" } : {})}>
+                  Pide tu cita <ArrowRight size={18} strokeWidth={2.2} aria-hidden="true" />
+                </a>
+                <a className="qs-enlace" {...propsEnlace("/psicologos")}>
+                  Conoce a nuestros psicólogos <ArrowRight size={16} strokeWidth={2.2} aria-hidden="true" />
+                </a>
+              </div>
+            </div>
+            <div className="qs-foto">
+              <img src={`${import.meta.env.BASE_URL}sitio/equipo.jpg`} width="936" height="1024"
+                alt="Tres psicólogos del equipo de Ítaca Conversemos" />
+            </div>
           </div>
         </div>
       </section>
 
-      <section className="st-sec">
-        <h2 className="st-h2">{q.modeloTitulo}</h2>
-        <div className="st-lee" style={{ marginTop: 14 }}>{q.modelo.map((p, i) => <p key={i}>{p}</p>)}</div>
-      </section>
-
-      <section className="st-sec st-sec-clara">
-        <h2 className="st-h2">{q.creenciasTitulo}</h2>
-        <p className="st-sub">Lo que nos repetimos en el equipo.</p>
-        <div className="st-rej">
-          {q.creencias.map((c) => (
-            <div key={c} className="st-card"><p>{c}</p></div>
-          ))}
+      {/* 2 · Qué hacemos */}
+      <section className="qs-sec qs-celeste">
+        <div className="qs-wrap">
+          <h2 className="qs-h2">{q.queHacemosTitulo}</h2>
+          <p className="qs-intro">{q.queHacemosEntrada}</p>
+          <ul className="qs-serv">
+            {q.queHacemos.map((sv) => {
+              const Icono = ICONOS_SERVICIO[sv.icono] || Users;
+              return (
+                <li key={sv.nombre}>
+                  <span className="qs-serv-ico"><Icono size={22} strokeWidth={1.6} aria-hidden="true" /></span>
+                  <h3>{sv.nombre}</h3>
+                  <p>{sv.detalle}</p>
+                </li>
+              );
+            })}
+          </ul>
         </div>
       </section>
 
-      <Cierre token={token} />
+      {/* 3 · Áreas de trabajo */}
+      <section className="qs-sec qs-blanco">
+        <div className="qs-wrap">
+          <h2 className="qs-h2">{q.areasTitulo}</h2>
+          <p className="qs-intro">{q.areasEntrada}</p>
+          <ol className="qs-pilares">
+            {q.areas.map((a, i) => (
+              <li key={a.titulo} className="qs-pilar">
+                <span className="qs-pilar-n">{String(i + 1).padStart(2, "0")}</span>
+                <h3>{a.titulo}</h3>
+                <p>{a.detalle}</p>
+              </li>
+            ))}
+          </ol>
+        </div>
+      </section>
+
+      {/* 4 · Modelo integrativo */}
+      <section className="qs-sec">
+        <div className="qs-wrap">
+          <div className="qs-modelo">
+            <img src={`${import.meta.env.BASE_URL}sitio/consulta.jpg`} width="1024" height="1024"
+              alt="Psicóloga de Ítaca Conversemos durante una sesión en línea" loading="lazy" />
+            <div>
+              <p className="qs-eyebrow">{q.modeloEyebrow}</p>
+              <h2 className="qs-h2">{q.modeloTitulo}</h2>
+              <p className="qs-cita">{q.modeloCita}</p>
+              <div className="qs-lee">{q.modelo.map((p, i) => <p key={i}>{p}</p>)}</div>
+              <ul className="qs-dims">{q.dimensiones.map((d) => <li key={d}>{d}</li>)}</ul>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* 5 · En lo que creemos */}
+      <section className="qs-sec qs-hondo">
+        <div className="qs-wrap">
+          <p className="qs-eyebrow">{q.creenciasEyebrow}</p>
+          <h2 className="qs-h2">{q.creenciasTitulo}</h2>
+          <ul className="qs-creencias" style={{ marginTop: 36 }}>
+            {q.creencias.map((c) => {
+              const Icono = ICONOS_SERVICIO[c.icono] || Heart;
+              return (
+                <li key={c.texto} className="qs-creencia">
+                  <Icono size={26} strokeWidth={1.5} aria-hidden="true" />
+                  <p>{c.texto}</p>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      </section>
+
+      {/* 6 · Cierre */}
+      <section className="qs-sec qs-celeste">
+        <div className="qs-wrap qs-cierre">
+          <h2 className="qs-h2 qs-h2-c">{q.cierreTitulo}</h2>
+          <p className="qs-intro qs-intro-c">{q.cierreTexto}</p>
+          <div className="qs-acciones">
+            <a className="qs-btn" href={hrefCita} {...(externo ? { target: "_blank", rel: "noopener" } : {})}>
+              Pide tu cita <ArrowRight size={18} strokeWidth={2.2} aria-hidden="true" />
+            </a>
+            <a className="qs-btn qs-btn-linea" href={AGENDA_SITIO.whatsapp} target="_blank" rel="noopener">
+              Escríbenos por WhatsApp <MessageCircle size={17} strokeWidth={2} aria-hidden="true" />
+            </a>
+          </div>
+          <div className="qs-sedes">
+            {Object.entries(AGENDA_SEDES).map(([k, se]) => (
+              <div key={k} className="qs-sede">
+                <MapPin size={17} strokeWidth={1.9} aria-hidden="true" />
+                <div>
+                  <strong>{se.label}</strong>
+                  <span>{se.direccion}</span>
+                  <a href={`tel:${se.telefono.replace(/\s/g, "")}`}>{se.telefono}</a>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
     </>
   );
 }
@@ -621,10 +862,10 @@ export function SitioPublico() {
             : <PaginaInicio datos={datos} token={token} faq={faq} />;
 
   return (
-    <div className="ag st-sitio">
-      <style>{AGENDA_CSS}{SITIO_CSS}</style>
+    <div className={`ag st-sitio${ruta === "/quienes-somos" ? " qs-tema" : ""}`}>
+      <style>{AGENDA_CSS}{SITIO_CSS}{QS_CSS}</style>
       <AgendaTop ruta={ruta} token={token} />
-      <main className="st-wrap">{pagina}</main>
+      <main className={ruta === "/quienes-somos" ? "" : "st-wrap"}>{pagina}</main>
       <AgendaPie />
       <AgendaWa />
     </div>
