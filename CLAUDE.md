@@ -624,6 +624,20 @@ los feriados de Perú. Zona horaria por defecto: `America/Lima` (GMT-5).
    - Verificado: cabecera de 80px con el CTA en su fila, nada tapado al cargar, saltar a
      un título lo deja visible (`scroll-margin-top`), sin desborde en 390px, menú móvil
      accesible, consola limpia, build de Vite y ESLint sin avisos.
-   - **Pendiente**: aprobación para replicar el sistema a Inicio, Psicólogos, Terapias
-     online y Preguntas, y recién entonces publicar (si se publica solo esta fase, las
-     otras cuatro quedan con el marco nuevo y el cuerpo viejo).
+   - **FASE 2 (aprobada y aplicada)**: el sistema se replicó a las cuatro páginas
+     restantes y el prefijo pasó de `qs-` a **`sw-`** (sitio web), porque ya no es "el
+     de Quiénes somos". El tema se aplica a todo el sitio (`.ag sw-sitio sw-tema`) y el
+     **sistema viejo `st-*` se eliminó entero** (CSS y helpers `Foto`/`BotonReservar`):
+     0 referencias restantes, nada de CSS muerto en el bundle.
+     · **Inicio**: hero con mosaico de 9 caras reales del equipo, proceso en cuatro
+       pasos numerados en serif, tira de psicólogos sobre celeste, testimonios en dos
+       columnas y dudas clave.
+     · **Psicólogos**: ficha con foto de 76px, colegiatura destacada, frase en serif,
+       enfoque recortado a 3 líneas y "Ver perfil completo" plegable.
+     · **Terapias online**: paquetes con el precio real en serif, temas y públicos como
+       pastillas, Círculo de Aliados en tarjetas y el cierre emocional sobre petróleo.
+     · **Preguntas**: hero propio y acordeón a 17px (se reestiliza `.ag-duda` solo
+       dentro de `.sw-tema`, así que el agendamiento no cambia).
+   - Verificado en las 5 páginas × escritorio y móvil: 0 errores de consola, 0 peticiones
+     fallidas, 0 enlaces rotos, un `<h1>` por página, menú móvil accesible y sin desborde.
+   - **Pendiente**: publicar (sin desplegar todavía).
