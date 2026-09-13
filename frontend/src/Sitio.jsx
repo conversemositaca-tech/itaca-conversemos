@@ -8,207 +8,330 @@
 // El equipo y los precios NO están escritos aquí: salen de `GET /api/sitio/`,
 // o sea de la base del sistema. Si entra o sale un psicólogo, la web cambia sola.
 import { useEffect, useMemo, useState } from "react";
-import { ArrowRight, Check, ChevronDown, Clock, GraduationCap, MapPin, MessageCircle, Shield, Users } from "lucide-react";
+import {
+  ArrowRight, Check, ChevronDown, Clock, Compass, GraduationCap, Heart, HeartHandshake, MapPin,
+  MessageCircle, MessagesSquare, Shield, Sprout, User, Users,
+} from "lucide-react";
+
+// Iconos lineales de los servicios y los principios, en un solo lugar para que
+// el trazo sea el mismo en toda la página.
+const ICONOS_SERVICIO = {
+  individual: User, grupal: Users, pareja: HeartHandshake, vocacional: Compass,
+  desarrollo: Sprout, talleres: MessagesSquare, objetivo: Check, comunidad: Users, aprendizaje: Heart,
+};
 
 import {
   AGENDA_CSS, AGENDA_SEDES, AGENDA_SITIO, AgendaDuda, AgendaPie, AgendaTop, AgendaWa, agendaFaq,
 } from "./App.jsx";
-import { alCambiarRuta, normalizarRuta, propsEnlace, rutaAgendar } from "./rutas";
+import { SITE_ROUTES, alCambiarRuta, propsEnlace, rutaCanonica } from "./rutas";
 import { INICIO, PASOS, PREGUNTAS, PSICOLOGOS, QUIENES_SOMOS, TERAPIAS, TESTIMONIOS } from "./sitio-textos";
 
 // Estilos propios de las páginas de contenido. Se apoyan en los tokens del
 // agendamiento (papel crema, tinta cálida, acento turquesa legible): aquí solo
 // va lo que el formulario no necesitaba —rejillas, secciones anchas, citas—.
-const SITIO_CSS = `
-/* El contenedor .ag es flex en fila (lo hereda del panel): en el agendamiento da
-   igual porque su columna es fija, pero aquí dejaba el <main> al ancho de su
-   contenido —la página de preguntas salía angosta y descentrada respecto al pie—.
-   Apilamos en columna, sin tocar .ag para no alterar el agendamiento ya en vivo. */
-.st-sitio { display:flex; flex-direction:column; align-items:stretch; }
-/* width:100% es imprescindible: dentro de un flex, un elemento con margin auto
-   y sin ancho definido se encoge a su contenido en vez de ocupar la página. */
-.st-wrap { width:100%; max-width:1080px; margin:0 auto; padding-left:clamp(18px,4vw,36px); padding-right:clamp(18px,4vw,36px); overflow-x:clip; }
-.st-wrap * { min-width:0; }
-.st-sec { padding-block:clamp(40px,6.5vw,72px); }
-.st-sec + .st-sec { border-top:1px solid var(--linea); }
-.st-sec-clara { background:var(--superficie); }
-.st-lee { max-width:68ch; }
-.st-lee p { font-size:16px; line-height:1.72; color:var(--tinta-2); margin:0 0 16px; }
-.st-lee p:last-child { margin-bottom:0; }
-.st-rotulo { font-size:11.5px; font-weight:600; letter-spacing:.16em; text-transform:uppercase; color:var(--acento); margin:0 0 10px; }
-.st-h1 { font-size:clamp(32px,6.4vw,52px); line-height:1.05; font-weight:600; letter-spacing:-0.035em; margin:0 0 18px; text-wrap:balance; }
-.st-h2 { font-size:clamp(22px,3.6vw,30px); line-height:1.2; font-weight:600; letter-spacing:-0.028em; margin:0 0 8px; text-wrap:balance; }
-.st-h3 { font-size:17.5px; font-weight:600; letter-spacing:-0.02em; margin:0 0 6px; }
-.st-sub { font-size:16px; line-height:1.6; color:var(--tinta-2); margin:0 0 26px; max-width:60ch; }
+// ── Sistema visual nuevo, por ahora solo en "Quiénes somos" ──────────────
+// Vive en clases `sw-*` para no alterar las páginas que todavía no se
+// rediseñan. Ritmo: blanco → celeste → blanco → petróleo → celeste, en vez de
+// una sucesión de tarjetas sobre el mismo fondo.
+const SW_CSS = `
+/* El contenedor .ag es flex en fila (lo hereda del panel): apilamos en columna
+   para que cabecera, contenido y pie ocupen todo el ancho. No se toca .ag, que
+   es también el marco del agendamiento ya publicado. */
+.sw-sitio { display:flex; flex-direction:column; align-items:stretch; }
+.sw-tema { background:var(--clinico); color:var(--txt); }
+.sw-wrap { width:100%; max-width:1200px; margin:0 auto; padding-inline:clamp(20px,4vw,40px); }
+.sw-sec { padding-block:clamp(56px,7.5vw,104px); }
+.sw-blanco { background:var(--blanco); }
+.sw-celeste { background:var(--t-suave); }
+.sw-celeste .sw-eyebrow, .sw-celeste .sw-enlace { color:var(--t-sobre-suave); }
+.sw-celeste .sw-btn-linea { color:var(--t-sobre-suave); border-color:rgba(8,94,113,.4); }
+.sw-hondo { background:var(--t-profundo); color:#fff; }
 
-/* Portada: el texto manda; las únicas caras del sitio son las del equipo real. */
-.st-hero { padding-block:clamp(44px,8vw,92px) clamp(36px,5vw,60px); }
-.st-hero-in { display:grid; gap:clamp(30px,5vw,56px); align-items:center; grid-template-columns:minmax(0,1fr); }
-.st-hero-in > * { min-width:0; }
-@media (min-width:940px) { .st-hero-in { grid-template-columns:minmax(0,1fr) 340px; } }
-.st-mosaico { display:grid; grid-template-columns:repeat(3,1fr); gap:9px; margin:0; padding:0; list-style:none; }
-.st-mosaico img, .st-mosaico .st-foto-ini {
-  width:100%; height:auto; aspect-ratio:1; border-radius:14px; object-fit:cover; font-size:24px;
+.sw-eyebrow {
+  font-size:12px; font-weight:600; letter-spacing:.18em; text-transform:uppercase;
+  color:var(--t-profundo); margin:0 0 18px;
 }
-.st-mosaico-pie { font-size:13px; line-height:1.5; color:var(--tinta-3); margin:12px 0 0; }
-.st-hero .st-h1 em { font-style:normal; color:var(--acento); }
-.st-hero-lead { font-size:clamp(16.5px,2vw,18.5px); line-height:1.6; color:var(--tinta-2); margin:0 0 28px; max-width:52ch; }
-.st-acciones { display:flex; flex-wrap:wrap; align-items:center; gap:12px 16px; }
-.st-btn {
-  display:inline-flex; align-items:center; gap:7px; text-decoration:none; cursor:pointer;
-  font-family:inherit; font-size:15.5px; font-weight:600; border:none;
-  padding:14px 24px; border-radius:12px; background:var(--acento); color:#fff;
-  box-shadow:0 1px 2px rgba(0,120,140,.2); transition:background .15s, transform .15s var(--curva), box-shadow .15s var(--curva);
+.sw-h1 {
+  font-family:var(--serif); font-optical-sizing:auto; font-weight:400;
+  font-size:clamp(34px,4.6vw,56px); line-height:1.08; letter-spacing:-0.015em;
+  color:var(--txt); margin:0 0 22px; max-width:15ch; text-wrap:balance;
 }
-.st-btn:hover { background:#00647A; transform:translateY(-1px); box-shadow:0 6px 18px rgba(0,120,140,.26); }
-.st-btn svg { transition:transform .16s var(--curva); }
-.st-btn:hover svg { transform:translateX(3px); }
-.st-btn-2 {
-  background:var(--superficie); color:var(--acento); box-shadow:var(--sombra);
-  border:1px solid var(--linea);
+.sw-h2 {
+  font-family:var(--serif); font-optical-sizing:auto; font-weight:400;
+  font-size:clamp(27px,3.2vw,40px); line-height:1.15; letter-spacing:-0.012em;
+  color:var(--txt); margin:0 0 14px; max-width:20ch; text-wrap:balance;
 }
-.st-btn-2:hover { background:var(--arena); color:var(--acento); }
+.sw-h2-c { max-width:24ch; margin-inline:auto; text-align:center; }
+.sw-lee p { font-size:clamp(17px,1.15vw,18.5px); line-height:1.72; color:var(--txt-2); margin:0 0 18px; max-width:63ch; }
+.sw-lee p:last-child { margin-bottom:0; }
+.sw-intro { font-size:17px; line-height:1.7; color:var(--txt-2); margin:0 0 40px; max-width:60ch; }
+.sw-intro-c { text-align:center; margin-inline:auto; }
 
-/* Rejillas */
-.st-rej { display:grid; gap:16px; grid-template-columns:repeat(auto-fit,minmax(min(248px,100%),1fr)); }
-.st-rej-2 { display:grid; gap:clamp(22px,4vw,48px); grid-template-columns:repeat(auto-fit,minmax(min(300px,100%),1fr)); align-items:start; }
-.st-card { background:var(--superficie); border-radius:16px; padding:22px; box-shadow:var(--sombra); }
-.st-card p { font-size:14.5px; line-height:1.62; color:var(--tinta-2); margin:0; }
+/* Botones */
+.sw-acciones { display:flex; flex-wrap:wrap; align-items:center; gap:14px 22px; margin-top:34px; }
+.sw-btn {
+  display:inline-flex; align-items:center; gap:9px; text-decoration:none; cursor:pointer;
+  font-family:inherit; font-size:16px; font-weight:600; border:none;
+  padding:16px 28px; border-radius:999px; background:var(--t-profundo); color:#fff;
+  transition:background .16s, transform .16s var(--curva), box-shadow .16s var(--curva);
+}
+.sw-btn:hover { background:#0B6A7C; transform:translateY(-1px); box-shadow:0 8px 20px rgba(10,125,146,.24); }
+.sw-btn svg { transition:transform .16s var(--curva); }
+.sw-btn:hover svg { transform:translateX(3px); }
+.sw-btn-claro { background:#fff; color:var(--t-hondo); }
+.sw-btn-claro:hover { background:#fff; box-shadow:0 8px 20px rgba(0,0,0,.16); }
+.sw-btn-linea {
+  background:transparent; color:var(--t-profundo); border:1.5px solid rgba(10,125,146,.35);
+  padding:14.5px 26px;
+}
+.sw-btn-linea:hover { background:rgba(10,125,146,.06); border-color:var(--t-profundo); box-shadow:none; }
+.sw-enlace {
+  display:inline-flex; align-items:center; gap:7px; font-size:16px; font-weight:600;
+  color:var(--t-profundo); text-decoration:none; border-bottom:1.5px solid rgba(10,125,146,.28);
+  padding-bottom:2px; transition:border-color .16s, gap .16s;
+}
+.sw-enlace:hover { border-color:var(--t-profundo); gap:11px; }
 
-/* Pasos del proceso: numerados, sin iconos de adorno. */
-.st-pasos { list-style:none; counter-reset:paso; margin:0; padding:0; display:grid; gap:14px; grid-template-columns:repeat(auto-fit,minmax(min(230px,100%),1fr)); }
-.st-pasos li { counter-increment:paso; background:var(--superficie); border-radius:16px; padding:20px; box-shadow:var(--sombra); }
-.st-pasos li::before {
-  content:counter(paso); display:flex; align-items:center; justify-content:center;
-  width:27px; height:27px; margin-bottom:12px; border-radius:50%;
-  background:var(--acento-suave); color:var(--acento); font-size:13.5px; font-weight:700;
+/* 1 · Hero 52/48 con la foto real del equipo */
+.sw-hero { padding-block:clamp(48px,6.5vw,92px); overflow-x:clip; }
+.sw-hero-in { display:grid; gap:clamp(32px,5vw,64px); align-items:center; grid-template-columns:minmax(0,1fr); }
+@media (min-width:940px) { .sw-hero-in { grid-template-columns:52fr 48fr; } }
+.sw-hero-in > * { min-width:0; }
+.sw-foto { position:relative; }
+/* Halo celeste: acompaña a la foto, no la disfraza. */
+.sw-foto::before {
+  content:''; position:absolute; inset:auto -4% -6% -8%; height:72%;
+  background:var(--t-suave); border-radius:48% 52% 46% 54% / 60% 46% 54% 40%; z-index:0;
+}
+.sw-foto img {
+  position:relative; z-index:1; display:block; width:100%; height:auto;
+  border-radius:28px; background:var(--blanco);
 }
 
-/* Listas de temas y servicios: pastillas, no viñetas. */
-.st-chips { display:flex; flex-wrap:wrap; gap:9px; margin:0; padding:0; list-style:none; }
-.st-chips li {
-  font-size:14px; font-weight:500; color:var(--tinta-2); background:var(--superficie);
-  border:1px solid var(--linea); border-radius:999px; padding:8px 15px;
+/* 2 · Qué hacemos — rejilla 3×2, iconos lineales */
+.sw-serv { display:grid; gap:clamp(18px,2.4vw,30px); grid-template-columns:repeat(auto-fit,minmax(min(260px,100%),1fr)); }
+@media (min-width:900px) { .sw-serv { grid-template-columns:repeat(3,1fr); } }
+.sw-serv li { list-style:none; }
+.sw-serv-ico {
+  width:46px; height:46px; border-radius:14px; display:flex; align-items:center; justify-content:center;
+  background:var(--blanco); color:var(--t-profundo); margin-bottom:14px;
 }
-.st-lista { margin:0; padding:0; list-style:none; display:grid; gap:11px; }
-.st-lista li { display:flex; gap:10px; align-items:flex-start; font-size:15.5px; line-height:1.55; color:var(--tinta-2); }
-.st-lista svg { color:var(--acento); flex-shrink:0; margin-top:3px; }
+.sw-serv h3 { font-size:17.5px; font-weight:600; letter-spacing:-0.015em; color:var(--txt); margin:0 0 5px; }
+.sw-serv p { font-size:15px; line-height:1.6; color:var(--txt-2); margin:0; max-width:34ch; }
 
-/* Equipo */
-.st-equipo { display:grid; gap:16px; grid-template-columns:repeat(auto-fill,minmax(min(272px,100%),1fr)); }
-.st-prof { background:var(--superficie); border-radius:18px; padding:22px; box-shadow:var(--sombra); display:flex; flex-direction:column; }
-.st-prof-top { display:flex; align-items:center; gap:14px; }
-.st-prof-nombre { font-size:16.5px; font-weight:600; letter-spacing:-0.02em; margin:0; }
-.st-prof-meta { font-size:12.5px; color:var(--tinta-3); margin:3px 0 0; line-height:1.45; }
-.st-prof-frase {
-  margin:16px 0 0; padding-left:13px; border-left:2px solid var(--acento-suave);
-  font-size:14px; line-height:1.55; color:var(--tinta-2); font-style:italic;
+/* 3 · Áreas — tres pilares numerados, no otra lista con checks */
+.sw-pilares { display:grid; gap:0; margin:0; padding:0; list-style:none; counter-reset:pilar; }
+@media (min-width:880px) { .sw-pilares { grid-template-columns:repeat(3,1fr); } }
+.sw-pilar { position:relative; padding:30px 30px 30px 0; border-top:2px solid var(--t-suave); }
+@media (min-width:880px) {
+  .sw-pilar { padding:34px 34px 10px 0; }
+  .sw-pilar + .sw-pilar { padding-left:34px; }
 }
-.st-prof-datos { margin:16px 0 0; display:grid; gap:9px; }
-.st-dato { font-size:13.5px; line-height:1.5; color:var(--tinta-2); }
-.st-dato strong { display:block; font-size:10.5px; font-weight:600; letter-spacing:.09em; text-transform:uppercase; color:var(--tinta-3); margin-bottom:2px; }
-.st-corta { display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
-.st-perfil { margin-top:14px; border-top:1px solid var(--linea); padding-top:12px; }
-.st-perfil summary {
+.sw-pilar-n {
+  display:block; font-family:var(--serif); font-size:34px; font-weight:400; line-height:1;
+  color:var(--t-profundo); margin-bottom:14px;
+}
+.sw-pilar h3 { font-size:18px; font-weight:600; letter-spacing:-0.015em; color:var(--txt); margin:0 0 7px; max-width:22ch; }
+.sw-pilar p { font-size:15px; line-height:1.6; color:var(--txt-2); margin:0; max-width:32ch; }
+
+/* 4 · Modelo integrativo — composición dividida */
+.sw-modelo { display:grid; gap:clamp(32px,5vw,64px); align-items:center; grid-template-columns:minmax(0,1fr); }
+@media (min-width:940px) { .sw-modelo { grid-template-columns:47fr 53fr; } }
+.sw-modelo > * { min-width:0; }
+.sw-modelo img { display:block; width:100%; height:auto; border-radius:26px; }
+.sw-cita {
+  font-family:var(--serif); font-size:clamp(20px,2.1vw,25px); line-height:1.4; font-weight:400;
+  color:var(--t-profundo); margin:0 0 26px; padding-left:20px; border-left:3px solid var(--t-vivo);
+  max-width:26ch;
+}
+.sw-dims { display:flex; flex-wrap:wrap; gap:9px; margin:26px 0 0; padding:0; list-style:none; }
+.sw-dims li {
+  font-size:14.5px; font-weight:500; color:var(--t-sobre-suave); background:var(--t-suave);
+  border-radius:999px; padding:9px 17px;
+}
+
+/* 5 · En lo que creemos — franja petróleo */
+.sw-creencias { display:grid; gap:0; margin:0; padding:0; list-style:none; }
+@media (min-width:880px) { .sw-creencias { grid-template-columns:repeat(3,1fr); } }
+.sw-creencia { padding:28px 0; border-top:1px solid rgba(255,255,255,.22); }
+@media (min-width:880px) {
+  .sw-creencia { padding:0 34px; border-top:none; border-left:1px solid rgba(255,255,255,.22); }
+  .sw-creencia:first-child { padding-left:0; border-left:none; }
+  .sw-creencia:last-child { padding-right:0; }
+}
+.sw-creencia svg { color:rgba(255,255,255,.85); margin-bottom:16px; }
+.sw-creencia p { font-size:17px; line-height:1.6; color:#fff; margin:0; max-width:28ch; }
+.sw-hondo .sw-h2, .sw-hondo .sw-eyebrow { color:#fff; }
+.sw-lee-claro p { color:rgba(255,255,255,.86); }
+.sw-hondo .sw-eyebrow { color:rgba(255,255,255,.7); }
+
+/* 6 · Cierre */
+.sw-cierre { text-align:center; }
+.sw-cierre .sw-acciones { justify-content:center; margin-top:30px; }
+.sw-sedes { display:grid; gap:20px; grid-template-columns:repeat(auto-fit,minmax(min(260px,100%),1fr));
+  max-width:720px; margin:44px auto 0; padding-top:26px; border-top:1px solid rgba(10,125,146,.18); }
+.sw-sede { display:flex; gap:11px; text-align:left; justify-content:center; }
+.sw-sede svg { color:var(--t-profundo); flex-shrink:0; margin-top:3px; }
+.sw-sede strong { display:block; font-size:15px; color:var(--txt); letter-spacing:-0.01em; }
+.sw-sede span { display:block; font-size:14px; color:var(--txt-2); line-height:1.5; }
+.sw-sede a { display:inline-block; margin-top:3px; font-size:14px; font-weight:600; color:var(--t-profundo); text-decoration:none; }
+.sw-sede a:hover { text-decoration:underline; }
+
+/* ── Psicólogos ──────────────────────────────────────────────────────── */
+.sw-equipo { display:grid; gap:clamp(18px,2.2vw,26px); grid-template-columns:repeat(auto-fill,minmax(min(320px,100%),1fr)); }
+.sw-prof {
+  background:var(--blanco); border-radius:24px; padding:26px; display:flex; flex-direction:column;
+  box-shadow:0 1px 2px rgba(8,94,113,.05), 0 10px 30px rgba(8,94,113,.06);
+}
+.sw-prof-top { display:flex; align-items:center; gap:16px; }
+.sw-prof-foto { width:76px; height:76px; border-radius:50%; object-fit:cover; flex-shrink:0; background:var(--t-suave); }
+.sw-prof-ini { display:flex; align-items:center; justify-content:center; font-weight:600; font-size:27px; color:var(--t-sobre-suave); }
+.sw-prof-nombre { font-size:19px; font-weight:600; letter-spacing:-0.02em; color:var(--txt); margin:0; }
+.sw-prof-meta { font-size:13px; line-height:1.5; color:var(--txt-2); margin:4px 0 0; }
+.sw-prof-cps { font-weight:600; color:var(--t-sobre-suave); }
+.sw-prof-frase {
+  font-family:var(--serif); font-size:16.5px; line-height:1.45; color:var(--t-sobre-suave);
+  margin:20px 0 0; padding-left:16px; border-left:2px solid var(--t-suave);
+}
+.sw-prof-campos { margin:20px 0 0; display:grid; gap:12px; }
+.sw-campo strong {
+  display:block; font-size:10.5px; font-weight:600; letter-spacing:.1em; text-transform:uppercase;
+  color:var(--txt-2); margin-bottom:3px;
+}
+.sw-campo span { font-size:14.5px; line-height:1.55; color:var(--txt-2); }
+.sw-corta { display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
+.sw-prof-pie { margin-top:auto; padding-top:22px; display:flex; flex-wrap:wrap; gap:10px 16px; align-items:center; }
+.sw-prof-pie .sw-btn { padding:12px 20px; font-size:14.5px; }
+.sw-mas { margin-top:18px; border-top:1px solid var(--linea-cl); padding-top:14px; }
+.sw-mas summary {
   display:flex; align-items:center; justify-content:space-between; gap:8px; cursor:pointer;
-  list-style:none; font-size:13.5px; font-weight:600; color:var(--acento); padding:2px 0;
+  list-style:none; font-size:14px; font-weight:600; color:var(--t-sobre-suave); padding:2px 0;
 }
-.st-perfil summary::-webkit-details-marker { display:none; }
-.st-perfil summary svg { transition:transform .18s var(--curva); flex-shrink:0; }
-.st-perfil[open] summary svg { transform:rotate(180deg); }
-.st-perfil .st-prof-datos { margin-top:12px; }
-.st-prof-pie { margin-top:auto; padding-top:18px; display:flex; align-items:center; gap:12px; }
-.st-prof-pie .st-btn { padding:10px 17px; font-size:14px; }
-.st-foto { border-radius:50%; object-fit:cover; flex-shrink:0; width:60px; height:60px; }
-.st-foto-ini { display:flex; align-items:center; justify-content:center; font-weight:600; font-size:22px; background:var(--acento-vivo); color:var(--tinta); }
-.st-tira { display:flex; flex-wrap:wrap; gap:10px; margin:0 0 22px; padding:0; list-style:none; }
-.st-tira img, .st-tira .st-foto-ini { width:54px; height:54px; font-size:19px; }
-
-/* Filtro por sede: pestañas de verdad, no un select escondido. */
-.st-filtros { display:flex; flex-wrap:wrap; gap:9px; margin:0 0 24px; }
-.st-filtro {
-  font-family:inherit; font-size:14.5px; font-weight:500; cursor:pointer; color:var(--tinta-2);
-  background:var(--superficie); border:1px solid var(--linea); border-radius:999px; padding:9px 18px;
+.sw-mas summary::-webkit-details-marker { display:none; }
+.sw-mas summary svg { transition:transform .18s var(--curva); }
+.sw-mas[open] summary svg { transform:rotate(180deg); }
+.sw-filtros { display:flex; flex-wrap:wrap; gap:10px; margin:0 0 34px; }
+.sw-filtro {
+  font-family:inherit; font-size:15px; font-weight:500; cursor:pointer; color:var(--txt-2);
+  background:var(--blanco); border:1px solid var(--linea-cl); border-radius:999px; padding:11px 22px;
   transition:border-color .15s, color .15s, background .15s;
 }
-.st-filtro:hover { border-color:var(--acento); color:var(--acento); }
-.st-filtro[aria-pressed="true"] { background:var(--acento); border-color:var(--acento); color:#fff; }
-
-/* Testimonios: palabras de pacientes, con su nombre. Sin estrellas ni adornos. */
-.st-testis { display:grid; gap:16px; grid-template-columns:repeat(auto-fit,minmax(min(420px,100%),1fr)); }
-.st-testi { background:var(--superficie); border-radius:18px; padding:24px; box-shadow:var(--sombra); display:flex; flex-direction:column; }
-.st-testi { margin:0; }
-.st-testi blockquote { margin:0; }
-.st-testi p { font-size:14.5px; line-height:1.68; color:var(--tinta-2); margin:0 0 16px; }
-.st-testi figcaption { margin-top:auto; display:flex; align-items:center; gap:11px; }
-.st-testi-ini {
-  width:38px; height:38px; border-radius:50%; display:flex; align-items:center; justify-content:center;
-  background:var(--arena); color:var(--acento); font-weight:600; font-size:14px; flex-shrink:0;
+.sw-filtro:hover { border-color:var(--t-profundo); color:var(--t-profundo); }
+.sw-filtro[aria-pressed="true"] { background:var(--t-profundo); border-color:var(--t-profundo); color:#fff; }
+.sw-cargando { font-size:16px; color:var(--txt-2); padding:10px 0; }
+.sw-aviso {
+  background:var(--t-suave); border-radius:20px; padding:24px 26px;
+  font-size:16px; line-height:1.6; color:var(--t-sobre-suave); max-width:62ch;
 }
-.st-testi-quien { display:block; font-size:14.5px; font-weight:600; letter-spacing:-0.01em; }
-.st-testi-rol { display:block; font-size:12.5px; color:var(--tinta-3); margin-top:1px; }
 
-/* Cierre: la invitación a reservar, siempre igual en todas las páginas. */
-.st-cierre { background:var(--arena); border-radius:20px; padding:clamp(26px,4vw,40px); text-align:center; }
-.st-cierre .st-h2 { margin-bottom:10px; }
-.st-cierre p { font-size:15.5px; line-height:1.6; color:var(--tinta-2); margin:0 auto 22px; max-width:48ch; }
-.st-cierre .st-acciones { justify-content:center; }
+/* ── Preguntas ───────────────────────────────────────────────────────── */
+.sw-faq { max-width:820px; }
+.sw-tema .ag-dudas { margin-top:0; }
+.sw-tema .ag-duda { border-top:1px solid var(--linea-cl); }
+.sw-tema .ag-duda:last-of-type { border-bottom:1px solid var(--linea-cl); }
+.sw-tema .ag-duda summary { font-size:17px; font-weight:500; color:var(--txt); padding:22px 0; gap:20px; }
+.sw-tema .ag-duda summary:hover { color:var(--t-sobre-suave); }
+.sw-tema .ag-duda[open] summary { color:var(--t-sobre-suave); font-weight:600; }
+.sw-tema .ag-duda summary svg { color:var(--t-profundo); }
+.sw-tema .ag-duda-txt { font-size:16.5px; line-height:1.72; color:var(--txt-2); max-width:68ch; }
+.sw-tema .ag-rotulo { color:var(--txt-2); }
 
-/* Sedes en el cierre y en contacto */
-.st-sedes { display:grid; gap:14px; grid-template-columns:repeat(auto-fit,minmax(min(250px,100%),1fr)); margin-top:22px; }
-.st-sede { display:flex; gap:11px; text-align:left; }
-.st-sede svg { color:var(--acento); flex-shrink:0; margin-top:2px; }
-.st-sede strong { display:block; font-size:15px; letter-spacing:-0.01em; }
-.st-sede span { display:block; font-size:13.5px; color:var(--tinta-2); line-height:1.45; }
-.st-sede a { display:inline-block; margin-top:3px; font-size:13.5px; font-weight:600; color:var(--acento); text-decoration:none; }
-.st-sede a:hover { text-decoration:underline; }
+/* ── Terapias online ─────────────────────────────────────────────────── */
+.sw-chips { display:flex; flex-wrap:wrap; gap:10px; margin:0; padding:0; list-style:none; }
+.sw-chips li {
+  font-size:15px; font-weight:500; color:var(--txt-2); background:var(--blanco);
+  border:1px solid var(--linea-cl); border-radius:999px; padding:10px 18px;
+}
+.sw-celeste .sw-chips li { background:rgba(255,255,255,.75); border-color:transparent; color:var(--t-sobre-suave); }
+.sw-precios { display:grid; gap:16px; grid-template-columns:repeat(auto-fit,minmax(min(250px,100%),1fr)); }
+.sw-precio {
+  background:var(--blanco); border-radius:20px; padding:24px;
+  box-shadow:0 1px 2px rgba(8,94,113,.05), 0 8px 24px rgba(8,94,113,.05);
+  display:flex; flex-direction:column; gap:10px;
+}
+.sw-precio h3 { font-size:16px; font-weight:600; color:var(--txt); margin:0; letter-spacing:-0.01em; }
+.sw-precio b { font-family:var(--serif); font-size:30px; font-weight:400; color:var(--t-profundo); line-height:1; margin-top:auto; }
+.sw-circulos { display:grid; gap:clamp(18px,2.4vw,26px); grid-template-columns:repeat(auto-fit,minmax(min(300px,100%),1fr)); }
+.sw-circulo { background:var(--blanco); border-radius:24px; padding:28px; }
+.sw-circulo h3 { font-family:var(--serif); font-size:22px; font-weight:400; color:var(--txt); margin:0 0 12px; }
+.sw-circulo .preg { font-size:15px; line-height:1.62; color:var(--t-sobre-suave); margin:0 0 14px; }
+.sw-circulo p { font-size:15.5px; line-height:1.65; color:var(--txt-2); margin:0; }
 
-.st-nota { font-size:13.5px; line-height:1.6; color:var(--tinta-3); margin:18px 0 0; }
-.st-cargando { color:var(--tinta-3); font-size:15px; padding:10px 0; }
-.st-aviso { background:var(--acento-suave); border-radius:14px; padding:16px 18px; font-size:14.5px; line-height:1.55; color:var(--tinta); }
+/* ── Inicio ──────────────────────────────────────────────────────────── */
+.sw-senas { display:flex; flex-wrap:wrap; gap:10px 26px; margin:30px 0 0; padding:0; list-style:none; }
+.sw-senas li { display:flex; align-items:center; gap:9px; font-size:14.5px; font-weight:500; color:var(--txt-2); }
+.sw-senas svg { color:var(--t-profundo); flex-shrink:0; }
+.sw-pasos { display:grid; gap:clamp(16px,2vw,22px); grid-template-columns:repeat(auto-fit,minmax(min(240px,100%),1fr)); margin:0; padding:0; list-style:none; counter-reset:paso; }
+.sw-paso { counter-increment:paso; }
+.sw-paso::before {
+  content:counter(paso,decimal-leading-zero); display:block; font-family:var(--serif);
+  font-size:26px; font-weight:400; color:var(--t-profundo); margin-bottom:10px;
+}
+.sw-paso h3 { font-size:17px; font-weight:600; color:var(--txt); margin:0 0 6px; letter-spacing:-0.015em; }
+.sw-paso p { font-size:15px; line-height:1.6; color:var(--txt-2); margin:0; }
+.sw-caras { display:flex; flex-wrap:wrap; gap:12px; margin:0 0 28px; padding:0; list-style:none; }
+.sw-caras img, .sw-caras .sw-cara-ini {
+  width:64px; height:64px; border-radius:50%; object-fit:cover; display:block; background:var(--t-suave);
+}
+.sw-cara-ini { display:flex; align-items:center; justify-content:center; font-weight:600; color:var(--t-sobre-suave); }
+.sw-testis { display:grid; gap:clamp(18px,2.2vw,26px); grid-template-columns:repeat(auto-fit,minmax(min(420px,100%),1fr)); }
+.sw-testi { background:var(--blanco); border-radius:24px; padding:30px; margin:0; display:flex; flex-direction:column; }
+.sw-testi blockquote { margin:0; }
+.sw-testi p { font-size:16px; line-height:1.72; color:var(--txt-2); margin:0 0 20px; }
+.sw-testi figcaption { margin-top:auto; display:flex; align-items:center; gap:12px; }
+.sw-testi-ini {
+  width:42px; height:42px; border-radius:50%; display:flex; align-items:center; justify-content:center;
+  background:var(--t-suave); color:var(--t-sobre-suave); font-weight:600; font-size:15px; flex-shrink:0;
+}
+.sw-testi-quien { display:block; font-size:15.5px; font-weight:600; color:var(--txt); letter-spacing:-0.01em; }
+.sw-testi-rol { display:block; font-size:13.5px; color:var(--txt-2); margin-top:1px; }
+.sw-mosaico { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin:0; padding:0; list-style:none; }
+.sw-mosaico img, .sw-mosaico .sw-cara-ini {
+  width:100%; height:auto; aspect-ratio:1; border-radius:18px; object-fit:cover; font-size:26px;
+}
+.sw-mosaico-pie { font-size:14px; line-height:1.55; color:var(--txt-2); margin:14px 0 0; }
 
-@media (max-width:560px) {
-  .st-card, .st-prof, .st-testi { padding:18px; }
-  .st-prof-pie { flex-direction:column; align-items:stretch; gap:9px; }
-  .st-prof-pie .st-btn { justify-content:center; }
+@media (max-width:600px) {
+  .sw-foto::before { inset:auto -6% -5% -6%; height:60%; }
+  .sw-circulo, .sw-testi { padding:22px; }
+  .sw-serv-ico { width:42px; height:42px; }
+  .sw-prof { padding:22px; }
+  .sw-prof-foto { width:64px; height:64px; }
+  .sw-prof-pie { flex-direction:column; align-items:stretch; }
+  .sw-prof-pie .sw-btn { justify-content:center; }
 }
 `;
 
 const iniciales = (n) => (n || "?").replace(/^lic\.?\s*/i, "").trim().charAt(0).toUpperCase();
 
-/** Enlace de reserva. Sin token todavía (o si la API falló), ofrece WhatsApp:
- *  una salida que sí funciona, en vez de un botón muerto. */
-function hrefReserva(token) {
-  return rutaAgendar(token) || AGENDA_SITIO.whatsapp;
-}
-
-function BotonReservar({ token, children = "Pide tu cita", clase = "st-btn" }) {
-  const href = hrefReserva(token);
-  const externo = !href.startsWith("/");
-  return (
-    <a className={clase} href={href} {...(externo ? { target: "_blank", rel: "noopener" } : {})}>
-      {children} <ArrowRight size={17} strokeWidth={2.2} aria-hidden="true" />
-    </a>
-  );
+/** Enlace de reserva: el mismo para todos los CTA del sitio, sin depender de
+ *  que la API haya respondido. Sale de SITE_ROUTES. */
+function hrefReserva() {
+  return SITE_ROUTES.agendar;
 }
 
 /** Cierre común: la misma invitación al final de cada página. */
-function Cierre({ token, titulo = "¿Damos el primer paso?", texto }) {
+function Cierre({ titulo = "¿Damos el primer paso?", texto }) {
+  const hrefCita = hrefReserva();
   return (
-    <section className="st-sec">
-      <div className="st-cierre">
-        <h2 className="st-h2">{titulo}</h2>
-        <p>{texto || "Elige sede, psicólogo y horario. Coordinación confirma contigo antes de la sesión y no pagas nada al reservar."}</p>
-        <div className="st-acciones">
-          <BotonReservar token={token} />
-          <a className="st-btn st-btn-2" href={AGENDA_SITIO.whatsapp} target="_blank" rel="noopener">
-            Escríbenos por WhatsApp <MessageCircle size={16} strokeWidth={2} aria-hidden="true" />
+    <section className="sw-sec sw-celeste">
+      <div className="sw-wrap sw-cierre">
+        <h2 className="sw-h2 sw-h2-c">{titulo}</h2>
+        <p className="sw-intro sw-intro-c">
+          {texto || "Elige sede, psicólogo y horario. Coordinación confirma contigo antes de la sesión y no pagas nada al reservar."}
+        </p>
+        <div className="sw-acciones">
+          <a className="sw-btn" href={hrefCita}>
+            Pide tu cita <ArrowRight size={18} strokeWidth={2.2} aria-hidden="true" />
+          </a>
+          <a className="sw-btn sw-btn-linea" href={AGENDA_SITIO.whatsapp} target="_blank" rel="noopener noreferrer">
+            Escríbenos por WhatsApp <MessageCircle size={17} strokeWidth={2} aria-hidden="true" />
           </a>
         </div>
-        <div className="st-sedes">
+        <div className="sw-sedes">
           {Object.entries(AGENDA_SEDES).map(([k, se]) => (
-            <div key={k} className="st-sede">
-              <MapPin size={16} strokeWidth={1.9} aria-hidden="true" />
+            <div key={k} className="sw-sede">
+              <MapPin size={17} strokeWidth={1.9} aria-hidden="true" />
               <div>
                 <strong>{se.label}</strong>
                 <span>{se.direccion}</span>
@@ -222,205 +345,305 @@ function Cierre({ token, titulo = "¿Damos el primer paso?", texto }) {
   );
 }
 
-function Foto({ p, size = 60 }) {
-  return p.foto
-    ? <img className="st-foto" src={p.foto} alt="" style={{ width: size, height: size }} loading="lazy" />
-    : <div className="st-foto st-foto-ini" style={{ width: size, height: size, fontSize: size * 0.36 }} aria-hidden="true">{iniciales(p.nombre)}</div>;
-}
-
 // ── Página: inicio ────────────────────────────────────────────────────────
-function PaginaInicio({ datos, token, faq }) {
-  const equipo = (datos?.equipo || []).slice(0, 8);
-  // Mosaico de la portada: solo caras reales, y en múltiplos de tres para que
-  // la rejilla no quede coja.
-  const conFoto = (datos?.equipo || []).filter((x) => x.foto);
+function PaginaInicio({ datos, faq }) {
+  const equipo = datos?.equipo || [];
+  const conFoto = equipo.filter((x) => x.foto);
   const mosaico = conFoto.slice(0, Math.min(9, Math.floor(conFoto.length / 3) * 3));
-  const totalEquipo = (datos?.equipo || []).length;
+  const hrefCita = hrefReserva();
   return (
     <>
-      <section className="st-hero">
-        <div className="st-hero-in">
-          <div>
-            <p className="st-rotulo">{INICIO.rotulo}</p>
-            <h1 className="st-h1">Este espacio <em>es para ti</em>.</h1>
-            <p className="st-hero-lead">{INICIO.entrada}</p>
-            <div className="st-acciones">
-              <BotonReservar token={token} />
-              <a className="st-btn st-btn-2" {...propsEnlace("/quienes-somos")}>Conócenos</a>
-            </div>
-            <ul className="ag-senas">
-              <li><GraduationCap size={16} strokeWidth={1.9} aria-hidden="true" /> Psicólogos colegiados</li>
-              <li><Shield size={16} strokeWidth={1.9} aria-hidden="true" /> Confidencial por secreto profesional</li>
-              <li><Clock size={16} strokeWidth={1.9} aria-hidden="true" /> Primera consulta de 30 a 45 min</li>
-              <li><Users size={16} strokeWidth={1.9} aria-hidden="true" /> Presencial en Lima y Piura, u online</li>
-            </ul>
-          </div>
-          {mosaico.length >= 6 && (
+      <section className="sw-sec sw-hero">
+        <div className="sw-wrap">
+          <div className="sw-hero-in">
             <div>
-              <ul className="st-mosaico">
-                {mosaico.map((m) => <li key={m.id}><Foto p={m} size={104} /></li>)}
+              <p className="sw-eyebrow">{INICIO.rotulo}</p>
+              <h1 className="sw-h1">Este espacio <em>es para ti</em>.</h1>
+              <div className="sw-lee"><p>{INICIO.entrada}</p></div>
+              <div className="sw-acciones">
+                <a className="sw-btn" href={hrefCita}>
+                  Pide tu cita <ArrowRight size={18} strokeWidth={2.2} aria-hidden="true" />
+                </a>
+                <a className="sw-enlace" {...propsEnlace(SITE_ROUTES.quienesSomos)}>
+                  Conócenos <ArrowRight size={16} strokeWidth={2.2} aria-hidden="true" />
+                </a>
+              </div>
+              <ul className="sw-senas">
+                <li><GraduationCap size={17} strokeWidth={1.8} aria-hidden="true" /> Psicólogos colegiados</li>
+                <li><Shield size={17} strokeWidth={1.8} aria-hidden="true" /> Confidencial por secreto profesional</li>
+                <li><Clock size={17} strokeWidth={1.8} aria-hidden="true" /> Primera consulta de 30 a 45 min</li>
               </ul>
-              <p className="st-mosaico-pie">
-                {totalEquipo} psicólogos colegiados atendiendo en Lima, Piura y en línea.
-              </p>
             </div>
+            {mosaico.length >= 6 && (
+              <div>
+                <ul className="sw-mosaico">
+                  {mosaico.map((m) => (
+                    <li key={m.id}><img src={m.foto} alt="" loading="lazy" /></li>
+                  ))}
+                </ul>
+                <p className="sw-mosaico-pie">
+                  {equipo.length} psicólogos colegiados atendiendo en Lima, Piura y en línea.
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+      </section>
+
+      <section className="sw-sec sw-blanco">
+        <div className="sw-wrap">
+          <h2 className="sw-h2">{INICIO.procesoTitulo}</h2>
+          <p className="sw-intro">{INICIO.procesoRotulo}</p>
+          <ol className="sw-pasos">
+            {PASOS.map((p) => (
+              <li key={p.t} className="sw-paso">
+                <h3>{p.t}</h3>
+                <p>{p.d}</p>
+              </li>
+            ))}
+          </ol>
+        </div>
+      </section>
+
+      <section className="sw-sec sw-celeste">
+        <div className="sw-wrap">
+          <h2 className="sw-h2">{INICIO.equipoTitulo}</h2>
+          <p className="sw-intro">{INICIO.equipoRotulo}</p>
+          {conFoto.length > 0 && (
+            <ul className="sw-caras">
+              {conFoto.slice(0, 10).map((p) => <li key={p.id}><img src={p.foto} alt="" loading="lazy" /></li>)}
+            </ul>
           )}
+          <div className="sw-acciones" style={{ marginTop: 0 }}>
+            <a className="sw-btn sw-btn-linea" {...propsEnlace(SITE_ROUTES.psicologos)}>
+              Conócelos aquí <ArrowRight size={16} strokeWidth={2.2} aria-hidden="true" />
+            </a>
+          </div>
         </div>
       </section>
 
-      <section className="st-sec st-sec-clara">
-        <h2 className="st-h2">{INICIO.procesoTitulo}</h2>
-        <p className="st-sub">{INICIO.procesoRotulo}</p>
-        <ol className="st-pasos">
-          {PASOS.map((p) => (
-            <li key={p.t}>
-              <h3 className="st-h3">{p.t}</h3>
-              <p style={{ fontSize: 14.5, lineHeight: 1.6, color: "var(--tinta-2)", margin: 0 }}>{p.d}</p>
-            </li>
-          ))}
-        </ol>
-      </section>
-
-      <section className="st-sec">
-        <h2 className="st-h2">{INICIO.equipoTitulo}</h2>
-        <p className="st-sub">{INICIO.equipoRotulo}</p>
-        {equipo.length > 0 && (
-          <ul className="st-tira">
-            {equipo.map((p) => <li key={p.id}><Foto p={p} size={54} /></li>)}
-          </ul>
-        )}
-        <div className="st-acciones">
-          <a className="st-btn st-btn-2" {...propsEnlace("/psicologos")}>
-            Conócelos aquí <ArrowRight size={16} strokeWidth={2.2} aria-hidden="true" />
-          </a>
+      <section className="sw-sec">
+        <div className="sw-wrap">
+          <h2 className="sw-h2">{INICIO.testimoniosTitulo}</h2>
+          <p className="sw-intro">{INICIO.testimoniosRotulo}</p>
+          <div className="sw-testis">
+            {TESTIMONIOS.map((t) => (
+              <figure key={t.nombre} className="sw-testi">
+                <blockquote><p>{t.texto}</p></blockquote>
+                <figcaption>
+                  <span className="sw-testi-ini" aria-hidden="true">{iniciales(t.nombre)}</span>
+                  <span>
+                    <span className="sw-testi-quien">{t.nombre}</span>
+                    <span className="sw-testi-rol">Paciente</span>
+                  </span>
+                </figcaption>
+              </figure>
+            ))}
+          </div>
         </div>
       </section>
 
-      <section className="st-sec st-sec-clara">
-        <h2 className="st-h2">{INICIO.testimoniosTitulo}</h2>
-        <p className="st-sub">{INICIO.testimoniosRotulo}</p>
-        <div className="st-testis">
-          {TESTIMONIOS.map((t) => (
-            <figure key={t.nombre} className="st-testi">
-              <blockquote><p>{t.texto}</p></blockquote>
-              <figcaption>
-                <span className="st-testi-ini" aria-hidden="true">{iniciales(t.nombre)}</span>
-                <span>
-                  <span className="st-testi-quien">{t.nombre}</span>
-                  <span className="st-testi-rol">Paciente</span>
-                </span>
-              </figcaption>
-            </figure>
-          ))}
+      <section className="sw-sec sw-blanco">
+        <div className="sw-wrap">
+          <h2 className="sw-h2">Antes de decidirte</h2>
+          <p className="sw-intro">Las que más nos preguntan.</p>
+          <div className="ag-dudas sw-faq">
+            {["costo", "online", "confidencial", "elegir"].map((id) => {
+              const item = faq.find((f) => f.id === id);
+              return item ? <AgendaDuda key={id} item={item} /> : null;
+            })}
+          </div>
+          <p style={{ marginTop: 26 }}>
+            <a className="sw-enlace" {...propsEnlace(SITE_ROUTES.preguntas)}>
+              Ver todas las preguntas <ArrowRight size={16} strokeWidth={2.2} aria-hidden="true" />
+            </a>
+          </p>
         </div>
       </section>
 
-      <section className="st-sec">
-        <h2 className="st-h2">Antes de decidirte</h2>
-        <p className="st-sub">Las que más nos preguntan.</p>
-        <div className="ag-dudas" style={{ marginTop: 0 }}>
-          {["costo", "online", "confidencial", "elegir"].map((id) => {
-            const item = faq.find((f) => f.id === id);
-            return item ? <AgendaDuda key={id} item={item} /> : null;
-          })}
-        </div>
-        <p className="st-nota">
-          <a {...propsEnlace("/preguntas")} style={{ color: "var(--acento)", fontWeight: 600 }}>Ver todas las preguntas</a>
-        </p>
-      </section>
-
-      <Cierre token={token} titulo={INICIO.procesoFrase} />
+      <Cierre titulo={INICIO.procesoFrase} />
     </>
   );
 }
 
-// ── Página: quiénes somos ─────────────────────────────────────────────────
-function PaginaQuienes({ token }) {
+// ── Página: quiénes somos (sistema visual nuevo) ──────────────────────────
+function PaginaQuienes() {
   const q = QUIENES_SOMOS;
+  const hrefCita = hrefReserva();
   return (
     <>
-      <section className="st-hero">
-        <p className="st-rotulo">{q.rotulo}</p>
-        <h1 className="st-h1">{q.titulo}</h1>
-        <div className="st-lee">{q.parrafos.map((p, i) => <p key={i}>{p}</p>)}</div>
-      </section>
-
-      <section className="st-sec st-sec-clara">
-        <div className="st-rej-2">
-          <div>
-            <h2 className="st-h2">{q.queHacemosTitulo}</h2>
-            <p className="st-sub">{q.queHacemosEntrada}</p>
-            <ul className="st-lista">
-              {q.queHacemos.map((x) => (
-                <li key={x}><Check size={17} strokeWidth={2.2} aria-hidden="true" />{x}</li>
-              ))}
-            </ul>
-          </div>
-          <div>
-            <h2 className="st-h2">{q.areasTitulo}</h2>
-            <p className="st-sub">Tres frentes, en este orden.</p>
-            <ul className="st-lista">
-              {q.areas.map((x) => (
-                <li key={x}><Check size={17} strokeWidth={2.2} aria-hidden="true" />{x}</li>
-              ))}
-            </ul>
+      {/* 1 · Hero humano */}
+      <section className="sw-sec sw-hero">
+        <div className="sw-wrap">
+          <div className="sw-hero-in">
+            <div>
+              <p className="sw-eyebrow">{q.eyebrow}</p>
+              <h1 className="sw-h1">{q.titulo}</h1>
+              <div className="sw-lee">{q.entrada.map((p, i) => <p key={i}>{p}</p>)}</div>
+              <div className="sw-acciones">
+                <a className="sw-btn" href={hrefCita}>
+                  Pide tu cita <ArrowRight size={18} strokeWidth={2.2} aria-hidden="true" />
+                </a>
+                <a className="sw-enlace" {...propsEnlace(SITE_ROUTES.psicologos)}>
+                  Conoce a nuestros psicólogos <ArrowRight size={16} strokeWidth={2.2} aria-hidden="true" />
+                </a>
+              </div>
+            </div>
+            <div className="sw-foto">
+              <img src={`${import.meta.env.BASE_URL}sitio/equipo.jpg`} width="936" height="1024"
+                alt="Tres psicólogos del equipo de Ítaca Conversemos" />
+            </div>
           </div>
         </div>
       </section>
 
-      <section className="st-sec">
-        <h2 className="st-h2">{q.modeloTitulo}</h2>
-        <div className="st-lee" style={{ marginTop: 14 }}>{q.modelo.map((p, i) => <p key={i}>{p}</p>)}</div>
-      </section>
-
-      <section className="st-sec st-sec-clara">
-        <h2 className="st-h2">{q.creenciasTitulo}</h2>
-        <p className="st-sub">Lo que nos repetimos en el equipo.</p>
-        <div className="st-rej">
-          {q.creencias.map((c) => (
-            <div key={c} className="st-card"><p>{c}</p></div>
-          ))}
+      {/* 2 · Qué hacemos */}
+      <section className="sw-sec sw-celeste">
+        <div className="sw-wrap">
+          <h2 className="sw-h2">{q.queHacemosTitulo}</h2>
+          <p className="sw-intro">{q.queHacemosEntrada}</p>
+          <ul className="sw-serv">
+            {q.queHacemos.map((sv) => {
+              const Icono = ICONOS_SERVICIO[sv.icono] || Users;
+              return (
+                <li key={sv.nombre}>
+                  <span className="sw-serv-ico"><Icono size={22} strokeWidth={1.6} aria-hidden="true" /></span>
+                  <h3>{sv.nombre}</h3>
+                  <p>{sv.detalle}</p>
+                </li>
+              );
+            })}
+          </ul>
         </div>
       </section>
 
-      <Cierre token={token} />
+      {/* 3 · Áreas de trabajo */}
+      <section className="sw-sec sw-blanco">
+        <div className="sw-wrap">
+          <h2 className="sw-h2">{q.areasTitulo}</h2>
+          <p className="sw-intro">{q.areasEntrada}</p>
+          <ol className="sw-pilares">
+            {q.areas.map((a, i) => (
+              <li key={a.titulo} className="sw-pilar">
+                <span className="sw-pilar-n">{String(i + 1).padStart(2, "0")}</span>
+                <h3>{a.titulo}</h3>
+                <p>{a.detalle}</p>
+              </li>
+            ))}
+          </ol>
+        </div>
+      </section>
+
+      {/* 4 · Modelo integrativo */}
+      <section className="sw-sec">
+        <div className="sw-wrap">
+          <div className="sw-modelo">
+            <img src={`${import.meta.env.BASE_URL}sitio/consulta.jpg`} width="1024" height="1024"
+              alt="Psicóloga de Ítaca Conversemos durante una sesión en línea" loading="lazy" />
+            <div>
+              <p className="sw-eyebrow">{q.modeloEyebrow}</p>
+              <h2 className="sw-h2">{q.modeloTitulo}</h2>
+              <p className="sw-cita">{q.modeloCita}</p>
+              <div className="sw-lee">{q.modelo.map((p, i) => <p key={i}>{p}</p>)}</div>
+              <ul className="sw-dims">{q.dimensiones.map((d) => <li key={d}>{d}</li>)}</ul>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* 5 · En lo que creemos */}
+      <section className="sw-sec sw-hondo">
+        <div className="sw-wrap">
+          <p className="sw-eyebrow">{q.creenciasEyebrow}</p>
+          <h2 className="sw-h2">{q.creenciasTitulo}</h2>
+          <ul className="sw-creencias" style={{ marginTop: 36 }}>
+            {q.creencias.map((c) => {
+              const Icono = ICONOS_SERVICIO[c.icono] || Heart;
+              return (
+                <li key={c.texto} className="sw-creencia">
+                  <Icono size={26} strokeWidth={1.5} aria-hidden="true" />
+                  <p>{c.texto}</p>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      </section>
+
+      {/* 6 · Cierre */}
+      <section className="sw-sec sw-celeste">
+        <div className="sw-wrap sw-cierre">
+          <h2 className="sw-h2 sw-h2-c">{q.cierreTitulo}</h2>
+          <p className="sw-intro sw-intro-c">{q.cierreTexto}</p>
+          <div className="sw-acciones">
+            <a className="sw-btn" href={hrefCita}>
+              Pide tu cita <ArrowRight size={18} strokeWidth={2.2} aria-hidden="true" />
+            </a>
+            <a className="sw-btn sw-btn-linea" href={AGENDA_SITIO.whatsapp} target="_blank" rel="noopener noreferrer">
+              Escríbenos por WhatsApp <MessageCircle size={17} strokeWidth={2} aria-hidden="true" />
+            </a>
+          </div>
+          <div className="sw-sedes">
+            {Object.entries(AGENDA_SEDES).map(([k, se]) => (
+              <div key={k} className="sw-sede">
+                <MapPin size={17} strokeWidth={1.9} aria-hidden="true" />
+                <div>
+                  <strong>{se.label}</strong>
+                  <span>{se.direccion}</span>
+                  <a href={`tel:${se.telefono.replace(/\s/g, "")}`}>{se.telefono}</a>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
     </>
   );
 }
 
 // ── Página: psicólogos (la lista sale de la base) ─────────────────────────
-function TarjetaProfesional({ p, token }) {
-  const meta = [p.titulo, p.colegiatura ? `C.Ps.P. N° ${p.colegiatura}` : "", p.sede_label, p.modalidad_label]
-    .filter(Boolean).join(" · ");
+function TarjetaProfesional({ p }) {
+  const hrefCita = hrefReserva();
+  const extra = [p.problematicas, p.formacion, p.trayectoria].some(Boolean);
   return (
-    <article className="st-prof">
-      <div className="st-prof-top">
-        <Foto p={p} />
+    <article className="sw-prof">
+      <div className="sw-prof-top">
+        {p.foto
+          ? <img className="sw-prof-foto" src={p.foto} alt="" loading="lazy" />
+          : <div className="sw-prof-foto sw-prof-ini" aria-hidden="true">{iniciales(p.nombre)}</div>}
         <div style={{ minWidth: 0 }}>
-          <h3 className="st-prof-nombre">{p.nombre}</h3>
-          <p className="st-prof-meta">{meta}</p>
+          <h3 className="sw-prof-nombre">{p.nombre}</h3>
+          <p className="sw-prof-meta">
+            {p.titulo}
+            {p.colegiatura ? <> · <span className="sw-prof-cps">C.Ps.P. N° {p.colegiatura}</span></> : null}
+            <br />{[p.sede_label, p.modalidad_label].filter(Boolean).join(" · ")}
+          </p>
         </div>
       </div>
-      {p.frase ? <p className="st-prof-frase">{p.frase}</p> : null}
-      <div className="st-prof-datos">
-        {p.enfoque ? <p className="st-dato"><strong>Enfoque</strong><span className="st-corta">{p.enfoque}</span></p> : null}
-        {p.poblaciones ? <p className="st-dato"><strong>Atiende a</strong>{p.poblaciones}</p> : null}
+      {p.frase ? <p className="sw-prof-frase">{p.frase}</p> : null}
+      <div className="sw-prof-campos">
+        {p.enfoque ? <p className="sw-campo"><strong>Enfoque</strong><span className="sw-corta">{p.enfoque}</span></p> : null}
+        {p.poblaciones ? <p className="sw-campo"><strong>Atiende a</strong><span>{p.poblaciones}</span></p> : null}
       </div>
-      {(p.problematicas || p.formacion || p.trayectoria) && (
-        <details className="st-perfil">
+      {extra && (
+        <details className="sw-mas">
           <summary>Ver perfil completo <ChevronDown size={16} strokeWidth={2} aria-hidden="true" /></summary>
-          <div className="st-prof-datos">
-            {p.problematicas ? <p className="st-dato"><strong>Qué trabaja</strong>{p.problematicas}</p> : null}
-            {p.formacion ? <p className="st-dato"><strong>Formación</strong>{p.formacion}</p> : null}
-            {p.trayectoria ? <p className="st-dato"><strong>Trayectoria</strong>{p.trayectoria}</p> : null}
+          <div className="sw-prof-campos">
+            {p.problematicas ? <p className="sw-campo"><strong>Qué trabaja</strong><span>{p.problematicas}</span></p> : null}
+            {p.formacion ? <p className="sw-campo"><strong>Formación</strong><span>{p.formacion}</span></p> : null}
+            {p.trayectoria ? <p className="sw-campo"><strong>Trayectoria</strong><span>{p.trayectoria}</span></p> : null}
           </div>
         </details>
       )}
-      <div className="st-prof-pie">
+      <div className="sw-prof-pie">
         {p.agendable
-          ? <BotonReservar token={token}>Ver sus horarios</BotonReservar>
+          ? (
+            <a className="sw-btn" href={hrefCita}>
+              Ver sus horarios <ArrowRight size={16} strokeWidth={2.2} aria-hidden="true" />
+            </a>
+          )
           : (
-            <a className="st-btn st-btn-2" href={AGENDA_SITIO.whatsapp} target="_blank" rel="noopener">
+            <a className="sw-btn sw-btn-linea" href={AGENDA_SITIO.whatsapp} target="_blank" rel="noopener noreferrer">
               Consultar por WhatsApp <MessageCircle size={16} strokeWidth={2} aria-hidden="true" />
             </a>
           )}
@@ -429,146 +652,171 @@ function TarjetaProfesional({ p, token }) {
   );
 }
 
-function PaginaPsicologos({ datos, token, cargando }) {
+function PaginaPsicologos({ datos, cargando }) {
   const [sede, setSede] = useState("");
   const equipo = useMemo(() => datos?.equipo || [], [datos]);
   const mostrados = sede ? equipo.filter((p) => p.sede === sede) : equipo;
   const sedes = useMemo(() => [...new Set(equipo.map((p) => p.sede))].filter(Boolean), [equipo]);
   return (
     <>
-      <section className="st-hero" style={{ paddingBottom: 0 }}>
-        <p className="st-rotulo">{PSICOLOGOS.rotulo}</p>
-        <h1 className="st-h1">{PSICOLOGOS.titulo}</h1>
-        <p className="st-hero-lead">{PSICOLOGOS.entrada}</p>
+      <section className="sw-sec sw-hero" style={{ paddingBottom: 0 }}>
+        <div className="sw-wrap">
+          <p className="sw-eyebrow">{PSICOLOGOS.rotulo}</p>
+          <h1 className="sw-h1" style={{ maxWidth: "18ch" }}>{PSICOLOGOS.titulo}</h1>
+          <p className="sw-intro" style={{ marginBottom: 0 }}>{PSICOLOGOS.entrada}</p>
+        </div>
       </section>
 
-      <section className="st-sec">
-        {sedes.length > 1 && (
-          <div className="st-filtros" role="group" aria-label="Filtrar por sede">
-            <button type="button" className="st-filtro" aria-pressed={sede === ""} onClick={() => setSede("")}>
-              Todos ({equipo.length})
-            </button>
-            {sedes.map((s) => (
-              <button key={s} type="button" className="st-filtro" aria-pressed={sede === s} onClick={() => setSede(s)}>
-                {AGENDA_SEDES[s]?.label || s} ({equipo.filter((p) => p.sede === s).length})
+      <section className="sw-sec">
+        <div className="sw-wrap">
+          {sedes.length > 1 && (
+            <div className="sw-filtros" role="group" aria-label="Filtrar por sede">
+              <button type="button" className="sw-filtro" aria-pressed={sede === ""} onClick={() => setSede("")}>
+                Todos ({equipo.length})
               </button>
-            ))}
-          </div>
-        )}
-        {cargando ? <p className="st-cargando">Cargando el equipo…</p>
-          : mostrados.length === 0 ? (
-            <div className="st-aviso">
-              No pudimos cargar el equipo en este momento. Escríbenos por WhatsApp y te contamos quién puede atenderte.
-            </div>
-          ) : (
-            <div className="st-equipo">
-              {mostrados.map((p) => <TarjetaProfesional key={p.id} p={p} token={token} />)}
+              {sedes.map((x) => (
+                <button key={x} type="button" className="sw-filtro" aria-pressed={sede === x} onClick={() => setSede(x)}>
+                  {AGENDA_SEDES[x]?.label || x} ({equipo.filter((p) => p.sede === x).length})
+                </button>
+              ))}
             </div>
           )}
+          {cargando ? <p className="sw-cargando">Cargando el equipo…</p>
+            : mostrados.length === 0 ? (
+              <div className="sw-aviso">
+                No pudimos cargar el equipo en este momento. Escríbenos por WhatsApp y te contamos quién puede atenderte.
+              </div>
+            ) : (
+              <div className="sw-equipo">
+                {mostrados.map((p) => <TarjetaProfesional key={p.id} p={p} />)}
+              </div>
+            )}
+        </div>
       </section>
 
-      <Cierre token={token} titulo="¿Ya sabes con quién quieres atenderte?"
+      <Cierre titulo="¿Ya sabes con quién quieres atenderte?"
         texto="Elige su horario y reserva. Si prefieres que te ayudemos a elegir, cuéntanos qué necesitas y coordinación te acompaña." />
     </>
   );
 }
 
 // ── Página: terapias online ───────────────────────────────────────────────
-function PaginaTerapias({ datos, token }) {
+function PaginaTerapias({ datos }) {
   const t = TERAPIAS;
   const servicios = datos?.servicios || [];
+  const hrefCita = hrefReserva();
   return (
     <>
-      <section className="st-hero">
-        <p className="st-rotulo">{t.rotulo}</p>
-        <h1 className="st-h1">{t.titulo}</h1>
-        <p className="st-hero-lead">{t.entradaRotulo}.</p>
-        <div className="st-acciones"><BotonReservar token={token}>Pide tu terapia</BotonReservar></div>
-      </section>
-
-      <section className="st-sec st-sec-clara">
-        <div className="st-rej-2">
-          <div className="st-lee">
-            <h2 className="st-h2">{t.entradaTitulo}</h2>
-            <p style={{ marginTop: 14 }}>{t.cuerpo}</p>
-          </div>
-          <div>
-            <h3 className="st-h3" style={{ marginBottom: 12 }}>{t.paraTitulo}</h3>
-            <ul className="st-chips">{t.para.map((x) => <li key={x}>{x}</li>)}</ul>
+      <section className="sw-sec sw-hero">
+        <div className="sw-wrap">
+          <p className="sw-eyebrow">{t.rotulo}</p>
+          <h1 className="sw-h1">{t.titulo}</h1>
+          <p className="sw-intro" style={{ marginBottom: 0 }}>{t.entradaRotulo}.</p>
+          <div className="sw-acciones">
+            <a className="sw-btn" href={hrefCita}>
+              Pide tu terapia <ArrowRight size={18} strokeWidth={2.2} aria-hidden="true" />
+            </a>
           </div>
         </div>
       </section>
 
-      <section className="st-sec">
-        <h2 className="st-h2">{t.temasTitulo}</h2>
-        <p className="st-sub">Nuestro equipo tiene experiencia en una amplia variedad de problemáticas.</p>
-        <ul className="st-chips">{t.temas.map((x) => <li key={x}>{x}</li>)}</ul>
+      <section className="sw-sec sw-blanco">
+        <div className="sw-wrap">
+          <div className="sw-modelo">
+            <div className="sw-lee">
+              <h2 className="sw-h2">{t.entradaTitulo}</h2>
+              <p style={{ marginTop: 16 }}>{t.cuerpo}</p>
+            </div>
+            <div>
+              <h3 className="sw-h3" style={{ marginBottom: 14 }}>{t.paraTitulo}</h3>
+              <ul className="sw-chips">{t.para.map((x) => <li key={x}>{x}</li>)}</ul>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="sw-sec sw-celeste">
+        <div className="sw-wrap">
+          <h2 className="sw-h2">{t.temasTitulo}</h2>
+          <p className="sw-intro">Nuestro equipo tiene experiencia en una amplia variedad de problemáticas.</p>
+          <ul className="sw-chips">{t.temas.map((x) => <li key={x}>{x}</li>)}</ul>
+        </div>
       </section>
 
       {servicios.length > 0 && (
-        <section className="st-sec st-sec-clara">
-          <h2 className="st-h2">Nuestros paquetes</h2>
-          <p className="st-sub">
-            Precios vigentes del catálogo de la clínica. La primera consulta sirve para conocer a tu psicólogo y
-            definir tu plan; después, tu asesor te ayuda a elegir el paquete y las facilidades de pago.
-          </p>
-          <div className="st-rej">
-            {servicios.map((s) => (
-              <div key={s.nombre} className="st-card">
-                <h3 className="st-h3">{s.nombre}</h3>
-                <p style={{ fontSize: 19, fontWeight: 600, color: "var(--acento)", letterSpacing: "-0.02em" }}>
-                  S/ {Number(s.precio).toFixed(0)}
-                </p>
-              </div>
-            ))}
+        <section className="sw-sec">
+          <div className="sw-wrap">
+            <h2 className="sw-h2">Nuestros paquetes</h2>
+            <p className="sw-intro">
+              Precios vigentes del catálogo de la clínica. La primera consulta sirve para conocer a tu psicólogo y
+              definir tu plan; después, tu asesor te ayuda a elegir el paquete y las facilidades de pago.
+            </p>
+            <div className="sw-precios">
+              {servicios.map((sv) => (
+                <div key={sv.nombre} className="sw-precio">
+                  <h3>{sv.nombre}</h3>
+                  <b>S/ {Number(sv.precio).toFixed(0)}</b>
+                </div>
+              ))}
+            </div>
           </div>
         </section>
       )}
 
-      <section className="st-sec">
-        <p className="st-rotulo">{t.circuloRotulo}</p>
-        <h2 className="st-h2">{t.circuloTitulo}</h2>
-        <p className="st-sub">{t.circuloEntrada}</p>
-        <div className="st-rej">
-          {t.circulos.map((c) => (
-            <div key={c.nombre} className="st-card">
-              <h3 className="st-h3">{c.nombre}</h3>
-              <p style={{ marginBottom: 10, color: "var(--tinta-3)" }}>{c.preguntas}</p>
-              <p>{c.texto}</p>
-            </div>
-          ))}
+      <section className="sw-sec sw-celeste">
+        <div className="sw-wrap">
+          <p className="sw-eyebrow">{t.circuloRotulo}</p>
+          <h2 className="sw-h2">{t.circuloTitulo}</h2>
+          <p className="sw-intro">{t.circuloEntrada}</p>
+          <div className="sw-circulos">
+            {t.circulos.map((c) => (
+              <div key={c.nombre} className="sw-circulo">
+                <h3>{c.nombre}</h3>
+                <p className="preg">{c.preguntas}</p>
+                <p>{c.texto}</p>
+              </div>
+            ))}
+          </div>
         </div>
       </section>
 
-      <section className="st-sec st-sec-clara">
-        <p className="st-rotulo">{t.cierreRotulo}</p>
-        <h2 className="st-h2">{t.cierreTitulo}</h2>
-        <div className="st-lee" style={{ marginTop: 14 }}>{t.cierre.map((p, i) => <p key={i}>{p}</p>)}</div>
+      <section className="sw-sec sw-hondo">
+        <div className="sw-wrap">
+          <p className="sw-eyebrow">{t.cierreRotulo}</p>
+          <h2 className="sw-h2">{t.cierreTitulo}</h2>
+          <div className="sw-lee sw-lee-claro" style={{ marginTop: 18 }}>
+            {t.cierre.map((p, i) => <p key={i}>{p}</p>)}
+          </div>
+        </div>
       </section>
 
-      <Cierre token={token} titulo="Estás a solo un paso"
+      <Cierre titulo="Estás a solo un paso"
         texto="Empecemos el viaje. Elige sede, psicólogo y horario; nosotros confirmamos contigo antes de tu sesión." />
     </>
   );
 }
 
 // ── Página: preguntas frecuentes ──────────────────────────────────────────
-function PaginaPreguntas({ token, faq }) {
+function PaginaPreguntas({ faq }) {
   return (
     <>
-      <section className="st-hero" style={{ paddingBottom: 0 }}>
-        <p className="st-rotulo">{PREGUNTAS.rotulo}</p>
-        <h1 className="st-h1">{PREGUNTAS.titulo}</h1>
-        <p className="st-hero-lead">{PREGUNTAS.entrada}</p>
-      </section>
-
-      <section className="st-sec">
-        <div className="ag-dudas" style={{ marginTop: 0 }}>
-          {faq.map((item) => <AgendaDuda key={item.id} item={item} />)}
+      <section className="sw-sec sw-hero" style={{ paddingBottom: 0 }}>
+        <div className="sw-wrap">
+          <p className="sw-eyebrow">{PREGUNTAS.rotulo}</p>
+          <h1 className="sw-h1">{PREGUNTAS.titulo}</h1>
+          <p className="sw-intro" style={{ marginBottom: 0 }}>{PREGUNTAS.entrada}</p>
         </div>
       </section>
 
-      <Cierre token={token} titulo="¿Te quedó alguna duda?"
+      <section className="sw-sec">
+        <div className="sw-wrap">
+          <div className="ag-dudas sw-faq">
+            {faq.map((item) => <AgendaDuda key={item.id} item={item} />)}
+          </div>
+        </div>
+      </section>
+
+      <Cierre titulo="¿Te quedó alguna duda?"
         texto="Escríbenos por WhatsApp y te respondemos. Si ya lo tienes claro, puedes reservar tu primera consulta ahora." />
     </>
   );
@@ -576,19 +824,19 @@ function PaginaPreguntas({ token, faq }) {
 
 // ── Raíz del sitio: ruta, datos y marco ───────────────────────────────────
 const TITULOS = {
-  "/": "Ítaca Conversemos · Terapia psicológica en Lima y Piura",
-  "/quienes-somos": "Quiénes somos · Ítaca Conversemos",
-  "/psicologos": "Nuestros psicólogos · Ítaca Conversemos",
-  "/terapias-online": "Terapias online · Ítaca Conversemos",
-  "/preguntas": "Preguntas frecuentes · Ítaca Conversemos",
+  [SITE_ROUTES.inicio]: "Ítaca Conversemos · Terapia psicológica en Lima y Piura",
+  [SITE_ROUTES.quienesSomos]: "Quiénes somos · Ítaca Conversemos",
+  [SITE_ROUTES.psicologos]: "Nuestros psicólogos · Ítaca Conversemos",
+  [SITE_ROUTES.terapias]: "Terapias online · Ítaca Conversemos",
+  [SITE_ROUTES.preguntas]: "Preguntas frecuentes · Ítaca Conversemos",
 };
 
 export function SitioPublico() {
-  const [ruta, setRuta] = useState(() => normalizarRuta(window.location.pathname));
+  const [ruta, setRuta] = useState(() => rutaCanonica(window.location.pathname));
   const [datos, setDatos] = useState(null);
   const [cargando, setCargando] = useState(true);
 
-  useEffect(() => alCambiarRuta(() => setRuta(normalizarRuta(window.location.pathname))), []);
+  useEffect(() => alCambiarRuta(() => setRuta(rutaCanonica(window.location.pathname))), []);
 
   useEffect(() => {
     let vivo = true;
@@ -601,11 +849,15 @@ export function SitioPublico() {
   }, []);
 
   useEffect(() => {
-    document.title = TITULOS[ruta] || TITULOS["/"];
+    document.title = TITULOS[ruta] || TITULOS[SITE_ROUTES.inicio];
     document.documentElement.lang = "es";
+    // Si se entró por un alias (o con barra final), la barra de direcciones se
+    // queda con la forma canónica, sin añadir una entrada al historial.
+    if (window.location.pathname !== ruta) {
+      window.history.replaceState({}, "", ruta + window.location.search + window.location.hash);
+    }
   }, [ruta]);
 
-  const token = datos?.token_agenda || "";
   // El precio de la primera consulta sale del catálogo real; si no está
   // publicado, el que dice el sitio. Mismo criterio que en el agendamiento.
   const faq = useMemo(() => {
@@ -614,17 +866,17 @@ export function SitioPublico() {
   }, [datos]);
 
   const pagina =
-    ruta === "/quienes-somos" ? <PaginaQuienes token={token} />
-      : ruta === "/psicologos" ? <PaginaPsicologos datos={datos} token={token} cargando={cargando} />
-        : ruta === "/terapias-online" ? <PaginaTerapias datos={datos} token={token} />
-          : ruta === "/preguntas" ? <PaginaPreguntas token={token} faq={faq} />
-            : <PaginaInicio datos={datos} token={token} faq={faq} />;
+    ruta === SITE_ROUTES.quienesSomos ? <PaginaQuienes />
+      : ruta === SITE_ROUTES.psicologos ? <PaginaPsicologos datos={datos} cargando={cargando} />
+        : ruta === SITE_ROUTES.terapias ? <PaginaTerapias datos={datos} />
+          : ruta === SITE_ROUTES.preguntas ? <PaginaPreguntas faq={faq} />
+            : <PaginaInicio datos={datos} faq={faq} />;
 
   return (
-    <div className="ag st-sitio">
-      <style>{AGENDA_CSS}{SITIO_CSS}</style>
-      <AgendaTop ruta={ruta} token={token} />
-      <main className="st-wrap">{pagina}</main>
+    <div className="ag sw-sitio sw-tema">
+      <style>{AGENDA_CSS}{SW_CSS}</style>
+      <AgendaTop ruta={ruta} />
+      <main>{pagina}</main>
       <AgendaPie />
       <AgendaWa />
     </div>

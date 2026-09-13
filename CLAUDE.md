@@ -593,3 +593,75 @@ los feriados de Perú. Zona horaria por defecto: `America/Lima` (GMT-5).
      de NPS del commit 9fba2fb). Se reusa `continuidad_mod.pacientes_del_rol(...)`,
      que es la regla de alcance del resto de la vista, en vez de repetirla a mano.
      Sin cambios de modelo ni de permisos. 258 tests de core+pacientes en verde.
+35. ⏳ Dirección visual del sitio · FASE 1 (rama `feature/sitio-diseno`, 2026-09-13,
+   SIN desplegar). El contenido ya estaba, pero el resultado se leía como un wireframe
+   técnico. Esta fase rehace SOLO cabecera, pie y "Quiénes somos"; las otras cuatro
+   páginas siguen intactas (clases `st-*`) hasta que se apruebe el sistema.
+   - **Paleta** (tokens `--t-*` en `.ag`, junto a los del agendamiento, que no se
+     tocan): turquesa profundo #0A7D92, petróleo #085E71, turquesa vivo #00B8D8 solo
+     como superficie, celeste #D7F4FA, fondo clínico #F4FBFD, crema #F7F5F1, texto
+     #26373A y #5C6E71. **Cuatro valores se oscurecieron respecto a lo pedido para
+     cumplir AA**: el secundario #66777A daba 4.47 sobre el clínico; el turquesa como
+     texto sobre celeste, 4.18 (ahí se usa `--t-sobre-suave`); los números 01/02/03 en
+     turquesa vivo, 2.37; los rótulos del pie al 55% de blanco, 3.41.
+   - **Tipografía**: Inter para interfaz y lectura; **Fraunces** (serif humana) solo en
+     titulares y frases emocionales. H1 máx. 56px, lectura 17-18.5px a 63 caracteres.
+   - **Cabecera** (`AgendaTop`): una fila de 80px, logo 44px, menú a la derecha con
+     "Inicio", CTA "Pide tu cita" al extremo que nunca se envuelve; página actual como
+     pastilla celeste. Bajo 1000px la navegación pasa a un panel con botón hamburguesa
+     accesible (`aria-expanded`/`aria-controls`, cierra con Escape) y el CTA se queda.
+   - **Pie** (`AgendaPie`): franja petróleo con el logo blanco de la marca
+     (`public/sitio/itaca-logo-blanco.png`), columnas sedes/navegación/contacto y redes
+     discretas. Conserva el enlace "Acceso interno" del ítem 34, adaptado al fondo.
+   - **Quiénes somos** (`qs-*` en `Sitio.jsx` + `sitio-textos.js`): hero 52/48 con la
+     foto REAL del equipo, servicios 3×2 con iconos lineales, las tres áreas como
+     pilares numerados, modelo integrativo con foto real y cita destacada, franja
+     turquesa de principios y cierre con las sedes en segundo plano. Las fotos salen
+     del propio WordPress (`somos-3` y `000011`), no de IA ni de bancos.
+   - **Ojo**: las descripciones de una línea de los seis servicios NO existían en el
+     WordPress; se redactaron describiendo qué es cada uno (duración y modalidad salen
+     de sus FAQ; la grupal, de su Círculo de Aliados), sin prometer resultados.
+   - Verificado: cabecera de 80px con el CTA en su fila, nada tapado al cargar, saltar a
+     un título lo deja visible (`scroll-margin-top`), sin desborde en 390px, menú móvil
+     accesible, consola limpia, build de Vite y ESLint sin avisos.
+   - **FASE 2 (aprobada y aplicada)**: el sistema se replicó a las cuatro páginas
+     restantes y el prefijo pasó de `qs-` a **`sw-`** (sitio web), porque ya no es "el
+     de Quiénes somos". El tema se aplica a todo el sitio (`.ag sw-sitio sw-tema`) y el
+     **sistema viejo `st-*` se eliminó entero** (CSS y helpers `Foto`/`BotonReservar`):
+     0 referencias restantes, nada de CSS muerto en el bundle.
+     · **Inicio**: hero con mosaico de 9 caras reales del equipo, proceso en cuatro
+       pasos numerados en serif, tira de psicólogos sobre celeste, testimonios en dos
+       columnas y dudas clave.
+     · **Psicólogos**: ficha con foto de 76px, colegiatura destacada, frase en serif,
+       enfoque recortado a 3 líneas y "Ver perfil completo" plegable.
+     · **Terapias online**: paquetes con el precio real en serif, temas y públicos como
+       pastillas, Círculo de Aliados en tarjetas y el cierre emocional sobre petróleo.
+     · **Preguntas**: hero propio y acordeón a 17px (se reestiliza `.ag-duda` solo
+       dentro de `.sw-tema`, así que el agendamiento no cambia).
+   - Verificado en las 5 páginas × escritorio y móvil: 0 errores de consola, 0 peticiones
+     fallidas, 0 enlaces rotos, un `<h1>` por página, menú móvil accesible y sin desborde.
+   - **Pendiente**: publicar (sin desplegar todavía).
+36. ✓ Navegación: una sola fuente de verdad para las rutas (2026-09-13).
+   Cada componente escribía sus destinos a mano y el enlace de reservas dependía del
+   token que devolvía la API, así que convivían `/preguntas` y `/preguntas-frecuentes`,
+   tokens distintos según el entorno y enlaces al WordPress.
+   - **`SITE_ROUTES`** (en `frontend/src/rutas.js`, `Object.freeze`) es ahora el único
+     lugar donde vive un destino interno: inicio · quienesSomos · psicologos · terapias ·
+     preguntas · **agendar** (con el token público `PmFaG9KH…`, fijo: si se regenera
+     desde Captación hay que actualizarlo AHÍ) · gestion. `MENU_SITIO`, `RUTAS_SITIO`,
+     los títulos, la cabecera, el pie, el FAQ y todos los CTA salen de ella.
+   - **La canónica de preguntas pasó a `/preguntas-frecuentes`**; `/preguntas` queda como
+     **alias** (`ALIAS_RUTAS`) porque era la dirección ya publicada. `rutaCanonica()`
+     resuelve alias y barra final, y la URL se normaliza con `replaceState` al entrar.
+   - **Blog y los tres test del WordPress quedaron OCULTOS** (`MOSTRAR_WORDPRESS = false`):
+     el certificado de conversemos.itaca.com.pe venció el 6 ene 2026 y enviar visitantes
+     ahí es mandarlos a una advertencia de sitio no seguro. Se reactivan poniendo esa
+     constante en true cuando se renueve el certificado.
+   - Los externos (Instagram, Facebook, WhatsApp) llevan `rel="noopener noreferrer"`;
+     correo y teléfonos conservan `mailto:`/`tel:`. Ningún enlace interno abre pestaña.
+   - **Auditoría automática**: `scratchpad/auditoria_navegacion.py` inventaría cada enlace
+     visible de las 6 páginas (34 distintos), marca destinos inertes/WordPress/tokens
+     ajenos/rutas desconocidas, hace clic en 13 CTA comprobando el destino contra
+     SITE_ROUTES, y repite la navegación en móvil. Resultado: sin errores.
+   - Verificado: `manage.py check`, 46 tests (core.tests_sitio + pacientes), build de Vite,
+     ESLint sin avisos nuevos (App.jsx bajó de 106 a 105 al quitar una prop sin uso).

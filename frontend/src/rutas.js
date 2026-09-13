@@ -1,43 +1,66 @@
-// Rutas públicas del sitio (inicio, quiénes somos, psicólogos, terapias,
-// preguntas) y la navegación entre ellas.
+// Rutas públicas del sitio y la navegación entre ellas.
 //
 // Vive aparte de App.jsx a propósito: la cabecera (que está en App.jsx, junto al
 // agendamiento) necesita saber a dónde llevan sus enlaces, y las páginas del
 // sitio necesitan la cabecera. Con este módulo en medio no hay import circular.
-//
-// El blog y los tres test siguen en el WordPress: se marcan `externo` para que
-// la cabecera los abra allá en vez de dejar una ruta interna rota.
+
+/**
+ * ÚNICA fuente de verdad de los destinos internos. Ningún componente debe
+ * escribir una ruta a mano: si un enlace no sale de aquí, es un bug.
+ *
+ * `agendar` lleva el token de captación público de la clínica. Va fijo a
+ * propósito —es el enlace que ya se reparte por WhatsApp y campañas— así que
+ * si alguna vez se regenera desde Captación, hay que actualizarlo AQUÍ.
+ */
+export const SITE_ROUTES = Object.freeze({
+  inicio: "/",
+  quienesSomos: "/quienes-somos",
+  psicologos: "/psicologos",
+  terapias: "/terapias-online",
+  preguntas: "/preguntas-frecuentes",
+  agendar: "/agendar/PmFaG9KH4EOQF2BZ2MCHcupVu70rUxZG",
+  gestion: "/gestion",
+});
 
 export const SITIO_WP = "https://conversemos.itaca.com.pe";
 
-// Enlace público de reservas. Sale del token de captación que entrega
-// `GET /api/sitio/`; esta constante es solo el respaldo para que el botón
-// nunca quede muerto si la API todavía no respondió.
-export const RUTA_AGENDAR = "/agendar";
+/**
+ * El blog y los tres test siguen en el WordPress, pero su certificado venció el
+ * 6 de enero de 2026: cualquiera que los abra choca con la advertencia de sitio
+ * no seguro. Hasta que se renueve, NO se enlazan desde aquí.
+ * Para volver a mostrarlos basta poner esto en true.
+ */
+export const MOSTRAR_WORDPRESS = false;
 
-export function rutaAgendar(token) {
-  return token ? `${RUTA_AGENDAR}/${token}` : "";
-}
-
-// Menú del sitio, en el mismo orden que el WordPress. `externo: true` = todavía
-// vive allá.
-export const MENU_SITIO = [
-  { label: "Quienes Somos", href: "/quienes-somos" },
-  { label: "Psicólogos", href: "/psicologos" },
-  { label: "Terapias Online", href: "/terapias-online" },
-  { label: "Preguntas", href: "/preguntas" },
+const ENLACES_WP = [
   { label: "Blog", href: `${SITIO_WP}/blog/`, externo: true },
 ];
 
-export const TESTS_SITIO = [
+export const TESTS_SITIO = MOSTRAR_WORDPRESS ? [
   { label: "Test de Ansiedad", href: `${SITIO_WP}/test-de-ansiedad/`, externo: true },
   { label: "Test de Dependencia Emocional", href: `${SITIO_WP}/test-de-dependencia-emocional/`, externo: true },
   { label: "Test de Depresión", href: `${SITIO_WP}/test-de-depresion/`, externo: true },
+] : [];
+
+// Menú del sitio. Todos los destinos salen de SITE_ROUTES.
+export const MENU_SITIO = [
+  { label: "Inicio", href: SITE_ROUTES.inicio },
+  { label: "Quienes Somos", href: SITE_ROUTES.quienesSomos },
+  { label: "Psicólogos", href: SITE_ROUTES.psicologos },
+  { label: "Terapias Online", href: SITE_ROUTES.terapias },
+  { label: "Preguntas", href: SITE_ROUTES.preguntas },
+  ...(MOSTRAR_WORDPRESS ? ENLACES_WP : []),
 ];
 
-// Rutas que sirve el sitio público (el catch-all de Django ya devuelve el SPA
-// en cualquiera de ellas).
-export const RUTAS_SITIO = ["/", "/quienes-somos", "/psicologos", "/terapias-online", "/preguntas"];
+// Rutas que sirve el sitio público. `/preguntas` se mantiene como alias: era la
+// dirección publicada antes de que la canónica pasara a `/preguntas-frecuentes`,
+// y romperla dejaría enlaces muertos fuera de nuestro control.
+export const ALIAS_RUTAS = Object.freeze({ "/preguntas": SITE_ROUTES.preguntas });
+
+export const RUTAS_SITIO = [
+  SITE_ROUTES.inicio, SITE_ROUTES.quienesSomos, SITE_ROUTES.psicologos,
+  SITE_ROUTES.terapias, SITE_ROUTES.preguntas, ...Object.keys(ALIAS_RUTAS),
+];
 
 // Prefijos que NO son del sitio: el panel interno, las páginas públicas por
 // token y todo lo que resuelve Django. La lista es explícita para que añadir
@@ -51,6 +74,12 @@ export const RESERVADAS = ["/gestion", "/agendar", "/consentimiento", "/api", "/
 export function esRutaReservada(pathname) {
   const p = normalizarRuta(pathname);
   return RESERVADAS.some((r) => p === r || p.startsWith(`${r}/`));
+}
+
+/** Devuelve la dirección canónica de una ruta (resuelve alias y barra final). */
+export function rutaCanonica(pathname) {
+  const p = normalizarRuta(pathname);
+  return ALIAS_RUTAS[p] || p;
 }
 
 export function esRutaSitio(pathname) {

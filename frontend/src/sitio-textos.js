@@ -62,39 +62,61 @@ export const TESTIMONIOS = [
 ];
 
 export const QUIENES_SOMOS = {
-  titulo: "¿Quiénes somos?",
-  rotulo: "Conócenos y da el primer paso",
-  parrafos: [
-    "Conversemos es un espacio creado para ti. Es un espacio dedicado para cuidar de nuestra salud mental y para todos los que buscan un espacio para mirar dentro y sanar. Conversemos es un espacio donde podemos cuestionarnos, informarnos y conversar sin miedo a ser juzgados y con un acompañamiento seguro y real.",
-    "En Conversemos podrás encontrar diferentes opciones para ti, esperando de corazón poder ayudarte con lo que necesitas.",
+  eyebrow: "Conócenos y da el primer paso",
+  titulo: "Un espacio seguro para mirar dentro y sanar.",
+  entrada: [
+    "Conversemos es un espacio creado para ti: un lugar donde podemos cuestionarnos, informarnos y conversar sin miedo a ser juzgados, con un acompañamiento seguro y real.",
+    "Aquí encontrarás diferentes opciones para lo que necesitas, presenciales en Lima y Piura o por videollamada.",
   ],
+
   queHacemosTitulo: "¿Qué hacemos?",
-  queHacemosEntrada: "Trabajamos todos los temas relacionados a salud mental y bienestar personal:",
+  queHacemosEntrada: "Trabajamos todos los temas relacionados a salud mental y bienestar personal.",
+  // La línea de cada servicio describe en qué consiste; no promete resultados.
   queHacemos: [
-    "Terapia individual",
-    "Terapia grupal",
-    "Terapia de pareja",
-    "Orientación vocacional",
-    "Desarrollo personal",
-    "Talleres y charlas psicoeducativas",
+    { nombre: "Terapia individual", icono: "individual",
+      detalle: "Sesiones de entre 50 minutos y una hora, presenciales o por videollamada." },
+    { nombre: "Terapia grupal", icono: "grupal",
+      detalle: "Reuniones con personas que atraviesan dificultades similares, con la guía de un psicólogo del equipo." },
+    { nombre: "Terapia de pareja", icono: "pareja",
+      detalle: "Sesiones para los dos, con profesionales del equipo que atienden consultas de pareja." },
+    { nombre: "Orientación vocacional", icono: "vocacional",
+      detalle: "Acompañamiento para decidir qué estudiar o hacia dónde seguir." },
+    { nombre: "Desarrollo personal", icono: "desarrollo",
+      detalle: "Un espacio para trabajar en ti, más allá de una crisis puntual." },
+    { nombre: "Talleres y charlas psicoeducativas", icono: "talleres",
+      detalle: "Encuentros para informar y prevenir, dentro de nuestra área de promoción." },
   ],
+
+  areasTitulo: "¿En qué áreas trabajamos?",
+  areasEntrada: "Nuestro trabajo se ordena en tres frentes que se sostienen entre sí.",
+  areas: [
+    { titulo: "Promoción de la salud física y mental",
+      detalle: "Generamos conciencia sobre la importancia de la salud mental." },
+    { titulo: "Prevención de trastornos y enfermedades mentales",
+      detalle: "Informamos y educamos para prevenir problemas con tu bienestar mental." },
+    { titulo: "Intervención psicoterapéutica",
+      detalle: "Brindamos ayuda profesional a través del apoyo psicoterapéutico." },
+  ],
+
+  modeloEyebrow: "Cómo acompañamos",
+  modeloTitulo: "Modelo de atención psicológico integrativo",
+  modeloCita: "Buscamos siempre desarrollar una relación humana y real de cada paciente con su psicoterapeuta.",
+  modelo: [
+    "Este modelo tiene como finalidad intervenir y ayudar tomando en cuenta a cada persona como un todo, no sólo una situación o crisis actual que estés experimentando: buscamos tu bienestar en todos los niveles.",
+    "Por eso, en cada proceso consideramos todo tu ser.",
+  ],
+  dimensiones: ["Mente", "Cuerpo", "Pensamientos", "Emociones", "Historia de vida"],
+
+  creenciasEyebrow: "Lo que nos sostiene",
   creenciasTitulo: "En lo que creemos",
   creencias: [
-    "Cada conversación tiene un objetivo: mejorar el entorno de la vida de cada persona que confía en nosotros.",
-    "Somos una comunidad, creada para apoyarnos mutuamente.",
-    "Cada hora de ayuda emocional es una hora de aprendizaje y fortalecimiento.",
+    { icono: "objetivo", texto: "Cada conversación tiene un objetivo: mejorar el entorno de la vida de cada persona que confía en nosotros." },
+    { icono: "comunidad", texto: "Somos una comunidad, creada para apoyarnos mutuamente." },
+    { icono: "aprendizaje", texto: "Cada hora de acompañamiento emocional es una hora de aprendizaje y fortalecimiento." },
   ],
-  areasTitulo: "¿En qué áreas trabajamos?",
-  areas: [
-    "Promoción de la salud física y mental.",
-    "Prevención de trastornos y enfermedades mentales.",
-    "Intervención psicoterapéutica.",
-  ],
-  modeloTitulo: "Modelo de atención psicológico integrativo",
-  modelo: [
-    "En Ítaca Conversemos implementamos el Modelo de atención psicológico integrativo.",
-    "Este modelo tiene como finalidad intervenir y ayudar tomando en cuenta a cada persona como un todo, no sólo una situación o crisis actual que estés experimentando: buscamos tu bienestar en todos los niveles, considerando todo tu ser —mente, cuerpo, pensamientos, emociones e historia de vida—. Buscamos siempre desarrollar una relación humana y real de cada paciente con su psicoterapeuta.",
-  ],
+
+  cierreTitulo: "¿Damos el primer paso juntos?",
+  cierreTexto: "Eliges la sede, el psicólogo y el horario que mejor te queden. Coordinación confirma contigo antes de la sesión, y no pagas nada al reservar.",
 };
 
 export const TERAPIAS = {
