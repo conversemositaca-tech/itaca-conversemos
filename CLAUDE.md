@@ -665,3 +665,25 @@ los feriados de Perú. Zona horaria por defecto: `America/Lima` (GMT-5).
      SITE_ROUTES, y repite la navegación en móvil. Resultado: sin errores.
    - Verificado: `manage.py check`, 46 tests (core.tests_sitio + pacientes), build de Vite,
      ESLint sin avisos nuevos (App.jsx bajó de 106 a 105 al quitar una prop sin uso).
+37. ✓ Correcciones de Gabriela + fotos reales del consultorio (2026-09-13).
+   Revisión de la dueña por WhatsApp sobre el sitio ya publicado:
+   - «Que diga solo terapia, no "online"» → la etiqueta del menú es **"Terapias"**
+     (la ruta sigue siendo `/terapias-online`, que ya estaba publicada) y el título de
+     pestaña pasa a "Terapias · Ítaca Conversemos".
+   - «Esos no funcionan, mejor quitarlos» (los 3 test) y «Blog también quitarlo» →
+     confirmado: ya estaban ocultos desde el ítem 36 por el certificado vencido.
+   - «¿Esa sección también puede salir arriba? En lugar de blog, esta de agendar» →
+     el menú estrena **"Agendar"** en el hueco del Blog, apuntando a `SITE_ROUTES.agendar`.
+   - `propsEnlace()` ahora detecta las rutas reservadas (`/agendar`, `/gestion`…) y
+     devuelve navegación REAL en vez de `pushState`: son otras aplicaciones dentro del
+     mismo dominio y un pushState no las montaría.
+   - **Seis fotos del consultorio** enviadas por la clínica (`frontend/public/sitio/`,
+     1600px, ~100-175 KB): `equipo` (sesión en escritorio) en el hero de Quiénes somos,
+     `consulta` (sesión con la pizarra de emociones) en el modelo integrativo, `pareja`
+     en Terapias, `sesion` en el hero de Psicólogos, `acompanamiento` en el proceso de
+     Inicio y `bienvenida` (recibiendo en la puerta) en el cierre común. Reemplazan a las
+     que se habían tomado del WordPress. Nada generado con IA.
+   - Verificado: auditoría de navegación **14/14 clics** (incluido el nuevo "Agendar"),
+     5 páginas × escritorio y móvil sin errores ni enlaces rotos, las 6 fotos cargan.
+     El capturador de pruebas ahora recorre la página antes de la captura: con
+     `loading="lazy"` las imágenes salían en blanco y la captura mentía.

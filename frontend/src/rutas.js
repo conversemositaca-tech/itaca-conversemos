@@ -47,8 +47,11 @@ export const MENU_SITIO = [
   { label: "Inicio", href: SITE_ROUTES.inicio },
   { label: "Quienes Somos", href: SITE_ROUTES.quienesSomos },
   { label: "Psicólogos", href: SITE_ROUTES.psicologos },
-  { label: "Terapias Online", href: SITE_ROUTES.terapias },
+  { label: "Terapias", href: SITE_ROUTES.terapias },
   { label: "Preguntas", href: SITE_ROUTES.preguntas },
+  // Reservar, también arriba: es la acción que la gente viene a hacer y ocupa
+  // el lugar que dejó el Blog.
+  { label: "Agendar", href: SITE_ROUTES.agendar },
   ...(MOSTRAR_WORDPRESS ? ENLACES_WP : []),
 ];
 
@@ -118,7 +121,10 @@ export function alCambiarRuta(fn) {
  * de verdad (se puede abrir en pestaña nueva, copiar el enlace y tabular).
  */
 export function propsEnlace(href, externo = false) {
-  if (externo) return { href, target: "_blank", rel: "noopener" };
+  if (externo) return { href, target: "_blank", rel: "noopener noreferrer" };
+  // El agendamiento y el panel son otras aplicaciones dentro del mismo dominio:
+  // un pushState no las montaría, así que aquí se navega de verdad.
+  if (esRutaReservada(href)) return { href };
   return {
     href,
     onClick: (e) => {

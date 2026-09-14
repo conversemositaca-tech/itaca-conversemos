@@ -291,6 +291,17 @@ const SW_CSS = `
 }
 .sw-mosaico-pie { font-size:14px; line-height:1.55; color:var(--txt-2); margin:14px 0 0; }
 
+/* Fotografías del consultorio (material propio de la clínica) */
+.sw-foto-sec { display:block; width:100%; height:auto; border-radius:26px; object-fit:cover; }
+.sw-foto-ancha {
+  display:block; width:100%; height:auto; max-height:380px; object-fit:cover;
+  border-radius:26px; margin:0 0 clamp(28px,3.5vw,42px);
+}
+.sw-foto-cierre {
+  display:block; width:100%; max-width:560px; height:auto; aspect-ratio:16/10; object-fit:cover;
+  border-radius:24px; margin:0 auto clamp(26px,3vw,36px);
+}
+
 @media (max-width:600px) {
   .sw-foto::before { inset:auto -6% -5% -6%; height:60%; }
   .sw-circulo, .sw-testi { padding:22px; }
@@ -316,6 +327,9 @@ function Cierre({ titulo = "¿Damos el primer paso?", texto }) {
   return (
     <section className="sw-sec sw-celeste">
       <div className="sw-wrap sw-cierre">
+        <img className="sw-foto-cierre" src={`${import.meta.env.BASE_URL}sitio/bienvenida.jpg`}
+          width="1600" height="1066" loading="lazy"
+          alt="Psicóloga de Ítaca Conversemos recibiendo a un paciente en la sede" />
         <h2 className="sw-h2 sw-h2-c">{titulo}</h2>
         <p className="sw-intro sw-intro-c">
           {texto || "Elige sede, psicólogo y horario. Coordinación confirma contigo antes de la sesión y no pagas nada al reservar."}
@@ -394,6 +408,9 @@ function PaginaInicio({ datos, faq }) {
         <div className="sw-wrap">
           <h2 className="sw-h2">{INICIO.procesoTitulo}</h2>
           <p className="sw-intro">{INICIO.procesoRotulo}</p>
+          <img className="sw-foto-ancha" src={`${import.meta.env.BASE_URL}sitio/acompanamiento.jpg`}
+            width="1600" height="1066" loading="lazy"
+            alt="Psicóloga de Ítaca Conversemos acompañando a una paciente" />
           <ol className="sw-pasos">
             {PASOS.map((p) => (
               <li key={p.t} className="sw-paso">
@@ -490,8 +507,8 @@ function PaginaQuienes() {
               </div>
             </div>
             <div className="sw-foto">
-              <img src={`${import.meta.env.BASE_URL}sitio/equipo.jpg`} width="936" height="1024"
-                alt="Tres psicólogos del equipo de Ítaca Conversemos" />
+              <img src={`${import.meta.env.BASE_URL}sitio/equipo.jpg`} width="1600" height="1108"
+                alt="Psicóloga de Ítaca Conversemos conversando con una paciente en consulta" />
             </div>
           </div>
         </div>
@@ -538,8 +555,8 @@ function PaginaQuienes() {
       <section className="sw-sec">
         <div className="sw-wrap">
           <div className="sw-modelo">
-            <img src={`${import.meta.env.BASE_URL}sitio/consulta.jpg`} width="1024" height="1024"
-              alt="Psicóloga de Ítaca Conversemos durante una sesión en línea" loading="lazy" />
+            <img src={`${import.meta.env.BASE_URL}sitio/consulta.jpg`} width="1600" height="1066"
+              alt="Sesión de terapia en el consultorio de Ítaca Conversemos" loading="lazy" />
             <div>
               <p className="sw-eyebrow">{q.modeloEyebrow}</p>
               <h2 className="sw-h2">{q.modeloTitulo}</h2>
@@ -661,9 +678,16 @@ function PaginaPsicologos({ datos, cargando }) {
     <>
       <section className="sw-sec sw-hero" style={{ paddingBottom: 0 }}>
         <div className="sw-wrap">
-          <p className="sw-eyebrow">{PSICOLOGOS.rotulo}</p>
-          <h1 className="sw-h1" style={{ maxWidth: "18ch" }}>{PSICOLOGOS.titulo}</h1>
-          <p className="sw-intro" style={{ marginBottom: 0 }}>{PSICOLOGOS.entrada}</p>
+          <div className="sw-hero-in">
+            <div>
+              <p className="sw-eyebrow">{PSICOLOGOS.rotulo}</p>
+              <h1 className="sw-h1" style={{ maxWidth: "18ch" }}>{PSICOLOGOS.titulo}</h1>
+              <p className="sw-intro" style={{ marginBottom: 0 }}>{PSICOLOGOS.entrada}</p>
+            </div>
+            <img className="sw-foto-sec" src={`${import.meta.env.BASE_URL}sitio/sesion.jpg`}
+              width="1600" height="1066"
+              alt="Psicóloga de Ítaca Conversemos en sesión con un paciente" />
+          </div>
         </div>
       </section>
 
@@ -723,14 +747,17 @@ function PaginaTerapias({ datos }) {
       <section className="sw-sec sw-blanco">
         <div className="sw-wrap">
           <div className="sw-modelo">
-            <div className="sw-lee">
-              <h2 className="sw-h2">{t.entradaTitulo}</h2>
-              <p style={{ marginTop: 16 }}>{t.cuerpo}</p>
-            </div>
             <div>
-              <h3 className="sw-h3" style={{ marginBottom: 14 }}>{t.paraTitulo}</h3>
+              <div className="sw-lee">
+                <h2 className="sw-h2">{t.entradaTitulo}</h2>
+                <p style={{ marginTop: 16 }}>{t.cuerpo}</p>
+              </div>
+              <h3 className="sw-h3" style={{ margin: "28px 0 14px" }}>{t.paraTitulo}</h3>
               <ul className="sw-chips">{t.para.map((x) => <li key={x}>{x}</li>)}</ul>
             </div>
+            <img className="sw-foto-sec" src={`${import.meta.env.BASE_URL}sitio/pareja.jpg`}
+              width="1600" height="1066" loading="lazy"
+              alt="Sesión de terapia de pareja en Ítaca Conversemos" />
           </div>
         </div>
       </section>
@@ -827,7 +854,7 @@ const TITULOS = {
   [SITE_ROUTES.inicio]: "Ítaca Conversemos · Terapia psicológica en Lima y Piura",
   [SITE_ROUTES.quienesSomos]: "Quiénes somos · Ítaca Conversemos",
   [SITE_ROUTES.psicologos]: "Nuestros psicólogos · Ítaca Conversemos",
-  [SITE_ROUTES.terapias]: "Terapias online · Ítaca Conversemos",
+  [SITE_ROUTES.terapias]: "Terapias · Ítaca Conversemos",
   [SITE_ROUTES.preguntas]: "Preguntas frecuentes · Ítaca Conversemos",
 };
 
