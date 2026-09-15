@@ -21,7 +21,8 @@ const ICONOS_SERVICIO = {
 };
 
 import {
-  AGENDA_CSS, AGENDA_SEDES, AGENDA_SITIO, AgendaDuda, AgendaPie, AgendaTop, AgendaWa, agendaFaq,
+  AGENDA_CSS, AGENDA_SEDES, AgendaDuda, AgendaPie, AgendaTop, AgendaWa, agendaFaq,
+  agendaWhatsapp,
 } from "./App.jsx";
 import { SITE_ROUTES, alCambiarRuta, propsEnlace, rutaCanonica } from "./rutas";
 import { INICIO, PASOS, PREGUNTAS, PSICOLOGOS, QUIENES_SOMOS, TERAPIAS, TESTIMONIOS } from "./sitio-textos";
@@ -338,9 +339,14 @@ function Cierre({ titulo = "¿Damos el primer paso?", texto }) {
           <a className="sw-btn" href={hrefCita}>
             Pide tu cita <ArrowRight size={18} strokeWidth={2.2} aria-hidden="true" />
           </a>
-          <a className="sw-btn sw-btn-linea" href={AGENDA_SITIO.whatsapp} target="_blank" rel="noopener noreferrer">
-            Escríbenos por WhatsApp <MessageCircle size={17} strokeWidth={2} aria-hidden="true" />
-          </a>
+          {/* Uno por sede: quien escribe llega a la ciudad que lo atiende, no a
+              un número que después tiene que derivar la consulta a mano. */}
+          {Object.keys(AGENDA_SEDES).map((sede) => (
+            <a key={sede} className="sw-btn sw-btn-linea" href={agendaWhatsapp(sede)}
+              target="_blank" rel="noopener noreferrer">
+              WhatsApp {AGENDA_SEDES[sede].label} <MessageCircle size={17} strokeWidth={2} aria-hidden="true" />
+            </a>
+          ))}
         </div>
         <div className="sw-sedes">
           {Object.entries(AGENDA_SEDES).map(([k, se]) => (
@@ -596,9 +602,12 @@ function PaginaQuienes() {
             <a className="sw-btn" href={hrefCita}>
               Pide tu cita <ArrowRight size={18} strokeWidth={2.2} aria-hidden="true" />
             </a>
-            <a className="sw-btn sw-btn-linea" href={AGENDA_SITIO.whatsapp} target="_blank" rel="noopener noreferrer">
-              Escríbenos por WhatsApp <MessageCircle size={17} strokeWidth={2} aria-hidden="true" />
-            </a>
+            {Object.keys(AGENDA_SEDES).map((sede) => (
+              <a key={sede} className="sw-btn sw-btn-linea" href={agendaWhatsapp(sede)}
+                target="_blank" rel="noopener noreferrer">
+                WhatsApp {AGENDA_SEDES[sede].label} <MessageCircle size={17} strokeWidth={2} aria-hidden="true" />
+              </a>
+            ))}
           </div>
           <div className="sw-sedes">
             {Object.entries(AGENDA_SEDES).map(([k, se]) => (
@@ -660,7 +669,10 @@ function TarjetaProfesional({ p }) {
             </a>
           )
           : (
-            <a className="sw-btn sw-btn-linea" href={AGENDA_SITIO.whatsapp} target="_blank" rel="noopener noreferrer">
+            /* Aquí sí se sabe la sede: la del psicólogo por el que preguntan. */
+            <a className="sw-btn sw-btn-linea"
+              href={agendaWhatsapp(p.sede || (p.sede_label || "").toLowerCase())}
+              target="_blank" rel="noopener noreferrer">
               Consultar por WhatsApp <MessageCircle size={16} strokeWidth={2} aria-hidden="true" />
             </a>
           )}
