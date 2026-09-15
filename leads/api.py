@@ -22,6 +22,20 @@ def _norm_tel(t):
     return "".join(c for c in (t or "") if c.isdigit())[-9:]
 
 
+def _norm_nombre(n):
+    """El nombre para comparar personas: sin mayúsculas, tildes ni espacios de más.
+
+    Corrige lo trivial (MARÍA / maria / María  Pérez) y nada más. Nada de
+    parecidos ni apodos: dos nombres distintos son dos personas distintas, y
+    equivocarse aquí mezcla dos historias clínicas.
+    """
+    import unicodedata
+
+    limpio = unicodedata.normalize("NFKD", (n or "").strip().lower())
+    limpio = "".join(c for c in limpio if not unicodedata.combining(c))
+    return " ".join(limpio.split())
+
+
 def _parse_fecha(valor, por_defecto):
     """'YYYY-MM-DD' -> date; si viene vacío/ inválido, usa por_defecto."""
     try:
@@ -47,34 +61,103 @@ def _paciente_del_lead(lead):
         return lead.paciente
     from usuarios.models import Profesional
 
-    tel = _norm_tel(lead.telefono)
-    if tel:
-        for p in Paciente.objects.del_tenant_actual().exclude(telefono=""):
-            if _norm_tel(p.telefono) == tel:
-                # Aprovecha lo que el lead trae y a la ficha le falta, sin pisar
-                # nada de lo que ya estaba cargado.
-                completar = []
-                if not p.email and lead.email:
-                    p.email = lead.email
-                    completar.append("email")
-                if not p.direccion and lead.ubicacion:
-                    p.direccion = lead.ubicacion
-                    completar.append("direccion")
-                if completar:
-                    p.save(update_fields=completar)
-                lead.paciente = p
-                lead.save(update_fields=["paciente"])
-                return p
+    p = _ficha_que_calza(lead)
+    if p is not None:
+        # Aprovecha lo que el lead trae y a la ficha le falta, sin pisar
+        # nada de lo que ya estaba cargado.
+        completar = []
+        if not p.email and lead.email:
+            p.email = lead.email
+            completar.append("email")
+        if not p.direccion and lead.ubicacion:
+            p.direccion = lead.ubicacion
+            completar.append("direccion")
+        if completar:
+            p.save(update_fields=completar)
+        lead.paciente = p
+        lead.save(update_fields=["paciente"])
+        return p
+
     ficha = Profesional.objects.filter(usuario=lead.medico).first() if lead.medico_id else None
     paciente = Paciente.objects.create(
-        clinica=lead.clinica, nombre=lead.nombre, telefono=lead.telefono,
+        clinica=lead.clinica, nombre=lead.nombre,
+        # El teléfono del lead solo es del PACIENTE cuando no hay un responsable
+        # detrás. Con contacto, el número es de quien gestiona la atención y va
+        # a los campos de tutor: dentro de `telefono` volvería a confundir a dos
+        # personas con la misma ficha.
+        telefono="" if _hay_contacto(lead) else lead.telefono,
         email=lead.email or "", sede=lead.sede or "", profesional=ficha,
         especialidad_habitual=lead.especialidad or lead.get_tipo_servicio_display() or "",
         provisional=True,
+        **_datos_del_tutor(lead),
     )
     lead.paciente = paciente
     lead.save(update_fields=["paciente"])
     return paciente
+
+
+def _hay_contacto(lead):
+    """¿Detrás de este lead hay un adulto que gestiona la atención de otra persona?"""
+    return bool((lead.contacto_nombre or "").strip() or (lead.contacto_telefono or "").strip())
+
+
+def _datos_del_tutor(lead):
+    """Lo que el lead sabe del responsable, en los campos de tutor del paciente.
+
+    El tutor es CANAL, nunca identidad: su nombre y su número quedan aquí, y
+    `Paciente.telefono` se queda vacío si el menor no tiene el suyo.
+    """
+    if not _hay_contacto(lead):
+        return {}
+    return {
+        "tutor_nombre": (lead.contacto_nombre or "")[:200],
+        "tutor_parentesco": (lead.contacto_parentesco or "")[:40],
+        "tutor_telefono": (lead.contacto_telefono or lead.telefono or "")[:40],
+    }
+
+
+def _sedes_compatibles(sede_ficha, sede_lead):
+    """¿Las sedes permiten dar por hecho que es la misma persona?
+
+    Dos sedes DISTINTAS no se fusionan solas: puede ser un homónimo, o alguien
+    que se atiende en otra ciudad, y eso lo decide una persona.
+
+    Una sede VACÍA es otra cosa: es un dato que falta, no un dato que
+    contradiga. Muchas fichas antiguas no la tienen, y tratarla como "distinta"
+    llenaría la base de duplicados de gente que ya existe.
+    """
+    a, b = (sede_ficha or "").strip(), (sede_lead or "").strip()
+    return not a or not b or a == b
+
+
+def _ficha_que_calza(lead):
+    """La ficha que es SIN DUDA de esta persona, o None.
+
+    El teléfono no identifica a nadie: en esta clínica 140 números están
+    compartidos por 307 fichas —hermanos, madres e hijos, familiares que
+    gestionan la atención de otro—. Antes bastaba con que coincidiera el número
+    para colgarle la consulta a la primera ficha que apareciera (por orden
+    alfabético), y así una sesión terminaba en la agenda y en el historial de
+    otra persona.
+
+    Ahora hace falta que coincida TODO: clínica, sede, teléfono y nombre. Y si
+    calzan dos fichas, no se elige ninguna: ante la duda se separa, porque una
+    ficha repetida se corrige y dos historias clínicas mezcladas no.
+    """
+    tel = _norm_tel(lead.telefono) or _norm_tel(lead.contacto_telefono)
+    nombre = _norm_nombre(lead.nombre)
+    # Un número incompleto (9 dígitos es lo normal en Perú) es un dato a medio
+    # cargar, no un identificador: con "123" en dos fichas no se puede afirmar
+    # que sean la misma persona.
+    if len(tel) < 9 or not nombre:
+        return None
+    candidatos = [
+        p for p in Paciente.objects.del_tenant_actual().exclude(telefono="")
+        if _norm_tel(p.telefono) == tel
+        and _norm_nombre(p.nombre) == nombre
+        and _sedes_compatibles(p.sede, lead.sede)
+    ]
+    return candidatos[0] if len(candidatos) == 1 else None
 
 
 def _servicio_de_consulta(lead):
@@ -272,21 +355,31 @@ class LeadViewSet(viewsets.ModelViewSet):
         return qs
 
     def create(self, request, *args, **kwargs):
-        # No permitir registrar dos veces el mismo número (salvo que se fuerce).
+        # Un número repetido NO bloquea: en infantojuvenil y en referidos, la
+        # madre, el padre o quien gestiona la atención usan el mismo número para
+        # varias personas. Bloquear ahí obligaba a Coordinación a forzar el alta
+        # de un hermano, o a registrarlo mal.
+        #
+        # Lo que sí se hace es AVISAR, sin elegir a nadie por su cuenta: quien
+        # está mirando la pantalla sabe si es la misma persona o un familiar.
+        respuesta = self._con_aviso(super().create(request, *args, **kwargs))
         tel = _norm_tel(request.data.get("telefono"))
-        if len(tel) >= 9 and not request.data.get("forzar"):
-            dup = next(
-                (l for l in Lead.objects.del_tenant_actual().exclude(telefono="").only("id", "nombre", "telefono")
-                 if _norm_tel(l.telefono) == tel),
-                None,
-            )
-            if dup is not None:
-                return Response(
-                    {"detail": f"Ese número ya está registrado como lead: {dup.nombre}. Búscalo en la lista.",
-                     "duplicado": {"id": dup.id, "nombre": dup.nombre}},
-                    status=status.HTTP_409_CONFLICT,
+        nombre = _norm_nombre(request.data.get("nombre"))
+        if len(tel) >= 9 and isinstance(respuesta.data, dict):
+            otros = [
+                l for l in Lead.objects.del_tenant_actual().exclude(telefono="")
+                .only("id", "nombre", "telefono")
+                if _norm_tel(l.telefono) == tel
+                and l.id != respuesta.data.get("id")
+                and _norm_nombre(l.nombre) != nombre
+            ]
+            if otros:
+                respuesta.data["aviso_telefono"] = (
+                    "Este número ya aparece asociado a otra persona "
+                    f"({otros[0].nombre}). Puedes continuar si es un familiar o "
+                    "responsable."
                 )
-        return self._con_aviso(super().create(request, *args, **kwargs))
+        return respuesta
 
     def update(self, request, *args, **kwargs):
         return self._con_aviso(super().update(request, *args, **kwargs))

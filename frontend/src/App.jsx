@@ -4747,6 +4747,16 @@ function WhatsappModal({ id, datos, onCerrar, onEnviado, showToast }) {
               Sale desde <strong>{canal.canal || "sin línea"}</strong>
               {canal.instancia ? ` · ${canal.instancia}` : ""}
             </div>
+            {/* El mensaje va al teléfono del responsable porque el paciente no
+                tiene uno propio. Quien escribe tiene que saberlo ANTES de
+                redactar: no se le habla igual a un niño que a su madre. */}
+            {canal.fuente_contacto === "tutor" && (
+              <div className="wa-compose-meta" style={{ marginTop: 1, color: "#9C6B2E" }}>
+                Contesta <strong>{canal.tutor_nombre || "el responsable"}</strong>
+                {canal.tutor_parentesco ? ` (${canal.tutor_parentesco})` : ""}
+                {" "}— {pac.nombre || "el paciente"} no tiene teléfono propio
+              </div>
+            )}
           </div>
           <button className="wa-compose-x" onClick={onCerrar} aria-label="Cerrar">
             <X size={19} strokeWidth={2} />
@@ -8510,14 +8520,17 @@ function Marketing({ showToast, onConvertir, esAdmin, sedePropia = "", soloLectu
   }
   async function guardarLead(data) {
     try {
-      if (data.id) await api.actualizarLead(data.id, data); else await api.crearLead(data);
+      let creado = null;
+      if (data.id) await api.actualizarLead(data.id, data); else creado = await api.crearLead(data);
       await cargar(); setCreando(false); setEditandoLead(null);
-      showToast(data.id ? "Lead actualizado ✓" : "Lead captado ✓");
+      // Un número repetido YA NO bloquea el registro: en infantojuvenil y en
+      // referidos, una madre o un familiar gestionan la atención de varias
+      // personas. Se avisa de que el número ya estaba, y quien mira la pantalla
+      // decide si es la misma persona o un familiar.
+      if (creado?.aviso_telefono) showToast(creado.aviso_telefono);
+      else showToast(data.id ? "Lead actualizado ✓" : "Lead captado ✓");
     } catch (err) {
-      // Número repetido: no cerramos el modal; dejamos el número en el buscador
-      // para que encuentren el lead que ya existe.
-      if (err.status === 409) { setBuscaLead((data.telefono || "").trim()); showToast(err.message); }
-      else showToast("Error: " + err.message);
+      showToast("Error: " + err.message);
     }
   }
   async function borrarLead(lead) {
@@ -8958,6 +8971,9 @@ function CrearLeadModal({ lead, medicos, anuncios, sedePropia, onClose, onSave }
     especialidad: lead?.especialidad || Object.keys(SPECIALTY)[0],
     medico: lead?.medico || "",
     tipo_servicio: lead?.tipo_servicio || "",
+    contacto_nombre: lead?.contacto_nombre || "",
+    contacto_parentesco: lead?.contacto_parentesco || "",
+    contacto_telefono: lead?.contacto_telefono || "",
     ubicacion: lead?.ubicacion || "",
     motivo_consulta: lead?.motivo_consulta || "",
     resumen_conversacion: lead?.resumen_conversacion || "",
@@ -8977,10 +8993,26 @@ function CrearLeadModal({ lead, medicos, anuncios, sedePropia, onClose, onSave }
   const canSave = f.nombre.trim().length > 0;
   const anunciosActivos = (anuncios || []).filter((a) => a.activo);
 
+  // En infantojuvenil quien escribe casi nunca es el paciente: el número es de
+  // la madre, del padre o de quien lleva al niño. Se propone marcado, pero se
+  // puede desmarcar — un adolescente puede tener su propio teléfono.
+  // Se deriva en el render en vez de copiarse a otro estado: así cambiar el tipo
+  // de servicio a "Niños" lo marca solo, y si la coordinadora lo desmarca, su
+  // decisión manda a partir de ese momento.
+  const esMenor = ["ninos", "adolescentes"].includes(f.tipo_servicio);
+  const [contactoManual, setContactoManual] = useState(null);
+  const contactoAparte = contactoManual ?? (
+    Boolean(lead?.contacto_nombre || lead?.contacto_telefono) || esMenor);
+  const marcarContacto = (e) => setContactoManual(e.target.checked);
+
   function guardar() {
     onSave({
       ...(lead?.id ? { id: lead.id } : {}),
       nombre: f.nombre.trim(), telefono: f.telefono.trim(), email: f.email.trim(),
+      // Sin responsable no se manda basura: si se desmarca, los campos se limpian.
+      contacto_nombre: contactoAparte ? f.contacto_nombre.trim() : "",
+      contacto_parentesco: contactoAparte ? f.contacto_parentesco : "",
+      contacto_telefono: contactoAparte ? f.contacto_telefono.trim() : "",
       fecha_llegada: f.fecha_llegada || null, sede: f.sede, fuente: f.fuente,
       subfuente: f.fuente === "referido" ? f.subfuente.trim() : ((SUBFUENTES[f.fuente] || []).includes(f.subfuente) ? f.subfuente : ""),
       fuente_otro: ["otro", "convenio", "alianza"].includes(f.fuente) ? f.fuente_otro.trim() : "",
@@ -9025,13 +9057,47 @@ function CrearLeadModal({ lead, medicos, anuncios, sedePropia, onClose, onSave }
         <div className="lead-grupo">
           <h4>Quién es</h4>
           <div style={{ marginBottom: 11 }}>
-            <div className="ca-label">Nombre</div>
-            <input className="ca-input" value={f.nombre} onChange={set("nombre")} placeholder="Nombre del interesado" autoFocus />
+            <div className="ca-label">Nombre del paciente</div>
+            <input className="ca-input" value={f.nombre} onChange={set("nombre")}
+              placeholder="Quién va a ser atendido" autoFocus />
           </div>
           <div style={{ display: "flex", gap: 11, marginBottom: 11 }}>
-            <div style={{ flex: 1.4 }}><div className="ca-label">Teléfono</div><input className="ca-input" value={f.telefono} onChange={set("telefono")} placeholder="987 654 321" /></div>
+            <div style={{ flex: 1.4 }}>
+              <div className="ca-label">Teléfono del paciente{contactoAparte && <span style={{ color: "var(--muted)", fontWeight: 400 }}> (opcional)</span>}</div>
+              <input className="ca-input" value={f.telefono} onChange={set("telefono")}
+                placeholder={contactoAparte ? "Déjalo vacío si no tiene uno propio" : "987 654 321"} />
+            </div>
             <div style={{ flex: 1 }}><div className="ca-label">Sede</div><select className="ca-input" value={f.sede} onChange={set("sede")}><option value="">—</option>{SEDES.map((s) => <option key={s.v} value={s.v}>{s.l}</option>)}</select></div>
           </div>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", margin: "2px 0 6px" }}>
+            <input type="checkbox" checked={contactoAparte} onChange={marcarContacto} />
+            <span style={{ fontSize: 13 }}>Quien contacta no es el paciente</span>
+          </label>
+          {contactoAparte && (
+            /* El responsable es POR DÓNDE se llega al paciente, no quién es. Su
+               número se guarda aparte y nunca pasa a ser el del paciente: eso
+               es lo que hacía que dos personas compartieran ficha e historial. */
+            <div style={{ display: "flex", gap: 8 }}>
+              <div style={{ flex: 1.4 }}>
+                <div className="ca-label">Nombre del responsable</div>
+                <input className="ca-input" value={f.contacto_nombre} onChange={set("contacto_nombre")}
+                  placeholder="Madre, padre o quien gestiona" />
+              </div>
+              <div style={{ flex: 1 }}>
+                <div className="ca-label">Parentesco</div>
+                <select className="ca-input" value={f.contacto_parentesco} onChange={set("contacto_parentesco")}>
+                  <option value="">—</option>
+                  {["madre", "padre", "tutor", "abuelo/a", "hermano/a", "otro"].map((x) =>
+                    <option key={x} value={x}>{x.charAt(0).toUpperCase() + x.slice(1)}</option>)}
+                </select>
+              </div>
+              <div style={{ flex: 1.4 }}>
+                <div className="ca-label">Teléfono del responsable</div>
+                <input className="ca-input" value={f.contacto_telefono} onChange={set("contacto_telefono")}
+                  placeholder="987 654 321" />
+              </div>
+            </div>
+          )}
           <div><div className="ca-label">Correo <span style={{ color: "var(--muted)", fontWeight: 400 }}>(opcional)</span></div><input className="ca-input" value={f.email} onChange={set("email")} placeholder="correo@ejemplo.com" inputMode="email" /></div>
         </div>
 

@@ -141,6 +141,33 @@ class Paciente(ModeloTenant):
     def __str__(self):
         return self.nombre
 
+    # --- Por dónde se le escribe ---------------------------------------------
+    # Un menor no suele tener número propio: el de su madre o su padre es un
+    # CANAL para llegar a él, no su identidad. Por eso vive en `tutor_telefono`
+    # y no en `telefono` — ahí dentro haría que dos personas distintas
+    # parecieran la misma, que es justo el cruce que estamos cerrando.
+    FUENTE_PACIENTE = "paciente"
+    FUENTE_TUTOR = "tutor"
+
+    def canal_contacto(self):
+        """(número, fuente) por donde escribirle. fuente ∈ paciente | tutor | ''.
+
+        Es el ÚNICO lugar donde se decide esto: el Centro de Continuidad y los
+        recordatorios preguntan aquí en vez de leer `telefono` a pelo, para que
+        un paciente sin número propio no quede incomunicado.
+        """
+        propio = (self.telefono or "").strip()
+        if propio:
+            return propio, self.FUENTE_PACIENTE
+        del_tutor = (self.tutor_telefono or "").strip()
+        if del_tutor:
+            return del_tutor, self.FUENTE_TUTOR
+        return "", ""
+
+    @property
+    def tiene_canal(self):
+        return bool(self.canal_contacto()[0])
+
     @property
     def edad(self):
         if not self.fecha_nacimiento:

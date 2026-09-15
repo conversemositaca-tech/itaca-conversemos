@@ -44,7 +44,7 @@ def enviar_recordatorios(fecha=None, dry=False):
     for clinica in Clinica.objects.filter(activo=True):
         for cita in citas_pendientes(clinica, fecha):
             nombre = cita.paciente.nombre
-            tel = cita.paciente.telefono
+            tel, _fuente = cita.paciente.canal_contacto()
             hora = f"{timezone.localtime(cita.inicio):%H:%M}"
 
             if not tel:

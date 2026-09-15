@@ -41,6 +41,7 @@ class LeadSerializer(serializers.ModelSerializer):
         model = Lead
         fields = [
             "id", "nombre", "telefono", "email", "sede", "sede_label", "fuente", "fuente_label", "subfuente", "fuente_otro",
+            "contacto_nombre", "contacto_parentesco", "contacto_telefono",
             "es_pauta", "anuncio", "anuncio_nombre", "es_pareja",
             "agendo_consulta", "fecha_consulta", "hora_consulta", "modalidad_consulta", "enlace_consulta", "fecha_cierre",
             "seguimiento_frecuencia", "seguimiento_frecuencia_label", "recontacto_fecha", "recontacto_vencido",
