@@ -3,15 +3,115 @@
 Si Evolution no está configurado (o falla), devolvemos un enlace wa.me como
 respaldo manual, para que el sistema siga siendo útil sin depender del servidor.
 """
+import logging
 import re
+import time
 from urllib.parse import quote
 
 import requests
 from django.conf import settings
 
+log = logging.getLogger(__name__)
+
 # Una imagen en base64 viaja ~33 % más pesada que el archivo: el envío tarda
 # bastante más que un texto y necesita su propio margen.
 TIMEOUT_MEDIA = 45
+
+SEDE_LABEL = {"lima": "Lima", "piura": "Piura"}
+
+# El estado de una línea se consulta una vez y se reutiliza unos segundos. Una
+# comunicación de cuatro partes no tiene por qué preguntar cuatro veces, y en
+# ese rato la línea no cambia. Es corto a propósito: si alguien conecta el QR,
+# el siguiente intento ya lo ve.
+TTL_ESTADO = 10
+_MEMO_ESTADO = {}
+
+
+def limpiar_memo_estado():
+    """Olvida los estados consultados. La usan las pruebas."""
+    _MEMO_ESTADO.clear()
+
+
+def _estado_reciente(nombre):
+    ahora = time.monotonic()
+    guardado = _MEMO_ESTADO.get(nombre)
+    if guardado is not None and ahora - guardado[1] < TTL_ESTADO:
+        return guardado[0]
+    estado = estado_en_vivo(nombre)
+    # Solo se recuerda una respuesta de verdad. Un "no se pudo preguntar" es
+    # pasajero —un corte de red, Evolution reiniciándose— y recordarlo taparía
+    # la comprobación de los segundos siguientes, que es justo cuando importa.
+    if estado:
+        _MEMO_ESTADO[nombre] = (estado, ahora)
+    return estado
+
+
+def _linea(sede):
+    etiqueta = SEDE_LABEL.get(sede or "")
+    return f"La línea de WhatsApp de {etiqueta}" if etiqueta else "La línea de WhatsApp"
+
+
+def linea_caida(instancia, sede):
+    """Comprueba la línea ANTES de enviar. Devuelve el fallo, o None si se puede.
+
+    Sin sesión de WhatsApp emparejada, Evolution revienta por dentro con un
+    error de JavaScript —`onWhatsApp` para un texto, `waUploadToServer` para una
+    imagen— que no significa nada para quien está usando el sistema. Los dos son
+    lo mismo: la instancia no tiene socket. Preguntar primero convierte ese
+    volcado en una frase que dice qué hacer.
+
+    Solo bloquea cuando CONSTA que la línea no está conectada. Si no se pudo
+    preguntar (Evolution caído, red cortada) se deja pasar el intento: no se
+    puede afirmar que la línea esté mal, y el envío fallará solo, ya con un
+    mensaje legible.
+    """
+    estado = _estado_reciente(instancia)
+    if estado == "open":
+        return None
+    if not estado:
+        log.warning("No se pudo consultar el estado de la instancia %s antes de enviar.",
+                    instancia)
+        return None
+    log.warning("Envío bloqueado: la instancia %s está en estado %r.", instancia, estado)
+    return {
+        "estado": "fallido",
+        "detalle": f"{_linea(sede)} no está conectada. El mensaje no fue enviado.",
+        "instancia": instancia,
+        "external_message_id": "",
+        "error_codigo": "linea_desconectada",
+    }
+
+
+def _fallo_del_proveedor(respuesta, instancia, sede, ruta):
+    """Traduce un error de Evolution a algo que se pueda leer en pantalla.
+
+    El cuerpo que devuelve Evolution es una traza de JavaScript. Va al log, que
+    es donde sirve; a la coordinadora se le dice qué pasó y qué queda por hacer.
+    """
+    log.warning("Evolution respondió %s en %s (instancia %s): %s",
+                respuesta.status_code, ruta, instancia, respuesta.text[:400])
+    return {
+        "estado": "fallido",
+        "detalle": (f"{_linea(sede)} no pudo enviar el mensaje "
+                    f"(el servidor respondió {respuesta.status_code}). "
+                    "El mensaje no fue enviado."),
+        "instancia": instancia,
+        "external_message_id": "",
+        "error_codigo": str(respuesta.status_code),
+    }
+
+
+def _fallo_de_red(error, instancia, sede, ruta):
+    """Igual que arriba, para cuando ni siquiera se pudo hablar con Evolution."""
+    log.warning("No se pudo conectar con Evolution en %s (instancia %s): %s",
+                ruta, instancia, error)
+    return {
+        "estado": "fallido",
+        "detalle": ("No se pudo conectar con el servidor de WhatsApp. "
+                    "El mensaje no fue enviado."),
+        "instancia": instancia,
+        "external_message_id": "",
+    }
 
 
 def normalizar_numero(tel, prefijo=None):
@@ -181,6 +281,12 @@ def enviar_texto(clinica, tel, texto, sede="", automatico=False, instancia_prueb
         return {"estado": "fallido", "detalle": "El paciente no tiene un teléfono válido.",
                 "instancia": instancia, "external_message_id": ""}
 
+    # Si la línea no está conectada, no se intenta: Evolution devolvería una
+    # traza de JavaScript que no le dice nada a nadie.
+    caida = linea_caida(instancia, sede)
+    if caida is not None:
+        return caida
+
     endpoint = url.rstrip("/") + "/message/sendText/" + instancia
     try:
         r = requests.post(
@@ -190,15 +296,12 @@ def enviar_texto(clinica, tel, texto, sede="", automatico=False, instancia_prueb
             timeout=20,
         )
     except requests.RequestException as e:
-        return {"estado": "fallido", "detalle": f"No se pudo conectar con WhatsApp: {e}",
-                "instancia": instancia, "external_message_id": ""}
+        return _fallo_de_red(e, instancia, sede, "/message/sendText/")
 
     if r.status_code in (200, 201):
         return {"estado": "enviado", "detalle": f"Enviado por WhatsApp ({instancia}).",
                 "instancia": instancia, "external_message_id": _id_externo(r)}
-    return {"estado": "fallido", "detalle": f"Evolution respondió {r.status_code}: {r.text[:200]}",
-            "instancia": instancia, "external_message_id": "",
-            "error_codigo": str(r.status_code)}
+    return _fallo_del_proveedor(r, instancia, sede, "/message/sendText/")
 
 
 def enviar_media(clinica, tel, *, contenido, mimetype, nombre_archivo,
@@ -239,6 +342,13 @@ def enviar_media(clinica, tel, *, contenido, mimetype, nombre_archivo,
         return {"estado": "fallido", "detalle": "La imagen está vacía o no se pudo leer.",
                 "instancia": instancia, "external_message_id": ""}
 
+    # Mismo chequeo que en el texto, y aquí importa más: sin sesión, Evolution
+    # revienta en `waUploadToServer` ANTES de contactar con WhatsApp, después de
+    # que nosotros hayamos armado varios MB de base64 para nada.
+    caida = linea_caida(instancia, sede)
+    if caida is not None:
+        return caida
+
     cuerpo = {
         "number": numero,
         "mediatype": "image",
@@ -258,13 +368,9 @@ def enviar_media(clinica, tel, *, contenido, mimetype, nombre_archivo,
             timeout=TIMEOUT_MEDIA,
         )
     except requests.RequestException as e:
-        return {"estado": "fallido", "detalle": f"No se pudo conectar con WhatsApp: {e}",
-                "instancia": instancia, "external_message_id": ""}
+        return _fallo_de_red(e, instancia, sede, "/message/sendMedia/")
 
     if r.status_code in (200, 201):
         return {"estado": "enviado", "detalle": f"Imagen enviada por WhatsApp ({instancia}).",
                 "instancia": instancia, "external_message_id": _id_externo(r)}
-    return {"estado": "fallido",
-            "detalle": f"Evolution respondió {r.status_code}: {r.text[:200]}",
-            "instancia": instancia, "external_message_id": "",
-            "error_codigo": str(r.status_code)}
+    return _fallo_del_proveedor(r, instancia, sede, "/message/sendMedia/")

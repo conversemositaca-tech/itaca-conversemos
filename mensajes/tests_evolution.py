@@ -63,7 +63,8 @@ class SeleccionDeInstanciaTests(_Base):
         with self.settings(EVOLUTION_API_URL="https://evo.example",
                            EVOLUTION_API_KEY="clave-de-prueba",
                            EVOLUTION_INSTANCE="legacy_env"):
-            with patch("mensajes.evolution.requests.post",
+            with patch("mensajes.evolution.estado_en_vivo", return_value="open"), \
+                 patch("mensajes.evolution.requests.post",
                        return_value=RespuestaFalsa()) as post:
                 mensaje, resultado, _ = registrar_y_enviar(
                     self.clinica, telefono=paciente.telefono, texto="Hola",
@@ -137,7 +138,8 @@ class RespuestasAutomaticasTests(_Base):
         respuesta = RespuestaFalsa(data={"key": {"id": f"MSG-{tipo}"}})
         with self.settings(EVOLUTION_API_URL="https://evo.example",
                            EVOLUTION_API_KEY="k", EVOLUTION_INSTANCE="conversemositaca"):
-            with patch("mensajes.evolution.requests.post", return_value=respuesta) as post:
+            with patch("mensajes.evolution.estado_en_vivo", return_value="open"), \
+                 patch("mensajes.evolution.requests.post", return_value=respuesta) as post:
                 registrar_y_enviar(self.clinica, telefono="987654321", texto="Hola",
                                    tipo=tipo, sede=sede)
         return post.call_args.args[0]
@@ -168,7 +170,8 @@ class AnalistaNoEnviaTests(_Base):
             email="analista@test.pe", password="x", clinica=self.clinica,
             rol=Usuario.Rol.ANALISTA)
         paciente = self._paciente()
-        with patch("mensajes.evolution.requests.post") as post:
+        with patch("mensajes.evolution.estado_en_vivo", return_value="open"), \
+             patch("mensajes.evolution.requests.post") as post:
             with self.assertRaises(PermissionDenied):
                 registrar_y_enviar(self.clinica, telefono=paciente.telefono, texto="Hola",
                                    tipo=Mensaje.Tipo.MANUAL, paciente=paciente,
@@ -290,7 +293,8 @@ class WebhookEvolutionTests(_Base):
         self.assertEqual(Mensaje.objects.get().telefono, "51987654321")
 
     def test_from_me_se_registra_pero_no_se_reenvia(self):
-        with patch("mensajes.evolution.requests.post") as post:
+        with patch("mensajes.evolution.estado_en_vivo", return_value="open"), \
+             patch("mensajes.evolution.requests.post") as post:
             r = self._post(_upsert(from_me=True, msg_id="WA-SALIENTE"))
         self.assertEqual(r.status_code, 200)
         post.assert_not_called()
@@ -304,6 +308,7 @@ class WebhookEvolutionTests(_Base):
         """Ni FAQs, ni IA, ni ningún envío: estas líneas las atiende una persona."""
         with patch("leads.whatsapp_auto.procesar_lead") as auto, \
              patch("mensajes.services.registrar_y_enviar") as enviar, \
+             patch("mensajes.evolution.estado_en_vivo", return_value="open"), \
              patch("mensajes.evolution.requests.post") as post, \
              patch("core.estructurar_nota.estructurar") as ia:
             r = self._post(_upsert(texto="¿Cuánto cuesta la terapia de pareja?"))
@@ -513,3 +518,175 @@ class ConstraintsTests(_Base):
             Mensaje.objects.create(clinica=self.clinica, texto="x", tipo=Mensaje.Tipo.MANUAL,
                                    estado=Mensaje.Estado.FALLIDO)
         self.assertEqual(Mensaje.objects.count(), 3)
+
+
+class LineaDesconectadaTests(TestCase):
+    """No se intenta enviar por una línea sin sesión de WhatsApp.
+
+    Sin sesión, Evolution revienta por dentro con un error de JavaScript —
+    `onWhatsApp` para un texto, `waUploadToServer` para una imagen— que llegaba
+    tal cual a la pantalla de la coordinadora. Son el mismo problema: la
+    instancia nunca se emparejó. Preguntar antes convierte ese volcado en una
+    frase que dice qué pasó.
+    """
+
+    def setUp(self):
+        evolution.limpiar_memo_estado()
+        self.clinica = Clinica.objects.create(nombre="Ítaca", slug="itaca-linea")
+        InstanciaEvolution.objects.create(
+            clinica=self.clinica, sede="piura", nombre_instancia="conversemospiura",
+            entorno=InstanciaEvolution.Entorno.OFICIAL, activo=True)
+
+    def tearDown(self):
+        evolution.limpiar_memo_estado()
+
+    def _ajustes(self):
+        return self.settings(EVOLUTION_API_URL="https://evo.example",
+                             EVOLUTION_API_KEY="clave-de-prueba")
+
+    # --- 1. conectada: se intenta el envío -----------------------------------
+
+    def test_linea_conectada_deja_enviar_texto(self):
+        with self._ajustes(), \
+             patch("mensajes.evolution.estado_en_vivo", return_value="open"), \
+             patch("mensajes.evolution.requests.post",
+                   return_value=RespuestaFalsa()) as post:
+            r = evolution.enviar_texto(self.clinica, "987654321", "Hola", sede="piura")
+        self.assertEqual(r["estado"], "enviado")
+        self.assertEqual(post.call_count, 1)
+
+    def test_linea_conectada_deja_enviar_imagen(self):
+        with self._ajustes(), \
+             patch("mensajes.evolution.estado_en_vivo", return_value="open"), \
+             patch("mensajes.evolution.requests.post",
+                   return_value=RespuestaFalsa()) as post:
+            r = evolution.enviar_media(self.clinica, "987654321", contenido=b"\x89PNG..",
+                                       mimetype="image/png", nombre_archivo="a.png",
+                                       sede="piura")
+        self.assertEqual(r["estado"], "enviado")
+        self.assertEqual(post.call_count, 1)
+
+    # --- 2. desconectada: ni se intenta --------------------------------------
+
+    def test_linea_cerrada_no_llama_a_sendtext(self):
+        with self._ajustes(), \
+             patch("mensajes.evolution.estado_en_vivo", return_value="close"), \
+             patch("mensajes.evolution.requests.post") as post:
+            r = evolution.enviar_texto(self.clinica, "987654321", "Hola", sede="piura")
+        self.assertEqual(r["estado"], "fallido")
+        self.assertEqual(post.call_count, 0, "no debe intentarse el envío")
+
+    def test_linea_cerrada_no_llama_a_sendmedia(self):
+        """Aquí importa más: se ahorra armar varios MB de base64 para nada."""
+        with self._ajustes(), \
+             patch("mensajes.evolution.estado_en_vivo", return_value="close"), \
+             patch("mensajes.evolution.requests.post") as post:
+            r = evolution.enviar_media(self.clinica, "987654321", contenido=b"\x89PNG..",
+                                       mimetype="image/png", nombre_archivo="a.png",
+                                       sede="piura")
+        self.assertEqual(r["estado"], "fallido")
+        self.assertEqual(post.call_count, 0, "no debe intentarse el envío")
+
+    def test_estado_intermedio_tambien_bloquea(self):
+        """`connecting` no es `open`: el envío fallaría igual."""
+        with self._ajustes(), \
+             patch("mensajes.evolution.estado_en_vivo", return_value="connecting"), \
+             patch("mensajes.evolution.requests.post") as post:
+            r = evolution.enviar_texto(self.clinica, "987654321", "Hola", sede="piura")
+        self.assertEqual(r["estado"], "fallido")
+        self.assertEqual(post.call_count, 0)
+
+    # --- 3. el mensaje nombra la sede ----------------------------------------
+
+    def test_el_mensaje_dice_de_que_sede_es_la_linea(self):
+        for sede, etiqueta in (("piura", "Piura"), ("lima", "Lima")):
+            with self.subTest(sede=sede):
+                evolution.limpiar_memo_estado()
+                InstanciaEvolution.objects.update_or_create(
+                    clinica=self.clinica, sede=sede,
+                    defaults={"nombre_instancia": f"conversemos{sede}",
+                              "entorno": InstanciaEvolution.Entorno.OFICIAL,
+                              "activo": True})
+                with self._ajustes(), \
+                     patch("mensajes.evolution.estado_en_vivo", return_value="close"), \
+                     patch("mensajes.evolution.requests.post"):
+                    r = evolution.enviar_texto(self.clinica, "987654321", "Hola", sede=sede)
+                self.assertEqual(
+                    r["detalle"],
+                    f"La línea de WhatsApp de {etiqueta} no está conectada. "
+                    "El mensaje no fue enviado.")
+
+    def test_el_codigo_permite_distinguirlo_en_la_interfaz(self):
+        with self._ajustes(), \
+             patch("mensajes.evolution.estado_en_vivo", return_value="close"), \
+             patch("mensajes.evolution.requests.post"):
+            r = evolution.enviar_texto(self.clinica, "987654321", "Hola", sede="piura")
+        self.assertEqual(r["error_codigo"], "linea_desconectada")
+
+    # --- 4. el error técnico no llega a la pantalla --------------------------
+
+    def test_la_traza_de_javascript_no_llega_al_frontend(self):
+        """El caso real: Evolution devolvía 500 con un TypeError de Baileys."""
+        traza = ('{"status":500,"error":"Internal Server Error","response":'
+                 '{"message":["TypeError: Cannot read properties of undefined '
+                 "(reading 'waUploadToServer')\"]}}")
+        respuesta = RespuestaFalsa(status_code=500, text=traza)
+        with self._ajustes(), \
+             patch("mensajes.evolution.estado_en_vivo", return_value="open"), \
+             patch("mensajes.evolution.requests.post", return_value=respuesta):
+            r = evolution.enviar_media(self.clinica, "987654321", contenido=b"\x89PNG..",
+                                       mimetype="image/png", nombre_archivo="a.png",
+                                       sede="piura")
+        self.assertEqual(r["estado"], "fallido")
+        for filtrado in ("TypeError", "waUploadToServer", "undefined",
+                         "Internal Server Error", "status"):
+            self.assertNotIn(filtrado, r["detalle"])
+        self.assertIn("no pudo enviar el mensaje", r["detalle"])
+        self.assertIn("Piura", r["detalle"])
+
+    def test_el_error_tecnico_queda_en_el_log(self):
+        """Lo que se le oculta a la coordinadora tiene que seguir estando."""
+        respuesta = RespuestaFalsa(status_code=500, text="TypeError: waUploadToServer")
+        with self._ajustes(), \
+             patch("mensajes.evolution.estado_en_vivo", return_value="open"), \
+             patch("mensajes.evolution.requests.post", return_value=respuesta):
+            with self.assertLogs("mensajes.evolution", level="WARNING") as registro:
+                evolution.enviar_texto(self.clinica, "987654321", "Hola", sede="piura")
+        self.assertIn("waUploadToServer", "\n".join(registro.output))
+
+    def test_un_corte_de_red_tampoco_ensena_la_excepcion(self):
+        import requests as _requests
+
+        with self._ajustes(), \
+             patch("mensajes.evolution.estado_en_vivo", return_value="open"), \
+             patch("mensajes.evolution.requests.post",
+                   side_effect=_requests.ConnectionError("https://evo.example roto")):
+            r = evolution.enviar_texto(self.clinica, "987654321", "Hola", sede="piura")
+        self.assertEqual(r["estado"], "fallido")
+        self.assertNotIn("evo.example", r["detalle"])
+        self.assertIn("No se pudo conectar con el servidor de WhatsApp", r["detalle"])
+
+    # --- que no se pregunte una vez por cada parte ---------------------------
+
+    def test_el_estado_se_consulta_una_sola_vez_por_comunicacion(self):
+        """Cuatro partes no son cuatro consultas: en ese rato nada cambia."""
+        with self._ajustes(), \
+             patch("mensajes.evolution.estado_en_vivo", return_value="open") as consulta, \
+             patch("mensajes.evolution.requests.post", return_value=RespuestaFalsa()):
+            for _ in range(4):
+                evolution.enviar_texto(self.clinica, "987654321", "Hola", sede="piura")
+        self.assertEqual(consulta.call_count, 1)
+
+    def test_si_no_se_puede_preguntar_el_envio_se_intenta_igual(self):
+        """No se puede afirmar que la línea esté mal: se deja que falle solo.
+
+        Bloquear aquí inventaría una avería a partir de no haber podido
+        preguntar, y rompería el respaldo por wa.me de toda la vida.
+        """
+        with self._ajustes(), \
+             patch("mensajes.evolution.estado_en_vivo", return_value=""), \
+             patch("mensajes.evolution.requests.post",
+                   return_value=RespuestaFalsa()) as post:
+            r = evolution.enviar_texto(self.clinica, "987654321", "Hola", sede="piura")
+        self.assertEqual(r["estado"], "enviado")
+        self.assertEqual(post.call_count, 1)
