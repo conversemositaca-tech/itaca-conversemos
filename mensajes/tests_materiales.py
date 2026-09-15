@@ -442,7 +442,9 @@ class EnvioDeVariasImagenesTests(TestCase):
         partes, resumen = self._enviar(self.imagenes[:1], texto="Hola Mirai", media=media)
         self.assertEqual(len(partes), 1)
         self.assertEqual(vistos, ["Hola Mirai"])
-        self.assertEqual(resumen["estado"], "enviado")
+        # El proveedor aceptó el envío; WhatsApp aún no ha confirmado nada. Ese
+        # es el estado correcto hasta que llegue un acuse por el webhook.
+        self.assertEqual(resumen["estado"], "aceptado")
 
     def test_varias_imagenes_van_primero_y_el_texto_al_final(self):
         partes, resumen = self._enviar(self.imagenes, texto="Hola")
@@ -451,7 +453,7 @@ class EnvioDeVariasImagenesTests(TestCase):
                          [m.id for m in self.imagenes] + [None])
         self.assertEqual(partes[-1].texto, "Hola")
         self.assertEqual((resumen["estado"], resumen["imagenes"], resumen["textos"]),
-                         ("enviado", 3, 1))
+                         ("aceptado", 3, 1))
 
     def test_las_imagenes_no_llevan_pie_cuando_son_varias(self):
         """Un pie pegado a una sola de tres se lee como un error."""
@@ -529,7 +531,7 @@ class EnvioDeVariasImagenesTests(TestCase):
         self.assertEqual(enviados, ["Pieza 2"])        # solo la que faltaba
         for nombre in ya_enviadas:
             self.assertNotIn(nombre, enviados)
-        self.assertEqual(resumen["estado"], "enviado")
+        self.assertEqual(resumen["estado"], "aceptado")
         self.assertEqual(resumen["enviadas"], 4)
 
     def test_los_ids_de_las_partes_ya_enviadas_no_cambian(self):
@@ -566,7 +568,7 @@ class EnvioDeVariasImagenesTests(TestCase):
                 usuario=self.coord, sede="piura")
         self.assertEqual(len(partes), 1)
         self.assertIsNone(partes[0].grupo_envio)
-        self.assertEqual(resumen["estado"], "enviado")
+        self.assertEqual(resumen["estado"], "aceptado")
 
     def test_la_pausa_entre_partes_se_respeta(self):
         """Sin pausa, WhatsApp puede mostrar las imágenes desordenadas."""
@@ -729,7 +731,9 @@ class EndpointDelCompositorTests(TestCase):
         self.assertEqual(r.status_code, 200, r.content[:300])
         self.assertEqual(enviadas, ["Pieza 2", "Pieza 0", "Pieza 1"])
         envio = r.json()["envio"]
-        self.assertEqual(envio["estado"], "enviado")
+        # "aceptado": Evolution recibió las cuatro partes y todavía no hay acuse
+        # de WhatsApp. La pantalla dice "En camino…", no "Enviado ✓".
+        self.assertEqual(envio["estado"], "aceptado")
         self.assertEqual((envio["resumen"]["enviadas"], envio["resumen"]["total"]), (4, 4))
 
     def test_el_endpoint_informa_el_fallo_parcial_y_el_reintento_completa(self):

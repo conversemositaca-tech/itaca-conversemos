@@ -1,7 +1,9 @@
 import uuid
+from datetime import timedelta
 
 from django.conf import settings
 from django.db import models
+from django.utils import timezone
 
 from core.models import ModeloTenant
 
@@ -36,6 +38,11 @@ class Mensaje(ModeloTenant):
         # partes se crean ANTES de empezar a enviar: si algo se corta a mitad,
         # esta fila es la que sabe qué faltaba. Un mensaje suelto nunca la usa.
         PENDIENTE = "pendiente", "Pendiente de envío"
+        # El proveedor ACEPTÓ la petición (HTTP 200/201) y le puso un id, pero
+        # WhatsApp todavía no confirmó nada. No es "enviado": es el escalón
+        # anterior, y es donde se queda un mensaje que la API dio por bueno y
+        # que nunca llegó a salir. Sale de aquí SOLO con un acuse del webhook.
+        ACEPTADO = "aceptado", "En camino"
         # Los que agrega el webhook de Evolution: el ciclo de vida real del
         # mensaje (lo que se ve como ✓, ✓✓ y ✓✓ azul en el celular).
         RECIBIDO = "recibido", "Recibido"
@@ -56,11 +63,22 @@ class Mensaje(ModeloTenant):
     # acuses por su cuenta: el "leído" puede llegar antes que el "entregado").
     # Los estados que no están aquí (fallido, no_configurado, recibido) no entran
     # en la comparación: no son parte de esa escalera.
+    #
+    # Se puede SALTAR escalones. Evolution 2.3.7 no registra `SERVER_ACK`, así
+    # que en la práctica un mensaje va de "aceptado" a "entregado" sin pasar por
+    # "enviado". Eso es normal y no es un error: por eso la comparación es por
+    # orden y no por el escalón siguiente.
     ORDEN_ESTADO = {
-        Estado.ENVIADO: 1,
-        Estado.ENTREGADO: 2,
-        Estado.LEIDO: 3,
+        Estado.ACEPTADO: 1,
+        Estado.ENVIADO: 2,
+        Estado.ENTREGADO: 3,
+        Estado.LEIDO: 4,
     }
+
+    # Cuánto se espera un acuse antes de avisar que no llegó. WhatsApp confirma
+    # en segundos cuando todo va bien; dos minutos sin nada significa que algo
+    # pasó, y quien envió tiene que poder enterarse sin adivinar.
+    ESPERA_CONFIRMACION = timedelta(minutes=2)
 
     paciente = models.ForeignKey(
         "pacientes.Paciente", on_delete=models.SET_NULL, related_name="mensajes", null=True, blank=True
@@ -90,6 +108,14 @@ class Mensaje(ModeloTenant):
     # acuses de entrega y para no procesar dos veces el mismo evento.
     external_message_id = models.CharField(max_length=180, blank=True, default="")
     error_codigo = models.CharField(max_length=40, blank=True, default="")
+    # Lo que el PROVEEDOR dijo de su propio envío (Evolution manda "PENDING").
+    # Es un dato suyo, no una conclusión nuestra. Se guarda solo este campo: la
+    # respuesta completa trae el mensaje y metadatos del servidor, y nada de eso
+    # hace falta para saber en qué quedó el envío.
+    proveedor_status = models.CharField(max_length=40, blank=True, default="")
+    # Cuándo el proveedor aceptó el mensaje: el reloj desde el que se cuenta la
+    # espera de confirmación.
+    aceptado_en = models.DateTimeField(null=True, blank=True)
     actualizado_en = models.DateTimeField(auto_now=True)
     # Qué plantilla se usó y qué decía ANTES de que la editaran. Si nadie tocó
     # el texto, `texto_original` queda vacío (no se guarda dos veces lo mismo).
@@ -145,8 +171,24 @@ class Mensaje(ModeloTenant):
     def __str__(self):
         return f"{self.get_tipo_display()} · {self.telefono} · {self.estado}"
 
+    @property
+    def sin_confirmacion(self):
+        """True si lleva demasiado ACEPTADO y WhatsApp no ha confirmado nada.
+
+        Es la única señal de que un mensaje que la pantalla dio por bueno puede
+        no haber salido nunca. No cambia el estado ni desbloquea nada: solo
+        avisa, porque reenviar por las malas le duplicaría el mensaje al
+        paciente.
+        """
+        if self.estado != self.Estado.ACEPTADO:
+            return False
+        desde = self.aceptado_en or self.creado_en
+        if desde is None:
+            return False
+        return timezone.now() - desde > self.ESPERA_CONFIRMACION
+
     def avanzar_estado(self, nuevo, *, detalle="", error_codigo=""):
-        """Mueve el estado hacia adelante en la escalera enviado→entregado→leído.
+        """Mueve el estado hacia adelante en la escalera del ciclo de vida.
 
         Devuelve True si guardó. Un acuse que llega tarde (el "entregado" después
         del "leído") NO retrocede el estado: en la bitácora quedaría como si el

@@ -159,10 +159,29 @@ const DECISIONES = [
 const DECISION_GRUPOS = [...new Set(DECISIONES.map((d) => d.g))];
 
 const MENSAJE_ESTADO = {
+  // "aceptado" va en gris a propósito: el proveedor recibió la petición y
+  // WhatsApp todavía no ha confirmado nada. No es un logro ni un fallo.
+  aceptado: { bg: "#F1F0ED", fg: "#6E6E6E" },
   enviado: { bg: "#E9F1ED", fg: "#3E7A65" },
+  entregado: { bg: "#E9F1ED", fg: "#3E7A65" },
+  leido: { bg: "#E4EEF7", fg: "#3A6A93" },
+  recibido: { bg: "#F1F0ED", fg: "#6E6E6E" },
+  pendiente: { bg: "#F7ECDD", fg: "#9C6B2E" },
   fallido: { bg: "#F7E5E5", fg: "#9C4646" },
   no_configurado: { bg: "#F7ECDD", fg: "#9C6B2E" },
 };
+
+// Los escalones por los que pasa un mensaje que SÍ salió. Un 200 del proveedor
+// no es "Enviado ✓": mientras WhatsApp no acuse, el mensaje está en camino.
+const ENVIO_SALIO = ["aceptado", "enviado", "entregado", "leido"];
+const ENVIO_TEXTO = {
+  aceptado: "En camino…",
+  enviado: "Enviado ✓",
+  entregado: "Entregado ✓✓",
+  leido: "Leído",
+};
+const AVISO_SIN_CONFIRMAR =
+  "El mensaje fue aceptado por el proveedor, pero aún no hay confirmación de entrega.";
 
 const LEAD_ESTADOS = [
   { v: "nuevo", l: "Nuevo" },
@@ -2276,6 +2295,10 @@ function Gerencia({ showToast, clinica }) {
             <StatCard label="Atendidas" valor={op.atendidas} color="#4F8A77" />
             <StatCard label="% Asistencia" valor={`${op.asistencia_pct}%`} sub={`${op.cancelacion_pct}% canceladas`} color={op.asistencia_pct >= 80 ? "#4F8A77" : "#B4564E"} />
             <StatCard label="Recordatorios enviados" valor={op.recordatorios} />
+            {op.recordatorios_sin_confirmar > 0 && (
+              <StatCard label="Pendientes de confirmación" valor={op.recordatorios_sin_confirmar}
+                sub="aceptados, sin acuse de WhatsApp" color="#9C6B2E" />
+            )}
           </div>
 
           {op.por_dia && op.por_dia.length > 1 && (
@@ -4596,9 +4619,31 @@ function WhatsappModal({ id, datos, onCerrar, onEnviado, showToast }) {
   const iniciales = (pac.nombre || "?").split(" ").filter(Boolean).slice(0, 2)
     .map((p) => p[0]).join("").toUpperCase();
   const nombrePlantilla = plantillas.find((p) => p.clave === clave)?.nombre || "";
-  const yaEnviado = resultado?.estado === "enviado";
+  const salio = ENVIO_SALIO.includes(resultado?.estado);
+  const confirmado = salio && resultado?.estado !== "aceptado";
   const parcial = resultado?.comunicacion === "parcial";
-  const bloqueado = yaEnviado || parcial;
+  // Un mensaje ACEPTADO bloquea igual que uno confirmado: volver a pulsar le
+  // llegaría dos veces al paciente. La falta de confirmación se avisa, no se
+  // resuelve reenviando.
+  const bloqueado = salio || parcial;
+
+  // Si a los dos minutos WhatsApp sigue sin confirmar nada, se dice. El backend
+  // ya lo marca en los contactos anteriores; este temporizador cubre el rato en
+  // que el modal sigue abierto después de enviar.
+  //
+  // Se guarda QUÉ mensaje venció, no un booleano: así un reintento posterior
+  // empieza su propia espera en vez de heredar el aviso del anterior. El aviso
+  // se deriva en el render y el temporizador es lo único que toca el estado.
+  const [vencido, setVencido] = useState("");
+  const claveEnvio = resultado?.external_message_id || resultado?.grupo || "";
+  useEffect(() => {
+    if (resultado?.estado !== "aceptado") return undefined;
+    const clave = resultado.external_message_id || resultado.grupo || "";
+    const t = setTimeout(() => setVencido(clave), 120000);
+    return () => clearTimeout(t);
+  }, [resultado]);
+  const tardando = Boolean(resultado?.sin_confirmacion)
+    || (resultado?.estado === "aceptado" && vencido === claveEnvio);
 
   // Tras insertar un emoji, el cursor vuelve justo detrás de él y el foco se
   // queda en el textarea: la coordinadora sigue escribiendo sin tocar el mouse.
@@ -4647,7 +4692,8 @@ function WhatsappModal({ id, datos, onCerrar, onEnviado, showToast }) {
       .then((d) => {
         const envio = d.envio || {};
         setResultado(envio);
-        if (envio.estado === "enviado") showToast("WhatsApp enviado");
+        if (ENVIO_SALIO.includes(envio.estado))
+          showToast(envio.estado === "aceptado" ? "Mensaje en camino" : "WhatsApp enviado");
         else if (envio.comunicacion === "parcial")
           showToast(`Se enviaron ${envio.resumen?.enviadas} de ${envio.resumen?.total} partes`);
         else showToast("No se pudo enviar: " + (envio.detalle || "revisa la línea"));
@@ -4675,7 +4721,7 @@ function WhatsappModal({ id, datos, onCerrar, onEnviado, showToast }) {
       .then((d) => {
         const envio = d.envio || {};
         setResultado(envio);
-        showToast(envio.estado === "enviado"
+        showToast(ENVIO_SALIO.includes(envio.estado)
           ? "Comunicación completada"
           : `Siguen faltando ${envio.resumen?.faltan || 0} partes`);
         onEnviado(d);
@@ -4720,9 +4766,22 @@ function WhatsappModal({ id, datos, onCerrar, onEnviado, showToast }) {
         <div className="wa-compose-body">
           {/* ── Compositor ── */}
           <div className="wa-compose-left">
-            {resultado && (yaEnviado ? (
+            {resultado && (salio ? (
               <div className="wa-compose-ok">
-                <div className="wa-compose-ok-t"><Check size={15} strokeWidth={2.5} /> WhatsApp enviado</div>
+                <div className="wa-compose-ok-t">
+                  {/* El ✓ es de WhatsApp, no nuestro: mientras no haya acuse va
+                      un reloj. Un check junto a "En camino…" diría lo contrario
+                      de lo que la frase dice. */}
+                  {confirmado
+                    ? <Check size={15} strokeWidth={2.5} />
+                    : <Clock size={15} strokeWidth={2.5} />}
+                  {" "}{ENVIO_TEXTO[resultado.estado] || "Enviado"}
+                </div>
+                {tardando && (
+                  <div className="wa-compose-alert warn" style={{ marginTop: 8 }}>
+                    {AVISO_SIN_CONFIRMAR}
+                  </div>
+                )}
                 <div className="wa-compose-ok-d">
                   {resultado.proveedor && <div>proveedor: {resultado.proveedor}</div>}
                   {resultado.instancia && <div>línea: {resultado.instancia}</div>}
@@ -4924,8 +4983,8 @@ function WhatsappModal({ id, datos, onCerrar, onEnviado, showToast }) {
 
         <div className="wa-compose-footer">
           <div className="wa-compose-dest">
-            {yaEnviado
-              ? <>Enviado a <strong>{pac.nombre}</strong> · {hora}</>
+            {salio
+              ? <>{confirmado ? "Enviado a" : "En camino a"} <strong>{pac.nombre}</strong> · {hora}</>
               : parcial
                 ? <>Faltan <strong>{resultado.resumen?.faltan}</strong> de {resultado.resumen?.total} partes.</>
                 : confirmar

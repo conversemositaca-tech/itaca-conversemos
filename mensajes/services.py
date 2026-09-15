@@ -21,6 +21,7 @@ rechazó explícitamente (400, 401, 5xx…), que es cuando consta que no entreg�
 Pase lo que pase, una comunicación deja UNA sola fila en la bitácora, con el
 proveedor que de verdad envió.
 """
+from django.utils import timezone
 from rest_framework.exceptions import PermissionDenied
 
 from core.permisos import es_solo_lectura
@@ -30,6 +31,50 @@ from .evolution import enviar_media as enviar_media_evolution
 from .evolution import enviar_texto as enviar_evolution
 from .evolution import wa_link
 from .models import Mensaje, PlantillaMensaje, params_plantilla
+
+
+# Estados en los que el mensaje SÍ salió hacia el paciente. "aceptado" está
+# aquí porque el mensaje se mandó: lo que falta es la confirmación, no el envío.
+# Sirve para no tratar un envío sin acuse como si hubiera fallado.
+SALIO = (
+    Mensaje.Estado.ACEPTADO,
+    Mensaje.Estado.ENVIADO,
+    Mensaje.Estado.ENTREGADO,
+    Mensaje.Estado.LEIDO,
+)
+
+
+def _estado_persistido(resultado, proveedor):
+    """Qué se guarda en la fila cuando el proveedor dio el envío por bueno.
+
+    Un 200 de Evolution significa "lo acepté", no "WhatsApp lo entregó", y esa
+    diferencia es justo lo que este estado existe para hacer visible: un mensaje
+    aceptado y nunca confirmado se veía en pantalla igual que uno entregado.
+
+    Es la ÚNICA traducción del sistema. El dict que devuelven `enviar_texto` y
+    `enviar_media` sigue diciendo "enviado" con el significado de siempre —"el
+    proveedor lo aceptó"—, así que los módulos que solo preguntan si salió
+    (recordatorios, leads, captación) no cambian.
+
+    WhatsApp Cloud (Meta) no pasa por aquí: tiene otros acuses y otro webhook, y
+    darle esta semántica sin tocar ese camino dejaría sus mensajes en "En
+    camino" para siempre.
+    """
+    if resultado["estado"] == "enviado" and proveedor == Mensaje.Proveedor.EVOLUTION:
+        return Mensaje.Estado.ACEPTADO
+    return resultado["estado"]
+
+
+def _trazabilidad(resultado, estado):
+    """Campos del proveedor que acompañan al estado guardado.
+
+    `aceptado_en` es el reloj desde el que se cuenta la espera de confirmación:
+    solo tiene sentido en el momento en que el proveedor acepta.
+    """
+    datos = {"proveedor_status": (resultado.get("proveedor_status") or "")[:40]}
+    if estado == Mensaje.Estado.ACEPTADO:
+        datos["aceptado_en"] = timezone.now()
+    return datos
 
 
 def _sede_de(paciente, cita):
@@ -112,9 +157,11 @@ def registrar_y_enviar(clinica, *, telefono, texto, tipo, paciente=None, cita=No
         # por el routing por sede. Lo valida la vista antes de llegar aquí.
         resultado = enviar_evolution(clinica, telefono, texto, sede=sede,
                                      automatico=False, instancia_prueba=instancia_prueba)
+        estado = _estado_persistido(resultado, Mensaje.Proveedor.EVOLUTION)
         mensaje = Mensaje.objects.create(
             clinica=clinica, paciente=paciente, cita=cita, telefono=telefono or "",
-            texto=texto, tipo=tipo, estado=resultado["estado"],
+            texto=texto, tipo=tipo, estado=estado,
+            **_trazabilidad(resultado, estado),
             detalle=("[PRUEBA] " + resultado.get("detalle", ""))[:300], enviado_por=usuario,
             proveedor=Mensaje.Proveedor.EVOLUTION, direccion=Mensaje.Direccion.SALIENTE,
             sede=sede or "", instancia=(resultado.get("instancia") or "")[:120],
@@ -152,6 +199,7 @@ def registrar_y_enviar(clinica, *, telefono, texto, tipo, paciente=None, cita=No
         resultado = enviar_evolution(clinica, telefono, texto, sede=sede,
                                      automatico=automatico)
 
+    estado = _estado_persistido(resultado, proveedor)
     mensaje = Mensaje.objects.create(
         clinica=clinica,
         paciente=paciente,
@@ -159,7 +207,8 @@ def registrar_y_enviar(clinica, *, telefono, texto, tipo, paciente=None, cita=No
         telefono=telefono or "",
         texto=texto,
         tipo=tipo,
-        estado=resultado["estado"],
+        estado=estado,
+        **_trazabilidad(resultado, estado),
         detalle=(detalle_previo + resultado.get("detalle", ""))[:300],
         enviado_por=usuario,
         proveedor=proveedor,
@@ -241,14 +290,22 @@ def _texto_de_parte(material, caption, texto):
 
 
 def _aplicar_resultado(mensaje, resultado, *, prefijo=""):
-    """Vuelca en la fila lo que respondió el proveedor."""
-    mensaje.estado = resultado["estado"]
+    """Vuelca en la fila lo que respondió el proveedor.
+
+    Las imágenes salen SIEMPRE por Evolution (ver la nota de arriba), así que
+    aquí el proveedor es siempre ese.
+    """
+    estado = _estado_persistido(resultado, Mensaje.Proveedor.EVOLUTION)
+    mensaje.estado = estado
     mensaje.detalle = (prefijo + (resultado.get("detalle") or ""))[:300]
     mensaje.instancia = (resultado.get("instancia") or "")[:120]
     mensaje.external_message_id = (resultado.get("external_message_id") or "")[:180]
     mensaje.error_codigo = (resultado.get("error_codigo") or "")[:40]
+    for campo, valor in _trazabilidad(resultado, estado).items():
+        setattr(mensaje, campo, valor)
     mensaje.save(update_fields=["estado", "detalle", "instancia", "external_message_id",
-                                "error_codigo", "actualizado_en"])
+                                "error_codigo", "proveedor_status", "aceptado_en",
+                                "actualizado_en"])
     return mensaje
 
 
@@ -300,14 +357,21 @@ def despachar_partes(partes, *, clinica, telefono, sede="", instancia_prueba="",
 def resumen_comunicacion(partes):
     """Cómo le queda la comunicación a Coordinación: una fila, no cuatro.
 
-    `estado` ∈ enviado | parcial | fallido | pendiente.
+    `estado` ∈ aceptado | enviado | entregado | leido | parcial | fallido |
+    pendiente.
+
+    Cuando TODAS las partes salieron, el estado de la comunicación es el de la
+    parte MENOS avanzada: una comunicación no está entregada mientras una de sus
+    imágenes siga sin confirmar. Así el escalón que se muestra es el que de
+    verdad alcanzaron todas.
     """
     partes = list(partes)
     total = len(partes)
     enviadas = [m for m in partes if m.external_message_id]
     n = len(enviadas)
     if total and n == total:
-        estado = "enviado"
+        estado = min((m.estado for m in partes),
+                     key=lambda e: Mensaje.ORDEN_ESTADO.get(e, 0))
     elif n:
         estado = "parcial"
     elif any(m.estado == Mensaje.Estado.PENDIENTE for m in partes):
