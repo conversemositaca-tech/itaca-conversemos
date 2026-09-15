@@ -922,3 +922,100 @@ class EstadoRealDelEnvioTests(_Base):
         r = self._acuse("DELIVERY_ACK", msg_id="WA-QUE-NO-EXISTE")
         self.assertEqual(r.status_code, 200)
         self.assertEqual(r.json().get("ignorado"), "desconocido")
+
+
+class NombreDeArchivoMultimediaTests(_Base):
+    """El `fileName` que ve Evolution decide el mimetype del mensaje.
+
+    Evolution 2.3.7 ignora el `mimetype` del cuerpo y lo deduce del nombre del
+    archivo. Sin extensión resuelve `false`, y WhatsApp descarta el mensaje sin
+    un solo acuse: se sube el archivo, se crea el mensaje y no llega nada.
+
+    Pasó en producción con la pieza "material_sin_extension", que se
+    envió dos veces y se perdió las dos, con el .jpg correcto en disco.
+    """
+
+    IMAGEN = b"\xff\xd8\xff\xe0 bytes de una imagen \x00\x01"
+
+    def _payload(self, *, nombre, mimetype, caption="Hola"):
+        """Envía una imagen y devuelve el cuerpo JSON que recibió Evolution."""
+        with self.settings(EVOLUTION_API_URL="https://evo.example",
+                           EVOLUTION_API_KEY="clave-de-prueba"):
+            with patch("mensajes.evolution.estado_en_vivo", return_value="open"), \
+                 patch("mensajes.evolution.requests.post",
+                       return_value=RespuestaFalsa()) as post:
+                evolution.enviar_media(
+                    self.clinica, "987654321", contenido=self.IMAGEN,
+                    mimetype=mimetype, nombre_archivo=nombre, caption=caption,
+                    sede="piura")
+        return post.call_args.kwargs["json"]
+
+    # --- 1 a 3. Sin extensión: se le pone la que dice el MIME ------------
+
+    def test_1_jpeg_sin_extension(self):
+        self.assertEqual(
+            evolution._nombre_con_extension("material_sin_extension", "image/jpeg"),
+            "material_sin_extension.jpg")
+
+    def test_2_png_sin_extension(self):
+        self.assertEqual(evolution._nombre_con_extension("ubicacion", "image/png"),
+                         "ubicacion.png")
+
+    def test_3_webp_sin_extension(self):
+        self.assertEqual(evolution._nombre_con_extension("tarifas", "image/webp"),
+                         "tarifas.webp")
+
+    # --- 4 y 5. La que ya vale se respeta --------------------------------
+
+    def test_4_jpg_no_se_duplica(self):
+        self.assertEqual(evolution._nombre_con_extension("horarios.jpg", "image/jpeg"),
+                         "horarios.jpg")
+
+    def test_5_jpeg_es_igual_de_valida(self):
+        """`.jpeg` describe el contenido tan bien como `.jpg`: no se toca."""
+        self.assertEqual(evolution._nombre_con_extension("horarios.jpeg", "image/jpeg"),
+                         "horarios.jpeg")
+
+    # --- 6. La que miente se corrige -------------------------------------
+
+    def test_6_extension_incoherente_se_reemplaza(self):
+        """Manda el contenido, no cómo llamaron a la pieza."""
+        self.assertEqual(evolution._nombre_con_extension("imagen.png", "image/jpeg"),
+                         "imagen.jpg")
+
+    def test_6b_un_punto_en_el_nombre_no_es_una_extension(self):
+        self.assertEqual(
+            evolution._nombre_con_extension("Horarios 2026. Sede Piura", "image/jpeg"),
+            "Horarios 2026. Sede Piura.jpg")
+
+    def test_6c_un_mime_desconocido_no_inventa_extension(self):
+        self.assertEqual(evolution._nombre_con_extension("archivo", "application/pdf"),
+                         "archivo")
+
+    def test_6d_un_nombre_vacio_sigue_teniendo_nombre(self):
+        self.assertEqual(evolution._nombre_con_extension("", "image/jpeg"), "imagen.jpg")
+
+    def test_6e_un_nombre_larguisimo_conserva_la_extension(self):
+        nombre = evolution._nombre_con_extension("x" * 300, "image/png")
+        self.assertTrue(nombre.endswith(".png"))
+        self.assertLessEqual(len(nombre), 120)
+
+    # --- 7 a 9. El payload que sale de verdad ----------------------------
+
+    def test_7_el_payload_lleva_mediatype_mimetype_y_filename_coherentes(self):
+        cuerpo = self._payload(nombre="material_sin_extension",
+                               mimetype="image/jpeg")
+        self.assertEqual(cuerpo["mediatype"], "image")
+        self.assertEqual(cuerpo["mimetype"], "image/jpeg")
+        self.assertEqual(cuerpo["fileName"], "material_sin_extension.jpg")
+
+    def test_8_los_bytes_enviados_no_cambian(self):
+        import base64
+
+        cuerpo = self._payload(nombre="pieza", mimetype="image/jpeg")
+        self.assertEqual(base64.b64decode(cuerpo["media"]), self.IMAGEN)
+
+    def test_9_el_pie_de_la_imagen_sigue_intacto(self):
+        cuerpo = self._payload(nombre="pieza", mimetype="image/jpeg",
+                               caption="Hola Ana, te comparto la ubicación 🩵")
+        self.assertEqual(cuerpo["caption"], "Hola Ana, te comparto la ubicación 🩵")
