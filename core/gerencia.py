@@ -351,7 +351,9 @@ class HoyResumenView(APIView):
                 Cita.objects.del_tenant_actual()
                 .filter(inicio__gte=ini, inicio__lt=fin, recordatorio_enviado=False)
                 .exclude(estado__in=[Cita.Estado.ATENDIDA, Cita.Estado.CANCELADA])
-                .exclude(paciente__telefono="")   # sin teléfono no hay nada que enviar
+                # Sin ningún número no hay nada que enviar. El del tutor cuenta:
+                # a un menor se le avisa por ahí, y antes esas citas no aparecían.
+                .exclude(paciente__telefono="", paciente__tutor_telefono="")
                 .count()
             )
             out["recordatorios"] = {

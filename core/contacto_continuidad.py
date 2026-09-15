@@ -165,10 +165,20 @@ def canal_de(paciente):
     sede = (paciente.sede or "").strip()
     if sede not in SEDES_CON_LINEA:
         raise ContactoBloqueado("sin_sede")
-    if not (paciente.telefono or "").strip():
+    # El número por el que se le llega: el suyo, o el de su tutor si no tiene
+    # uno propio (un menor normalmente no lo tiene). El tutor es CANAL: el
+    # mensaje sigue siendo de la ficha del paciente y en su historial consta.
+    numero, fuente_contacto = paciente.canal_contacto()
+    if not numero:
         raise ContactoBloqueado("sin_telefono")
     instancia = instancia_para(paciente.clinica, sede)
     return {
+        "telefono": numero,
+        # Quién contesta al otro lado, para que quien escribe lo sepa antes de
+        # redactar: no es lo mismo escribirle al paciente que a su madre.
+        "fuente_contacto": fuente_contacto,
+        "tutor_nombre": paciente.tutor_nombre if fuente_contacto == "tutor" else "",
+        "tutor_parentesco": paciente.tutor_parentesco if fuente_contacto == "tutor" else "",
         "sede": sede,
         "sede_label": paciente.get_sede_display(),
         "canal": f"WhatsApp {paciente.get_sede_display()}",
@@ -188,7 +198,11 @@ def telefono_mascara(paciente):
     La coordinadora necesita confirmar que le escribe a la persona correcta sin
     que el número completo quede a la vista de quien mire la pantalla.
     """
-    d = "".join(c for c in (paciente.telefono or "") if c.isdigit())
+    # El número por el que se le va a escribir de verdad: si el paciente no
+    # tiene uno propio, el de su tutor. Enmascarar el suyo cuando el mensaje
+    # sale por otro sitio confundiría a quien está comprobando el destino.
+    numero, _fuente = paciente.canal_contacto()
+    d = "".join(c for c in numero if c.isdigit())
     if not d:
         return ""
     return "•" * max(len(d) - 3, 0) + d[-3:]
@@ -498,7 +512,7 @@ def enviar(paciente, usuario, *, texto="", observacion="", confirmado=False,
     piezas = materiales_validos(paciente.clinica, materiales)
 
     partes, resumen = enviar_comunicacion(
-        paciente.clinica, telefono=paciente.telefono, texto=cuerpo,
+        paciente.clinica, telefono=canal["telefono"], texto=cuerpo,
         tipo=Mensaje.Tipo.CONTINUIDAD, materiales=piezas, paciente=paciente,
         usuario=usuario, sede=canal["sede"], plantilla_clave=clave,
         texto_original=original, gestion_continuidad=gestion,

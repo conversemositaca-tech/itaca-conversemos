@@ -176,11 +176,28 @@ class LeadCreaLaCitaTests(TestCase):
         self.assertEqual(Lead.objects.get().cita_id, cita.id)
 
     def test_no_duplica_al_paciente_que_ya_existe(self):
-        """El mismo teléfono, aunque esté escrito distinto, es la misma persona."""
-        ya = Paciente.objects.create(clinica=self.clinica, nombre="Ana P.", telefono="+51 987 654 321")
+        """Mismo nombre y mismo teléfono, aunque esté escrito distinto: la misma persona.
+
+        El teléfono por sí solo ya NO alcanza para decidirlo (en esta clínica
+        140 números están compartidos por 307 fichas: hermanos, madres e hijos).
+        Tiene que calzar también el nombre.
+        """
+        ya = Paciente.objects.create(clinica=self.clinica, nombre="ANA  PÉREZ",
+                                     telefono="+51 987 654 321")
         self._crear_lead()
         self.assertEqual(Paciente.objects.count(), 1)
         self.assertEqual(Cita.objects.get().paciente_id, ya.id)
+
+    def test_el_mismo_telefono_con_otro_nombre_es_otra_persona(self):
+        """El caso que cruzaba historiales: la madre y su hijo comparten número."""
+        madre = Paciente.objects.create(clinica=self.clinica, nombre="Rosa Pérez",
+                                        telefono="+51 987 654 321")
+        self._crear_lead()   # el lead es de "Ana Pérez", con ese mismo número
+        self.assertEqual(Paciente.objects.count(), 2)
+        cita = Cita.objects.get()
+        self.assertNotEqual(cita.paciente_id, madre.id)
+        self.assertEqual(cita.paciente.nombre, "Ana Pérez")
+        self.assertEqual(madre.citas.count(), 0)
 
     def test_sin_consulta_agendada_no_crea_nada(self):
         r = self._crear_lead(agendo_consulta=False, fecha_consulta=None, hora_consulta=None)

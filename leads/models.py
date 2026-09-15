@@ -98,6 +98,21 @@ class Lead(ModeloTenant):
     nombre = models.CharField(max_length=200)
     telefono = models.CharField(max_length=40, blank=True)
     email = models.EmailField("correo", blank=True, default="")
+    # --- Quién escribe, cuando no es la persona que se va a atender ----------
+    # En infantojuvenil y en referidos, el número es de la madre, del padre o de
+    # quien gestiona la atención. Guardarlo como si fuera del paciente es lo que
+    # hacía que dos personas distintas terminaran compartiendo ficha, agenda e
+    # historial. Aquí el contacto queda registrado como lo que es: un canal.
+    #
+    # Que `contacto_nombre` esté lleno ya dice que el contacto no es el paciente:
+    # no hace falta una marca aparte, igual que `tipo_servicio` ya dice si la
+    # consulta es para un niño o un adolescente.
+    contacto_nombre = models.CharField("Nombre del responsable", max_length=200,
+                                       blank=True, default="")
+    contacto_parentesco = models.CharField("Parentesco", max_length=40,
+                                           blank=True, default="")
+    contacto_telefono = models.CharField("Teléfono del responsable", max_length=40,
+                                         blank=True, default="")
     sede = models.CharField(max_length=10, choices=Sede.choices, blank=True, default="")
     fuente = models.CharField(max_length=20, choices=Fuente.choices, default=Fuente.INSTAGRAM)
     # Subfuente: canal concreto dentro del origen (ej. TikTok Ads → WhatsApp;
