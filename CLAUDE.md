@@ -464,8 +464,8 @@ los feriados de Perú. Zona horaria por defecto: `America/Lima` (GMT-5).
    2026-09-11). `/agendar/<token>` lleva ahora el **marco de conversemos.itaca.com.pe**:
    cabecera fija con el logo y el menú real del sitio (Quienes Somos · Psicólogos · Terapias
    Online · Preguntas · Blog; abren en pestaña nueva para no perder una reserva a medias), pie
-   claro con sedes, contacto, redes y los test, y el botón flotante de WhatsApp del sitio
-   (+51 961 350 844). Las **Preguntas frecuentes** del sitio (texto del equipo, `agendaFaq`)
+   claro con sedes, contacto, redes y los test, y los botones flotantes de WhatsApp del sitio, uno
+   por sede (`agendaWhatsapp`, con el teléfono de `AGENDA_SEDES`). Las **Preguntas frecuentes** del sitio (texto del equipo, `agendaFaq`)
    van como `<details>`: las que frenan en cada paso, al pie de ese paso (`AgendaDudas`); la
    lista completa, solo en la portada. El precio de la primera consulta sale del catálogo real
    (`Servicio` reservable cuyo nombre contenga consulta/inicial/primera); si no hay, S/ 50 (el
@@ -476,9 +476,9 @@ los feriados de Perú. Zona horaria por defecto: `America/Lima` (GMT-5).
    `#root:has(.ag)` anula el padding del panel para que cabecera y pie corran de borde a borde.
    - **Acción del usuario**: apuntar los botones "Pide tu terapia" / "Pedir tu cita" del
      WordPress al enlace de Railway, y **renovar el certificado SSL del sitio** (venció el
-     6 ene 2026: el navegador marca "No seguro" y nadie deja su DNI ahí). Confirmar qué número
-     es el vigente para "Tengo más preguntas" (el sitio dice 965 337 290; el botón de WhatsApp
-     del sitio usa 961 350 844).
+     6 ene 2026: el navegador marca "No seguro" y nadie deja su DNI ahí). RESUELTO (15 sep 2026): el sitio derivaba
+     todo a un celular personal, que terminaba repartiendo los leads a mano. Ahora cada
+     enlace lleva al WhatsApp de su sede y la FAQ da esos mismos dos números.
    - Verificado: `manage.py check`, 11/11 tests de `pacientes` (nuevo `AgendamientoPublicoTests`),
      build de Vite, ESLint sin errores y recorrido completo con Playwright (escritorio y móvil)
      contra una base demo aislada en el scratchpad.
