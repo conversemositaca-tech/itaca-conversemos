@@ -235,22 +235,28 @@ def esta_configurado(clinica, sede="", automatico=False):
     return bool(url and key and instancia)
 
 
-def _id_externo(respuesta):
-    """El id que WhatsApp le pone al mensaje (key.id en la respuesta de Evolution).
+def _datos_del_envio(respuesta):
+    """(id del mensaje, status del proveedor) de la respuesta de Evolution.
 
-    Es lo que después permite casar los acuses de entrega/lectura con la fila de
-    la bitácora. Si la respuesta no trae uno, se sigue sin él (el envío no falla
-    por esto)."""
+    El id (`key.id`) es lo que después permite casar los acuses de entrega y
+    lectura con la fila de la bitácora. El `status` es lo que Evolution dice de
+    su propio envío: normalmente "PENDING", que significa exactamente lo que
+    parece — lo aceptó, todavía no lo confirmó nadie.
+
+    De la respuesta NO se guarda nada más. El resto del cuerpo trae el mensaje
+    entero y metadatos del servidor, y ninguno de los dos hace falta para saber
+    en qué quedó el envío. Si falta alguno de los dos, se sigue sin él: el envío
+    no falla por esto.
+    """
     try:
         data = respuesta.json()
     except ValueError:
-        return ""
+        return "", ""
     if not isinstance(data, dict):
-        return ""
+        return "", ""
     key = data.get("key")
-    if isinstance(key, dict) and key.get("id"):
-        return str(key["id"])[:180]
-    return ""
+    externo = str(key["id"])[:180] if isinstance(key, dict) and key.get("id") else ""
+    return externo, str(data.get("status") or "")[:40]
 
 
 def enviar_texto(clinica, tel, texto, sede="", automatico=False, instancia_prueba=""):
@@ -260,9 +266,15 @@ def enviar_texto(clinica, tel, texto, sede="", automatico=False, instancia_prueb
     por las líneas oficiales salvo que esa línea lo tenga permitido (ver
     `instancia_para`).
 
-    Devuelve {estado, detalle, instancia, external_message_id}:
-    estado ∈ enviado | fallido | no_configurado. Los dos últimos campos son
+    Devuelve {estado, detalle, instancia, external_message_id, proveedor_status}:
+    estado ∈ enviado | fallido | no_configurado. Los últimos campos son
     informativos (para la bitácora) y pueden venir vacíos.
+
+    OJO con `estado: "enviado"`: aquí significa "Evolution aceptó la petición",
+    que es lo ÚNICO que se sabe al recibir un 200. No significa que WhatsApp lo
+    haya entregado ni que vaya a hacerlo. Quien lo guarda en la bitácora lo
+    traduce a ACEPTADO (`services._estado_persistido`), y solo un acuse del
+    webhook lo mueve de ahí.
     """
     url, key, instancia = _config(clinica, sede, automatico=automatico)
     if instancia_prueba:
@@ -299,8 +311,10 @@ def enviar_texto(clinica, tel, texto, sede="", automatico=False, instancia_prueb
         return _fallo_de_red(e, instancia, sede, "/message/sendText/")
 
     if r.status_code in (200, 201):
+        externo, proveedor_status = _datos_del_envio(r)
         return {"estado": "enviado", "detalle": f"Enviado por WhatsApp ({instancia}).",
-                "instancia": instancia, "external_message_id": _id_externo(r)}
+                "instancia": instancia, "external_message_id": externo,
+                "proveedor_status": proveedor_status}
     return _fallo_del_proveedor(r, instancia, sede, "/message/sendText/")
 
 
@@ -371,6 +385,8 @@ def enviar_media(clinica, tel, *, contenido, mimetype, nombre_archivo,
         return _fallo_de_red(e, instancia, sede, "/message/sendMedia/")
 
     if r.status_code in (200, 201):
+        externo, proveedor_status = _datos_del_envio(r)
         return {"estado": "enviado", "detalle": f"Imagen enviada por WhatsApp ({instancia}).",
-                "instancia": instancia, "external_message_id": _id_externo(r)}
+                "instancia": instancia, "external_message_id": externo,
+                "proveedor_status": proveedor_status}
     return _fallo_del_proveedor(r, instancia, sede, "/message/sendMedia/")

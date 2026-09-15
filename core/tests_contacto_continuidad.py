@@ -304,7 +304,9 @@ class HistorialTests(_ConContacto):
         self._enviar_ok(p)
         contacto = self._caso(self.coord, p).json()["contacto"]
         self.assertEqual(len(contacto["enviados"]), 1)
-        self.assertEqual(contacto["ultimo"]["estado"], "enviado")
+        # Recién enviado: Evolution lo aceptó y WhatsApp todavía no ha acusado
+        # nada. Pasa a "entregado" cuando llegue el acuse por el webhook.
+        self.assertEqual(contacto["ultimo"]["estado"], "aceptado")
         self.assertEqual(contacto["horas_desde_ultimo"], 0)
 
     def test_el_texto_lo_escribe_quien_envia(self):

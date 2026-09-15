@@ -984,10 +984,23 @@ class GerenciaResumenView(APIView):
         atendidas = sum(1 for c in citas if c.estado == E.ATENDIDA)
         canceladas = sum(1 for c in citas if c.estado == E.CANCELADA)
         cerradas = atendidas + canceladas
-        recordatorios = Mensaje.objects.del_tenant_actual().filter(
-            tipo=Mensaje.Tipo.RECORDATORIO, estado=Mensaje.Estado.ENVIADO,
-            creado_en__gte=ini, creado_en__lt=fin,
-        ).count()
+        # Recordatorios CONFIRMADOS: los que WhatsApp acusó de alguna forma.
+        # El filtro era `estado=ENVIADO` a secas, y eso dejaba fuera a los
+        # entregados y a los leídos — es decir, a los que mejor salieron. No se
+        # notaba porque sin webhook ningún mensaje salía nunca de "enviado".
+        #
+        # "aceptado" NO entra aquí a propósito: que Evolution aceptara la
+        # petición no prueba que WhatsApp enviara nada, y contarlo como enviado
+        # reconstruiría el mismo espejismo que este cambio vino a romper.
+        msgs_periodo = Mensaje.objects.del_tenant_actual().filter(
+            tipo=Mensaje.Tipo.RECORDATORIO, creado_en__gte=ini, creado_en__lt=fin)
+        recordatorios = msgs_periodo.filter(estado__in=(
+            Mensaje.Estado.ENVIADO, Mensaje.Estado.ENTREGADO, Mensaje.Estado.LEIDO,
+        )).count()
+        # Aceptados y todavía sin acuse. Van aparte para que un problema de
+        # entrega se vea como lo que es, en vez de desaparecer del tablero.
+        recordatorios_sin_confirmar = msgs_periodo.filter(
+            estado=Mensaje.Estado.ACEPTADO).count()
         cit_dia = {}
         for c in citas:
             k = timezone.localtime(c.inicio).date().isoformat()
@@ -1002,6 +1015,7 @@ class GerenciaResumenView(APIView):
             "asistencia_pct": round(atendidas / cerradas * 100) if cerradas else 0,
             "cancelacion_pct": round(canceladas / cerradas * 100) if cerradas else 0,
             "recordatorios": recordatorios,
+            "recordatorios_sin_confirmar": recordatorios_sin_confirmar,
             "por_dia": por_dia_citas,
         }
 

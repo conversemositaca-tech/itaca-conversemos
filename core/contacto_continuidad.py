@@ -29,7 +29,7 @@ from core import gestion_continuidad as gc
 from mensajes.evolution import instancia_para
 from mensajes.materiales import MAX_LADO_PX, MAX_MB, MAX_POR_COMUNICACION
 from mensajes.models import Material, Mensaje, render_plantilla
-from mensajes.services import (enviar_comunicacion, partes_del_grupo,
+from mensajes.services import (SALIO, enviar_comunicacion, partes_del_grupo,
                                plantilla_por_clave, reintentar_comunicacion,
                                resumen_comunicacion, serializar_partes)
 from pacientes.models import GestionContinuidad, HistorialContinuidad
@@ -247,6 +247,9 @@ def _serializar_mensaje(m):
         "proveedor": m.proveedor,
         "external_message_id": m.external_message_id,
         "estado_label": m.get_estado_display(),
+        # Aceptado hace rato y sin acuse: el historial tiene que poder decirlo,
+        # porque es el caso que antes se veía igual que uno entregado.
+        "sin_confirmacion": m.sin_confirmacion,
         "texto": m.texto,
         "instancia": m.instancia,
         "sede": m.sede,
@@ -503,7 +506,10 @@ def enviar(paciente, usuario, *, texto="", observacion="", confirmado=False,
     )
     resultado = _resultado_de(partes, resumen)
 
-    if resumen["estado"] == "enviado":
+    # Salió (con acuse o todavía sin él) cuenta como contactado: el mensaje se
+    # mandó. Lo que falta en "aceptado" es la confirmación, no el envío, y
+    # anotarlo como fallido dejaría el caso mintiendo en el historial.
+    if resumen["estado"] in SALIO:
         gc.registrar_evento(gestion, Evento.WHATSAPP_ENVIADO,
                             despues=clave, usuario=usuario)
     else:
@@ -532,8 +538,11 @@ def _resultado_de(partes, resumen):
     if resumen["estado"] == "parcial":
         detalle = (f"Se enviaron {resumen['enviadas']} de {resumen['total']} partes. "
                    + (detalle or ""))
-    if resumen["estado"] == "enviado":
-        estado = "enviado"
+    if resumen["estado"] in SALIO:
+        # El escalón real que alcanzó la comunicación: aceptado (sin acuse
+        # todavía), enviado, entregado o leído. La pantalla no puede decir
+        # "Enviado ✓" mientras WhatsApp no haya confirmado nada.
+        estado = resumen["estado"]
     else:
         # El estado que se informa es el de la primera parte que no salió: "sin
         # WhatsApp configurado" y "el envío falló" piden acciones distintas y la
@@ -544,6 +553,9 @@ def _resultado_de(partes, resumen):
         "estado": estado,
         "comunicacion": resumen["estado"],
         "detalle": detalle,
+        # Salió, el proveedor lo aceptó y WhatsApp no ha confirmado nada en un
+        # rato. No desbloquea el botón (reenviar duplicaría el mensaje): avisa.
+        "sin_confirmacion": any(m.sin_confirmacion for m in partes),
         "proveedor": cabeza.proveedor if cabeza else "",
         "instancia": cabeza.instancia if cabeza else "",
         "external_message_id": cabeza.external_message_id if cabeza else "",
@@ -569,7 +581,7 @@ def reintentar(paciente, usuario, grupo, *, instancia_prueba=""):
 
     partes, resumen = reintentar_comunicacion(
         paciente.clinica, grupo, usuario=usuario, instancia_prueba=instancia_prueba)
-    evento = (Evento.WHATSAPP_ENVIADO if resumen["estado"] == "enviado"
+    evento = (Evento.WHATSAPP_ENVIADO if resumen["estado"] in SALIO
               else Evento.WHATSAPP_FALLIDO)
     gc.registrar_evento(gestion, evento,
                         despues=f"reintento {resumen['enviadas']}/{resumen['total']}"[:60],

@@ -13,17 +13,20 @@ Lo que se juega aquí:
 
     python manage.py test mensajes.tests_evolution
 """
+import uuid
+from datetime import timedelta
 from unittest.mock import patch
 
 from django.test import TestCase
 from django.urls import reverse
+from django.utils import timezone
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.test import APIClient
 
 from core.models import Clinica, InstanciaEvolution
 from mensajes import evolution
 from mensajes.models import Mensaje
-from mensajes.services import registrar_y_enviar
+from mensajes.services import registrar_y_enviar, reintentar_comunicacion
 from pacientes.models import Paciente
 from usuarios.models import Usuario
 
@@ -690,3 +693,232 @@ class LineaDesconectadaTests(TestCase):
             r = evolution.enviar_texto(self.clinica, "987654321", "Hola", sede="piura")
         self.assertEqual(r["estado"], "enviado")
         self.assertEqual(post.call_count, 1)
+
+
+class EstadoRealDelEnvioTests(_Base):
+    """Aceptado no es enviado.
+
+    Un 200 de Evolution solo dice que la API recibió la petición. En producción
+    un mensaje salió con 200 y su `key.id`, la pantalla dijo "enviado" y WhatsApp
+    no lo confirmó jamás: no llegó ni el primer ✓. Estas pruebas sostienen la
+    diferencia entre lo que el proveedor acepta y lo que WhatsApp confirma.
+
+    Evolution 2.3.7 no registra `SERVER_ACK`, así que lo normal es saltar de
+    "aceptado" a "entregado" sin pasar por "enviado". Eso es válido y está
+    probado abajo.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.client = APIClient()
+        self.token = self.clinica.asegurar_token_webhook_evolution()
+        self.url = reverse("evolution-webhook", args=[self.token])
+
+    def _enviar(self, status_code=200, data=None, sede="piura"):
+        """Un envío real por Evolution, con la respuesta del proveedor simulada."""
+        paciente = self._paciente(sede=sede)
+        with self.settings(EVOLUTION_API_URL="https://evo.example",
+                           EVOLUTION_API_KEY="clave-de-prueba"):
+            with patch("mensajes.evolution.estado_en_vivo", return_value="open"), \
+                 patch("mensajes.evolution.requests.post",
+                       return_value=RespuestaFalsa(status_code=status_code, data=data)):
+                return registrar_y_enviar(
+                    self.clinica, telefono=paciente.telefono, texto="Hola",
+                    tipo=Mensaje.Tipo.RECORDATORIO, paciente=paciente)
+
+    def _mensaje_en(self, estado, *, msg_id="WA-ACK", clinica=None, **extra):
+        return Mensaje.objects.create(
+            clinica=clinica or self.clinica, telefono="51987654321", texto="Hola",
+            tipo=Mensaje.Tipo.CONTINUIDAD, estado=estado,
+            direccion=Mensaje.Direccion.SALIENTE, proveedor=Mensaje.Proveedor.EVOLUTION,
+            sede="piura", instancia="conversemospiura", external_message_id=msg_id,
+            **extra)
+
+    def _acuse(self, estado, msg_id="WA-ACK"):
+        return self.client.post(
+            self.url, _update("conversemospiura", msg_id=msg_id, estado=estado),
+            format="json")
+
+    # --- 1. Lo que el proveedor acepta -----------------------------------
+
+    def test_1_http_200_se_guarda_como_aceptado(self):
+        mensaje, resultado, _ = self._enviar(200, {"key": {"id": "WA-1"}, "status": "PENDING"})
+        self.assertEqual(mensaje.estado, Mensaje.Estado.ACEPTADO)
+        self.assertEqual(mensaje.external_message_id, "WA-1")
+        # El `status` del proveedor se guarda tal cual: es su palabra, no la nuestra.
+        self.assertEqual(mensaje.proveedor_status, "PENDING")
+        self.assertIsNotNone(mensaje.aceptado_en)
+        # El contrato interno con el resto del sistema NO cambia: para los
+        # módulos que solo preguntan si salió, un 200 sigue siendo "enviado".
+        self.assertEqual(resultado["estado"], "enviado")
+
+    def test_1b_http_201_tambien_se_guarda_como_aceptado(self):
+        mensaje, _, _ = self._enviar(201, {"key": {"id": "WA-2"}})
+        self.assertEqual(mensaje.estado, Mensaje.Estado.ACEPTADO)
+
+    def test_1c_una_respuesta_sin_status_no_inventa_ninguno(self):
+        mensaje, _, _ = self._enviar(200, {"key": {"id": "WA-3"}})
+        self.assertEqual(mensaje.proveedor_status, "")
+        self.assertEqual(mensaje.estado, Mensaje.Estado.ACEPTADO)
+
+    def test_1d_un_fallo_del_proveedor_sigue_siendo_fallido(self):
+        mensaje, _, _ = self._enviar(500, {"error": "boom"})
+        self.assertEqual(mensaje.estado, Mensaje.Estado.FALLIDO)
+        self.assertIsNone(mensaje.aceptado_en)
+
+    # --- 2 a 5. Cada acuse mueve al escalón que le toca ------------------
+
+    def test_2_server_ack_pasa_a_enviado(self):
+        m = self._mensaje_en(Mensaje.Estado.ACEPTADO)
+        self.assertEqual(self._acuse("SERVER_ACK").status_code, 200)
+        m.refresh_from_db()
+        self.assertEqual(m.estado, Mensaje.Estado.ENVIADO)
+
+    def test_3_delivery_ack_pasa_a_entregado(self):
+        m = self._mensaje_en(Mensaje.Estado.ENVIADO)
+        self._acuse("DELIVERY_ACK")
+        m.refresh_from_db()
+        self.assertEqual(m.estado, Mensaje.Estado.ENTREGADO)
+
+    def test_4_read_pasa_a_leido(self):
+        m = self._mensaje_en(Mensaje.Estado.ENTREGADO)
+        self._acuse("READ")
+        m.refresh_from_db()
+        self.assertEqual(m.estado, Mensaje.Estado.LEIDO)
+
+    def test_5_error_pasa_a_fallido(self):
+        m = self._mensaje_en(Mensaje.Estado.ACEPTADO)
+        self._acuse("ERROR")
+        m.refresh_from_db()
+        self.assertEqual(m.estado, Mensaje.Estado.FALLIDO)
+        self.assertEqual(m.error_codigo, "ERROR")
+
+    # --- 6 y 7. Evolution puede saltarse escalones ----------------------
+
+    def test_6_aceptado_mas_delivery_ack_es_entregado(self):
+        """El camino REAL en producción: nunca llega SERVER_ACK."""
+        m = self._mensaje_en(Mensaje.Estado.ACEPTADO)
+        self._acuse("DELIVERY_ACK")
+        m.refresh_from_db()
+        self.assertEqual(m.estado, Mensaje.Estado.ENTREGADO)
+
+    def test_7_aceptado_mas_read_es_leido(self):
+        m = self._mensaje_en(Mensaje.Estado.ACEPTADO)
+        self._acuse("READ")
+        m.refresh_from_db()
+        self.assertEqual(m.estado, Mensaje.Estado.LEIDO)
+
+    # --- 8 y 9. Nunca hacia atrás ---------------------------------------
+
+    def test_8_leido_mas_delivery_ack_sigue_leido(self):
+        m = self._mensaje_en(Mensaje.Estado.LEIDO)
+        self._acuse("DELIVERY_ACK")
+        m.refresh_from_db()
+        self.assertEqual(m.estado, Mensaje.Estado.LEIDO)
+
+    def test_9_entregado_mas_server_ack_sigue_entregado(self):
+        m = self._mensaje_en(Mensaje.Estado.ENTREGADO)
+        self._acuse("SERVER_ACK")
+        m.refresh_from_db()
+        self.assertEqual(m.estado, Mensaje.Estado.ENTREGADO)
+
+    def test_9b_el_estado_nunca_vuelve_a_aceptado(self):
+        m = self._mensaje_en(Mensaje.Estado.LEIDO)
+        self.assertFalse(m.avanzar_estado(Mensaje.Estado.ACEPTADO))
+        m.refresh_from_db()
+        self.assertEqual(m.estado, Mensaje.Estado.LEIDO)
+
+    # --- 10. El aviso de que nadie confirmó nada -------------------------
+
+    def test_10_aceptado_hace_mas_de_dos_minutos_queda_sin_confirmacion(self):
+        reciente = self._mensaje_en(Mensaje.Estado.ACEPTADO, msg_id="WA-NUEVO",
+                                    aceptado_en=timezone.now())
+        viejo = self._mensaje_en(Mensaje.Estado.ACEPTADO, msg_id="WA-VIEJO",
+                                 aceptado_en=timezone.now() - timedelta(minutes=3))
+        self.assertFalse(reciente.sin_confirmacion)
+        self.assertTrue(viejo.sin_confirmacion)
+
+    def test_10b_un_mensaje_confirmado_nunca_avisa(self):
+        entregado = self._mensaje_en(Mensaje.Estado.ENTREGADO, msg_id="WA-OK",
+                                     aceptado_en=timezone.now() - timedelta(hours=2))
+        self.assertFalse(entregado.sin_confirmacion)
+
+    # --- 11. Aceptado bloquea el reenvío --------------------------------
+
+    def test_11_una_parte_aceptada_no_se_vuelve_a_enviar(self):
+        """Falta el acuse, pero el mensaje SALIÓ: reenviarlo lo duplicaría."""
+        paciente = self._paciente(sede="piura")
+        grupo = uuid.uuid4()
+        Mensaje.objects.create(
+            clinica=self.clinica, paciente=paciente, telefono=paciente.telefono,
+            texto="Hola", tipo=Mensaje.Tipo.CONTINUIDAD,
+            estado=Mensaje.Estado.ACEPTADO, direccion=Mensaje.Direccion.SALIENTE,
+            proveedor=Mensaje.Proveedor.EVOLUTION, sede="piura",
+            instancia="conversemospiura", external_message_id="WA-YA-SALIO",
+            grupo_envio=grupo, orden=1, aceptado_en=timezone.now())
+        with self.settings(EVOLUTION_API_URL="https://evo.example",
+                           EVOLUTION_API_KEY="clave-de-prueba"):
+            with patch("mensajes.evolution.requests.post") as post:
+                _partes, resumen = reintentar_comunicacion(self.clinica, grupo)
+        post.assert_not_called()
+        self.assertEqual(resumen["estado"], Mensaje.Estado.ACEPTADO)
+        self.assertEqual(resumen["faltan"], 0)
+
+    # --- 12 y 13. Los indicadores de gerencia ---------------------------
+
+    def _recordatorio(self, estado, msg_id):
+        return Mensaje.objects.create(
+            clinica=self.clinica, telefono="51987654321", texto="Su cita es mañana",
+            tipo=Mensaje.Tipo.RECORDATORIO, estado=estado,
+            direccion=Mensaje.Direccion.SALIENTE, proveedor=Mensaje.Proveedor.EVOLUTION,
+            sede="piura", instancia="conversemospiura", external_message_id=msg_id)
+
+    def _resumen_gerencia(self):
+        admin = Usuario.objects.create_user(
+            email="gerencia@test.pe", password="x", clinica=self.clinica,
+            rol=Usuario.Rol.ADMIN)
+        self.client.force_login(admin)
+        r = self.client.get(reverse("gerencia-resumen"), {"periodo": "mes"})
+        self.assertEqual(r.status_code, 200)
+        return r.json()["operacion"]
+
+    def test_12_el_kpi_de_recordatorios_no_cuenta_los_aceptados(self):
+        """Contar un aceptado como enviado rearmaría el mismo espejismo."""
+        self._recordatorio(Mensaje.Estado.ENVIADO, "R-1")
+        self._recordatorio(Mensaje.Estado.ENTREGADO, "R-2")
+        self._recordatorio(Mensaje.Estado.LEIDO, "R-3")
+        self._recordatorio(Mensaje.Estado.ACEPTADO, "R-4")
+        self._recordatorio(Mensaje.Estado.FALLIDO, "R-5")
+        self.assertEqual(self._resumen_gerencia()["recordatorios"], 3)
+
+    def test_13_los_aceptados_se_cuentan_aparte(self):
+        self._recordatorio(Mensaje.Estado.ENTREGADO, "R-1")
+        self._recordatorio(Mensaje.Estado.ACEPTADO, "R-2")
+        self._recordatorio(Mensaje.Estado.ACEPTADO, "R-3")
+        operacion = self._resumen_gerencia()
+        self.assertEqual(operacion["recordatorios"], 1)
+        self.assertEqual(operacion["recordatorios_sin_confirmar"], 2)
+
+    # --- 14. El acuse cae en el mensaje correcto ------------------------
+
+    def test_14_el_acuse_casa_por_external_message_id(self):
+        objetivo = self._mensaje_en(Mensaje.Estado.ACEPTADO, msg_id="WA-OBJETIVO")
+        senuelo = self._mensaje_en(Mensaje.Estado.ACEPTADO, msg_id="WA-OTRO")
+        otra_clinica = Clinica.objects.create(nombre="Otra", slug="otra-evo")
+        ajeno = self._mensaje_en(Mensaje.Estado.ACEPTADO, msg_id="WA-OBJETIVO",
+                                 clinica=otra_clinica)
+
+        self._acuse("DELIVERY_ACK", msg_id="WA-OBJETIVO")
+
+        objetivo.refresh_from_db()
+        senuelo.refresh_from_db()
+        ajeno.refresh_from_db()
+        self.assertEqual(objetivo.estado, Mensaje.Estado.ENTREGADO)
+        self.assertEqual(senuelo.estado, Mensaje.Estado.ACEPTADO)
+        # El mismo id en otra clínica no se toca: el webhook es por clínica.
+        self.assertEqual(ajeno.estado, Mensaje.Estado.ACEPTADO)
+
+    def test_14b_un_acuse_de_un_mensaje_que_no_registramos_se_ignora(self):
+        r = self._acuse("DELIVERY_ACK", msg_id="WA-QUE-NO-EXISTE")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.json().get("ignorado"), "desconocido")
