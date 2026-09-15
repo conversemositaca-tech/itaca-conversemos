@@ -13476,6 +13476,23 @@ export function ConsentimientoPublico({ token }) {
 // Página PÚBLICA de auto-agendamiento (sin login): /agendar/<token>. El paciente
 // elige psicólogo y un horario libre y reserva. Nuevo → lead + cita tentativa;
 // existente (match por teléfono/DNI) → cita directa en la agenda.
+// El saludo con el que llega quien escribe desde el sitio.
+const AGENDA_WA_SALUDO = "Hola, escribo desde la página de Ítaca Conversemos";
+
+/** El WhatsApp de UNA sede. Quien escribe desde la web llega a la sede que
+ *  atiende su ciudad, no a un número personal: antes todos los botones del
+ *  sitio apuntaban al celular de una sola persona, que terminaba derivando a
+ *  mano cada consulta. */
+export function agendaWhatsapp(sede) {
+  const info = AGENDA_SEDES[sede] || AGENDA_SEDES.piura;
+  const numero = (info.telefono || "").replace(/\D/g, "");
+  return `https://api.whatsapp.com/send?phone=${numero}&text=${encodeURIComponent(AGENDA_WA_SALUDO)}`;
+}
+
+// Las sedes en el orden en que se ofrecen, para los botones y enlaces que no
+// saben desde dónde escribe el visitante.
+const AGENDA_WA_SEDES = ["lima", "piura"];
+
 // Sedes de Ítaca Conversemos (dirección + teléfono para el mensaje de pre-reserva).
 export const AGENDA_SEDES = {
   lima: { label: "Lima", direccion: "Av. Arequipa 4130, Of. 205 — Miraflores, Lima", telefono: "+51 980 453 832" },
@@ -13517,9 +13534,7 @@ export const AGENDA_SITIO = {
   base: "https://conversemos.itaca.com.pe",
   instagram: "https://www.instagram.com/itaca.conversemos/",
   facebook: "https://www.facebook.com/people/%C3%8Dtaca-Conversemos-Salud-Mental/100084447923643/",
-  whatsapp: "https://api.whatsapp.com/send?phone=51961350844&text=Bienvenid%40%20a%20Itaca%20Conversemos",
   correo: "conversemos.itaca@gmail.com",
-  telefono: "965 337 290",
   lema: "Hablamos de salud mental en un espacio seguro para sanar, brindando terapia presencial y online.",
 };
 
@@ -13554,7 +13569,7 @@ export function agendaFaq(precio) {
     { id: "dia", q: "Ya tengo mi cita, ¿con quién tengo que contactar ese día? ¿Me llaman o llamo yo?",
       a: "Si tu sesión es virtual, el día de tu sesión te enviaremos un link de Zoom para que puedas ingresar a la sala personal de tu psicólogo. A la hora agendada, tu psicólogo abrirá la sala y te permitirá el ingreso.\n\nSi es presencial, te esperamos en la sede que elegiste a la hora reservada." },
     { id: "mas", q: "Tengo más preguntas, ¿qué puedo hacer?",
-      a: <>Puedes escribirnos a <a href={`mailto:${AGENDA_SITIO.correo}`}>{AGENDA_SITIO.correo}</a> o comunicarte a este número: <a href={`tel:+51${AGENDA_SITIO.telefono.replace(/\s/g, "")}`}>{AGENDA_SITIO.telefono}</a>. Estamos dispuestos a resolver todas tus dudas.</> },
+      a: <>Puedes escribirnos a <a href={`mailto:${AGENDA_SITIO.correo}`}>{AGENDA_SITIO.correo}</a> o por WhatsApp a la sede que te quede: <a href={agendaWhatsapp("lima")} {..._ext}>Lima {AGENDA_SEDES.lima.telefono}</a> o <a href={agendaWhatsapp("piura")} {..._ext}>Piura {AGENDA_SEDES.piura.telefono}</a>. Estamos dispuestos a resolver todas tus dudas.</> },
   ];
 }
 
@@ -13662,9 +13677,13 @@ export function AgendaPie() {
                   <path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z" />
                 </svg>
               </a>
-              <a href={AGENDA_SITIO.whatsapp} {..._ext} aria-label="WhatsApp">
-                <MessageCircle size={17} strokeWidth={2} aria-hidden="true" />
-              </a>
+              {AGENDA_WA_SEDES.map((sede) => (
+                <a key={sede} href={agendaWhatsapp(sede)} {..._ext}
+                  aria-label={`WhatsApp ${AGENDA_SEDES[sede].label}`}
+                  title={`WhatsApp ${AGENDA_SEDES[sede].label}`}>
+                  <MessageCircle size={17} strokeWidth={2} aria-hidden="true" />
+                </a>
+              ))}
             </div>
           </div>
           <div>
@@ -13695,7 +13714,13 @@ export function AgendaPie() {
             <h3>Contacto</h3>
             <ul>
               <li><a href={`mailto:${AGENDA_SITIO.correo}`}>{AGENDA_SITIO.correo}</a></li>
-              <li><a href={AGENDA_SITIO.whatsapp} {..._ext}>WhatsApp · +51 961 350 844</a></li>
+              {AGENDA_WA_SEDES.map((sede) => (
+                <li key={sede}>
+                  <a href={agendaWhatsapp(sede)} {..._ext}>
+                    WhatsApp {AGENDA_SEDES[sede].label} · {AGENDA_SEDES[sede].telefono}
+                  </a>
+                </li>
+              ))}
             </ul>
           </div>
         </div>
@@ -13714,12 +13739,21 @@ export function AgendaPie() {
   );
 }
 
-// WhatsApp flotante, como en todas las páginas del sitio (mismo número y saludo).
+// WhatsApp flotante, una burbuja por sede. Lleva la ciudad escrita porque el
+// visitante tiene que saber a dónde escribe antes de pulsar: quien está en Lima
+// no debería acabar en la línea de Piura.
 export function AgendaWa() {
   return (
-    <a className="ag-wa" href={AGENDA_SITIO.whatsapp} {..._ext} aria-label="Escríbenos por WhatsApp" title="Escríbenos por WhatsApp">
-      <MessageCircle size={26} strokeWidth={2} aria-hidden="true" />
-    </a>
+    <div className="ag-wa-grupo">
+      {AGENDA_WA_SEDES.map((sede) => (
+        <a key={sede} className="ag-wa" href={agendaWhatsapp(sede)} {..._ext}
+          aria-label={`Escríbenos por WhatsApp · ${AGENDA_SEDES[sede].label}`}
+          title={`Escríbenos por WhatsApp · ${AGENDA_SEDES[sede].label}`}>
+          <MessageCircle size={22} strokeWidth={2} aria-hidden="true" />
+          <span className="ag-wa-sede">{AGENDA_SEDES[sede].label}</span>
+        </a>
+      ))}
+    </div>
   );
 }
 
@@ -14141,12 +14175,23 @@ export const AGENDA_CSS = `
 
 /* WhatsApp flotante, como en todas las páginas del sitio: la salida de quien
    se traba, para que escriba en vez de irse. */
+/* Una burbuja por sede, apiladas. La ciudad va escrita: quien escribe tiene que
+   saber a qué línea llega antes de pulsar. */
+.ag-wa-grupo {
+  position:fixed; right:18px; bottom:18px; z-index:50;
+  display:flex; flex-direction:column; gap:10px; align-items:flex-end;
+}
 .ag-wa {
-  position:fixed; right:18px; bottom:18px; z-index:50; width:54px; height:54px; border-radius:50%;
-  display:flex; align-items:center; justify-content:center; background:#25D366; color:#fff;
+  width:auto; min-width:54px; height:54px; border-radius:27px; padding:0 16px;
+  display:flex; align-items:center; justify-content:center; gap:7px; background:#25D366; color:#fff;
   box-shadow:0 6px 18px rgba(37,211,102,.38); transition:transform .16s var(--curva), box-shadow .16s;
 }
+.ag-wa-sede { font-size:14px; font-weight:600; letter-spacing:-0.01em; }
 .ag-wa:hover { transform:translateY(-2px); box-shadow:0 10px 24px rgba(37,211,102,.42); }
+@media (max-width:480px) {
+  .ag-wa { padding:0 13px; height:48px; border-radius:24px; }
+  .ag-wa-sede { font-size:13px; }
+}
 
 /* Por debajo de 1000px la navegación se guarda tras el botón de menú: así el
    CTA nunca salta a una segunda fila ni los enlaces se aprietan. */
