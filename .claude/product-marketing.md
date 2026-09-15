@@ -58,7 +58,7 @@ Las skills están escritas para SaaS/B2B. En Conversemos los conceptos existen, 
 - Medios de pago registrados: efectivo, Yape, Plin, tarjeta, transferencia, Mercado Pago. Comprobantes: boleta, factura, recibo por honorarios, nota de venta. **[V]** Fuera de alcance por decisión: comprobantes electrónicos SUNAT e IGV.
 - Los psicólogos **liquidan por sesión atendida** (monto por sesión definido en el servicio / porcentaje en la ficha del profesional).
 - Metas de facturación mensual por defecto: **S/ 20 000 mínima / S/ 30 000 ideal**, configurables por sede.
-- Contacto público del sitio: `conversemos.itaca@gmail.com` · teléfono 965 337 290 · botón de WhatsApp del sitio +51 961 350 844. **[P]** `CLAUDE.md` menciona además una "línea WhatsApp oficial +51 941 697 769" en una etapa anterior; hay que confirmar cuál es el número vigente para "Tengo más preguntas".
+- Contacto público del sitio: `conversemos.itaca@gmail.com` y el WhatsApp **de cada sede** (los de `AGENDA_SEDES`). **[V]** Desde el 15 sep 2026 el sitio no deriva a ningún número personal: los botones, el pie y las Preguntas frecuentes llevan a Lima o a Piura según elija quien escribe.
 
 **Sedes** **[V]**:
 | Sede | Dirección | Teléfono | Coordinación (responsable de la línea de WhatsApp) |
