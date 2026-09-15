@@ -114,6 +114,59 @@ def _fallo_de_red(error, instancia, sede, ruta):
     }
 
 
+# Extensión que le corresponde a cada tipo de imagen, y las que ya valen para
+# ese tipo. Es un mapa local a propósito: `TIPOS_MATERIAL` (en models) decide
+# cómo se guarda el archivo en disco, y esto decide cómo se le presenta al
+# proveedor. Son dos decisiones distintas y esta capa no debería depender del
+# ORM para transportar un archivo.
+EXTENSION_CANONICA = {
+    "image/jpeg": ".jpg",
+    "image/png": ".png",
+    "image/webp": ".webp",
+}
+EXTENSIONES_VALIDAS = {
+    "image/jpeg": (".jpg", ".jpeg"),
+    "image/png": (".png",),
+    "image/webp": (".webp",),
+}
+# Lo que puede ser una extensión y no parte del nombre: "foto.jpg" tiene
+# extensión; "Horarios 2026. Sede Piura" tiene un punto y nada más.
+MAX_EXTENSION = 5
+
+
+def _nombre_con_extension(nombre, mimetype):
+    """El nombre del archivo, con una extensión que case con su MIME real.
+
+    Evolution 2.3.7 NO usa el `mimetype` que se le manda en el cuerpo: lo deduce
+    del `fileName`. Un nombre sin extensión le hace resolver `false` —el valor
+    que devuelve `mime.lookup()` en Node cuando no reconoce nada— y ese "false"
+    viaja como mimetype del mensaje. WhatsApp lo descarta en silencio: el
+    mensaje se crea, el archivo se sube, y no llega ni un acuse.
+
+    Pasó de verdad: una pieza de la biblioteca llamada
+    "material_sin_extension" (sin extensión, como suele venir una
+    imagen bajada de WhatsApp) se envió dos veces y las dos se perdieron, aunque
+    el archivo en disco sí era un .jpg.
+
+    Manda el MIME, no cómo se llame la pieza: si la extensión no corresponde al
+    contenido, se reemplaza. Los bytes no se tocan.
+    """
+    nombre = (nombre or "").strip() or "imagen"
+    tipo = (mimetype or "").strip().lower()
+    validas = EXTENSIONES_VALIDAS.get(tipo)
+    if not validas:
+        # Un MIME que no conocemos: no se inventa una extensión, que sería
+        # mentirle al proveedor sobre el contenido.
+        return nombre[:120]
+    if nombre.lower().endswith(validas):
+        return nombre[:120]
+    raiz, punto, ext = nombre.rpartition(".")
+    if punto and raiz and ext.isalnum() and len(ext) <= MAX_EXTENSION:
+        nombre = raiz
+    extension = EXTENSION_CANONICA[tipo]
+    return nombre[:120 - len(extension)] + extension
+
+
 def normalizar_numero(tel, prefijo=None):
     """Convierte un teléfono a formato internacional sin símbolos (ej. 51987654321)."""
     prefijo = prefijo or settings.WHATSAPP_PAIS_PREFIJO
@@ -363,12 +416,15 @@ def enviar_media(clinica, tel, *, contenido, mimetype, nombre_archivo,
     if caida is not None:
         return caida
 
+    tipo = mimetype or "image/png"
     cuerpo = {
         "number": numero,
         "mediatype": "image",
-        "mimetype": mimetype or "image/png",
+        "mimetype": tipo,
         "media": base64.b64encode(contenido).decode("ascii"),
-        "fileName": (nombre_archivo or "imagen.png")[:120],
+        # Con extensión SIEMPRE: es de donde Evolution saca el mimetype real
+        # (ver `_nombre_con_extension`). Sin ella el mensaje no llega.
+        "fileName": _nombre_con_extension(nombre_archivo, tipo),
     }
     if caption:
         cuerpo["caption"] = caption
