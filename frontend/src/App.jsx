@@ -1,18 +1,8 @@
 import React, { useState, useMemo, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
-import {
-  Home, Calendar, Users, Receipt, Search, Plus, Clock, ChevronLeft, ChevronDown,
-  Phone, Cake, X, HeartHandshake, MessageCircle, Check, Pencil, UserPlus, FileText,
-  ClipboardList, BookUser, UserRound,
-  TrendingUp, Download, AlertTriangle, Megaphone, LogOut,
-  Paperclip, Trash2, Activity, Pill, HeartPulse, Copy, BarChart3, UserCog, KeyRound, MapPin,
-  Mic, FolderOpen, Lightbulb, ExternalLink, Bell, GraduationCap,
-  Building2, DoorOpen, ChevronRight, Compass, Send,
-  Shield, Target, Heart, Leaf, Trophy, Award, Sparkles, Landmark,
-  FileSpreadsheet, Presentation, FileDown,
-  Smile, Upload, ArrowUp, ArrowDown, RotateCcw,
-} from "lucide-react";
+import { Activity, AlertTriangle, ArrowDown, ArrowUp, Award, BarChart3, Bell, BookUser, Building2, Cake, Calendar, Check, ChevronDown, ChevronLeft, ChevronRight, ClipboardList, Clock, Compass, Copy, DoorOpen, Download, ExternalLink, FileDown, FileSpreadsheet, FileText, FolderOpen, GraduationCap, Heart, HeartHandshake, HeartPulse, Home, KeyRound, Landmark, Leaf, Lightbulb, LogOut, MapPin, Megaphone, Menu, MessageCircle, Mic, Paperclip, Pencil, Phone, Pill, Plus, Presentation, Receipt, RotateCcw, Search, Send, Shield, Smile, Sparkles, Target, Trash2, TrendingUp, Trophy, Upload, UserCog, UserPlus, UserRound, Users, X } from "lucide-react";
 import { api } from "./api";
+import { MENU_SITIO, SITE_ROUTES, propsEnlace, normalizarRuta } from "./rutas";
 import { modeloReporte, modeloTabla, exportarExcel, exportarWord, exportarPowerPoint, exportarPDF, exportarCSV } from "./exportGerencia";
 import Login from "./Login";
 
@@ -13362,7 +13352,7 @@ export function ConsentimientoPublico({ token }) {
 // elige psicólogo y un horario libre y reserva. Nuevo → lead + cita tentativa;
 // existente (match por teléfono/DNI) → cita directa en la agenda.
 // Sedes de Ítaca Conversemos (dirección + teléfono para el mensaje de pre-reserva).
-const AGENDA_SEDES = {
+export const AGENDA_SEDES = {
   lima: { label: "Lima", direccion: "Av. Arequipa 4130, Of. 205 — Miraflores, Lima", telefono: "+51 980 453 832" },
   piura: { label: "Piura", direccion: "Av. Bolognesi 582, Of. 201 — Piura", telefono: "+51 983 292 173" },
 };
@@ -13394,12 +13384,226 @@ function _profSirveServicio(prof, nombreServicio) {
   return kw.some((k) => pob.includes(k));
 }
 
+// Señas de Ítaca Conversemos tomadas de su propio sitio: redes, WhatsApp, correo
+// y la frase del pie. El menú vive en `rutas.js`, porque estas mismas páginas ya
+// se sirven desde aquí. Las redes y el WhatsApp sí abren en pestaña nueva, para
+// no perder una reserva a medias.
+export const AGENDA_SITIO = {
+  base: "https://conversemos.itaca.com.pe",
+  instagram: "https://www.instagram.com/itaca.conversemos/",
+  facebook: "https://www.facebook.com/people/%C3%8Dtaca-Conversemos-Salud-Mental/100084447923643/",
+  whatsapp: "https://api.whatsapp.com/send?phone=51961350844&text=Bienvenid%40%20a%20Itaca%20Conversemos",
+  correo: "conversemos.itaca@gmail.com",
+  telefono: "965 337 290",
+  lema: "Hablamos de salud mental en un espacio seguro para sanar, brindando terapia presencial y online.",
+};
+
+// Preguntas frecuentes del sitio, con el texto del equipo (no reescrito). `precio`
+// es el de la primera consulta según el catálogo real; si no hay, el del sitio.
+export function agendaFaq(precio) {
+  return [
+    { id: "que-es", q: "¿Qué es Conversemos?",
+      a: "Conversemos es una plataforma dedicada a trabajar la salud mental de forma integral, en la que se brindan terapias psicológicas en línea segura, de manera económicamente accesible. Nuestra misión es ayudarte a recuperar la calma contigo mismo. Nuestros psicoterapeutas tienen formación en psicología clínica y están capacitados para poder brindar terapia psicológica virtual. Todo nuestro equipo de profesionales pasa por un exhaustivo proceso de selección, por lo que nos caracterizamos por nuestra excelencia profesional." },
+    { id: "online", q: "¿Cómo sé que la terapia online es para mí?",
+      a: "La terapia online permite recibir la misma atención psicológica que recibirías en un consultorio tradicional, pero de forma remota. Al conversar con tu terapeuta por videollamada recibirás las herramientas que te permitan afrontar tus dificultades y tendrás un espacio tuyo para enfocarte en ti, de una manera fácil y conveniente. El significado de “estar bien” es diferente para cada persona: para algunos puede ser comunicarse mejor, para otros vivir de forma saludable y para algunos otros puede ser tener a alguien con quien hablar de lo que les sucede. La terapia online es para ti por el simple hecho de ser humano, porque uno quiere crecer, ser escuchado y ser constante en sus cambios." },
+    { id: "costo", q: "¿Cuánto dura cada sesión y cuánto cuesta?",
+      a: `La primera consulta tiene una duración de entre 30 y 45 minutos y una inversión de ${precio}. Nuestra finalidad es que en este primer encuentro conozcas al psicólogo o psicóloga que te acompañará durante tu proceso de sanar. En esta reunión sabrás cuál es tu plan de terapia.\n\nLas sesiones psicológicas duran aproximadamente 50 minutos o 1 hora. La inversión de estas sesiones depende de tu plan de terapia. Antes de tener un tratamiento debemos identificar qué necesitas, por eso recomendamos iniciar con la primera consulta y luego conversar con tu asesor comercial asignado para que te ayude a encontrar el mejor paquete y facilidades de pago que se adecúen a ti y tu presupuesto.` },
+    { id: "frecuencia", q: "¿Con cuánta frecuencia tendré que hacer terapia?",
+      a: "Tu psicólogo recomendará la frecuencia de las sesiones dependiendo de la complejidad de tus necesidades a trabajar (usualmente iniciamos con una o dos veces por semana). En Conversemos la finalidad es que obtengas las herramientas para continuar tu camino tú solo, por lo que dependiendo de tu progreso, necesidades y preferencias, iremos ajustando la frecuencia de las sesiones. Ten en cuenta que el éxito de tus sesiones terapéuticas depende de tu compromiso con el desarrollo de las mismas." },
+    { id: "duracion", q: "¿Cuánto tiempo tendré que estar haciendo terapia?",
+      a: "Nos encantaría poder darte una respuesta, pero lo cierto es que esto varía dependiendo de cada persona. Algunos buscan trabajar sobre un tema puntual y para solucionarlo les resulta suficiente tener algunas sesiones; también hay quienes buscan y necesitan un apoyo a largo plazo. Lo que sí te podemos asegurar es que nuestro compromiso es total: haremos tanto como podamos para trabajar de forma eficaz contigo y así poder avanzar en el menor tiempo posible." },
+    { id: "contacto-fuera", q: "¿Podré tener contacto con mi psicóloga más allá de la sesión de terapia?",
+      a: "Sí, podrás contactarla para comentar cualquier asunto relacionado con la terapia, pero no se realizará terapia fuera de la sesión y siempre se respetará la disponibilidad de tu psicólogo para contestar al contacto externo." },
+    { id: "confidencial", q: "¿Alguien más sabrá lo que yo le cuente a mi psicóloga en terapia?",
+      a: "No. Los psicólogos de Conversemos están obligados por ley a mantener el secreto profesional y a ofrecer una garantía total y absoluta de confidencialidad. Nuestros psicólogos están comprometidos contigo a cuidar tus datos e historia." },
+    { id: "elegir", q: "¿Puedo elegir a mi psicóloga?",
+      a: <>Sí, puedes seleccionar a tu psicólogo y reservar tu cita directamente con él o ella. O puedes acudir a nuestro servicio de atención al cliente, comentarle lo que deseas trabajar en terapia y te recomendará al mejor psicólogo para ti. Puedes revisar información sobre nuestros psicólogos <a {...propsEnlace(SITE_ROUTES.psicologos)}>haciendo clic aquí</a>.</> },
+    { id: "conexion", q: "Ya estoy en terapia pero no siento conexión con mi psicóloga, ¿qué puedo hacer?",
+      a: "Si ya estás llevando terapia y sientes que no acabas de conectar con tu terapeuta, si no notas avances o simplemente te sientes más cómoda cambiando de profesional, te asignaremos otra psicóloga. Lo más importante es que te sientas a gusto y todo fluya de manera natural; solo así podremos garantizar el éxito de la terapia. Del mismo modo, si no estuviste conforme con tu psicólogo en la primera consulta, te podemos cambiar de especialista sin costo adicional." },
+    { id: "reservar", q: "¿Cómo puedo reservar una sesión?",
+      a: "Desde esta misma página: elige tu sede, el psicólogo y un horario libre, y déjanos tu nombre y teléfono. Coordinación te escribe para confirmar; no pagas nada hasta entonces." },
+    { id: "cambiar", q: "Una vez reservada mi sesión, ¿puedo cambiar el día y la hora, o cancelarla?",
+      a: "Sí, es posible reprogramar tu cita comunicándote con tu asesor de las sesiones (la persona que te brinda el link de ingreso todas las semanas) o directamente con tu psicólogo. Es importante saber que los profesionales esperarán un máximo de 15 minutos desde la hora de inicio de la sesión; pasado este tiempo, si no te has presentado, daremos por anulada la sesión." },
+    { id: "problemas", q: "¿Se pueden tratar todo tipo de problemas en las terapias?",
+      a: "Sí, contamos con diferentes profesionales que tienen experiencia en una amplia variedad de problemáticas, por lo que todas tus necesidades pueden ser atendidas de forma integral." },
+    { id: "dia", q: "Ya tengo mi cita, ¿con quién tengo que contactar ese día? ¿Me llaman o llamo yo?",
+      a: "Si tu sesión es virtual, el día de tu sesión te enviaremos un link de Zoom para que puedas ingresar a la sala personal de tu psicólogo. A la hora agendada, tu psicólogo abrirá la sala y te permitirá el ingreso.\n\nSi es presencial, te esperamos en la sede que elegiste a la hora reservada." },
+    { id: "mas", q: "Tengo más preguntas, ¿qué puedo hacer?",
+      a: <>Puedes escribirnos a <a href={`mailto:${AGENDA_SITIO.correo}`}>{AGENDA_SITIO.correo}</a> o comunicarte a este número: <a href={`tel:+51${AGENDA_SITIO.telefono.replace(/\s/g, "")}`}>{AGENDA_SITIO.telefono}</a>. Estamos dispuestos a resolver todas tus dudas.</> },
+  ];
+}
+
+// Una duda plegable (<details> nativo: funciona con teclado y sin JS).
+export function AgendaDuda({ item }) {
+  return (
+    <details className="ag-duda">
+      <summary>{item.q}<ChevronDown size={17} strokeWidth={2} /></summary>
+      {typeof item.a === "string"
+        ? item.a.split("\n\n").map((p, i) => <p key={i} className="ag-duda-txt">{p}</p>)
+        : <p className="ag-duda-txt">{item.a}</p>}
+    </details>
+  );
+}
+
+// Las dudas que frenan en ESE paso, al pie de la acción (la acción primero).
+export function AgendaDudas({ faq, ids, titulo = "¿Tienes dudas?" }) {
+  const items = ids.map((id) => faq.find((f) => f.id === id)).filter(Boolean);
+  if (!items.length) return null;
+  return (
+    <div className="ag-dudas">
+      <h3 className="ag-rotulo">{titulo}</h3>
+      {items.map((it) => <AgendaDuda key={it.id} item={it} />)}
+    </div>
+  );
+}
+
+export const AGENDA_LOGO = `${import.meta.env.BASE_URL}itaca-logo-h.png`;
+const AGENDA_LOGO_BLANCO = `${import.meta.env.BASE_URL}sitio/itaca-logo-blanco.png`;
+const _ext = { target: "_blank", rel: "noopener noreferrer" };
+
+// Cabecera del sitio: el logo, el menú y la reserva a un clic. Es un sello de
+// "sigues en Ítaca", no una invitación a irse: 62px de alto, texto quieto.
+// `ruta` marca la página actual; `token` arma el enlace de reservas.
+export function AgendaTop({ ruta = "" }) {
+  const actual = normalizarRuta(ruta);
+  const [abierto, setAbierto] = useState(false);
+  const hrefCita = SITE_ROUTES.agendar;
+
+  // El panel se cierra al cambiar de página y con Escape: quien lo abrió con
+  // el teclado tiene que poder salir con el teclado.
+  useEffect(() => { setAbierto(false); }, [actual]);
+  useEffect(() => {
+    if (!abierto) return undefined;
+    const alTeclear = (e) => { if (e.key === "Escape") setAbierto(false); };
+    window.addEventListener("keydown", alTeclear);
+    return () => window.removeEventListener("keydown", alTeclear);
+  }, [abierto]);
+
+  const enlace = (m, clase) => (
+    <a key={m.href} className={clase} {...propsEnlace(m.href, m.externo)}
+      aria-current={!m.externo && normalizarRuta(m.href) === actual ? "page" : undefined}>
+      {m.label}{m.externo ? <ExternalLink size={13} strokeWidth={2} aria-hidden="true" /> : null}
+    </a>
+  );
+
+  return (
+    <header className="ag-top">
+      <div className="ag-top-in">
+        <a className="ag-top-logo" {...propsEnlace(SITE_ROUTES.inicio)} aria-label="Ítaca Conversemos · inicio">
+          <img src={AGENDA_LOGO} alt="Ítaca Conversemos" onError={(e) => { e.currentTarget.style.display = "none"; }} />
+        </a>
+        <nav className="ag-nav" aria-label="Sitio de Ítaca Conversemos">
+          <ul className="ag-menu">
+            {MENU_SITIO.map((m) => <li key={m.href}>{enlace(m)}</li>)}
+          </ul>
+          <a className="ag-top-cta" href={hrefCita}>Pide tu cita</a>
+          <button type="button" className="ag-burger" aria-expanded={abierto} aria-controls="ag-menu-movil"
+            aria-label={abierto ? "Cerrar menú" : "Abrir menú"} onClick={() => setAbierto((v) => !v)}>
+            {abierto ? <X size={22} strokeWidth={2} aria-hidden="true" /> : <Menu size={22} strokeWidth={2} aria-hidden="true" />}
+          </button>
+        </nav>
+      </div>
+      <div className="ag-panel" id="ag-menu-movil" hidden={!abierto}>
+        <div className="ag-panel-in">
+          {MENU_SITIO.map((m) => enlace(m))}
+          <a className="ag-top-cta" href={hrefCita}>Pide tu cita</a>
+        </div>
+      </div>
+    </header>
+  );
+}
+
+// Pie del sitio: sedes, contacto, redes y los test. Claro, no negro como el del
+// sitio: un bloque negro cierra de golpe una página pensada para alguien nervioso.
+export function AgendaPie() {
+  const tel = (t) => `tel:${t.replace(/\s/g, "")}`;
+  return (
+    <footer className="ag-pie">
+      <div className="ag-pie-in">
+        <div className="ag-pie-cols">
+          <div>
+            <div className="ag-pie-logo">
+              <img src={AGENDA_LOGO_BLANCO} alt="Ítaca Conversemos" onError={(e) => { e.currentTarget.style.display = "none"; }} />
+            </div>
+            <p className="ag-pie-txt">{AGENDA_SITIO.lema}</p>
+            <div className="ag-redes">
+              <a href={AGENDA_SITIO.instagram} {..._ext} aria-label="Instagram">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <rect width="20" height="20" x="2" y="2" rx="5" ry="5" /><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z" /><line x1="17.5" x2="17.51" y1="6.5" y2="6.5" />
+                </svg>
+              </a>
+              <a href={AGENDA_SITIO.facebook} {..._ext} aria-label="Facebook">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z" />
+                </svg>
+              </a>
+              <a href={AGENDA_SITIO.whatsapp} {..._ext} aria-label="WhatsApp">
+                <MessageCircle size={17} strokeWidth={2} aria-hidden="true" />
+              </a>
+            </div>
+          </div>
+          <div>
+            <h3>Sedes</h3>
+            <ul>
+              {Object.entries(AGENDA_SEDES).map(([k, se]) => (
+                <li key={k} className="ag-pie-sede">
+                  <strong>{se.label}</strong>
+                  {se.direccion}<br />
+                  <a href={tel(se.telefono)}>{se.telefono}</a>
+                </li>
+              ))}
+            </ul>
+          </div>
+          <div>
+            <h3>Navegación</h3>
+            <ul>
+              {MENU_SITIO.map((m) => (
+                <li key={m.href}>
+                  <a {...propsEnlace(m.href, m.externo)}>
+                    {m.label}{m.externo ? <> <ExternalLink size={11} strokeWidth={2} aria-hidden="true" /></> : null}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </div>
+          <div>
+            <h3>Contacto</h3>
+            <ul>
+              <li><a href={`mailto:${AGENDA_SITIO.correo}`}>{AGENDA_SITIO.correo}</a></li>
+              <li><a href={AGENDA_SITIO.whatsapp} {..._ext}>WhatsApp · +51 961 350 844</a></li>
+            </ul>
+          </div>
+        </div>
+        <div className="ag-pie-legal">
+          <span>© {new Date().getFullYear()} Ítaca Conversemos · Salud mental</span>
+          <span>
+            Tus datos se guardan con confidencialidad · Ley 29733
+            {" · "}
+            {/* Enlace de servicio para el equipo: navegación real, no del SPA
+                del sitio, porque /gestion monta otra aplicación. */}
+            <a className="ag-interno" href={SITE_ROUTES.gestion}>Acceso interno</a>
+          </span>
+        </div>
+      </div>
+    </footer>
+  );
+}
+
+// WhatsApp flotante, como en todas las páginas del sitio (mismo número y saludo).
+export function AgendaWa() {
+  return (
+    <a className="ag-wa" href={AGENDA_SITIO.whatsapp} {..._ext} aria-label="Escríbenos por WhatsApp" title="Escríbenos por WhatsApp">
+      <MessageCircle size={26} strokeWidth={2} aria-hidden="true" />
+    </a>
+  );
+}
+
 // Estilos de la página pública de agendamiento (/agendar/<token>).
 // Vive fuera de .clinica-app: no hereda nada del panel interno, así que define
 // su propio sistema. Una sola familia tipográfica, un solo acento, y separación
 // por altura (sombra) en vez de líneas de 1px.
-const AGENDA_CSS = `
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+export const AGENDA_CSS = `
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&display=swap');
 
 .ag {
   /* Los tres colores del logo de Itaca Conversemos, medidos del archivo:
@@ -13415,15 +13619,30 @@ const AGENDA_CSS = `
   --arena:#EFEAE1; /* bloques destacados: la cita elegida, el resumen */
   --papel:#F7F5F1; --superficie:#FFFEFC; --linea:#E6E1D8;
   --sombra:0 1px 2px rgba(74,54,38,.05), 0 6px 20px rgba(74,54,38,.07);
+
+  /* Sistema visual del sitio (cabecera, pie y páginas de contenido).
+     Convive con los tokens de arriba, que son los del formulario de reservas. */
+  --t-profundo:#0A7D92;   /* turquesa profundo: titulares de acento y botones */
+  --t-hondo:#085E71;      /* petróleo: franjas oscuras y pie (más contraste) */
+  --t-vivo:#00B8D8;       /* turquesa de marca: SOLO superficie, nunca texto */
+  --t-suave:#D7F4FA;      /* celeste suave: fondos de sección y pastillas */
+  --t-sobre-suave:#085E71; /* texto turquesa CUANDO el fondo es celeste */
+  --clinico:#F4FBFD;      /* fondo clínico: el papel del sitio */
+  --crema:#F7F5F1;        /* crema cálido: secciones puntuales */
+  --blanco:#FFFFFF;
+  --txt:#26373A;          /* texto principal */
+  --txt-2:#5C6E71;        /* texto secundario (AA sobre clínico y celeste) */
+  --linea-cl:#DCEBEF;     /* borde sutil sobre fondo clínico */
+  --serif:'Fraunces','Iowan Old Style',Georgia,'Times New Roman',serif;
   --sombra-alta:0 2px 4px rgba(74,54,38,.06), 0 14px 34px rgba(74,54,38,.12);
   --curva:cubic-bezier(.2,.8,.3,1);
   font-family:'Inter',-apple-system,system-ui,sans-serif;
   background:var(--papel); color:var(--tinta);
-  min-height:100vh; letter-spacing:-0.011em;
+  min-height:100vh; display:flex; flex-direction:column; letter-spacing:-0.011em;
   -webkit-font-smoothing:antialiased;
 }
 .ag *, .ag *::before, .ag *::after { box-sizing:border-box; }
-.ag-wrap { max-width:620px; margin:0 auto; padding:clamp(24px,6vw,56px) clamp(18px,5vw,28px) 80px; }
+.ag-wrap { width:100%; flex:1; max-width:620px; margin:0 auto; padding:clamp(24px,6vw,56px) clamp(18px,5vw,28px) 80px; }
 
 /* ── Tipografía ─────────────────────────────────────────────────────── */
 .ag-h1 {
@@ -13444,15 +13663,12 @@ const AGENDA_CSS = `
   color:var(--acento); margin:0 0 20px;
 }
 .ag-marca-sm { margin:0 0 24px; }
-.ag-logo { display:block; height:46px; width:auto; max-width:100%; margin:0 0 26px; }
-.ag-logo-sm { height:32px; margin:0 0 22px; opacity:.9; }
 .ag-rotulo {
   font-size:11px; font-weight:600; letter-spacing:.11em; text-transform:uppercase;
   color:var(--tinta-3); margin:0 0 10px;
 }
 .ag-cargando { color:var(--tinta-3); font-size:15px; padding:8px 0; }
 .ag-portada { margin-bottom:38px; }
-.ag-cabecera { margin-bottom:8px; }
 .ag-paso { margin-top:8px; }
 
 /* ── Progreso: una línea fina, sin cinco etiquetas apretadas ────────── */
@@ -13670,6 +13886,162 @@ const AGENDA_CSS = `
   outline:2px solid var(--acento); outline-offset:3px; border-radius:8px;
 }
 
+/* ── Marco del sitio: cabecera, pie y WhatsApp ─────────────────────── */
+/* La página se monta dentro del #root del panel (ancho máximo y 18px de
+   aire). Para que cabecera y pie corran de borde a borde, como en el sitio,
+   se anulan solo cuando el root contiene esta página. */
+#root:has(.ag) { max-width:none; padding:0; }
+.ag :where(h1,h2,h3,section,[id]) { scroll-margin-top:96px; }
+
+/* ── Cabecera global ───────────────────────────────────────────────────
+   Una sola fila a 80px: logo · navegación · reservar. El CTA no se envuelve
+   nunca (flex-shrink:0 y nowrap); por debajo de 1000px la navegación se
+   guarda en un panel y queda el botón, que es lo que la gente viene a hacer. */
+.ag-top {
+  position:sticky; top:0; z-index:60;
+  background:rgba(255,255,255,.92); backdrop-filter:saturate(1.6) blur(10px);
+  -webkit-backdrop-filter:saturate(1.6) blur(10px);
+  border-bottom:1px solid rgba(10,125,146,.10);
+}
+.ag-top-in, .ag-pie-in {
+  max-width:1200px; margin:0 auto;
+  padding-left:clamp(20px,4vw,40px); padding-right:clamp(20px,4vw,40px);
+}
+.ag-top-in { height:80px; display:flex; align-items:center; gap:24px; flex-wrap:nowrap; }
+.ag-top-logo { display:flex; align-items:center; flex-shrink:0; margin-right:auto; }
+.ag-top-logo img { height:44px; width:auto; display:block; }
+.ag-nav { display:flex; align-items:center; gap:4px; min-width:0; }
+.ag-menu { display:flex; align-items:center; gap:2px; margin:0; padding:0; list-style:none; }
+.ag-menu a {
+  display:inline-flex; align-items:center; gap:4px; padding:9px 14px; border-radius:999px;
+  white-space:nowrap; text-decoration:none; font-size:15px; font-weight:500; color:var(--txt-2);
+  transition:color .16s, background .16s;
+}
+.ag-menu a:hover { color:var(--t-profundo); background:rgba(10,125,146,.06); }
+/* Página actual: una pastilla celeste, no un subrayado suelto. */
+.ag-menu a[aria-current="page"] { color:var(--t-profundo); background:var(--t-suave); font-weight:600; }
+.ag-menu a svg { opacity:.45; }
+.ag-top-cta {
+  flex-shrink:0; display:inline-flex; align-items:center; white-space:nowrap; text-decoration:none;
+  font-size:14.5px; font-weight:600; color:#fff; background:var(--t-profundo);
+  padding:12px 20px; border-radius:999px; margin-left:8px;
+  transition:background .16s, transform .16s var(--curva), box-shadow .16s var(--curva);
+}
+.ag-top-cta:hover { background:#0B6A7C; transform:translateY(-1px); box-shadow:0 6px 16px rgba(10,125,146,.22); }
+
+/* Botón de menú en móvil */
+.ag-burger {
+  display:none; flex-shrink:0; align-items:center; justify-content:center; gap:0;
+  width:44px; height:44px; padding:0; border:1px solid var(--linea-cl); border-radius:14px;
+  background:var(--blanco); color:var(--t-profundo); cursor:pointer;
+  transition:background .15s, border-color .15s;
+}
+.ag-burger:hover { background:var(--t-suave); border-color:var(--t-suave); }
+.ag-panel {
+  border-top:1px solid var(--linea-cl); background:var(--blanco); border-radius:0;
+  box-shadow:0 14px 28px rgba(8,94,113,.10);
+  animation:ag-baja .18s var(--curva) both;
+}
+.ag-panel-in {
+  max-width:1200px; margin:0 auto; padding:10px clamp(20px,4vw,40px) 20px;
+  display:flex; flex-direction:column;
+}
+.ag-panel a {
+  display:flex; align-items:center; justify-content:space-between; gap:8px;
+  padding:14px 2px; text-decoration:none; font-size:16.5px; font-weight:500; color:var(--txt);
+  border-bottom:1px solid var(--linea-cl);
+}
+.ag-panel a[aria-current="page"] { color:var(--t-profundo); font-weight:600; }
+.ag-panel a svg { opacity:.4; }
+.ag-panel .ag-top-cta { margin:18px 0 0; justify-content:center; padding:15px; font-size:16px; }
+@keyframes ag-baja { from { opacity:0; transform:translateY(-6px); } to { opacity:1; transform:none; } }
+
+/* Señas de confianza en la portada: tres hechos del sitio, sin tarjetas. */
+.ag-senas { display:flex; flex-wrap:wrap; gap:9px 22px; margin:22px 0 0; padding:0; list-style:none; }
+.ag-senas li { display:flex; align-items:center; gap:8px; font-size:13.5px; font-weight:500; color:var(--tinta-2); }
+.ag-senas svg { color:var(--acento); flex-shrink:0; }
+
+/* Preguntas: un <details> por duda. Las contextuales van al pie de cada paso;
+   la lista completa, solo en la portada. */
+.ag-dudas { margin-top:30px; }
+.ag-dudas .ag-rotulo { margin-bottom:2px; }
+.ag-duda { border-top:1px solid var(--linea); }
+.ag-duda:last-of-type { border-bottom:1px solid var(--linea); }
+.ag-duda summary {
+  list-style:none; cursor:pointer; display:flex; align-items:center; justify-content:space-between;
+  gap:14px; padding:13px 0; font-size:14.5px; font-weight:500; color:var(--tinta);
+  text-wrap:balance; transition:color .14s;
+}
+.ag-duda summary::-webkit-details-marker { display:none; }
+.ag-duda summary:hover { color:var(--acento); }
+.ag-duda summary svg { flex-shrink:0; color:var(--tinta-3); transition:transform .2s var(--curva); }
+.ag-duda[open] summary svg { transform:rotate(180deg); color:var(--acento); }
+.ag-duda-txt { font-size:14px; line-height:1.65; color:var(--tinta-2); margin:0 0 14px; max-width:58ch; }
+.ag-duda-txt:last-child { margin-bottom:18px; }
+.ag-duda-txt a { color:var(--acento); }
+.ag-faq { margin-top:60px; padding-top:34px; border-top:1px solid var(--linea); }
+.ag-faq .ag-sub { margin-bottom:6px; }
+
+/* Pie: claro, sobre la misma superficie de las tarjetas. */
+.ag-pie { background:var(--t-hondo); color:#fff; margin-top:auto; }
+.ag-pie-in { padding-top:clamp(48px,6vw,72px); padding-bottom:28px; }
+.ag-pie-cols { display:grid; grid-template-columns:1.5fr 1fr 1.1fr 1.1fr; gap:clamp(28px,4vw,48px); }
+.ag-pie-logo img { height:40px; width:auto; display:block; margin-bottom:16px; }
+.ag-pie-txt { font-size:14.5px; line-height:1.65; color:rgba(255,255,255,.78); margin:0; max-width:32ch; }
+.ag-pie h3 {
+  font-size:11px; font-weight:600; letter-spacing:.14em; text-transform:uppercase;
+  color:rgba(255,255,255,.72); margin:0 0 14px;
+}
+.ag-pie ul { list-style:none; margin:0; padding:0; }
+.ag-pie li { margin-bottom:11px; font-size:14.5px; line-height:1.5; color:rgba(255,255,255,.85); }
+.ag-pie a { color:rgba(255,255,255,.85); text-decoration:none; transition:color .14s; }
+.ag-pie a:hover { color:#fff; text-decoration:underline; text-underline-offset:3px; }
+.ag-pie-sede strong { display:block; color:#fff; font-weight:600; margin-bottom:2px; }
+.ag-pie-sede { color:rgba(255,255,255,.7); }
+.ag-pie-sede a { color:#fff; font-weight:500; }
+.ag-redes { display:flex; gap:10px; margin-top:20px; }
+.ag-redes a {
+  width:36px; height:36px; border-radius:50%; display:flex; align-items:center; justify-content:center;
+  background:rgba(255,255,255,.12); color:#fff; transition:background .15s, transform .15s var(--curva);
+}
+.ag-redes a:hover { background:rgba(255,255,255,.22); transform:translateY(-2px); }
+/* Acceso del equipo: discreto sobre el pie oscuro, pero legible (4.7:1). */
+.ag-interno { color:rgba(255,255,255,.72); text-decoration:underline; text-underline-offset:2px; }
+.ag-interno:hover { color:#fff; }
+.ag-pie-legal {
+  margin-top:clamp(32px,4vw,48px); padding-top:22px; border-top:1px solid rgba(255,255,255,.16);
+  display:flex; flex-wrap:wrap; justify-content:space-between; gap:6px 18px;
+  font-size:12.5px; color:rgba(255,255,255,.6);
+}
+
+/* WhatsApp flotante, como en todas las páginas del sitio: la salida de quien
+   se traba, para que escriba en vez de irse. */
+.ag-wa {
+  position:fixed; right:18px; bottom:18px; z-index:50; width:54px; height:54px; border-radius:50%;
+  display:flex; align-items:center; justify-content:center; background:#25D366; color:#fff;
+  box-shadow:0 6px 18px rgba(37,211,102,.38); transition:transform .16s var(--curva), box-shadow .16s;
+}
+.ag-wa:hover { transform:translateY(-2px); box-shadow:0 10px 24px rgba(37,211,102,.42); }
+
+/* Por debajo de 1000px la navegación se guarda tras el botón de menú: así el
+   CTA nunca salta a una segunda fila ni los enlaces se aprietan. */
+@media (max-width:1000px) {
+  .ag-nav .ag-menu { display:none; }
+  .ag-burger { display:inline-flex; }
+}
+@media (min-width:1001px) { .ag-panel { display:none; } }
+@media (max-width:760px) {
+  .ag-top-in { height:70px; gap:12px; }
+  .ag-top-logo img { height:38px; }
+  .ag-top-cta { padding:11px 16px; font-size:14px; }
+  .ag-pie-cols { grid-template-columns:1fr; gap:28px; }
+  .ag-pie-legal { padding-right:64px; } /* que el botón de WhatsApp no tape el texto */
+}
+@media (max-width:420px) {
+  .ag-top-cta { padding:10px 13px; font-size:13.5px; }
+  .ag-top-logo img { height:34px; }
+}
+
 @media (max-width:520px) {
   .ag-fila { grid-template-columns:1fr; gap:0; }
   .ag-prof { padding:18px; }
@@ -13704,6 +14076,14 @@ export function AgendarPublico({ token }) {
   const setF = (k) => (e) => setForm((p) => ({ ...p, [k]: e.target.value }));
 
   useEffect(() => { api.agendaInfo(token).then(setInfo).catch((e) => setErr(e.message)); }, [token]);
+
+  // La pestaña del navegador es del paciente, no del panel: título e idioma propios.
+  useEffect(() => {
+    const prevTitle = document.title, prevLang = document.documentElement.lang;
+    document.title = "Reserva tu cita · Ítaca Conversemos";
+    document.documentElement.lang = "es";
+    return () => { document.title = prevTitle; document.documentElement.lang = prevLang; };
+  }, []);
 
   useEffect(() => {
     if (!prof) return;
@@ -13750,28 +14130,36 @@ export function AgendarPublico({ token }) {
 
   const pila = <style>{AGENDA_CSS}</style>;
 
-  if (err && !info) return (
+  // Precio de la primera consulta desde el catálogo real (si está publicado);
+  // si no, el que dice el sitio. Así la respuesta nunca contradice al formulario.
+  const servConsulta = (info?.servicios || []).find((x) => /consulta|inicial|primera/i.test(x.nombre) && Number(x.precio) > 0);
+  const faq = agendaFaq(servConsulta ? `S/ ${Number(servConsulta.precio).toFixed(0)}` : "S/ 50");
+
+  // Marco del sitio (cabecera, pie y WhatsApp) alrededor de cada pantalla. Es una
+  // función y no un componente: si fuera componente, React lo remontaría en cada
+  // render y los inputs perderían el foco al escribir.
+  const marco = (children, extra = null) => (
     <div className="ag">{pila}
-      <main className="ag-wrap">
-        <div className="ag-aviso ag-aviso-mal" style={{ marginTop: 40 }}>
-          <h1 className="ag-h2">Este enlace no está disponible</h1>
-          <p style={{ margin: "6px 0 0" }}>{err}</p>
-        </div>
-      </main>
+      <AgendaTop />
+      <main className="ag-wrap">{children}</main>
+      <AgendaPie />
+      <AgendaWa />
+      {extra}
     </div>
   );
-  if (!info) return (
-    <div className="ag">{pila}
-      <main className="ag-wrap"><div className="ag-cargando">Cargando…</div></main>
+
+  if (err && !info) return marco(
+    <div className="ag-aviso ag-aviso-mal" style={{ marginTop: 40 }}>
+      <h1 className="ag-h2">Este enlace no está disponible</h1>
+      <p style={{ margin: "6px 0 0" }}>{err}</p>
     </div>
   );
+  if (!info) return marco(<div className="ag-cargando">Cargando…</div>);
 
   // ── Pantalla final: pre-reserva registrada ────────────────────────────
   if (hecho) {
     const sedesContacto = AGENDA_SEDES[hecho.sede] ? [hecho.sede] : ["piura", "lima"];
-    return (
-      <div className="ag">{pila}
-        <main className="ag-wrap">
+    return marco(
           <div className="ag-entra">
             <div className="ag-ok-marca"><Check size={26} strokeWidth={2.5} /></div>
             <h1 className="ag-h1 ag-h1-sm">Tu hora quedó apartada</h1>
@@ -13815,12 +14203,12 @@ export function AgendarPublico({ token }) {
               })}
             </section>
 
+            <AgendaDudas faq={faq} ids={["dia", "cambiar", "contacto-fuera"]} titulo="Lo que suelen preguntarnos después de reservar" />
+
             <p className="ag-cierre">
               Nos alegra acompañarte en este primer paso.
             </p>
           </div>
-        </main>
-      </div>
     );
   }
 
@@ -13865,7 +14253,7 @@ export function AgendarPublico({ token }) {
         <div className="ag-prof-id">
           <h3 className="ag-prof-nombre">{p.nombre}</h3>
           <p className="ag-prof-meta">
-            {[p.titulo, p.sede_label, p.modalidad_label].filter(Boolean).join(" · ")}
+            {[p.titulo, p.colegiatura ? `C.Ps.P. N° ${p.colegiatura}` : "", p.sede_label, p.modalidad_label].filter(Boolean).join(" · ")}
           </p>
         </div>
       </div>
@@ -13878,16 +14266,12 @@ export function AgendarPublico({ token }) {
     </article>
   );
 
-  return (
-    <div className="ag">{pila}
-      <main className="ag-wrap">
+  return marco(
+    <>
         {/* ── Portada ── */}
         {showSede ? (
           <header className="ag-portada ag-entra">
-            {/* El logo de verdad, no el nombre en mayúsculas. Si no cargara, se
-                oculta y queda el nombre de la clínica debajo. */}
-            <img className="ag-logo" src={`${import.meta.env.BASE_URL}itaca-logo-h.png`}
-              alt={info.clinica} onError={(e) => { e.currentTarget.style.display = "none"; }} />
+            {/* Sin logo aquí: la cabecera del sitio ya lleva la marca en cada pantalla. */}
             <h1 className="ag-h1">
               Todos necesitamos de un<br /><em>sincero conversemos</em>
             </h1>
@@ -13900,13 +14284,15 @@ export function AgendarPublico({ token }) {
               Gracias por estar aquí. Creemos que todos, en algún momento, necesitamos un
               espacio seguro para conversar y entender lo que sentimos.
             </p>
+            {/* Tres hechos del sitio que responden los tres miedos antes del
+                primer clic: ¿es serio?, ¿se enteran?, ¿cuánto me compromete? */}
+            <ul className="ag-senas" aria-label="Lo que puedes esperar">
+              <li><GraduationCap size={16} strokeWidth={1.9} aria-hidden="true" /> Psicólogos colegiados</li>
+              <li><Shield size={16} strokeWidth={1.9} aria-hidden="true" /> Confidencial por secreto profesional</li>
+              <li><Clock size={16} strokeWidth={1.9} aria-hidden="true" /> Primera consulta de 30 a 45 min</li>
+            </ul>
           </header>
-        ) : (
-          <header className="ag-cabecera">
-            <img className="ag-logo ag-logo-sm" src={`${import.meta.env.BASE_URL}itaca-logo-h.png`}
-              alt={info.clinica} onError={(e) => { e.currentTarget.style.display = "none"; }} />
-          </header>
-        )}
+        ) : null}
 
         {/* ── Progreso ── */}
         {info.hay_agenda && (
@@ -13952,6 +14338,15 @@ export function AgendarPublico({ token }) {
           </section>
         )}
 
+        {/* ── Preguntas frecuentes (todas), solo en la portada ── */}
+        {showSede && (
+          <section className="ag-faq ag-entra" id="preguntas" aria-labelledby="ag-faq-t">
+            <h2 className="ag-h2" id="ag-faq-t">Preguntas frecuentes</h2>
+            <p className="ag-sub">Lo que más nos preguntan antes de una primera consulta.</p>
+            {faq.map((it) => <AgendaDuda key={it.id} item={it} />)}
+          </section>
+        )}
+
         {/* ── Paso 2: con quién ── */}
         {showVia && (
           <section className="ag-paso ag-entra">
@@ -13971,6 +14366,7 @@ export function AgendarPublico({ token }) {
                 </button>
               ))}
             </div>
+            <AgendaDudas faq={faq} ids={["elegir", "conexion"]} titulo="Si te preocupa elegir mal" />
           </section>
         )}
 
@@ -14006,6 +14402,7 @@ export function AgendarPublico({ token }) {
                 Escríbenos por WhatsApp y te ayudamos a agendar.
               </div>
             ) : <div className="ag-profs">{profsMostrar.map((p) => ProfCard(p))}</div>}
+            <AgendaDudas faq={faq} ids={["conexion", "problemas"]} />
           </section>
         )}
 
@@ -14039,6 +14436,7 @@ export function AgendarPublico({ token }) {
                   </div>
                 </div>
               ))}
+            <AgendaDudas faq={faq} ids={["costo", "cambiar"]} titulo="Sobre el horario" />
           </section>
         )}
 
@@ -14121,12 +14519,12 @@ export function AgendarPublico({ token }) {
             <p className="ag-nota-suave ag-centro">
               No pagas nada ahora. Te contactamos para confirmar y recién ahí te enviamos los medios de pago.
             </p>
+            <AgendaDudas faq={faq} ids={["confidencial", "dia"]} titulo="Antes de enviar tus datos" />
           </section>
         )}
-      </main>
-
-      {/* ── Modal: perfil del psicólogo ── */}
-      {perfil && (
+    </>,
+    /* ── Modal: perfil del psicólogo ── */
+    perfil && (
         <div className="ag-modal-fondo" onClick={() => setPerfil(null)} role="dialog" aria-modal="true">
           <div className="ag-modal" onClick={(e) => e.stopPropagation()}>
             <button className="ag-cerrar" onClick={() => setPerfil(null)} aria-label="Cerrar">
@@ -14137,7 +14535,7 @@ export function AgendarPublico({ token }) {
               <div className="ag-prof-id">
                 <h2 className="ag-prof-nombre">{perfil.nombre}</h2>
                 <p className="ag-prof-meta">
-                  {[perfil.titulo, perfil.sede_label, perfil.modalidad_label].filter(Boolean).join(" · ")}
+                  {[perfil.titulo, perfil.colegiatura ? `C.Ps.P. N° ${perfil.colegiatura}` : "", perfil.sede_label, perfil.modalidad_label].filter(Boolean).join(" · ")}
                 </p>
               </div>
             </div>
@@ -14157,7 +14555,6 @@ export function AgendarPublico({ token }) {
             </button>
           </div>
         </div>
-      )}
-    </div>
+      )
   );
 }

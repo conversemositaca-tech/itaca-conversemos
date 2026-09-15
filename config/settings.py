@@ -221,6 +221,12 @@ SOTO_EXEC_URL = os.getenv("SOTO_EXEC_URL", "")
 SOTO_PUSH_ENABLED = env_bool("SOTO_PUSH_ENABLED", False)
 
 
+# --- Sitio web público ---
+# Token de captación de la clínica cuyo sitio servimos en las páginas públicas
+# (inicio, quiénes somos, psicólogos…). Con una sola clínica activa se resuelve
+# sola; con varias hay que declararlo o el sitio responde 404 (aislamiento).
+SITIO_CLINICA_TOKEN = os.getenv("SITIO_CLINICA_TOKEN", "")
+
 # --- WhatsApp vía Evolution API ---
 # URL y API key del servidor Evolution (en EasyPanel). La "instancia" es la conexión
 # de WhatsApp; puede definirse global aquí o por clínica (Clinica.whatsapp_instance).

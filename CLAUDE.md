@@ -460,6 +460,29 @@ los feriados de Perú. Zona horaria por defecto: `America/Lima` (GMT-5).
      WhatsApp desde Continuidad: iteración separada (hueco `contacto` en el detalle).
    - Dev: el preview corre contra una base demo aislada (`DATABASE_URL` → sqlite en el
      scratchpad); `db.sqlite3` local tiene 3 migraciones pendientes (0033, 0034, usuarios 0012).
+31. ✓ Agendamiento público como página del sitio (rama `feature/agendar-pagina-sitio`,
+   2026-09-11). `/agendar/<token>` lleva ahora el **marco de conversemos.itaca.com.pe**:
+   cabecera fija con el logo y el menú real del sitio (Quienes Somos · Psicólogos · Terapias
+   Online · Preguntas · Blog; abren en pestaña nueva para no perder una reserva a medias), pie
+   claro con sedes, contacto, redes y los test, y el botón flotante de WhatsApp del sitio
+   (+51 961 350 844). Las **Preguntas frecuentes** del sitio (texto del equipo, `agendaFaq`)
+   van como `<details>`: las que frenan en cada paso, al pie de ese paso (`AgendaDudas`); la
+   lista completa, solo en la portada. El precio de la primera consulta sale del catálogo real
+   (`Servicio` reservable cuyo nombre contenga consulta/inicial/primera); si no hay, S/ 50 (el
+   del sitio). Portada con tres señas de confianza (colegiados, confidencial, 30-45 min) y sin
+   logo propio (la cabecera ya lleva la marca). El endpoint público expone `colegiatura` y se
+   muestra como "C.Ps.P. N°" en tarjeta y perfil. Título de pestaña e idioma propios. Todo en
+   `frontend/src/App.jsx` (`AGENDA_SITIO`, `AgendaTop`, `AgendaPie`, `AgendaWa`);
+   `#root:has(.ag)` anula el padding del panel para que cabecera y pie corran de borde a borde.
+   - **Acción del usuario**: apuntar los botones "Pide tu terapia" / "Pedir tu cita" del
+     WordPress al enlace de Railway, y **renovar el certificado SSL del sitio** (venció el
+     6 ene 2026: el navegador marca "No seguro" y nadie deja su DNI ahí). Confirmar qué número
+     es el vigente para "Tengo más preguntas" (el sitio dice 965 337 290; el botón de WhatsApp
+     del sitio usa 961 350 844).
+   - Verificado: `manage.py check`, 11/11 tests de `pacientes` (nuevo `AgendamientoPublicoTests`),
+     build de Vite, ESLint sin errores y recorrido completo con Playwright (escritorio y móvil)
+     contra una base demo aislada en el scratchpad.
+
 32. ⏳ Biblioteca de imágenes del compositor de WhatsApp (rama
    `feature/contactabilidad-continuidad`, 2026-09-11, SIN desplegar). Coordinación puede
    adjuntar varias imágenes reales al mensaje del Centro de Continuidad, subir piezas
@@ -513,3 +536,154 @@ los feriados de Perú. Zona horaria por defecto: `America/Lima` (GMT-5).
      segunda instancia sin tocar la que ya corre.
    - **Pendiente**: medir qué tamaño de payload aguanta EasyPanel/Railway antes de subir
      el límite de 2 MB; la prueba manual controlada con la línea `vibery`.
+33. ✓ El sitio web vive en la misma app (rama `feature/sitio-publico`, 2026-09-12).
+   Las cinco páginas principales de conversemos.itaca.com.pe se rehicieron dentro del
+   frontend que ya corre en Railway, con el marco y el sistema visual del agendamiento:
+   `/` · `/quienes-somos` · `/psicologos` · `/terapias-online` · `/preguntas`. El catch-all
+   de `config/urls.py` ya las servía; `main.jsx` las enruta con `esRutaSitio()`.
+   - **Backend**: `core/sitio.py` = `GET /api/sitio/` (público, sin token en la URL) con
+     clínica, `token_agenda`, servicios reservables y equipo; y `GET /api/sitio/foto/<pk>/`
+     para las fotos (Django sigue sin publicar /media · Ley 29733). La clínica sale de
+     `SITIO_CLINICA_TOKEN`; con una sola clínica activa se resuelve sola y **con varias
+     responde 404 en vez de adivinar** (aislamiento). Tests: `core/tests_sitio.py` (6).
+   - **Frontend**: `Sitio.jsx` (páginas + estilos `.st-*`), `rutas.js` (menú, navegación sin
+     recarga con `history.pushState`, `propsEnlace`) y `sitio-textos.js` (los textos del
+     equipo, copiados del WordPress; solo se corrigieron tildes). En `App.jsx` el marco
+     (`AgendaTop`/`AgendaPie`/`AgendaWa`/`agendaFaq`/`AGENDA_CSS`) pasó a exportarse y el
+     menú dejó de apuntar al WordPress: ahora navega por dentro, marca la página actual y
+     suma el botón "Pide tu cita". Blog y los tres test siguen en WordPress, marcados como
+     enlaces externos (no se migran todavía).
+   - **La página de Psicólogos sale de la base**: 15 activos con foto, colegiatura, enfoque
+     y frase, con filtro por sede. La web vieja mostraba 7, tres de ellos ya inactivos
+     (Katia Briones, Verónica León, Pamela Revilla). Los precios de "Terapias online" y el
+     de la primera consulta en el FAQ salen del catálogo (`Servicio` reservable).
+   - **Datos NO publicados a propósito**: las cifras de la portada del WordPress ("300+
+     vidas cambiadas", "2,000+ personas", "21,600+ horas conversando") contradicen la base
+     (2.833 atenciones registradas), así que quedaron fuera; sí se conservaron las frases
+     que las acompañaban. El teléfono de Piura del pie del WordPress (947709108) **no
+     coincide** con el del sistema (983 292 173): se usó el del sistema.
+   - Verificado con Playwright (escritorio 1366 y móvil 390, las 5 páginas): sin errores de
+     consola, sin peticiones fallidas, sin enlaces rotos, un solo `<h1>` por página, foco
+     visible, menú navegable en móvil y sin desborde horizontal. `manage.py check` limpio,
+     46 tests (sitio + pacientes) OK, build de Vite OK y ESLint sin avisos nuevos en los
+     archivos nuevos (App.jsx suma 3 advertencias de `react-refresh`, solo de desarrollo).
+   - **Pendiente (acción del usuario)**: apuntar el dominio conversemos.itaca.com.pe a
+     Railway (y renovar su certificado, vencido el 6 ene 2026), decidir si se migran el blog
+     (10 entradas, la última de enero de 2022) y los tres test psicológicos, y confirmar qué
+     número de Piura es el vigente.
+34. ✓ `/gestion`: el sistema interno recuperó su puerta (2026-09-13, corrección).
+   Al publicar el sitio (ítem 33), `/` pasó a servir la portada pública y el panel
+   interno —que se abría justo ahí— quedó SIN ruta: seguía montado como último
+   recurso, pero el equipo no podía entrar. Ahora `frontend/src/main.jsx` enruta en
+   este orden: `/consentimiento/<token>` · `/agendar/<token>` · **`/gestion[/...]`
+   → `<App />`** · rutas del sitio · resto → `<App />`. `esRutaSitio()` consulta
+   primero `esRutaReservada()` (`/gestion`, `/agendar`, `/consentimiento`, `/api`,
+   `/admin`, `/static`, `/media`), así que añadir una página al sitio no puede
+   volver a tapar el panel. El catch-all de Django ya servía la SPA en `/gestion`:
+   no hizo falta tocar `config/urls.py`. El pie de la web lleva un enlace discreto
+   "Acceso interno" (`/gestion`, navegación real, no del SPA).
+   - Verificado local (16/16): `/` y `/quienes-somos` públicas; `/gestion` sin sesión
+     muestra el login de siempre; login real con cuenta existente entra al sistema;
+     Agenda, Pacientes y Continuidad accesibles; recargar `/gestion` y `/gestion/x`
+     no da 404; cerrar sesión deja el login en `/gestion`; `/agendar/<token>` y
+     `/consentimiento/<token>` siguen; `/api/` responde JSON y `/admin/` HTML de
+     Django (React no los intercepta).
+   - **Bug aparte encontrado y corregido**: `GET /api/hoy/` devolvía 500 para el rol
+     médico (`NameError: name 'ficha' is not defined` en `core/gerencia.py`, bloque
+     de NPS del commit 9fba2fb). Se reusa `continuidad_mod.pacientes_del_rol(...)`,
+     que es la regla de alcance del resto de la vista, en vez de repetirla a mano.
+     Sin cambios de modelo ni de permisos. 258 tests de core+pacientes en verde.
+35. ⏳ Dirección visual del sitio · FASE 1 (rama `feature/sitio-diseno`, 2026-09-13,
+   SIN desplegar). El contenido ya estaba, pero el resultado se leía como un wireframe
+   técnico. Esta fase rehace SOLO cabecera, pie y "Quiénes somos"; las otras cuatro
+   páginas siguen intactas (clases `st-*`) hasta que se apruebe el sistema.
+   - **Paleta** (tokens `--t-*` en `.ag`, junto a los del agendamiento, que no se
+     tocan): turquesa profundo #0A7D92, petróleo #085E71, turquesa vivo #00B8D8 solo
+     como superficie, celeste #D7F4FA, fondo clínico #F4FBFD, crema #F7F5F1, texto
+     #26373A y #5C6E71. **Cuatro valores se oscurecieron respecto a lo pedido para
+     cumplir AA**: el secundario #66777A daba 4.47 sobre el clínico; el turquesa como
+     texto sobre celeste, 4.18 (ahí se usa `--t-sobre-suave`); los números 01/02/03 en
+     turquesa vivo, 2.37; los rótulos del pie al 55% de blanco, 3.41.
+   - **Tipografía**: Inter para interfaz y lectura; **Fraunces** (serif humana) solo en
+     titulares y frases emocionales. H1 máx. 56px, lectura 17-18.5px a 63 caracteres.
+   - **Cabecera** (`AgendaTop`): una fila de 80px, logo 44px, menú a la derecha con
+     "Inicio", CTA "Pide tu cita" al extremo que nunca se envuelve; página actual como
+     pastilla celeste. Bajo 1000px la navegación pasa a un panel con botón hamburguesa
+     accesible (`aria-expanded`/`aria-controls`, cierra con Escape) y el CTA se queda.
+   - **Pie** (`AgendaPie`): franja petróleo con el logo blanco de la marca
+     (`public/sitio/itaca-logo-blanco.png`), columnas sedes/navegación/contacto y redes
+     discretas. Conserva el enlace "Acceso interno" del ítem 34, adaptado al fondo.
+   - **Quiénes somos** (`qs-*` en `Sitio.jsx` + `sitio-textos.js`): hero 52/48 con la
+     foto REAL del equipo, servicios 3×2 con iconos lineales, las tres áreas como
+     pilares numerados, modelo integrativo con foto real y cita destacada, franja
+     turquesa de principios y cierre con las sedes en segundo plano. Las fotos salen
+     del propio WordPress (`somos-3` y `000011`), no de IA ni de bancos.
+   - **Ojo**: las descripciones de una línea de los seis servicios NO existían en el
+     WordPress; se redactaron describiendo qué es cada uno (duración y modalidad salen
+     de sus FAQ; la grupal, de su Círculo de Aliados), sin prometer resultados.
+   - Verificado: cabecera de 80px con el CTA en su fila, nada tapado al cargar, saltar a
+     un título lo deja visible (`scroll-margin-top`), sin desborde en 390px, menú móvil
+     accesible, consola limpia, build de Vite y ESLint sin avisos.
+   - **FASE 2 (aprobada y aplicada)**: el sistema se replicó a las cuatro páginas
+     restantes y el prefijo pasó de `qs-` a **`sw-`** (sitio web), porque ya no es "el
+     de Quiénes somos". El tema se aplica a todo el sitio (`.ag sw-sitio sw-tema`) y el
+     **sistema viejo `st-*` se eliminó entero** (CSS y helpers `Foto`/`BotonReservar`):
+     0 referencias restantes, nada de CSS muerto en el bundle.
+     · **Inicio**: hero con mosaico de 9 caras reales del equipo, proceso en cuatro
+       pasos numerados en serif, tira de psicólogos sobre celeste, testimonios en dos
+       columnas y dudas clave.
+     · **Psicólogos**: ficha con foto de 76px, colegiatura destacada, frase en serif,
+       enfoque recortado a 3 líneas y "Ver perfil completo" plegable.
+     · **Terapias online**: paquetes con el precio real en serif, temas y públicos como
+       pastillas, Círculo de Aliados en tarjetas y el cierre emocional sobre petróleo.
+     · **Preguntas**: hero propio y acordeón a 17px (se reestiliza `.ag-duda` solo
+       dentro de `.sw-tema`, así que el agendamiento no cambia).
+   - Verificado en las 5 páginas × escritorio y móvil: 0 errores de consola, 0 peticiones
+     fallidas, 0 enlaces rotos, un `<h1>` por página, menú móvil accesible y sin desborde.
+   - **Pendiente**: publicar (sin desplegar todavía).
+36. ✓ Navegación: una sola fuente de verdad para las rutas (2026-09-13).
+   Cada componente escribía sus destinos a mano y el enlace de reservas dependía del
+   token que devolvía la API, así que convivían `/preguntas` y `/preguntas-frecuentes`,
+   tokens distintos según el entorno y enlaces al WordPress.
+   - **`SITE_ROUTES`** (en `frontend/src/rutas.js`, `Object.freeze`) es ahora el único
+     lugar donde vive un destino interno: inicio · quienesSomos · psicologos · terapias ·
+     preguntas · **agendar** (con el token público `PmFaG9KH…`, fijo: si se regenera
+     desde Captación hay que actualizarlo AHÍ) · gestion. `MENU_SITIO`, `RUTAS_SITIO`,
+     los títulos, la cabecera, el pie, el FAQ y todos los CTA salen de ella.
+   - **La canónica de preguntas pasó a `/preguntas-frecuentes`**; `/preguntas` queda como
+     **alias** (`ALIAS_RUTAS`) porque era la dirección ya publicada. `rutaCanonica()`
+     resuelve alias y barra final, y la URL se normaliza con `replaceState` al entrar.
+   - **Blog y los tres test del WordPress quedaron OCULTOS** (`MOSTRAR_WORDPRESS = false`):
+     el certificado de conversemos.itaca.com.pe venció el 6 ene 2026 y enviar visitantes
+     ahí es mandarlos a una advertencia de sitio no seguro. Se reactivan poniendo esa
+     constante en true cuando se renueve el certificado.
+   - Los externos (Instagram, Facebook, WhatsApp) llevan `rel="noopener noreferrer"`;
+     correo y teléfonos conservan `mailto:`/`tel:`. Ningún enlace interno abre pestaña.
+   - **Auditoría automática**: `scratchpad/auditoria_navegacion.py` inventaría cada enlace
+     visible de las 6 páginas (34 distintos), marca destinos inertes/WordPress/tokens
+     ajenos/rutas desconocidas, hace clic en 13 CTA comprobando el destino contra
+     SITE_ROUTES, y repite la navegación en móvil. Resultado: sin errores.
+   - Verificado: `manage.py check`, 46 tests (core.tests_sitio + pacientes), build de Vite,
+     ESLint sin avisos nuevos (App.jsx bajó de 106 a 105 al quitar una prop sin uso).
+37. ✓ Correcciones de Gabriela + fotos reales del consultorio (2026-09-13).
+   Revisión de la dueña por WhatsApp sobre el sitio ya publicado:
+   - «Que diga solo terapia, no "online"» → la etiqueta del menú es **"Terapias"**
+     (la ruta sigue siendo `/terapias-online`, que ya estaba publicada) y el título de
+     pestaña pasa a "Terapias · Ítaca Conversemos".
+   - «Esos no funcionan, mejor quitarlos» (los 3 test) y «Blog también quitarlo» →
+     confirmado: ya estaban ocultos desde el ítem 36 por el certificado vencido.
+   - «¿Esa sección también puede salir arriba? En lugar de blog, esta de agendar» →
+     el menú estrena **"Agendar"** en el hueco del Blog, apuntando a `SITE_ROUTES.agendar`.
+   - `propsEnlace()` ahora detecta las rutas reservadas (`/agendar`, `/gestion`…) y
+     devuelve navegación REAL en vez de `pushState`: son otras aplicaciones dentro del
+     mismo dominio y un pushState no las montaría.
+   - **Seis fotos del consultorio** enviadas por la clínica (`frontend/public/sitio/`,
+     1600px, ~100-175 KB): `equipo` (sesión en escritorio) en el hero de Quiénes somos,
+     `consulta` (sesión con la pizarra de emociones) en el modelo integrativo, `pareja`
+     en Terapias, `sesion` en el hero de Psicólogos, `acompanamiento` en el proceso de
+     Inicio y `bienvenida` (recibiendo en la puerta) en el cierre común. Reemplazan a las
+     que se habían tomado del WordPress. Nada generado con IA.
+   - Verificado: auditoría de navegación **14/14 clics** (incluido el nuevo "Agendar"),
+     5 páginas × escritorio y móvil sin errores ni enlaces rotos, las 6 fotos cargan.
+     El capturador de pruebas ahora recorre la página antes de la captura: con
+     `loading="lazy"` las imágenes salían en blanco y la captura mentía.

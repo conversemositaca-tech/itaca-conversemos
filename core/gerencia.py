@@ -269,10 +269,15 @@ class HoyResumenView(APIView):
         from pacientes.models import RespuestaNPS
 
         nps_qs = RespuestaNPS.objects.del_tenant_actual().filter(fecha__gte=hoy - timedelta(days=90))
-        if rol == "medico":
-            nps_qs = nps_qs.filter(paciente__profesional=ficha) if ficha else nps_qs.none()
-        elif rol == "comercial":
+        # Mismo alcance por rol que el resto de la pantalla: el psicólogo ve solo
+        # sus pacientes, la coordinadora los de su sede, admin y analista ambas,
+        # y el comercial ninguno. Se reusa `pacientes_del_rol` en vez de repetir
+        # la regla a mano (era lo que rompía esta vista: `ficha` no existe aquí).
+        if rol == "comercial":
             nps_qs = nps_qs.none()
+        else:
+            nps_qs = nps_qs.filter(paciente__in=continuidad_mod.pacientes_del_rol(
+                Paciente.objects.del_tenant_actual(), request.user))
         puntajes = list(nps_qs.values_list("puntaje", flat=True))
         if puntajes:
             n_nps = len(puntajes)

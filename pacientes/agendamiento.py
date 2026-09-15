@@ -167,6 +167,9 @@ class AgendamientoInfoView(_PublicBase):
                 "id": p.id,
                 "nombre": p.nombre,
                 "titulo": p.titulo,
+                # N° de colegiatura (C.Ps.P.): el sitio lo muestra bajo cada
+                # psicólogo y es lo primero que mira quien desconfía.
+                "colegiatura": p.colegiatura,
                 "sede": p.sede,
                 "sede_label": p.get_sede_display(),
                 "modalidad": p.modalidad,

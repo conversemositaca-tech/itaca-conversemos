@@ -53,6 +53,7 @@ from mensajes.materiales import MaterialViewSet
 from mensajes.monitor_evolution import EvolutionEstadoView, EvolutionInstanciasView
 from mensajes.webhook_evolution import EvolutionWebhookView
 from pacientes.api import AdjuntoViewSet, AplicacionEscalaViewSet, AtencionViewSet, BloqueoAgendaViewSet, CitaViewSet, ContactoProfesionalViewSet, ObjetivoTerapeuticoViewSet, PacienteViewSet, RespuestaNPSViewSet, TareaViewSet, TranscribirView
+from core.sitio import SitioFotoView, SitioInfoView
 from pacientes.agendamiento import (
     AgendamientoFotoView,
     AgendamientoInfoView,
@@ -172,6 +173,10 @@ urlpatterns = [
     path("api/agendamiento/<str:token>/slots/", AgendamientoSlotsView.as_view(), name="agendamiento-slots"),
     path("api/agendamiento/<str:token>/reservar/", AgendamientoReservarView.as_view(), name="agendamiento-reservar"),
     path("api/agendamiento/<str:token>/", AgendamientoInfoView.as_view(), name="agendamiento-info"),
+    # Datos públicos del sitio web (sin token en la URL; la clínica sale de settings).
+    path("api/sitio/foto/<int:pk>/", SitioFotoView.as_view(), name="sitio-foto"),
+    path("api/sitio/", SitioInfoView.as_view(), name="sitio-info"),
+
     path("api/", include(router.urls)),
     # Catch-all: cualquier otra ruta sirve la app React (index.html). En producción
     # Django entrega el SPA; en desarrollo el SPA lo sirve Vite (5173), no Django.
