@@ -270,7 +270,8 @@ def _motivo(g, paciente, fila):
     if paciente.frecuencia in cont.FRECUENCIAS_CERRADAS:
         return "proceso_cerrado"
     historia = list(Cita.objects.filter(paciente=paciente, estado__in=cont._ESTADOS_ASISTIDOS)
-                    .order_by("inicio").values("id", "n_sesion", "inicio", "estado", "decision"))
+                    .order_by("inicio")
+                    .values("id", "n_sesion", "inicio", "estado", "decision", "especialidad"))
     # Solo el proceso en curso. Si la cita de referencia de la gestión quedó en
     # un proceso anterior, la condición no "se resolvió": el paciente empezó
     # de nuevo, y esa gestión pertenece a la historia.

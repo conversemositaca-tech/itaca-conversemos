@@ -345,6 +345,7 @@ class CitaSerializer(serializers.ModelSerializer):
     # El N° de sesión real de la cita (editable, puede ir vacío) y el que se
     # muestra, que cae al del paciente cuando la cita no lo trae.
     n_sesion_efectivo = serializers.SerializerMethodField()
+    es_consulta = serializers.SerializerMethodField()
     modalidad_label = serializers.CharField(source="get_modalidad_display", read_only=True)
     sede_label = serializers.CharField(source="get_sede_display", read_only=True)
     categoria_label = serializers.CharField(source="get_categoria_display", read_only=True)
@@ -358,7 +359,7 @@ class CitaSerializer(serializers.ModelSerializer):
         fields = [
             "id", "pacienteId", "paciente", "medico", "medicoId", "especialidad", "categoria", "categoria_label",
             "fecha", "hora", "inicio", "estado", "estado_label", "recordado", "cobrada",
-            "n_sesion", "n_sesion_efectivo",
+            "n_sesion", "n_sesion_efectivo", "es_consulta",
             "sede", "sede_label", "modalidad", "modalidad_label", "enlace", "notas", "motivo_consulta",
             "agendado_web", "decision", "decision_label",
         ]
@@ -403,7 +404,16 @@ class CitaSerializer(serializers.ModelSerializer):
         # Usa los cobros ya prefetcheados (evita 1 query por cita = N+1 en la agenda).
         return any(c.estado != "anulado" for c in obj.cobros.all())
 
+    def get_es_consulta(self, obj):
+        """La consulta previa no es una sesión: la agenda la rotula como tal."""
+        return continuidad.es_consulta(obj)
+
     def get_n_sesion_efectivo(self, obj):
+        # Una consulta no lleva número de sesión: es el paso anterior al S1, y
+        # ponerle uno hacía que el día de la consulta la agenda dijera "Sesión
+        # N° 1" para alguien que todavía no había tenido ninguna.
+        if continuidad.es_consulta(obj):
+            return 0
         # El N° de la cita si se indicó; si no, la sesión real del paciente
         # (de sus citas asistidas — no el contador manual Paciente.n_sesion,
         # que se queda en 0 salvo que alguien use "Registrar sesión" a

@@ -55,6 +55,37 @@ GAP_REFUERZO_DIAS = 60
 MARCADOR_IMPORTADO_AGENDAPRO = "Importado de AgendaPro."
 
 
+# La CONSULTA INICIAL no es la sesión 1: es la conversación previa de la que
+# sale el plan de terapia. Dura menos, se liquida distinto y el equipo la llama
+# "consulta 0". Se reconoce por el servicio, que es el mismo criterio con el que
+# se crea (`leads.api._servicio_de_consulta`): "Consulta inicial - Adultos",
+# "Consulta inicial - niños/adolescentes"…
+#
+# Importa más de lo que parece: las consultas casi nunca se numeran (14 de 1496
+# en la base), así que caían en el conteo automático y corrían TODO el proceso
+# en uno — la agenda decía "Sesión N° 1" el día de la consulta, el aviso de
+# abandono de la sesión 3 saltaba en la 2 y el cierre de bloque de la 6, en la 5.
+MARCA_CONSULTA = "consulta"
+
+
+def es_consulta(cita):
+    """¿Esta cita es la consulta previa y no una sesión del proceso?"""
+    if isinstance(cita, dict):
+        servicio = cita.get("especialidad") or ""
+    else:
+        servicio = getattr(cita, "especialidad", "") or ""
+    return MARCA_CONSULTA in servicio.lower()
+
+
+def cuantas_sesiones(citas):
+    """Las sesiones de verdad que tiene un tramo: las consultas no cuentan.
+
+    Una cita sin servicio registrado SÍ cuenta: lo que no consta no se
+    descuenta, y la mayoría del histórico no dice a qué vino.
+    """
+    return sum(1 for c in citas if not es_consulta(c))
+
+
 def _normalizar_cita(c):
     """Una cita como dict uniforme, venga de `.values()` o de un modelo.
 
@@ -71,6 +102,8 @@ def _normalizar_cita(c):
         "fecha": c.inicio.date() if c.inicio else None,
         "estado": c.estado,
         "decision": c.decision or "",
+        # Para saber si fue consulta o sesión (ver `es_consulta`).
+        "especialidad": getattr(c, "especialidad", "") or "",
     }
 
 
@@ -200,13 +233,14 @@ def proceso_actual(citas, senales=()):
     for t in tramos[:-1]:
         nums = [c["n_sesion"] for c in t["citas"] if c["n_sesion"]]
         anteriores.append({
-            "n": resolver_sesion_real(max(nums) if nums else None, len(t["citas"])),
+            "n": resolver_sesion_real(max(nums) if nums else None, cuantas_sesiones(t["citas"])),
             "ultima": t["citas"][-1]["fecha"],
             "cierre_registrado": bool(t["citas"][-1]["decision"]),
         })
     return {
         "citas": actual["citas"],
-        "n": resolver_sesion_real(max(con_numero) if con_numero else None, len(actual["citas"])),
+        "n": resolver_sesion_real(max(con_numero) if con_numero else None,
+                                  cuantas_sesiones(actual["citas"])),
         "numero": len(tramos),
         "total": len(tramos),
         "inicio": actual["citas"][0]["fecha"],
@@ -271,7 +305,8 @@ def sesion_real_por_pacientes(paciente_ids):
         return {}
     por_paciente = {}
     for c in (Cita.objects.filter(paciente_id__in=ids, estado__in=_ESTADOS_ASISTIDOS)
-              .values("id", "paciente_id", "n_sesion", "inicio", "estado", "decision")):
+              .values("id", "paciente_id", "n_sesion", "inicio", "estado", "decision",
+                      "especialidad")):
         por_paciente.setdefault(c["paciente_id"], []).append(c)
     senales = senales_por_paciente(list(por_paciente))
     return {pid: proceso_actual(cs, senales.get(pid, ()))["n"] for pid, cs in por_paciente.items()}
@@ -519,7 +554,8 @@ def cola_de_continuidad(pacientes, hoy=None, dias_proximos=None, dias_backlog=No
     if not ids:
         return []
 
-    campos_asistidas = ["id", "paciente_id", "n_sesion", "inicio", "estado", "decision"]
+    campos_asistidas = ["id", "paciente_id", "n_sesion", "inicio", "estado", "decision",
+                        "especialidad"]
     campos_futuras = ["id", "paciente_id", "n_sesion", "inicio"]
     if con_contexto:
         campos_asistidas.append("notas")
