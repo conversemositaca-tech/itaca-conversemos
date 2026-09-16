@@ -1,12 +1,8 @@
-"""Fusiona pacientes repetidos que comparten NÚMERO DE TELÉFONO.
+"""LISTA pacientes repetidos que comparten NÚMERO DE TELÉFONO. Ya no fusiona.
 
 Son los que dejó el doble registro: la coordinadora registraba la consulta en
 Marketing y volvía a crear al paciente desde la Agenda, así que la misma persona
-quedaba dos veces con el mismo número. (El flujo ya no los genera; esto limpia
-los que quedaron.)
-
-`fusionar_duplicados` NO sirve para estos: aquel compara nombres y exige que el
-duplicado no tenga teléfono.
+quedaba dos veces con el mismo número.
 
 CUIDADO — el mismo número NO siempre es la misma persona: en la clínica se
 atiende a niños y adolescentes, y madre e hijo comparten celular. Por eso solo se
@@ -15,29 +11,17 @@ en el otro). Los demás se listan para que alguien los mire, pero no se tocan.
 
     python manage.py fusionar_por_telefono                 # simula, no escribe
     python manage.py fusionar_por_telefono --sede piura
-    python manage.py fusionar_por_telefono --aplicar       # ahora sí fusiona
+
+`--aplicar` está DESACTIVADO desde set. 2026: lo reemplaza la pantalla
+"Posibles duplicados" (pacientes/fusion.py), que mueve las relaciones por
+introspección y consolida de a un caso con confirmación humana. Este comando
+queda solo como listado rápido desde la consola.
 """
-from django.core.management.base import BaseCommand
-from django.db import transaction
+from django.core.management.base import BaseCommand, CommandError
 
 from core.models import Clinica
-from finanzas.models import Cobro, Paquete
-from leads.models import Lead
-from mensajes.models import Mensaje
 from pacientes.management.commands.importar_lima import norm
-from pacientes.models import (
-    Adjunto, AplicacionEscala, Atencion, Cita, Consentimiento, ContactoProfesional,
-    ObjetivoTerapeutico, Paciente, RespuestaNPS, SeguimientoSesion, Tarea,
-)
-
-# TODO lo que cuelga de un paciente. El comando viejo solo movía cinco de estas y
-# el resto se borraba con el duplicado (consentimientos, escalas, objetivos,
-# tareas, NPS…). Aquí se mueven todas antes de borrar.
-RELACIONES = [
-    Atencion, Cita, Adjunto, Cobro, Paquete, Lead, Mensaje, SeguimientoSesion,
-    Consentimiento, AplicacionEscala, ObjetivoTerapeutico, Tarea, RespuestaNPS,
-    ContactoProfesional,
-]
+from pacientes.models import Paciente
 
 
 def solo_digitos(t):
@@ -64,7 +48,7 @@ def mismo_nombre(a, b):
 
 
 class Command(BaseCommand):
-    help = "Fusiona pacientes repetidos con el mismo teléfono (y nombre compatible)."
+    help = "Lista pacientes repetidos con el mismo teléfono. Ya NO fusiona."
 
     def add_arguments(self, parser):
         parser.add_argument("--sede", default="", choices=["", "lima", "piura"])
@@ -119,29 +103,22 @@ class Command(BaseCommand):
             self.stdout.write(self.style.WARNING(
                 "\nRevisa la lista de arriba ANTES de aplicar: si en un mismo nombre "
                 "ves a dos personas (pasa en terapia de pareja), no lo apliques."))
-            self.stdout.write(self.style.SUCCESS("SIMULACIÓN: no se escribió nada. Agrega --aplicar para fusionar."))
+            self.stdout.write(self.style.SUCCESS("SIMULACIÓN: no se escribió nada."))
             return
 
-        with transaction.atomic():
-            for duplicado, principal in pares:
-                for modelo in RELACIONES:
-                    modelo.objects.filter(paciente=duplicado).update(paciente=principal)
-                # Se queda el dato que el principal no tenga (el duplicado suele
-                # traer el correo o el documento que al otro le falta).
-                cambios = []
-                for campo in ("email", "numero_documento", "fecha_nacimiento", "direccion"):
-                    if not getattr(principal, campo) and getattr(duplicado, campo):
-                        setattr(principal, campo, getattr(duplicado, campo))
-                        cambios.append(campo)
-                # Se queda el nombre más completo: el principal es el que más
-                # historia tiene, pero suele ser el que se registró más corto.
-                if len(norm(duplicado.nombre).split()) > len(norm(principal.nombre).split()):
-                    principal.nombre = duplicado.nombre
-                    cambios.append("nombre")
-                if cambios:
-                    principal.save(update_fields=cambios)
-                duplicado.delete()
-        self.stdout.write(self.style.SUCCESS(f"Listo: {len(pares)} pacientes fusionados."))
+        # --aplicar queda DESACTIVADO. Su lista `RELACIONES` está escrita a mano y
+        # se quedó sin GestionContinuidad (PROTECT), así que revienta a mitad de
+        # camino con ProtectedError; y aunque no reventara, fusiona en lote sin que
+        # nadie mire cada caso. Lo reemplaza "Posibles duplicados" en el sistema,
+        # que mueve las relaciones por introspección, proyecta la continuidad antes
+        # de tocar nada y exige confirmación humana caso por caso.
+        raise CommandError(
+            "Este comando ya no fusiona: su lista de relaciones quedó incompleta "
+            "(falta GestionContinuidad) y fusionaba en lote sin revisión. "
+            "Usa la pantalla 'Posibles duplicados' del sistema, que compara las dos "
+            "fichas, muestra la vista previa y consolida de a un caso. "
+            "Por código: pacientes.fusion.analizar_fusion / fusionar_pacientes."
+        )
 
     @staticmethod
     def _peso(p):

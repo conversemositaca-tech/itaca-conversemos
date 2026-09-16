@@ -115,3 +115,44 @@ class BloqueoEscrituraAnalista(BasePermission):
         if request.method in SAFE_METHODS:
             return True
         return not es_solo_lectura(request.user)
+
+
+# Roles que pueden usar la pantalla de CALIDAD DE DATOS (posibles duplicados):
+# mirar candidatos, comparar fichas lado a lado y descartar un par. Es trabajo
+# de coordinación, que ya ve el contacto del paciente y sabe quién es quién.
+# El psicólogo queda fuera (solo ve a sus pacientes y no gestiona identidad) y
+# la analista también: es solo lectura y nunca toca datos de contacto.
+ROLES_REVISAN_DUPLICADOS = ("admin", "asistente")
+
+# CONSOLIDAR dos fichas es irreversible: la secundaria se elimina. Se restringe
+# a gerencia, igual que eliminar un paciente. Coordinación prepara el caso y
+# deja el dry-run listo; quien aprieta el botón es admin.
+ROLES_FUSIONAN_PACIENTES = ("admin",)
+
+
+def puede_revisar_duplicados(user):
+    return getattr(user, "rol", None) in ROLES_REVISAN_DUPLICADOS
+
+
+def puede_fusionar_pacientes(user):
+    return getattr(user, "rol", None) in ROLES_FUSIONAN_PACIENTES
+
+
+class PuedeRevisarDuplicados(BasePermission):
+    """Ver y comparar posibles duplicados. No incluye fusionar."""
+
+    message = "Tu perfil no puede revisar la calidad de datos de pacientes."
+
+    def has_permission(self, request, view):
+        return bool(request.user and request.user.is_authenticated
+                    and puede_revisar_duplicados(request.user))
+
+
+class PuedeFusionarPacientes(BasePermission):
+    """Ejecutar una consolidación real (elimina la ficha secundaria)."""
+
+    message = "Solo la gerencia puede consolidar fichas de pacientes."
+
+    def has_permission(self, request, view):
+        return bool(request.user and request.user.is_authenticated
+                    and puede_fusionar_pacientes(request.user))

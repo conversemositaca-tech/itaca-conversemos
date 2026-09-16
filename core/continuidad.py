@@ -601,6 +601,168 @@ def _decidido(cita):
     return cita is not None and bool(cita["decision"])
 
 
+def evaluar_paciente(r, historia, proximas, senales_pac=(), migrado=False, hoy=None,
+                     dias_proximos=None, dias_backlog=None, con_contexto=False,
+                     indicadores=None):
+    """Las filas de la cola que produce UN paciente a partir de SU historia.
+
+    Es el cuerpo de `cola_de_continuidad`, extraido para poder evaluar una
+    historia que todavia no existe en la base —la de dos fichas duplicadas
+    unidas— sin escribir nada. Asi la proyeccion de una fusion sale de la misma
+    regla que la cola de verdad, en vez de una copia que se desalinea
+    (ver `pacientes.fusion.analizar_fusion`).
+
+    `r` es el registro del paciente como lo arma `cola_de_continuidad`:
+    {id, nombre, sede, sesiones_proceso, profesional_id, profesional__nombre}.
+    `historia` son sus citas ASISTIDAS ya ordenadas; `proximas`, las futuras.
+    """
+    from django.utils import timezone
+
+    hoy = hoy or timezone.localdate()
+    dias_proximos = DIAS_PROXIMOS if dias_proximos is None else dias_proximos
+    dias_backlog = DIAS_BACKLOG if dias_backlog is None else dias_backlog
+    filas = []
+    if not historia:
+        return filas
+    # Solo el proceso EN CURSO: un S6 de un proceso anterior nunca se
+    # confunde con el S6 de este (ver segmentar_procesos). De aquí en
+    # adelante `citas` es el tramo actual, no toda la historia.
+    pa = proceso_actual(historia, senales_pac)
+    citas = pa["citas"]
+    con_numero = [c["n_sesion"] for c in citas if c["n_sesion"]]
+    n = pa["n"]
+    proceso_info = {
+        "numero": pa["numero"], "total": pa["total"],
+        "inicio": pa["inicio"].isoformat() if pa["inicio"] else None,
+        "motivo": pa["motivo"],
+        "numeracion_inconsistente": pa["numeracion_inconsistente"],
+        "anteriores_sin_cierre": pa["anteriores_sin_cierre"],
+    }
+    if indicadores is not None:
+        if pa["anteriores_sin_cierre"]:
+            indicadores["procesos_anteriores_sin_cierre"] += 1
+            ant = [a for a in pa["anteriores"] if not a["cierre_registrado"]][-1]
+            indicadores["filas_procesos_anteriores"].append(
+                _fila_proceso_anterior(r, pa, ant, migrado, hoy))
+        if pa["numeracion_inconsistente"]:
+            indicadores["numeracion_inconsistente"] += 1
+    if n <= 0:
+        return filas
+    # OJO: aquí ya NO se sale por "la última cita trae decisión". Cada
+    # cierre se evalúa contra su propia cita (pasos 2-4 más abajo).
+    ultima_sesion = citas[-1]["inicio"].date()
+    proxima_fecha = proximas[0]["inicio"].date() if proximas else None
+
+    contexto = notas_mod.vacio()
+    if con_contexto:
+        contexto = notas_mod.analizar(
+            [c.get("notas") for c in citas] + [c.get("notas") for c in proximas])
+
+    # DATO_INCOMPLETO es solo para el caso que no se puede EVALUAR: ninguna
+    # cita trae N° de sesión, así que el "va por la 6" salió de contar citas
+    # y el cierre de bloque es una suposición. Ahí la urgencia no se puede
+    # afirmar, y por eso desplaza al estado por fecha.
+    #
+    # Que falte el psicólogo o la sede NO entra aquí a propósito: un cierre
+    # vencido hace 18 días sigue siendo urgente aunque nadie lo tenga
+    # asignado. Eso viaja como `faltantes` —una marca en la fila— para que
+    # se vea y se arregle, sin sacar el caso del grupo de acción.
+    incompleto = not con_numero
+    faltantes = []
+    if not r["profesional_id"]:
+        faltantes.append("psicologo")
+    if not r["sede"]:
+        faltantes.append("sede")
+    if incompleto:
+        faltantes.append("n_sesion")
+
+    ultima_decidida = bool(citas[-1]["decision"])
+    sp = r["sesiones_proceso"] or 0
+
+    def agregar(estado, meta_ev, fecha, origen, dias, referencia, ref_origen, anteriores=()):
+        """Cierra la fila aplicando el override de calidad de dato.
+
+        Solo reclasifica casos que YA entrarían a la cola: nunca agrega
+        pacientes nuevos. Así el arreglo de 'cientos de pacientes
+        mezclados' sigue en pie."""
+        if incompleto:
+            estado = EstadoCierre.DATO_INCOMPLETO
+        anteriores = list(anteriores)
+        fila = _fila(r, n, meta_ev, fecha, origen, estado, dias, bool(proximas),
+                     ultima_sesion, proxima_fecha, contexto, faltantes,
+                     evento=_evento(estado, meta_ev, citas, referencia, ref_origen),
+                     anteriores=anteriores, proceso=proceso_info, migrado=migrado)
+        # Los cierres anteriores sin decidir, con su cita, para que la
+        # gestión de cada uno pueda reconocerse aunque no sea el titular.
+        fila["anteriores_evento"] = [
+            {"meta": m, "cita_referencia": (cita_de_sesion(citas, m)[0] or {}).get("id")}
+            for m in anteriores
+        ]
+        filas.append(fila)
+
+    # 1) Riesgo de abandono en la sesión 3: misma regla que `evaluar()` —llegó
+    #    a la sesión de riesgo y no tiene ninguna cita futura—, pero ahora
+    #    también entra a la cola para poder filtrarla y trabajarla aquí. Una
+    #    decisión en esa última sesión (p. ej. "no inicia proceso") lo cierra.
+    if n == SESION_RIESGO_ABANDONO and not proximas and not ultima_decidida:
+        ref, ref_origen = cita_de_sesion(citas, SESION_RIESGO_ABANDONO)
+        agregar(EstadoCierre.RIESGO_S3, SESION_RIESGO_ABANDONO, None, "riesgo_s3",
+                (hoy - ultima_sesion).days, ref, ref_origen)
+        return filas
+
+    # 2) Cierres que ya quedaron atrás: cada uno se evalúa contra SU cita.
+    #    Que S7 no tenga decisión no dice nada del cierre de la 6; que S6 sí
+    #    la tenga cierra ese bloque aunque el paciente siga viniendo.
+    sin_decision = [m for m in metas_cerradas(n, sp)
+                    if not _decidido(cita_de_sesion(citas, m)[0])]
+
+    # 3) Bloque vigente: está en el cierre (n == meta) o a una sesión de él.
+    #    Pendiente si su cita de cierre no trae decisión; una decisión en
+    #    la última sesión (p. ej. "finaliza proceso" en la 5) también lo
+    #    cierra, porque ya no habrá cierre de bloque que evaluar.
+    meta = proxima_meta(n, sp)
+    if n >= meta - 1 and not ultima_decidida:
+        cierre, fecha, origen = _cierre_de_bloque(citas, proximas, meta, n)
+        if not _decidido(cierre):
+            if cierre is not None:
+                referencia, ref_origen = cierre, origen
+            else:                          # aún no cerró: ancla en la sesión previa
+                referencia, ref_origen = cita_de_sesion(citas, meta - 1)
+                ref_origen = "pre_cierre" if referencia is not None else ref_origen
+            if fecha is None:
+                agregar(EstadoCierre.SIN_AGENDAR, meta, None, origen, None,
+                        referencia, ref_origen, sin_decision)
+                return filas
+            dias = (hoy - fecha).days
+            estado = None
+            if dias > dias_backlog:
+                estado = EstadoCierre.BACKLOG
+            elif dias > 0:
+                estado = EstadoCierre.VENCIDO
+            elif dias == 0:
+                estado = EstadoCierre.HOY
+            elif -dias <= dias_proximos:
+                estado = EstadoCierre.PROXIMO
+            # Más allá de la ventana todavía no es asunto de nadie: se cae
+            # al paso 4 por si hay un cierre anterior sin decidir.
+            if estado is not None:
+                agregar(estado, meta, fecha, origen, dias, referencia, ref_origen, sin_decision)
+                return filas
+
+    # 4) Continuó sin decisión: pasó un cierre sin decidirlo y siguió
+    #    viniendo. No es el riesgo de que se vaya sin cerrar: es una decisión
+    #    que nadie anotó. Se separa para no mezclar un problema de registro
+    #    con uno de continuidad. Se muestra el cierre más reciente; los más
+    #    antiguos viajan en `anteriores_sin_decision`, nada se pierde.
+    if sin_decision:
+        m = sin_decision[-1]
+        ref, ref_origen = cita_de_sesion(citas, m)
+        agregar(EstadoCierre.CONTINUO_SIN_DECISION, m, None, "continuo", None,
+                ref, ref_origen, sin_decision[:-1])
+
+    return filas
+
+
 def cola_de_continuidad(pacientes, hoy=None, dias_proximos=None, dias_backlog=None,
                         con_contexto=False, indicadores=None):
     """La cola de trabajo del Centro de Continuidad, priorizada.
@@ -669,147 +831,11 @@ def cola_de_continuidad(pacientes, hoy=None, dias_proximos=None, dias_backlog=No
     filas = []
     for r in base:
         pid = r["id"]
-        historia = asistidas.get(pid, [])
-        if not historia:
-            continue
-        # Solo el proceso EN CURSO: un S6 de un proceso anterior nunca se
-        # confunde con el S6 de este (ver segmentar_procesos). De aquí en
-        # adelante `citas` es el tramo actual, no toda la historia.
-        pa = proceso_actual(historia, senales.get(pid, ()))
-        citas = pa["citas"]
-        con_numero = [c["n_sesion"] for c in citas if c["n_sesion"]]
-        n = pa["n"]
-        proceso_info = {
-            "numero": pa["numero"], "total": pa["total"],
-            "inicio": pa["inicio"].isoformat() if pa["inicio"] else None,
-            "motivo": pa["motivo"],
-            "numeracion_inconsistente": pa["numeracion_inconsistente"],
-            "anteriores_sin_cierre": pa["anteriores_sin_cierre"],
-        }
-        migrado = pid in solo_migrados
-        if indicadores is not None:
-            if pa["anteriores_sin_cierre"]:
-                indicadores["procesos_anteriores_sin_cierre"] += 1
-                ant = [a for a in pa["anteriores"] if not a["cierre_registrado"]][-1]
-                indicadores["filas_procesos_anteriores"].append(
-                    _fila_proceso_anterior(r, pa, ant, migrado, hoy))
-            if pa["numeracion_inconsistente"]:
-                indicadores["numeracion_inconsistente"] += 1
-        if n <= 0:
-            continue
-        # OJO: aquí ya NO se sale por "la última cita trae decisión". Cada
-        # cierre se evalúa contra su propia cita (pasos 2-4 más abajo).
-        proximas = futuras.get(pid, [])
-        ultima_sesion = citas[-1]["inicio"].date()
-        proxima_fecha = proximas[0]["inicio"].date() if proximas else None
-
-        contexto = notas_mod.vacio()
-        if con_contexto:
-            contexto = notas_mod.analizar(
-                [c.get("notas") for c in citas] + [c.get("notas") for c in proximas])
-
-        # DATO_INCOMPLETO es solo para el caso que no se puede EVALUAR: ninguna
-        # cita trae N° de sesión, así que el "va por la 6" salió de contar citas
-        # y el cierre de bloque es una suposición. Ahí la urgencia no se puede
-        # afirmar, y por eso desplaza al estado por fecha.
-        #
-        # Que falte el psicólogo o la sede NO entra aquí a propósito: un cierre
-        # vencido hace 18 días sigue siendo urgente aunque nadie lo tenga
-        # asignado. Eso viaja como `faltantes` —una marca en la fila— para que
-        # se vea y se arregle, sin sacar el caso del grupo de acción.
-        incompleto = not con_numero
-        faltantes = []
-        if not r["profesional_id"]:
-            faltantes.append("psicologo")
-        if not r["sede"]:
-            faltantes.append("sede")
-        if incompleto:
-            faltantes.append("n_sesion")
-
-        ultima_decidida = bool(citas[-1]["decision"])
-        sp = r["sesiones_proceso"] or 0
-
-        def agregar(estado, meta_ev, fecha, origen, dias, referencia, ref_origen, anteriores=()):
-            """Cierra la fila aplicando el override de calidad de dato.
-
-            Solo reclasifica casos que YA entrarían a la cola: nunca agrega
-            pacientes nuevos. Así el arreglo de 'cientos de pacientes
-            mezclados' sigue en pie."""
-            if incompleto:
-                estado = EstadoCierre.DATO_INCOMPLETO
-            anteriores = list(anteriores)
-            fila = _fila(r, n, meta_ev, fecha, origen, estado, dias, bool(proximas),
-                         ultima_sesion, proxima_fecha, contexto, faltantes,
-                         evento=_evento(estado, meta_ev, citas, referencia, ref_origen),
-                         anteriores=anteriores, proceso=proceso_info, migrado=migrado)
-            # Los cierres anteriores sin decidir, con su cita, para que la
-            # gestión de cada uno pueda reconocerse aunque no sea el titular.
-            fila["anteriores_evento"] = [
-                {"meta": m, "cita_referencia": (cita_de_sesion(citas, m)[0] or {}).get("id")}
-                for m in anteriores
-            ]
-            filas.append(fila)
-
-        # 1) Riesgo de abandono en la sesión 3: misma regla que `evaluar()` —llegó
-        #    a la sesión de riesgo y no tiene ninguna cita futura—, pero ahora
-        #    también entra a la cola para poder filtrarla y trabajarla aquí. Una
-        #    decisión en esa última sesión (p. ej. "no inicia proceso") lo cierra.
-        if n == SESION_RIESGO_ABANDONO and not proximas and not ultima_decidida:
-            ref, ref_origen = cita_de_sesion(citas, SESION_RIESGO_ABANDONO)
-            agregar(EstadoCierre.RIESGO_S3, SESION_RIESGO_ABANDONO, None, "riesgo_s3",
-                    (hoy - ultima_sesion).days, ref, ref_origen)
-            continue
-
-        # 2) Cierres que ya quedaron atrás: cada uno se evalúa contra SU cita.
-        #    Que S7 no tenga decisión no dice nada del cierre de la 6; que S6 sí
-        #    la tenga cierra ese bloque aunque el paciente siga viniendo.
-        sin_decision = [m for m in metas_cerradas(n, sp)
-                        if not _decidido(cita_de_sesion(citas, m)[0])]
-
-        # 3) Bloque vigente: está en el cierre (n == meta) o a una sesión de él.
-        #    Pendiente si su cita de cierre no trae decisión; una decisión en
-        #    la última sesión (p. ej. "finaliza proceso" en la 5) también lo
-        #    cierra, porque ya no habrá cierre de bloque que evaluar.
-        meta = proxima_meta(n, sp)
-        if n >= meta - 1 and not ultima_decidida:
-            cierre, fecha, origen = _cierre_de_bloque(citas, proximas, meta, n)
-            if not _decidido(cierre):
-                if cierre is not None:
-                    referencia, ref_origen = cierre, origen
-                else:                          # aún no cerró: ancla en la sesión previa
-                    referencia, ref_origen = cita_de_sesion(citas, meta - 1)
-                    ref_origen = "pre_cierre" if referencia is not None else ref_origen
-                if fecha is None:
-                    agregar(EstadoCierre.SIN_AGENDAR, meta, None, origen, None,
-                            referencia, ref_origen, sin_decision)
-                    continue
-                dias = (hoy - fecha).days
-                estado = None
-                if dias > dias_backlog:
-                    estado = EstadoCierre.BACKLOG
-                elif dias > 0:
-                    estado = EstadoCierre.VENCIDO
-                elif dias == 0:
-                    estado = EstadoCierre.HOY
-                elif -dias <= dias_proximos:
-                    estado = EstadoCierre.PROXIMO
-                # Más allá de la ventana todavía no es asunto de nadie: se cae
-                # al paso 4 por si hay un cierre anterior sin decidir.
-                if estado is not None:
-                    agregar(estado, meta, fecha, origen, dias, referencia, ref_origen, sin_decision)
-                    continue
-
-        # 4) Continuó sin decisión: pasó un cierre sin decidirlo y siguió
-        #    viniendo. No es el riesgo de que se vaya sin cerrar: es una decisión
-        #    que nadie anotó. Se separa para no mezclar un problema de registro
-        #    con uno de continuidad. Se muestra el cierre más reciente; los más
-        #    antiguos viajan en `anteriores_sin_decision`, nada se pierde.
-        if sin_decision:
-            m = sin_decision[-1]
-            ref, ref_origen = cita_de_sesion(citas, m)
-            agregar(EstadoCierre.CONTINUO_SIN_DECISION, m, None, "continuo", None,
-                    ref, ref_origen, sin_decision[:-1])
-
+        filas.extend(evaluar_paciente(
+            r, asistidas.get(pid, []), futuras.get(pid, []),
+            senales_pac=senales.get(pid, ()), migrado=pid in solo_migrados, hoy=hoy,
+            dias_proximos=dias_proximos, dias_backlog=dias_backlog,
+            con_contexto=con_contexto, indicadores=indicadores))
     filas.sort(key=lambda f: (_ORDEN_ESTADO[f["estado"]], -(f["dias"] or 0), f["paciente"]))
     return filas
 

@@ -412,6 +412,23 @@ export const api = {
     req(`/api/${endpoint}/`, { method: "POST", body: JSON.stringify(data) }),
   hojaBorrar: (endpoint, id) => req(`/api/${endpoint}/${id}/`, { method: "DELETE" }),
 
+  // --- Calidad de datos: posibles pacientes duplicados ---
+  // El detector PROPONE; consolidar es siempre una decisión humana y la
+  // ejecuta gerencia. `analizar` es el dry-run: no escribe nada.
+  duplicados: (confianza = "alta") => req(`/api/duplicados/?confianza=${confianza}`),
+  analizarFusion: (principal, secundario, opts = {}) =>
+    req("/api/duplicados/analizar/", {
+      method: "POST",
+      body: JSON.stringify({ principal, secundario, ...opts }),
+    }),
+  fusionarPacientes: (principal, secundario, opts = {}) =>
+    req("/api/duplicados/fusionar/", {
+      method: "POST",
+      body: JSON.stringify({ principal, secundario, confirmar: true, ...opts }),
+    }),
+  descartarDuplicado: (a, b, nota = "") =>
+    req("/api/duplicados/descartar/", { method: "POST", body: JSON.stringify({ a, b, nota }) }),
+
   // Ingreso automático de leads (URL/token de captación)
   captacionConfig: () => req("/api/captacion/config/"),
   regenerarTokenCaptacion: () => req("/api/captacion/regenerar/", { method: "POST" }),

@@ -1045,3 +1045,87 @@ class HistorialContinuidad(ModeloTenant):
 
     def __str__(self):
         return f"{self.gestion_id} · {self.get_evento_display()} · {self.creado_en:%d/%m %H:%M}"
+
+
+# ---------------------------------------------------------------------------
+# Calidad de datos: pacientes duplicados.
+#
+# La misma persona con dos fichas parte su historia en dos: sus sesiones, su
+# próxima cita, su DP y su continuidad viven en Paciente.id distintos, y el
+# Centro de Continuidad evalúa cada id por separado (core/continuidad.py). La
+# consolidación reúne todo en UNA ficha y borra la sobrante — pero el hecho de
+# que se fusionaron no se puede perder, así que queda aquí.
+# ---------------------------------------------------------------------------
+
+
+class RegistroFusionPaciente(ModeloTenant):
+    """Constancia de una consolidación. La ficha secundaria se elimina; esto no.
+
+    Guarda IDs y un resumen operativo, NUNCA una copia de la historia clínica:
+    esa viaja entera al paciente principal y allí se lee (Ley 29733, minimización).
+    No es un Paciente y no aparece en ningún conteo de pacientes.
+    """
+
+    principal = models.ForeignKey(
+        Paciente, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="fusiones_recibidas",
+        help_text="La ficha que sobrevivió. Vacío solo si después se eliminó.",
+    )
+    principal_id_original = models.PositiveIntegerField("id del paciente principal")
+    secundario_id_eliminado = models.PositiveIntegerField("id del paciente eliminado")
+    principal_nombre = models.CharField(max_length=200)
+    secundario_nombre = models.CharField(max_length=200)
+    motivo = models.TextField(blank=True, default="")
+    # Qué se movió, qué se heredó y qué conflictos se resolvieron: el resumen
+    # del dry-run que se aprobó, para poder reconstruir la decisión.
+    relaciones_movidas = models.JSONField(default=dict, blank=True)
+    campos_heredados = models.JSONField(default=list, blank=True)
+    conflictos_resueltos = models.JSONField(default=list, blank=True)
+    continuidad_antes = models.JSONField(default=dict, blank=True)
+    continuidad_despues = models.JSONField(default=dict, blank=True)
+    fusionado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="fusiones_pacientes",
+    )
+
+    class Meta:
+        verbose_name = "Registro de fusión de pacientes"
+        verbose_name_plural = "Registros de fusión de pacientes"
+        ordering = ["-creado_en"]
+        indexes = [models.Index(fields=["clinica", "creado_en"])]
+
+    @property
+    def total_movido(self):
+        return sum(self.relaciones_movidas.values()) if self.relaciones_movidas else 0
+
+    def __str__(self):
+        return f"#{self.secundario_id_eliminado} → #{self.principal_id_original} · {self.principal_nombre}"
+
+
+class RevisionDuplicado(ModeloTenant):
+    """Un par que una persona ya miró y descartó: no son la misma persona.
+
+    Sin esto, el detector vuelve a ofrecer los mismos homónimos cada vez y la
+    pantalla deja de ser útil. Se guarda el par ordenado (menor, mayor) para que
+    (A,B) y (B,A) sean el mismo registro.
+    """
+
+    paciente_a = models.ForeignKey(Paciente, on_delete=models.CASCADE, related_name="revisiones_duplicado_a")
+    paciente_b = models.ForeignKey(Paciente, on_delete=models.CASCADE, related_name="revisiones_duplicado_b")
+    nota = models.CharField(max_length=300, blank=True, default="")
+    revisado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="duplicados_descartados",
+    )
+
+    class Meta:
+        verbose_name = "Duplicado descartado"
+        verbose_name_plural = "Duplicados descartados"
+        ordering = ["-creado_en"]
+        constraints = [
+            models.UniqueConstraint(fields=["clinica", "paciente_a", "paciente_b"],
+                                    name="uniq_revision_duplicado_par"),
+        ]
+
+    def __str__(self):
+        return f"{self.paciente_a_id} ≠ {self.paciente_b_id}"

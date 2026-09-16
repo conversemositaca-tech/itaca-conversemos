@@ -5,6 +5,7 @@ import { api } from "./api";
 import { MENU_SITIO, SITE_ROUTES, propsEnlace, normalizarRuta } from "./rutas";
 import { modeloReporte, modeloTabla, exportarExcel, exportarWord, exportarPowerPoint, exportarPDF, exportarCSV } from "./exportGerencia";
 import Login from "./Login";
+import Duplicados, { AvisoDuplicado } from "./Duplicados";
 
 const TIPOS_DOC = [
   { v: "dni", l: "DNI" }, { v: "ce", l: "Carné de extranjería" },
@@ -603,6 +604,7 @@ export default function ClinicaApp() {
   const [agendaFecha, setAgendaFecha] = useState(HOY_ISO);
   const [agendaVista, setAgendaVista] = useState("dia");
   const [editingPaciente, setEditingPaciente] = useState(null);
+  const [posibleDuplicado, setPosibleDuplicado] = useState(null);
   const [registrandoSesion, setRegistrandoSesion] = useState(null);
   const [toast, setToast] = useState("");
   // Directorio de psicólogos: hace falta para poder reasignar una cita.
@@ -769,6 +771,9 @@ export default function ClinicaApp() {
     ...(usuario?.rol === "admin" ? [{ id: "legal", label: "Legal", icon: FileText }] : []),
     ...(usuario?.rol === "admin" ? [{ id: "whatsapp", label: "Conexión WhatsApp", icon: MessageCircle }] : []),
     ...(usuario?.rol === "admin" ? [{ id: "hojas", label: "Editar (Excel)", icon: Pencil }] : []),
+    // Calidad de datos: coordinación revisa los posibles duplicados; solo
+    // gerencia puede consolidar (elimina una ficha). Ver core/permisos.py.
+    ...((usuario?.rol === "admin" || usuario?.rol === "asistente") ? [{ id: "duplicados", label: "Posibles duplicados", icon: Users }] : []),
     // El buzón de sugerencias lo ve todo el equipo (dejar sugerencia); gerencia además ve la bandeja.
     // El rol de solo lectura no escribe (tampoco sugerencias), así que no lo ve.
     ...(esAnalista ? [] : [{ id: "buzon", label: "Buzón", icon: MessageCircle }]),
@@ -929,7 +934,17 @@ export default function ClinicaApp() {
         setSelectedId(nuevo.id);
         cargarDetalle(nuevo.id);
       }
-    } catch (e) { showToast("Error: " + e.message); }
+    } catch (e) {
+      // 409: esa persona podría existir ya. No se bloquea a nadie —los
+      // homónimos existen— pero sí se muestra la ficha parecida antes de
+      // abrir una segunda: 57 de los 76 duplicados medidos en producción
+      // nacieron justo aquí, guardando sin mirar.
+      if (e.status === 409 && e.data?.posibles_duplicados?.length) {
+        setPosibleDuplicado({ payload, candidatos: e.data.posibles_duplicados });
+        return;
+      }
+      showToast("Error: " + e.message);
+    }
   }
 
   async function agendarCita(data) {
@@ -1751,6 +1766,37 @@ export default function ClinicaApp() {
         {view === "whatsapp" && <ConexionWhatsapp showToast={showToast} />}
 
         {view === "hojas" && <HojasExcel showToast={showToast} onCambio={cargarDatos} />}
+
+        {posibleDuplicado && (
+          <AvisoDuplicado
+            aviso={posibleDuplicado}
+            onCerrar={() => setPosibleDuplicado(null)}
+            onUsarExistente={async (id) => {
+              setPosibleDuplicado(null);
+              setEditingPaciente(null);
+              await refrescarPacientes();
+              setSelectedId(id);
+              cargarDetalle(id);
+              go("pacientes");
+            }}
+            onCrearIgual={async () => {
+              const { payload } = posibleDuplicado;
+              setPosibleDuplicado(null);
+              try {
+                const nuevo = await api.crearPaciente({ ...payload, confirmar_nuevo: true });
+                setEditingPaciente(null);
+                showToast("Paciente agregado ✓");
+                await refrescarPacientes();
+                setSelectedId(nuevo.id);
+                cargarDetalle(nuevo.id);
+              } catch (e) { showToast("Error: " + e.message); }
+            }}
+          />
+        )}
+
+        {view === "duplicados" && (
+          <Duplicados showToast={showToast} puedeFusionar={usuario?.rol === "admin"} />
+        )}
 
         {view === "profesionales" && <Profesionales showToast={showToast} esAdmin={usuario?.rol === "admin"} />}
 

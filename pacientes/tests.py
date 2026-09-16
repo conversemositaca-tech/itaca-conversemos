@@ -14,6 +14,7 @@ from datetime import datetime, time, timedelta
 from io import StringIO
 
 from django.core.management import call_command
+from django.core.management.base import CommandError
 
 from django.test import TestCase
 from django.utils import timezone
@@ -263,11 +264,13 @@ class EditarCitaTests(TestCase):
 
 
 class FusionarPorTelefonoTests(TestCase):
-    """Limpieza de los pacientes repetidos que dejó el doble registro.
+    """El comando quedó como LISTADO: ya no fusiona.
 
-    Lo delicado no es fusionar, es NO fusionar de más: en la clínica se atiende a
-    menores y madre e hijo comparten celular, así que el mismo número no significa
-    la misma persona.
+    Su lista de relaciones estaba escrita a mano y se quedó sin
+    GestionContinuidad (PROTECT), así que `--aplicar` reventaba a mitad de
+    camino; y aunque no reventara, fusionaba en lote sin que nadie mirara cada
+    caso. Consolidar vive ahora en `pacientes.fusion`, de a un caso y con
+    confirmación humana (ver pacientes/tests_duplicados.py).
     """
 
     def setUp(self):
@@ -279,45 +282,36 @@ class FusionarPorTelefonoTests(TestCase):
     def _paciente(self, nombre, telefono, **extra):
         return Paciente.objects.create(clinica=self.clinica, nombre=nombre, telefono=telefono, **extra)
 
-    def _fusionar(self, aplicar=True):
-        call_command("fusionar_por_telefono", *(["--aplicar"] if aplicar else []), stdout=StringIO())
+    def _listar(self, aplicar=False):
+        salida = StringIO()
+        call_command("fusionar_por_telefono", *(["--aplicar"] if aplicar else []), stdout=salida)
+        return salida.getvalue()
 
-    def test_fusiona_a_la_misma_persona_y_le_mueve_todo(self):
-        rico = self._paciente("Ana María Pérez Gómez", "987654321")
-        pobre = self._paciente("Ana Pérez", "+51 987 654 321", email="ana@correo.pe")
-        Cita.objects.create(
-            clinica=self.clinica, paciente=pobre, medico=self.psico,
-            inicio=timezone.now() + timedelta(days=1), estado=Cita.Estado.AGENDADA,
-        )
-        # Lo que el comando viejo se llevaba por delante al borrar el duplicado:
-        Tarea.objects.create(clinica=self.clinica, paciente=pobre, texto="Traer registro de emociones")
-
-        self._fusionar()
-
-        self.assertEqual(Paciente.objects.count(), 1)
-        queda = Paciente.objects.get()
-        self.assertEqual(Cita.objects.get().paciente_id, queda.id)
-        self.assertEqual(Tarea.objects.get().paciente_id, queda.id)  # NO se borró
-        self.assertEqual(queda.email, "ana@correo.pe")           # hereda lo que faltaba
-        self.assertEqual(queda.nombre, "Ana María Pérez Gómez")  # y el nombre completo
-
-    def test_no_fusiona_a_madre_e_hijo_con_el_mismo_celular(self):
-        self._paciente("Lucía Torres", "987111222")      # hija
-        self._paciente("Carmen Sánchez", "987111222")    # mamá, mismo celular
-        self._fusionar()
+    def test_lista_los_candidatos_sin_tocar_nada(self):
+        self._paciente("Ana María Pérez Gómez", "987654321")
+        self._paciente("Ana Pérez", "+51 987 654 321")
+        salida = self._listar()
+        self.assertIn("fusiones seguras: 1", salida)
         self.assertEqual(Paciente.objects.count(), 2)
 
-    def test_no_fusiona_el_expediente_de_pareja_con_el_individual(self):
+    def test_no_propone_a_madre_e_hijo_con_el_mismo_celular(self):
+        self._paciente("Lucía Torres", "987111222")      # hija
+        self._paciente("Carmen Sánchez", "987111222")    # mamá, mismo celular
+        salida = self._listar()
+        self.assertIn("fusiones seguras: 0", salida)
+        self.assertIn("a revisar a mano: 1", salida)
+
+    def test_no_propone_el_expediente_de_pareja_con_el_individual(self):
         """'Andrea Zapata y Roy Pozo' es un proceso de pareja, no un duplicado."""
         self._paciente("Andrea Zapata", "987333444")
         self._paciente("Andrea Zapata y Roy Pozo", "987333444")
-        self._fusionar()
-        self.assertEqual(Paciente.objects.count(), 2)
+        self.assertIn("fusiones seguras: 0", self._listar())
 
-    def test_sin_aplicar_no_toca_nada(self):
+    def test_aplicar_esta_desactivado(self):
         self._paciente("Ana María Pérez", "987654321")
         self._paciente("Ana Pérez", "987654321")
-        self._fusionar(aplicar=False)
+        with self.assertRaises(CommandError):
+            self._listar(aplicar=True)
         self.assertEqual(Paciente.objects.count(), 2)
 
 
