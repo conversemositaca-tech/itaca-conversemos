@@ -7176,7 +7176,9 @@ function CitaRow({ c, esAsistente, esMedico, soloLectura = false, onAtender, onR
         <button className="ca-pnamebtn" onClick={() => openFicha(c.pacienteId)}>{c.paciente}</button>
         {c.agendado_web && <span title="La reservó el paciente desde la web — priorizar contacto para confirmar y cobrar" style={{ marginLeft: 6, fontSize: 10.5, background: "#E3F1F2", color: "#0C5E69", padding: "1px 7px", borderRadius: 999, fontWeight: 700, verticalAlign: "middle" }}>🌐 Web</span>}
         <div className="ca-pmeta">
-          {c.medico}{c.n_sesion_efectivo ? ` · Sesión N° ${c.n_sesion_efectivo}` : ""}{c.sede_label ? ` · ${c.sede_label}` : ""} · {c.modalidad === "virtual" ? "Virtual" : "Presencial"}
+          {/* La consulta previa se rotula como tal: no es la sesión 1, es el
+              paso del que sale el plan de terapia. */}
+          {c.medico}{c.es_consulta ? " · Consulta" : (c.n_sesion_efectivo ? ` · Sesión N° ${c.n_sesion_efectivo}` : "")}{c.sede_label ? ` · ${c.sede_label}` : ""} · {c.modalidad === "virtual" ? "Virtual" : "Presencial"}
           {c.modalidad === "virtual" && c.enlace && (<> · <a href={urlEnlace(c.enlace)} target="_blank" rel="noreferrer" style={{ color: "var(--accent)", fontWeight: 600 }}>Unirse</a></>)}
         </div>
       </div>
@@ -7405,7 +7407,7 @@ function Agenda({ citas, bloqueos = [], fecha, setFecha, vista, setVista, esAsis
         <div style={{ display: "flex", gap: 9, alignItems: "center" }}>
           {!esMedico && <ExportBtns nombre="agenda" titulo="Agenda" disabled={activas.length === 0} contexto={subt}
             headers={["Fecha", "Hora", "Paciente", "Psicologo", "Especialidad", "N° sesion", "Sede", "Modalidad", "Estado", "Que paso"]}
-            filas={activas.map((c) => [c.fecha, c.hora, c.paciente, c.medico, c.especialidad, c.n_sesion_efectivo || "", c.sede_label || "", c.modalidad === "virtual" ? "Virtual" : "Presencial", c.estado_label, c.decision_label || ""])} />}
+            filas={activas.map((c) => [c.fecha, c.hora, c.paciente, c.medico, c.especialidad, c.es_consulta ? "Consulta" : (c.n_sesion_efectivo || ""), c.sede_label || "", c.modalidad === "virtual" ? "Virtual" : "Presencial", c.estado_label, c.decision_label || ""])} />}
           {!esMedico && !soloLectura && <button className="ca-btn ghost" onClick={onVenta}><Receipt size={15} strokeWidth={2} /> Venta</button>}
           {!esMedico && !soloLectura && <button className="ca-btn ghost" onClick={onBloquear}><Clock size={15} strokeWidth={2} /> Bloquear horario</button>}
           {!esMedico && !soloLectura && <button className="ca-btn" onClick={onAgendar}><Plus size={16} strokeWidth={2.2} /> Agendar sesión</button>}
