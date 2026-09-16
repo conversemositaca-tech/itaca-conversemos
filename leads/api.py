@@ -11,6 +11,7 @@ from pacientes.models import Paciente
 
 from . import whatsapp_auto
 from .captacion import _base_url
+from . import identidad
 from .models import Anuncio, Lead
 from .reporte import generar_reporte_pauta, personas_unicas
 from .serializers import AnuncioSerializer, LeadSerializer
@@ -18,22 +19,11 @@ from .serializers import AnuncioSerializer, LeadSerializer
 _FUENTE_LABEL = dict(Lead.Fuente.choices)
 
 
-def _norm_tel(t):
-    return "".join(c for c in (t or "") if c.isdigit())[-9:]
-
-
-def _norm_nombre(n):
-    """El nombre para comparar personas: sin mayúsculas, tildes ni espacios de más.
-
-    Corrige lo trivial (MARÍA / maria / María  Pérez) y nada más. Nada de
-    parecidos ni apodos: dos nombres distintos son dos personas distintas, y
-    equivocarse aquí mezcla dos historias clínicas.
-    """
-    import unicodedata
-
-    limpio = unicodedata.normalize("NFKD", (n or "").strip().lower())
-    limpio = "".join(c for c in limpio if not unicodedata.combining(c))
-    return " ".join(limpio.split())
+# La regla de identidad vive en `leads.identidad`, para que la reserva web y el
+# registro de Marketing decidan igual quién es quién (antes cada uno tenía su
+# versión, y la de la web era más laxa).
+_norm_tel = identidad.norm_tel
+_norm_nombre = identidad.norm_nombre
 
 
 def _parse_fecha(valor, por_defecto):
@@ -116,48 +106,14 @@ def _datos_del_tutor(lead):
     }
 
 
-def _sedes_compatibles(sede_ficha, sede_lead):
-    """¿Las sedes permiten dar por hecho que es la misma persona?
-
-    Dos sedes DISTINTAS no se fusionan solas: puede ser un homónimo, o alguien
-    que se atiende en otra ciudad, y eso lo decide una persona.
-
-    Una sede VACÍA es otra cosa: es un dato que falta, no un dato que
-    contradiga. Muchas fichas antiguas no la tienen, y tratarla como "distinta"
-    llenaría la base de duplicados de gente que ya existe.
-    """
-    a, b = (sede_ficha or "").strip(), (sede_lead or "").strip()
-    return not a or not b or a == b
-
-
 def _ficha_que_calza(lead):
-    """La ficha que es SIN DUDA de esta persona, o None.
-
-    El teléfono no identifica a nadie: en esta clínica 140 números están
-    compartidos por 307 fichas —hermanos, madres e hijos, familiares que
-    gestionan la atención de otro—. Antes bastaba con que coincidiera el número
-    para colgarle la consulta a la primera ficha que apareciera (por orden
-    alfabético), y así una sesión terminaba en la agenda y en el historial de
-    otra persona.
-
-    Ahora hace falta que coincida TODO: clínica, sede, teléfono y nombre. Y si
-    calzan dos fichas, no se elige ninguna: ante la duda se separa, porque una
-    ficha repetida se corrige y dos historias clínicas mezcladas no.
-    """
-    tel = _norm_tel(lead.telefono) or _norm_tel(lead.contacto_telefono)
-    nombre = _norm_nombre(lead.nombre)
-    # Un número incompleto (9 dígitos es lo normal en Perú) es un dato a medio
-    # cargar, no un identificador: con "123" en dos fichas no se puede afirmar
-    # que sean la misma persona.
-    if len(tel) < 9 or not nombre:
-        return None
-    candidatos = [
-        p for p in Paciente.objects.del_tenant_actual().exclude(telefono="")
-        if _norm_tel(p.telefono) == tel
-        and _norm_nombre(p.nombre) == nombre
-        and _sedes_compatibles(p.sede, lead.sede)
-    ]
-    return candidatos[0] if len(candidatos) == 1 else None
+    """La ficha que es SIN DUDA de este lead, o None (ver `leads.identidad`)."""
+    return identidad.ficha_que_calza(
+        lead.clinica,
+        nombre=lead.nombre,
+        telefono=lead.telefono or lead.contacto_telefono,
+        sede=lead.sede,
+    )
 
 
 def _servicio_de_consulta(lead):
@@ -304,6 +260,48 @@ def convertir_lead_en_paciente(lead):
         lead.estado = Lead.Estado.GANADO
         lead.save(update_fields=["estado"])
     return paciente
+
+
+# La ÚNICA decisión que confirma que alguien empezó un proceso. DP-02 ("solicita
+# tiempo para decidir") y DP-03 ("seguimiento posterior") describen a quien
+# todavía no decidió: convertirlos en pacientes activos sería contar como
+# cerrado lo que sigue abierto.
+#
+# Ojo con `continuidad.DP_INICIO`, que agrupa DP-01, DP-02 y DP-03: ese conjunto
+# responde otra pregunta —si entre dos tramos hubo una consulta de por medio— y
+# no sirve para esto.
+DP_CONFIRMA_INICIO = "DP-01"
+
+
+def sincronizar_inicio_de_proceso(cita):
+    """Registrar DP-01 en una consulta también cierra el lead y consolida la ficha.
+
+    Coordinación registraba "Inicia proceso" en la Agenda y daba por hecho que el
+    sistema ya lo sabía. No lo sabía: la decisión se quedaba en la cita, el lead
+    seguía abierto, la ficha seguía `provisional` —así que no aparecía en
+    Pacientes ni en los reportes— y había que ir a Marketing a marcarlo otra vez.
+    De ahí salía la costumbre de borrar la reserva y volver a crearla.
+
+    Va en UNA dirección a propósito: el DP-01 de la agenda mueve Marketing, pero
+    marcar "ganado" en Marketing NO escribe una decisión clínica que nadie tomó.
+
+    Devuelve el lead actualizado, o None si no había ninguno que tocar.
+    """
+    if cita is None or (cita.decision or "") != DP_CONFIRMA_INICIO:
+        return None
+    lead = (Lead.objects.filter(clinica_id=cita.clinica_id, cita_id=cita.id).first()
+            or Lead.objects.filter(clinica_id=cita.clinica_id, paciente_id=cita.paciente_id)
+            .order_by("-creado_en").first())
+    if lead is None:
+        # Una cita sin lead detrás (las de antes de este cambio, o las que nacen
+        # dentro de un proceso ya en marcha). No se inventa uno: este camino
+        # confirma una captación existente, no la crea.
+        return None
+    # `convertir_lead_en_paciente` es idempotente y es el único sitio que quita
+    # `provisional`: se reutiliza en vez de repetir aquí la regla comercial.
+    convertir_lead_en_paciente(lead)
+    lead.refresh_from_db()
+    return lead
 
 
 class AnuncioViewSet(viewsets.ModelViewSet):

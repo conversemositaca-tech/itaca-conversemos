@@ -459,7 +459,8 @@ class CitaViewSet(viewsets.ModelViewSet):
         # Es lo que permite medir cuánto tarda en cerrarse un bloque y qué
         # pasó con "Evaluar continuidad" antes y después del rediseño.
         decision_nueva = serializer.validated_data.get("decision")
-        if decision_nueva is not None and decision_nueva != serializer.instance.decision:
+        decision_previa = serializer.instance.decision
+        if decision_nueva is not None and decision_nueva != decision_previa:
             if decision_nueva:
                 serializer.validated_data["decision_registrada_en"] = timezone.now()
                 serializer.validated_data["decision_registrada_por"] = self.request.user
@@ -467,6 +468,14 @@ class CitaViewSet(viewsets.ModelViewSet):
                 serializer.validated_data["decision_registrada_en"] = None
                 serializer.validated_data["decision_registrada_por"] = None
         serializer.save()
+        # "Inicia proceso" registrado en la consulta vale también para Marketing:
+        # cierra el lead de esa captación y la ficha deja de ser provisional. Sin
+        # esto, la coordinadora tenía que ir a marcarlo una segunda vez y, si no
+        # lo hacía, la persona no aparecía en Pacientes ni en los reportes.
+        if decision_nueva is not None and decision_nueva != decision_previa:
+            from leads.api import sincronizar_inicio_de_proceso
+
+            sincronizar_inicio_de_proceso(serializer.instance)
         # Reasignar la cita a otro psicólogo (p. ej. para cubrir una ausencia)
         # dejaba a la ficha del paciente apuntando al psicólogo anterior en
         # Paciente.profesional —el campo que usa el filtro por psicólogo de la

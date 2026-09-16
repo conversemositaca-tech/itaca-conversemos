@@ -124,20 +124,18 @@ def _slots_libres(clinica, prof, dias=14, min_lead_min=30):
     return fuera
 
 
-def _match_paciente(clinica, documento, telefono):
-    """Paciente existente por documento (exacto) o por los últimos 9 dígitos del tel."""
-    doc = _solo_digitos(documento)
-    if doc:
-        p = Paciente.objects.filter(clinica=clinica, numero_documento=doc).first()
-        if p:
-            return p
-    digs = _solo_digitos(telefono)
-    if len(digs) >= 6:
-        suf = digs[-9:]
-        for p in Paciente.objects.filter(clinica=clinica).exclude(telefono=""):
-            if _solo_digitos(p.telefono).endswith(suf):
-                return p
-    return None
+def _match_paciente(clinica, documento, telefono, nombre="", sede=""):
+    """La ficha que es SIN DUDA de quien reserva, o None.
+
+    Antes bastaba con que el teléfono terminara igual que el de CUALQUIER ficha
+    de la clínica para darla por suya. Con el número de una madre que gestiona
+    la atención de dos hijos, eso colgaba la reserva de la persona equivocada —y
+    de paso saltaba el registro de captación (ver `leads.identidad`).
+    """
+    from leads import identidad
+
+    return identidad.ficha_que_calza(
+        clinica, nombre=nombre, telefono=telefono, sede=sede, documento=documento)
 
 
 class _PublicBase(APIView):
@@ -278,43 +276,50 @@ class AgendamientoReservarView(_PublicBase):
                 return Response({"detail": "Justo tomaron ese horario. Elige otro, por favor."},
                                 status=status.HTTP_409_CONFLICT)
 
-            paciente = _match_paciente(clinica, documento, telefono)
-            if paciente is not None:
-                # Paciente existente → cita directa en la agenda.
-                Cita.objects.create(
-                    clinica=clinica, paciente=paciente, medico=usuario, inicio=inicio,
-                    especialidad=servicio, categoria=categoria, estado=Cita.Estado.AGENDADA, sede=prof.sede,
-                    modalidad=modalidad, motivo_consulta=mensaje, agendado_web=True,
-                    notas="Reserva online." + nota_ayuda)
-                return Response({
-                    "ok": True, "tipo": "existente", "estado": "agendada",
-                    "profesional": prof.nombre,
-                    "inicio_label": timezone.localtime(inicio).strftime("%d/%m/%Y a las %H:%M"),
-                }, status=status.HTTP_201_CREATED)
+            paciente = _match_paciente(clinica, documento, telefono,
+                                       nombre=nombre, sede=prof.sede)
+            conocido = paciente is not None
+            if not conocido:
+                paciente = Paciente.objects.create(
+                    clinica=clinica, nombre=nombre, telefono=telefono, email=email, sede=prof.sede,
+                    numero_documento=documento,
+                    tipo_documento=("ruc" if len(documento) == 11 else "dni") if documento else "dni",
+                    # Reservó por la web, todavía no vino: la ficha existe para
+                    # sostener la cita, pero no cuenta como paciente hasta que
+                    # inicie proceso (lo confirma el DP-01 de la consulta).
+                    provisional=True)
 
-            # Nuevo → lead (captación) + paciente mínimo + cita tentativa por confirmar.
+            # A quien ya conocemos no hay que confirmarle nada: su cita entra
+            # agendada. La de alguien nuevo queda pendiente de que Coordinación
+            # la confirme, como hasta ahora.
+            cita = Cita.objects.create(
+                clinica=clinica, paciente=paciente, medico=usuario, inicio=inicio,
+                especialidad=servicio, categoria=categoria, sede=prof.sede,
+                estado=Cita.Estado.AGENDADA if conocido else Cita.Estado.PENDIENTE,
+                modalidad=modalidad, motivo_consulta=mensaje, agendado_web=True,
+                notas=("Reserva online." if conocido
+                       else "Reserva online — paciente nuevo, confirmar.") + nota_ayuda)
+
+            # El lead se crea SIEMPRE, también para quien ya tenía ficha: es el
+            # registro de CAPTACIÓN de esta reserva, no un registro de identidad.
+            # Sin él, la consulta no existía para Marketing ni para el reporte de
+            # pauta, y Coordinación terminaba borrando la reserva y volviéndola a
+            # crear a mano para que el sistema la contara.
             lead = Lead.objects.create(
                 clinica=clinica, nombre=nombre, telefono=telefono, email=email, sede=prof.sede,
                 fuente=Lead.Fuente.WEB, agendo_consulta=True,
                 fecha_consulta=timezone.localtime(inicio).date(), especialidad=servicio,
                 medico=usuario, estado=Lead.Estado.AGENDADO, motivo_consulta=mensaje,
-                notas="Reserva online (paciente nuevo).")
-            paciente = Paciente.objects.create(
-                clinica=clinica, nombre=nombre, telefono=telefono, email=email, sede=prof.sede,
-                numero_documento=documento,
-                tipo_documento=("ruc" if len(documento) == 11 else "dni") if documento else "dni",
-                # Reservo por la web, todavia no vino: la ficha existe para sostener
-                # la cita, pero no cuenta como paciente hasta que inicie proceso.
-                provisional=True)
-            lead.paciente = paciente
-            lead.save(update_fields=["paciente"])
-            Cita.objects.create(
-                clinica=clinica, paciente=paciente, medico=usuario, inicio=inicio,
-                especialidad=servicio, categoria=categoria, estado=Cita.Estado.PENDIENTE, sede=prof.sede,
-                modalidad=modalidad, motivo_consulta=mensaje, agendado_web=True,
-                notas=f"Reserva online — paciente nuevo, confirmar. Lead #{lead.id}.{nota_ayuda}")
+                paciente=paciente, cita=cita,
+                notas="Reserva online." if conocido else "Reserva online (paciente nuevo).")
+            # Con `cita` enlazada desde el principio, editar el lead en Marketing
+            # MUEVE esta reserva en vez de crear una segunda cita.
+            cita.notas = f"{cita.notas} Lead #{lead.id}."
+            cita.save(update_fields=["notas"])
             return Response({
-                "ok": True, "tipo": "nuevo", "estado": "pendiente",
+                "ok": True,
+                "tipo": "existente" if conocido else "nuevo",
+                "estado": "agendada" if conocido else "pendiente",
                 "profesional": prof.nombre,
                 "inicio_label": timezone.localtime(inicio).strftime("%d/%m/%Y a las %H:%M"),
             }, status=status.HTTP_201_CREATED)
