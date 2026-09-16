@@ -406,6 +406,13 @@ class ContinuidadPendientesView(APIView):
              |todos
       sede=lima|piura · medico=<id del profesional> · bloque=6|12|18|24
       dias_proximos=<n>  (ventana hacia adelante; por defecto 7)
+      orden=recientes|antiguos  (por defecto: recientes)
+
+    `orden` solo cambia el ORDEN de lo que ya salió de los filtros, nunca qué
+    entra. "recientes" pone primero lo más cerca del día de hoy —entre vencidos,
+    1 día antes que 90—; "antiguos" invierte ese eje. En `estado=accionables`
+    manda además la prioridad operativa de coordinación (cierra hoy, riesgo S3,
+    pre-cierre sin cita, vencidos) por encima de la recencia.
     """
 
     def get(self, request):
@@ -483,6 +490,15 @@ class ContinuidadPendientesView(APIView):
                      or (mio and f["gestion"]["responsable"] == mio
                          and f["gestion"]["estado_revision"] != "resuelto")]
 
+        # El orden es lo último: se aplica a lo que quedó después de TODOS los
+        # filtros, para que sede + psicólogo + bloque + gestión se combinen sin
+        # que ninguno mande sobre los otros.
+        orden = (request.query_params.get("orden") or "").strip()
+        if orden not in continuidad_mod.ORDENES:
+            orden = continuidad_mod.ORDEN_RECIENTES
+        filas = continuidad_mod.ordenar_cola(
+            filas, orden=orden, prioridad=(estado == "accionables"))
+
         # "Resueltos" también lista lo que el sistema o una persona cerró y ya
         # no está en la cola (últimos 30 días): es la única forma de ver que
         # un caso se resolvió de verdad, no solo que desapareció.
@@ -495,6 +511,7 @@ class ContinuidadPendientesView(APIView):
             "conteo": conteo,
             "dias_proximos": dias_proximos,
             "dias_backlog": continuidad_mod.DIAS_BACKLOG,
+            "orden": orden,
         })
 
     DIAS_CERRADAS = 30
