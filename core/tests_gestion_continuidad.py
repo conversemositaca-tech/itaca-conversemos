@@ -381,9 +381,19 @@ class PermisosTests(_ConGestion):
         self.assertEqual(self._get(self.coord, self.p_lima).status_code, 404)
         self.assertFalse(G.objects.filter(paciente=self.p_lima).exists())
 
-    def test_psicologo_solo_sus_pacientes(self):
-        self.assertEqual(self._patch(self.psico, self.p, {"estado_revision": "en_seguimiento"}).status_code, 200)
-        self.assertEqual(self._patch(self.psico, self.p_lima, {"estado_revision": "en_seguimiento"}).status_code, 404)
+    def test_el_psicologo_ya_no_gestiona_ni_a_los_suyos(self):
+        """Cambió el 16 de setiembre de 2026. Antes este PATCH le respondía 200
+        sobre sus propios pacientes: el psicólogo estaba en
+        ROLES_GESTION_CONTINUIDAD. El Centro pasó a ser para él una vista de
+        seguimiento —mira sus casos, no los mueve—, así que ahora es 403 incluso
+        con un paciente suyo. Su alcance sigue intacto donde SÍ lee: el detalle
+        de un paciente ajeno le responde 404. Ver core/tests_continuidad_psicologo.py."""
+        self.assertEqual(self._patch(self.psico, self.p, {"estado_revision": "en_seguimiento"}).status_code, 403)
+        self.assertFalse(G.objects.filter(paciente=self.p).exists())
+        # El ajeno también es 403, no 404: el permiso se evalúa antes que el
+        # alcance, así que ni siquiera se llega a mirar si ese paciente existe.
+        self.assertEqual(self._patch(self.psico, self.p_lima, {"estado_revision": "en_seguimiento"}).status_code, 403)
+        self.assertEqual(self._get(self.psico, self.p_lima).status_code, 404)
 
     def test_admin_ambas_sedes_y_comercial_nada(self):
         self.assertEqual(self._patch(self.admin, self.p_lima, {"estado_revision": "en_seguimiento"}).status_code, 200)

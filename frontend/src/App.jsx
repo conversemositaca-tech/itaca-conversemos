@@ -1484,6 +1484,11 @@ export default function ClinicaApp() {
         .cc-sedefija { display:inline-flex; align-items:center; gap:6px; align-self:center;
           padding:6px 11px; border-radius:8px; background:var(--accent-soft);
           color:var(--ink-soft); font-size:13px; font-weight:600; white-space:nowrap; }
+        /* El psicólogo entra a mirar sus casos, no a moverlos. Decirlo arriba
+           evita que lo descubra probando un control que no responde. */
+        .cc-lectura { display:inline-flex; align-items:center; gap:6px;
+          padding:4px 10px; border-radius:999px; background:#EFEDE8;
+          color:#7C7870; font-size:12px; font-weight:600; white-space:nowrap; }
         /* La tabla puede scrollear en horizontal, pero el nombre del paciente
            nunca se pierde: es la columna que ancla la lectura de la fila. */
         .cc-wrap { overflow-x:auto; }
@@ -5531,12 +5536,28 @@ function ContinuidadPendientes({ onOpen, onVolver, showToast, esMedico, sedeFija
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 4 }}>
         <button className="ca-mini" onClick={onVolver}>← Hoy</button>
         <h1 className="ca-h1" style={{ margin: 0 }}>Centro de Continuidad</h1>
-        <div style={{ marginLeft: "auto" }}>
-          <ExportBtns nombre="continuidad" titulo="Centro de Continuidad" headers={headers} filas={filasExport}
-            disabled={!filas.length} contexto={etiquetaEstado} showToast={showToast} />
-        </div>
+        {esMedico && (
+          <span className="cc-lectura" title="Puedes revisar el estado de tus casos. Gestionarlos y contactar pacientes es trabajo de coordinación.">
+            Vista de seguimiento · Solo lectura
+          </span>
+        )}
+        {/* Exportar saca nombres de pacientes del sistema. Es tarea de
+            coordinación y dirección; el psicólogo revisa sus casos aquí dentro.
+            Ojo: esto es una decisión de alcance, no una barrera — el archivo se
+            arma en el navegador con filas que su perfil ya puede ver. Lo que de
+            verdad lo acota es `pacientes_del_rol` en el servidor. */}
+        {!esMedico && (
+          <div style={{ marginLeft: "auto" }}>
+            <ExportBtns nombre="continuidad" titulo="Centro de Continuidad" headers={headers} filas={filasExport}
+              disabled={!filas.length} contexto={etiquetaEstado} showToast={showToast} />
+          </div>
+        )}
       </div>
-      <div className="ca-sub">Detecta, prioriza y da seguimiento a pacientes en momentos clave de su proceso.</div>
+      <div className="ca-sub">
+        {esMedico
+          ? "Seguimiento de tus pacientes: en qué punto de su proceso está cada uno."
+          : "Detecta, prioriza y da seguimiento a pacientes en momentos clave de su proceso."}
+      </div>
 
       {/* Filtros agrupados: acción, seguimiento y calidad de registro no piden
           lo mismo de quien los mira, así que no se ven igual. */}

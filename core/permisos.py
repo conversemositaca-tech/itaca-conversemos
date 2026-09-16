@@ -39,7 +39,14 @@ def ve_finanzas(user):
 # única escritura permitida al analista (Dirección Clínica): el resto de la
 # API sigue cerrada para ese rol por BloqueoEscrituraAnalista. El alcance por
 # sede/paciente lo pone la vista con core.continuidad.pacientes_del_rol.
-ROLES_GESTION_CONTINUIDAD = ("admin", "asistente", "medico", "analista")
+#
+# El psicólogo NO está: el Centro es para él una vista de seguimiento de sus
+# propios pacientes. La gestión operativa —quién hace el siguiente paso, si el
+# caso quedó resuelto— es trabajo de coordinación y dirección; el psicólogo
+# actúa en la Agenda y en la historia clínica, que es donde su decisión tiene
+# efecto. Verlo sin poder moverlo no le quita nada y evita dos registros de la
+# misma realidad que se contradicen.
+ROLES_GESTION_CONTINUIDAD = ("admin", "asistente", "analista")
 
 
 def puede_gestionar_continuidad(user):
@@ -68,8 +75,8 @@ class PuedeGestionarContinuidad(BasePermission):
 # Es más estrecho que ROLES_GESTION_CONTINUIDAD a propósito:
 #   - la analista gestiona casos pero nunca contacta pacientes (solo lectura,
 #     y `registrar_y_enviar` ya la rechaza),
-#   - el psicólogo no ve el teléfono de sus pacientes (ROLES_SIN_CONTACTO):
-#     mal podría mandarle un WhatsApp.
+#   - el psicólogo, que además no gestiona, no ve el teléfono de sus pacientes
+#     (ROLES_SIN_CONTACTO): mal podría mandarle un WhatsApp.
 # Contactar es tarea de coordinación; gerencia entra porque cubre a coordinación.
 ROLES_CONTACTAN_PACIENTES = ("admin", "asistente")
 
