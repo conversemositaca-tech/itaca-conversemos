@@ -569,6 +569,202 @@ class EndpointsTests(_Base):
         self.assertEqual(self.client.get("/api/continuidad/pendientes/?estado=todos").json()["total"], 0)
 
 
+class SedeOrdenYPrioridadTests(_Base):
+    """Lo que Coordinación necesita para trabajar rápido: ver solo su sede,
+    atacar primero lo más reciente (que todavía se recupera) y, en "Todos los
+    prioritarios", lo que aún se puede evitar antes que lo que ya se perdió.
+
+    Nada de esto toca los criterios de inclusión: son los mismos casos, en
+    otro orden y recortados por sede.
+    """
+
+    # Las pestañas del Centro, con el valor que manda la pantalla. "calidad" es
+    # el grupo entero; sus chips individuales pasan por el mismo filtro de sede.
+    PESTANAS = ("accionables", "vencido", "hoy", "riesgo_s3", "sin_agendar",
+                "proximo", "calidad", "continuo_sin_decision", "backlog",
+                "dato_incompleto")
+
+    def setUp(self):
+        super().setUp()
+        self.admin = Usuario.objects.create_user(email="adm-orden@test.pe", password="x",
+                                                 clinica=self.clinica, rol=Usuario.Rol.ADMIN)
+        self.otra = Profesional.objects.create(clinica=self.clinica, nombre="Psicóloga Lima", sede="lima")
+        self.client.force_login(self.admin)
+
+    # --- datos de prueba ---------------------------------------------------
+
+    def _sin_numerar(self, nombre, sede, ficha, n=6, ultima_hace=5):
+        """Sesiones asistidas que nadie numeró: el caso cae en "dato incompleto"."""
+        p = self._paciente(nombre, sede=sede, ficha=ficha)
+        for i in range(n):
+            Cita.objects.create(clinica=self.clinica, paciente=p, medico=self.psico, n_sesion=None,
+                                estado=Cita.Estado.ASISTIO, inicio=_dt(-ultima_hace - 7 * (n - 1 - i)))
+        return p
+
+    def _juego(self, sede, ficha):
+        """Un caso de cada pestaña en esa sede."""
+        def nuevo(que, **kw):
+            return self._paciente(f"{sede} {que}", sede=sede, ficha=ficha, **kw)
+
+        self._asistidas(nuevo("vencido"), 6, ultima_hace=10)
+        self._asistidas(nuevo("hoy"), 6, ultima_hace=0)
+        self._asistidas(nuevo("s3"), 3, ultima_hace=4)
+        self._asistidas(nuevo("precierre"), 5, ultima_hace=6)
+        prox = nuevo("proximo"); self._asistidas(prox, 5, ultima_hace=2); self._agendada(prox, 2, 6)
+        self._asistidas(nuevo("continuo"), 9, ultima_hace=1)
+        self._asistidas(nuevo("backlog"), 6, ultima_hace=200)
+        self._sin_numerar(f"{sede} incompleto", sede, ficha)
+
+    def _ambas_sedes(self):
+        self._juego("piura", self.ficha)
+        self._juego("lima", self.otra)
+
+    def _vencidos(self, dias, sede="piura", ficha=None):
+        for d in dias:
+            self._asistidas(self._paciente(f"Vencido {d:03d}", sede=sede, ficha=ficha), 6, ultima_hace=d)
+
+    def _accionables_de_cada_tipo(self):
+        self._asistidas(self._paciente("Cierra hoy"), 6, ultima_hace=0)
+        self._asistidas(self._paciente("Riesgo S3"), 3, ultima_hace=4)
+        self._asistidas(self._paciente("Pre-cierre"), 5, ultima_hace=6)
+        self._asistidas(self._paciente("Vencido 03"), 6, ultima_hace=3)
+        self._asistidas(self._paciente("Vencido 20"), 6, ultima_hace=20)
+
+    def _pedir(self, **params):
+        q = "&".join(f"{k}={v}" for k, v in params.items() if v not in ("", None))
+        return self.client.get(f"/api/continuidad/pendientes/?{q}").json()
+
+    def _nombres(self, **params):
+        return [f["paciente"] for f in self._pedir(**params)["filas"]]
+
+    # --- 1) Filtro por sede, en todas las pestañas -------------------------
+
+    def test_lima_no_muestra_piura(self):
+        self._ambas_sedes()
+        for pestana in self.PESTANAS:
+            filas = self._pedir(estado=pestana, sede="lima")["filas"]
+            self.assertTrue(filas, pestana)
+            self.assertEqual({f["sede"] for f in filas}, {"lima"}, pestana)
+
+    def test_piura_no_muestra_lima(self):
+        self._ambas_sedes()
+        for pestana in self.PESTANAS:
+            filas = self._pedir(estado=pestana, sede="piura")["filas"]
+            self.assertTrue(filas, pestana)
+            self.assertEqual({f["sede"] for f in filas}, {"piura"}, pestana)
+
+    def test_todas_las_sedes_muestra_ambas(self):
+        self._ambas_sedes()
+        for pestana in self.PESTANAS:
+            filas = self._pedir(estado=pestana)["filas"]
+            self.assertEqual({f["sede"] for f in filas}, {"lima", "piura"}, pestana)
+
+    def test_la_sede_tambien_recorta_los_contadores_de_los_chips(self):
+        """Si no, la pantalla diría "Vencidos · 40" y listaría 20."""
+        self._ambas_sedes()
+        piura = self._pedir(estado="accionables", sede="piura")["conteo"]
+        ambas = self._pedir(estado="accionables")["conteo"]
+        self.assertEqual(piura["accionables"] * 2, ambas["accionables"])
+
+    # --- 2) Orden por recencia ---------------------------------------------
+
+    def test_vencidos_mas_recientes_van_de_menos_a_mas_dias(self):
+        self._vencidos([7, 90, 1, 4, 2])
+        d = self._pedir(estado="vencido", orden="recientes")
+        self.assertEqual([f["dias"] for f in d["filas"]], [1, 2, 4, 7, 90])
+
+    def test_mas_antiguos_invierte_el_orden(self):
+        self._vencidos([7, 90, 1, 4, 2])
+        d = self._pedir(estado="vencido", orden="antiguos")
+        self.assertEqual([f["dias"] for f in d["filas"]], [90, 7, 4, 2, 1])
+
+    def test_el_orden_por_defecto_es_mas_recientes(self):
+        self._vencidos([7, 90, 1, 4, 2])
+        d = self._pedir(estado="vencido")
+        self.assertEqual(d["orden"], "recientes")
+        self.assertEqual([f["dias"] for f in d["filas"]], [1, 2, 4, 7, 90])
+
+    def test_un_orden_desconocido_cae_en_el_por_defecto(self):
+        self._vencidos([7, 1])
+        d = self._pedir(estado="vencido", orden="loquesea")
+        self.assertEqual(d["orden"], "recientes")
+        self.assertEqual([f["dias"] for f in d["filas"]], [1, 7])
+
+    def test_en_proximos_va_primero_lo_mas_inminente(self):
+        for d in (2, 6, 1):
+            p = self._paciente(f"Cierra en {d}")
+            self._asistidas(p, 5, ultima_hace=3)
+            self._agendada(p, d, 6)
+        self.assertEqual(self._nombres(estado="proximo", orden="recientes"),
+                         ["Cierra en 1", "Cierra en 2", "Cierra en 6"])
+        self.assertEqual(self._nombres(estado="proximo", orden="antiguos"),
+                         ["Cierra en 6", "Cierra en 2", "Cierra en 1"])
+
+    def test_el_orden_no_cambia_que_casos_entran(self):
+        self._ambas_sedes()
+        def ids(orden):
+            return sorted(f["fila_id"] for f in self._pedir(estado="todos", orden=orden)["filas"])
+        self.assertEqual(ids("recientes"), ids("antiguos"))
+
+    def test_los_casos_sin_fecha_operativa_quedan_al_final(self):
+        """Un pre-cierre sin cita no tiene fecha de cierre: no puede colarse al
+        principio de "más recientes" solo por no tener con qué compararse."""
+        self._asistidas(self._paciente("Pre-cierre sin fecha"), 5, ultima_hace=6)
+        self._asistidas(self._paciente("Cierra hoy"), 6, ultima_hace=0)
+        sin_fecha = next(f for f in self._pedir(estado="sin_agendar")["filas"])
+        self.assertIsNone(sin_fecha["fecha_cierre"])
+        self.assertEqual(C.fecha_operativa(sin_fecha), sin_fecha["ultima_sesion"])
+
+    # --- 3) "Todos los prioritarios": prioridad operativa + recencia -------
+
+    def test_todos_los_prioritarios_ordena_por_prioridad_y_luego_recencia(self):
+        self._accionables_de_cada_tipo()
+        self.assertEqual(self._nombres(estado="accionables"),
+                         ["Cierra hoy", "Riesgo S3", "Pre-cierre", "Vencido 03", "Vencido 20"])
+
+    def test_en_prioritarios_mas_antiguos_solo_invierte_la_recencia(self):
+        self._accionables_de_cada_tipo()
+        self.assertEqual(self._nombres(estado="accionables", orden="antiguos"),
+                         ["Cierra hoy", "Riesgo S3", "Pre-cierre", "Vencido 20", "Vencido 03"])
+
+    def test_la_prioridad_operativa_solo_rige_en_prioritarios(self):
+        """La cola general y la tarjeta de "Hoy" siguen con su orden de siempre:
+        lo vencido primero. Solo "Todos los prioritarios" lo baja."""
+        self._accionables_de_cada_tipo()
+        self.assertEqual(self._nombres(estado="todos")[:2], ["Vencido 03", "Vencido 20"])
+
+    # --- 4) Los filtros se combinan ----------------------------------------
+
+    def test_los_filtros_se_combinan(self):
+        """Piura + psicóloga X + Riesgo S3 + más recientes."""
+        self._asistidas(self._paciente("Piura mía 2"), 3, ultima_hace=2)
+        self._asistidas(self._paciente("Piura mía 9"), 3, ultima_hace=9)
+        self._asistidas(self._paciente("Piura ajena", ficha=self.otra), 3, ultima_hace=5)
+        self._asistidas(self._paciente("Lima mía", sede="lima"), 3, ultima_hace=1)
+        self.assertEqual(
+            self._nombres(sede="piura", medico=self.ficha.id, estado="riesgo_s3", orden="recientes"),
+            ["Piura mía 2", "Piura mía 9"])
+        self.assertEqual(
+            self._nombres(sede="piura", medico=self.ficha.id, estado="riesgo_s3", orden="antiguos"),
+            ["Piura mía 9", "Piura mía 2"])
+
+    def test_la_sede_se_combina_con_bloque_y_gestion(self):
+        self._asistidas(self._paciente("Piura doce"), 12, ultima_hace=4)
+        self._asistidas(self._paciente("Lima doce", sede="lima", ficha=self.otra), 12, ultima_hace=4)
+        self._asistidas(self._paciente("Piura seis"), 6, ultima_hace=4)
+        self.assertEqual(self._nombres(sede="piura", bloque=12, revision="sin_revisar"), ["Piura doce"])
+
+    def test_la_coordinadora_sigue_sin_poder_saltarse_su_sede(self):
+        """El selector de sede es comodidad, no permiso: el alcance por rol
+        manda igual que antes."""
+        self._ambas_sedes()
+        coord = Usuario.objects.create_user(email="coord-orden@test.pe", password="x", clinica=self.clinica,
+                                            rol=Usuario.Rol.ASISTENTE, sede=Usuario.Sede.PIURA)
+        self.client.force_login(coord)
+        self.assertEqual(self._pedir(estado="todos", sede="lima")["total"], 0)
+        self.assertEqual({f["sede"] for f in self._pedir(estado="todos")["filas"]}, {"piura"})
+
+
 class TrazabilidadDeLaDecisionTests(_Base):
     """Cuándo y quién registró la decisión: sin esto no se puede medir cuánto
     tarda coordinación en cerrar un bloque, ni comparar antes y después."""

@@ -442,6 +442,86 @@ _ORDEN_ESTADO = {
 }
 
 
+# --- Orden de la lista del Centro de Continuidad ----------------------------
+# Dos ejes, independientes entre sí:
+#
+#  1. EL GRUPO. Por defecto el de siempre (`_ORDEN_ESTADO`): primero la brecha
+#     abierta, al final la calidad del dato. En "Todos los prioritarios" manda
+#     la prioridad operativa de coordinación (`_PRIORIDAD_ACCIONABLE`): lo que
+#     todavía se puede evitar va antes que lo que ya se perdió.
+#
+#  2. LA RECENCIA dentro del grupo. "Más recientes" = lo más cerca del día de
+#     hoy primero: entre vencidos, 1 día antes que 90 (un caso que se acaba de
+#     torcer se recupera; uno de tres meses ya es otra conversación). Entre
+#     eventos que todavía no ocurren, lo más inminente primero. "Más antiguos"
+#     invierte ese eje, nunca el del grupo.
+ORDEN_RECIENTES = "recientes"
+ORDEN_ANTIGUOS = "antiguos"
+ORDENES = (ORDEN_RECIENTES, ORDEN_ANTIGUOS)
+
+# Prioridad operativa de "Todos los prioritarios". No es `_ORDEN_ESTADO`: allí
+# lo vencido va primero porque es la deuda más vieja; aquí va último porque es
+# lo único que ya no se puede prevenir hoy.
+_PRIORIDAD_ACCIONABLE = {
+    EstadoCierre.HOY: 0,
+    EstadoCierre.RIESGO_S3: 1,
+    EstadoCierre.SIN_AGENDAR: 2,
+    EstadoCierre.VENCIDO: 3,
+}
+
+
+def fecha_operativa(fila):
+    """La fecha que define el caso, en ISO, o None si no tiene ninguna.
+
+    El cierre de bloque cuando lo hay; si no (riesgo S3, pre-cierre sin cita,
+    continuó sin decisión), la próxima cita y, en último lugar, la última
+    sesión. Es la misma fecha que la pantalla muestra en la columna "Cierre".
+    """
+    for clave in ("fecha_cierre", "proxima_fecha", "ultima_sesion"):
+        if fila.get(clave):
+            return fila[clave]
+    return None
+
+
+def _dias_a_hoy(fila, hoy):
+    """Días entre la fecha operativa del caso y hoy, sin signo. Menor = más
+    reciente. None si el caso no tiene ninguna fecha: esos van siempre al
+    final, se ordene como se ordene."""
+    from datetime import date
+
+    iso = fecha_operativa(fila)
+    if not iso:
+        return None
+    try:
+        return abs((date.fromisoformat(iso) - hoy).days)
+    except (TypeError, ValueError):
+        return None
+
+
+def ordenar_cola(filas, orden=ORDEN_RECIENTES, prioridad=False, hoy=None):
+    """Ordena las filas ya filtradas: grupo primero, recencia dentro del grupo.
+
+    `prioridad=True` usa la prioridad operativa de coordinación en lugar del
+    orden de estados de la cola; es lo que pide "Todos los prioritarios".
+    No toca los criterios de inclusión: recibe y devuelve las mismas filas.
+    """
+    from django.utils import timezone
+
+    hoy = hoy or timezone.localdate()
+    antiguos = orden == ORDEN_ANTIGUOS
+    tabla = _PRIORIDAD_ACCIONABLE if prioridad else _ORDEN_ESTADO
+    ultimo = len(tabla)
+
+    def clave(f):
+        dias = _dias_a_hoy(f, hoy)
+        return (tabla.get(f["estado"], ultimo),
+                dias is None,
+                -(dias or 0) if antiguos else (dias or 0),
+                f["paciente"])
+
+    return sorted(filas, key=clave)
+
+
 def pacientes_del_rol(queryset, usuario):
     """Acota un queryset de pacientes a lo que ese rol puede ver.
 

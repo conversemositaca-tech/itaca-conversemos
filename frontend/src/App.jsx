@@ -1478,6 +1478,12 @@ export default function ClinicaApp() {
           color:var(--muted); padding-left:2px; }
         .cc-grupo.accion .cc-gtit { color:#9C4646; }
         .cc-sep { width:1px; align-self:stretch; background:var(--line); }
+        /* Sede fija por permisos: no es un filtro que se pueda cambiar, así que
+           no se ve como un select. Se muestra igual, porque saber qué universo
+           se está mirando es parte de poder confiar en la lista. */
+        .cc-sedefija { display:inline-flex; align-items:center; gap:6px; align-self:center;
+          padding:6px 11px; border-radius:8px; background:var(--accent-soft);
+          color:var(--ink-soft); font-size:13px; font-weight:600; white-space:nowrap; }
         /* La tabla puede scrollear en horizontal, pero el nombre del paciente
            nunca se pierde: es la columna que ancla la lectura de la fila. */
         .cc-wrap { overflow-x:auto; }
@@ -1598,7 +1604,8 @@ export default function ClinicaApp() {
 
         {view === "continuidad" && (
           <ContinuidadPendientes onOpen={openFicha} onVolver={() => go("hoy")} showToast={showToast}
-            esMedico={usuario?.rol === "medico"} esAsistente={usuario?.rol === "asistente"} />
+            esMedico={usuario?.rol === "medico"}
+            sedeFija={esAsistente ? (usuario?.sede || "") : ""} />
         )}
 
         {view === "agenda" && (
@@ -5383,12 +5390,15 @@ function ContinuidadDetalle({ id, onCerrar, onOpen, showToast, onGestionGuardada
   );
 }
 
-function ContinuidadPendientes({ onOpen, onVolver, showToast, esMedico, esAsistente }) {
+function ContinuidadPendientes({ onOpen, onVolver, showToast, esMedico, sedeFija }) {
   const [estado, setEstado] = useState("accionables");
   const [sede, setSede] = useState("");
   const [medico, setMedico] = useState("");
   const [bloque, setBloque] = useState("");
   const [revision, setRevision] = useState("");   // gestión: sin revisar / en seguimiento / resueltos / mi atención
+  // Por defecto lo más cerca de hoy primero: un caso que se acaba de torcer se
+  // recupera; uno de tres meses ya es otra conversación.
+  const [orden, setOrden] = useState("recientes");
   const [datos, setDatos] = useState(null);
   const [profesionales, setProfesionales] = useState([]);
   const [caso, setCaso] = useState(null);   // paciente abierto en el panel de detalle
@@ -5401,11 +5411,11 @@ function ContinuidadPendientes({ onOpen, onVolver, showToast, esMedico, esAsiste
   useEffect(() => {
     let vivo = true;
     setDatos(null);
-    api.continuidadPendientes({ estado, sede, medico, bloque, revision })
+    api.continuidadPendientes({ estado, sede, medico, bloque, revision, orden })
       .then((d) => { if (vivo) setDatos(d); })
       .catch((e) => showToast("Error: " + e.message));
     return () => { vivo = false; };
-  }, [estado, sede, medico, bloque, revision]);
+  }, [estado, sede, medico, bloque, revision, orden]);
 
   const filas = datos?.filas || [];
   const conteo = datos?.conteo || {};
@@ -5551,7 +5561,14 @@ function ContinuidadPendientes({ onOpen, onVolver, showToast, esMedico, esAsiste
       </div>
 
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14 }}>
-        {!esAsistente && (
+        {/* Coordinación ya tiene la sede fijada por su alcance: un selector le
+            ofrecería una opción que devuelve cero casos. En su lugar, el dato
+            en claro: qué sede está viendo. */}
+        {sedeFija ? (
+          <span className="cc-sedefija" title="Tu usuario trabaja solo esta sede.">
+            Sede: {SEDE_LABEL[sedeFija] || sedeFija}
+          </span>
+        ) : (
           <select className="ca-input" style={{ width: "auto" }} value={sede} onChange={(e) => setSede(e.target.value)}>
             <option value="">Todas las sedes</option><option value="lima">Lima</option><option value="piura">Piura</option>
           </select>
@@ -5575,6 +5592,15 @@ function ContinuidadPendientes({ onOpen, onVolver, showToast, esMedico, esAsiste
           <option value="resuelto">Resueltos</option>
           <option value="atencion">Requiere mi atención</option>
         </select>
+        {/* El orden no cambia QUÉ se ve, así que va después de los filtros y
+            con su etiqueta: ninguna de sus dos opciones es "todo". */}
+        <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, color: "var(--muted)" }}>
+          Ordenar por
+          <select className="ca-input" style={{ width: "auto" }} value={orden} onChange={(e) => setOrden(e.target.value)}>
+            <option value="recientes">Más recientes</option>
+            <option value="antiguos">Más antiguos</option>
+          </select>
+        </label>
         {filas.length > 0 && (
           <span style={{ fontSize: 12.5, color: "var(--muted)", alignSelf: "center" }}>
             {filas.length} caso{filas.length === 1 ? "" : "s"} · clic en una fila para ver el detalle
