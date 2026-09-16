@@ -370,7 +370,7 @@ def serializar_contacto(paciente, gestion, usuario):
     si este perfil puede escribir, por qué línea saldría, qué se envió ya y qué
     contestó el paciente. Nunca envía nada.
     """
-    from core.permisos import puede_contactar_pacientes
+    from core.permisos import oculta_contacto, puede_contactar_pacientes
 
     enviados = contactos_de(gestion)
     ultimo = enviados[0] if enviados else None
@@ -387,6 +387,15 @@ def serializar_contacto(paciente, gestion, usuario):
         canal = canal_de(paciente)
     except ContactoBloqueado as e:
         bloqueo = e.codigo
+
+    # Quien no contacta pacientes tampoco necesita por dónde se les llega. El
+    # psicólogo y la analista están en ROLES_SIN_CONTACTO por la Ley 29733, y el
+    # detalle del caso no puede ser la puerta lateral por la que ese dato sale
+    # igual. Se tapa lo que es del PACIENTE (su número, el nombre de su tutor) y
+    # se deja lo que es de la clínica: sede, línea y responsable, que es lo que
+    # sostiene la frase "a este lo contacta coordinación".
+    if canal is not None and oculta_contacto(usuario):
+        canal = {**canal, "telefono": "", "tutor_nombre": "", "tutor_parentesco": ""}
 
     horas = None
     if ultimo_dt is not None:

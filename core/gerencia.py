@@ -398,6 +398,11 @@ class ContinuidadPendientesView(APIView):
     ve solo sus pacientes, la coordinadora los de su sede, admin y analista
     ambas sedes, el comercial nada.
 
+    Los filtros solo pueden ACHICAR ese alcance, nunca ampliarlo: se aplican
+    sobre el queryset que ya devolvió `pacientes_del_rol`. Por eso un psicólogo
+    que pide `medico=<ficha de un colega>` recibe una lista vacía, no la del
+    colega. Ver core/tests_continuidad_psicologo.py.
+
     Filtros (todos opcionales, se combinan):
       estado=vencido|hoy|riesgo_s3|sin_agendar|proximo|continuo_sin_decision
              |dato_incompleto|backlog
@@ -638,9 +643,13 @@ class ContinuidadGestionView(APIView):
     la Agenda y aquí ni se lee para escribir.
 
     Permisos propios (reemplazan a los globales solo en esta vista): admin,
-    coordinación, psicólogo y analista. El alcance sigue siendo el de
-    `pacientes_del_rol`: coordinación no sale de su sede, el psicólogo no toca
-    pacientes ajenos (404, no 403: no se confirma que existan).
+    coordinación y analista. El psicólogo NO: para él el Centro es una vista de
+    seguimiento de sus propios casos, y este PATCH le responde 403 aunque el
+    paciente sea suyo (ver ROLES_GESTION_CONTINUIDAD).
+
+    El alcance sigue siendo el de `pacientes_del_rol`: coordinación no sale de
+    su sede y nadie toca pacientes ajenos (404, no 403: no se confirma que
+    existan).
     """
 
     permission_classes = [IsAuthenticated, PuedeGestionarContinuidad]
