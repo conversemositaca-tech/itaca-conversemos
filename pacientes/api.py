@@ -16,6 +16,8 @@ from core.tenant import get_clinica_actual
 from mensajes.models import Mensaje, PlantillaMensaje
 from mensajes.services import plantilla_por_clave, registrar_y_enviar
 
+from . import duplicados as duplicados_mod
+from .api_duplicados import coincidencia as _coincidencia, fecha as _fecha, flag as _bool, texto as _texto
 from .models import (
     Adjunto, AplicacionEscala, Atencion, BloqueoAgenda, Cita, ContactoProfesional, EdicionAtencion,
     ObjetivoTerapeutico, Paciente, RegistroEliminacion, RespuestaNPS, SeguimientoSesion, Tarea,
@@ -268,6 +270,38 @@ class PacienteViewSet(viewsets.ModelViewSet):
         if sede:
             qs = qs.filter(sede=sede)
         return qs.order_by("nombre")
+
+    def create(self, request, *args, **kwargs):
+        """Crear un paciente, avisando antes si esa persona ya podría existir.
+
+        La causa dominante de las fichas duplicadas medidas en producción (76
+        sobre 1.646 pacientes) no fue el emparejamiento automático: fue este
+        formulario, que guardaba sin mirar. 57 de esas 76 tenían el mismo
+        nombre y el mismo teléfono que una ficha que ya estaba.
+
+        No bloquea a nadie: devuelve 409 con las coincidencias para que quien
+        registra compare y decida. Con `confirmar_nuevo` se crea igual — los
+        homónimos existen y registrar a una persona real nunca puede depender
+        de que el sistema se convenza.
+        """
+        d = request.data if isinstance(request.data, dict) else {}
+        if not _bool(d.get("confirmar_nuevo")):
+            posibles = duplicados_mod.coincidencias(
+                get_clinica_actual(),
+                nombre=_texto(d.get("nombre")),
+                telefono=_texto(d.get("telefono")),
+                documento=_texto(d.get("numero_documento")),
+                sede=_texto(d.get("sede")),
+                tutor_telefono=_texto(d.get("tutor_telefono")),
+                fecha_nacimiento=_fecha(d.get("fecha_nacimiento")),
+                minimo=duplicados_mod.MEDIA,
+            )
+            if posibles:
+                return Response(
+                    {"detail": "Encontramos una posible ficha existente.",
+                     "posibles_duplicados": [_coincidencia(f, c, s) for f, c, s in posibles[:5]]},
+                    status=status.HTTP_409_CONFLICT)
+        return super().create(request, *args, **kwargs)
 
     def perform_create(self, serializer):
         serializer.save(clinica=get_clinica_actual())

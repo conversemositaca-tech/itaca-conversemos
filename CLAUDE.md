@@ -687,3 +687,61 @@ los feriados de Perú. Zona horaria por defecto: `America/Lima` (GMT-5).
      5 páginas × escritorio y móvil sin errores ni enlaces rotos, las 6 fotos cargan.
      El capturador de pruebas ahora recorre la página antes de la captura: con
      `loading="lazy"` las imágenes salían en blanco y la captura mentía.
+38. ✓ Pacientes duplicados: prevención + consolidación (rama
+   `feat/consolidar-pacientes-duplicados`, 2026-09-16). Salió de una auditoría
+   read-only sobre producción: **65 grupos de confianza ALTA, 76 fichas de más sobre
+   1.646 pacientes**, 34 personas con su próxima cita en la ficha que Coordinación no
+   mira, 16 con las sesiones repartidas, 10 con el cierre de bloque inconsistente y
+   **3 alertas de Continuidad objetivamente innecesarias** (la cita ya existía en la
+   otra ficha). La causa dominante NO fue el emparejamiento automático: de las 76,
+   **57 tenían el mismo nombre y teléfono que una ficha existente** y 48 nacieron al
+   crear la cita desde la Agenda → el culpable era `PacienteViewSet.perform_create`,
+   un `save()` sin comprobación. (El hueco de `tutor_telefono` es real pero solo
+   afecta a 1 ficha hoy: es riesgo prospectivo de infantojuvenil, no el problema.)
+   - **Prevención**: `PacienteViewSet.create` busca coincidencias antes de guardar y
+     devuelve **409** con `posibles_duplicados` (contacto enmascarado). No bloquea:
+     con `confirmar_nuevo` se crea igual, porque los homónimos existen. En el front,
+     modal `AvisoDuplicado` con "nuevo registro" vs "ya existe" y dos salidas: **usar
+     la ficha existente** o **crear persona distinta**.
+   - **Detector** `pacientes/duplicados.py` (solo lee, nunca fusiona). ALTA = mismo
+     documento, o mismo nombre + teléfono válido (≥9 dígitos) + sede compatible, sin
+     contradicciones. MEDIA = sugerente sin identificador fuerte (incluye el teléfono
+     del tutor como PISTA, jamás como identidad). BAJA = solo el nombre se parece.
+     **Descarta**: documentos válidos distintos, nacimientos distintos, familiares con
+     el mismo celular y nombre distinto, y expedientes de pareja ("A y B").
+   - **Motor** `pacientes/fusion.py`: `analizar_fusion` (dry-run 100 % read-only) y
+     `fusionar_pacientes` (atómico). Las relaciones salen de
+     `Paciente._meta.get_fields()`, no de una lista a mano —así fue como el viejo
+     `fusionar_por_telefono` se quedó sin `GestionContinuidad` y reventaba con
+     ProtectedError—. **Fail-safe**: si un modelo tiene una restricción de unicidad
+     sobre `paciente` y no tiene manejo propio, la fusión **se detiene antes de tocar
+     nada**. Eso descubrió `SeguimientoSesion` (`uniq_seg_paciente_semana`), que nadie
+     había previsto. Manejo propio: GestionContinuidad (cierra la gestión repetida
+     conservando su historial), SeguimientoSesion (une la semana quedándose con la
+     sesión más alta) y RevisionDuplicado (se limpia).
+   - Orden **no negociable**: resolver choques → mover todo → completar la ficha
+     maestra → `gestion_continuidad.reconciliar()` (el `update()` no dispara señales)
+     → verificar que NADA sigue apuntando al secundario → dejar constancia → borrar.
+     Todo en `transaction.atomic()`. El texto clínico de las dos fichas se **une**, no
+     se descarta. **Bloquean**: clínicas distintas, documentos válidos distintos,
+     nacimientos distintos; la sede distinta exige `aceptar_sede_distinta` explícito.
+   - **Auditoría sin conservar el duplicado**: `RegistroFusionPaciente` (ids, nombres,
+     usuario, motivo, relaciones movidas, conflictos, continuidad antes/después). No
+     es un Paciente y no entra en ningún conteo. `RevisionDuplicado` guarda los "no son
+     la misma persona" para no reofrecerlos. Migración 0037.
+   - **Refactor clave**: `core/continuidad.py` expone `evaluar_paciente(...)`, extraído
+     de `cola_de_continuidad`. El dry-run proyecta la continuidad llamando a ESA misma
+     función con la historia unida — no reimplementa la regla, así que lo que muestra
+     la vista previa es lo que se verá después.
+   - **Permisos**: `ROLES_REVISAN_DUPLICADOS` = admin + asistente (ver, comparar,
+     descartar); `ROLES_FUSIONAN_PACIENTES` = **solo admin** (consolidar elimina una
+     ficha). El psicólogo y la analista quedan fuera. Cada fusión es individual y con
+     confirmación explícita: **no existe "fusionar todos"**.
+   - Frontend `Duplicados.jsx`: pestañas Alta/Revisar/Descartados, tarjeta por grupo
+     con el impacto en Continuidad, comparación lado a lado, elección explícita del
+     principal, dry-run en pantalla (campos, relaciones, continuidad antes/después) y
+     confirmación que dice qué id sobrevive y cuál desaparece.
+   - Verificado: **53 tests nuevos** (`pacientes/tests_duplicados.py`), 662 de la suite
+     completa, `manage.py check`, `makemigrations --check`, build de Vite y ESLint
+     limpio en el archivo nuevo. **Ninguna fusión ejecutada**: el histórico se limpia
+     caso por caso, a mano, empezando por el dry-run de Ariana (1744 + 1769).

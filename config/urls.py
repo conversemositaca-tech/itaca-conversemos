@@ -54,6 +54,10 @@ from mensajes.monitor_evolution import EvolutionEstadoView, EvolutionInstanciasV
 from mensajes.webhook_evolution import EvolutionWebhookView
 from pacientes.api import AdjuntoViewSet, AplicacionEscalaViewSet, AtencionViewSet, BloqueoAgendaViewSet, CitaViewSet, ContactoProfesionalViewSet, ObjetivoTerapeuticoViewSet, PacienteViewSet, RespuestaNPSViewSet, TareaViewSet, TranscribirView
 from core.sitio import SitioFotoView, SitioInfoView
+from pacientes.api_duplicados import (
+    DuplicadoAnalizarView, DuplicadoDescartarView, DuplicadoFusionarView,
+    DuplicadosListaView,
+)
 from pacientes.agendamiento import (
     AgendamientoFotoView,
     AgendamientoInfoView,
@@ -130,6 +134,10 @@ urlpatterns = [
     path("api/continuidad/caso/<int:pk>/whatsapp/", ContinuidadWhatsappView.as_view(), name="continuidad-whatsapp"),
     path("api/eliminaciones/<int:pk>/revisar/", EliminacionRevisarView.as_view(), name="eliminacion-revisar"),
     path("api/eliminaciones/revisar-todas/", EliminacionesRevisarTodasView.as_view(), name="eliminaciones-revisar-todas"),
+    path("api/duplicados/", DuplicadosListaView.as_view(), name="duplicados-lista"),
+    path("api/duplicados/analizar/", DuplicadoAnalizarView.as_view(), name="duplicados-analizar"),
+    path("api/duplicados/fusionar/", DuplicadoFusionarView.as_view(), name="duplicados-fusionar"),
+    path("api/duplicados/descartar/", DuplicadoDescartarView.as_view(), name="duplicados-descartar"),
     path("api/clinica/", ClinicaConfigView.as_view(), name="clinica-config"),
     path("api/gerencia/resumen/", GerenciaResumenView.as_view(), name="gerencia-resumen"),
     path("api/finanzas/caja/", CajaView.as_view(), name="finanzas-caja"),
