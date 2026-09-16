@@ -42,7 +42,7 @@ class Base(TestCase):
         self.psico_user = Usuario.objects.create_user(
             email="psico@dup.pe", password="x", clinica=self.clinica, rol=Usuario.Rol.MEDICO)
         self.prof = Profesional.objects.create(
-            clinica=self.clinica, nombre="Sofía Ferreyra", usuario=self.psico_user, sede="piura")
+            clinica=self.clinica, nombre="Nora Salcedo", usuario=self.psico_user, sede="piura")
         self.ahora = timezone.now()
 
     def pac(self, nombre, **kw):
@@ -62,8 +62,8 @@ class Base(TestCase):
 
 class DeteccionTests(Base):
     def test_mismo_nombre_y_telefono_es_alta(self):
-        a = self.pac("Ariana Belén Martínez Paiva", sede="piura", telefono="987654321")
-        b = self.pac("ARIANA BELEN MARTINEZ PAIVA", sede="piura", telefono="+51 987 654 321")
+        a = self.pac("Paula Ruiz Delgado", sede="piura", telefono="987654321")
+        b = self.pac("PAULA RUIZ DELGADO", sede="piura", telefono="+51 987 654 321")
         gs, _ = duplicados.grupos(self.clinica)
         self.assertEqual([sorted([a.pk, b.pk])], [g for g, _s in gs])
 
@@ -146,9 +146,9 @@ class AvisoAlCrearTests(Base):
         self.client.force_login(self.coord)
 
     def test_avisa_cuando_ya_existe_mismo_nombre_y_telefono(self):
-        existente = self.pac("Ariana Belén Martínez Paiva", sede="piura", telefono="987654321")
+        existente = self.pac("Paula Ruiz Delgado", sede="piura", telefono="987654321")
         r = self.client.post("/api/pacientes/", {
-            "nombre": "Ariana Belen Martinez Paiva", "telefono": "987 654 321", "sede": "piura",
+            "nombre": "PAULA RUIZ DELGADO", "telefono": "987 654 321", "sede": "piura",
         }, content_type="application/json")
         self.assertEqual(r.status_code, 409)
         ids = [p["id"] for p in r.json()["posibles_duplicados"]]
@@ -156,10 +156,10 @@ class AvisoAlCrearTests(Base):
         self.assertEqual(Paciente.objects.count(), 1)
 
     def test_el_aviso_enmascara_el_contacto(self):
-        self.pac("Ariana Belén Martínez Paiva", sede="piura", telefono="987654321",
+        self.pac("Paula Ruiz Delgado", sede="piura", telefono="987654321",
                  numero_documento="70112233")
         r = self.client.post("/api/pacientes/", {
-            "nombre": "Ariana Belén Martínez Paiva", "telefono": "987654321", "sede": "piura",
+            "nombre": "Paula Ruiz Delgado", "telefono": "987654321", "sede": "piura",
         }, content_type="application/json")
         p = r.json()["posibles_duplicados"][0]
         self.assertTrue(p["telefono"].startswith("*"))
@@ -168,9 +168,9 @@ class AvisoAlCrearTests(Base):
         self.assertNotIn("70112233", str(r.json()))
 
     def test_confirmar_nuevo_crea_la_persona_distinta(self):
-        self.pac("Ariana Belén Martínez Paiva", sede="piura", telefono="987654321")
+        self.pac("Paula Ruiz Delgado", sede="piura", telefono="987654321")
         r = self.client.post("/api/pacientes/", {
-            "nombre": "Ariana Belén Martínez Paiva", "telefono": "987654321", "sede": "piura",
+            "nombre": "Paula Ruiz Delgado", "telefono": "987654321", "sede": "piura",
             "confirmar_nuevo": True,
         }, content_type="application/json")
         self.assertEqual(r.status_code, 201)
@@ -212,11 +212,13 @@ class AvisoAlCrearTests(Base):
 class DryRunTests(Base):
     def setUp(self):
         super().setUp()
-        # El caso Ariana, tal como salió en producción.
-        self.a = self.pac("Ariana Belén Martínez Paiva", sede="piura", telefono="987654321",
-                          numero_documento="70112870", fecha_nacimiento=date(2008, 12, 1),
+        # La forma del caso real que disparó todo esto: la historia partida
+        # en dos, el documento y la psicóloga en una ficha, la próxima cita
+        # en la otra. Los datos son inventados; el patrón, no.
+        self.a = self.pac("Paula Ruiz Delgado", sede="piura", telefono="987654321",
+                          numero_documento="70000001", fecha_nacimiento=date(2008, 12, 1),
                           profesional=self.prof)
-        self.b = self.pac("Ariana Belén Martínez Paiva", sede="piura", telefono="987654321")
+        self.b = self.pac("Paula Ruiz Delgado", sede="piura", telefono="987654321")
         self.cita(self.a, -39, n=1, decision="DP-01")
         self.cita(self.a, -28, n=2)
         for i, n in enumerate((3, 4, 5)):
@@ -268,7 +270,7 @@ class DryRunTests(Base):
         self.assertEqual(r["id_que_desaparece"], self.b.pk)
 
     def test_detecta_conflicto_de_documento(self):
-        otro = self.pac("Ariana Belén Martínez Paiva", numero_documento="11112222", sede="piura")
+        otro = self.pac("Paula Ruiz Delgado", numero_documento="11112222", sede="piura")
         r = fusion.analizar_fusion(self.a, otro)
         self.assertFalse(r["puede_fusionar"])
         self.assertTrue(any("documentos válidos DISTINTOS" in c for c in r["conflictos"]))
@@ -397,6 +399,100 @@ class FusionTests(Base):
         RevisionDuplicado.objects.create(clinica=self.clinica, paciente_a=self.b, paciente_b=otro)
         fusion.fusionar_pacientes(self.a, self.b, self.admin)
         self.assertEqual(RevisionDuplicado.objects.count(), 0)
+
+
+# ---------------------------------------------------------------------------
+# Atención vigente: el dato viejo no es un conflicto, es una etapa superada
+# ---------------------------------------------------------------------------
+
+class EspecialidadHabitualTests(Base):
+    """`especialidad_habitual` describe cómo se atiende HOY a la persona.
+
+    Salió del primer caso real: la ficha antigua decía "Consulta psicológica"
+    —la conversación previa— y la reciente, "Terapia individual", porque ya
+    estaba en proceso. Conservar la de la ficha antigua habría hecho retroceder
+    el estado del paciente, que es justo lo que la consolidación no puede hacer.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.a = self.pac("Paula Ruiz Delgado", sede="lima", telefono="987000111")
+        self.b = self.pac("Paula Ruiz Delgado", sede="lima", telefono="987000111")
+
+    def _plan(self):
+        return fusion.plan_de_campos(self.a, self.b)[0].get("especialidad_habitual", "sin cambio")
+
+    def test_si_solo_una_tiene_valor_se_usa_ese(self):
+        self.b.especialidad_habitual = "Terapia individual"
+        self.b.save()
+        self.cita(self.a, -10, n=1)
+        self.assertEqual(self._plan(), "Terapia individual")
+
+    def test_si_las_dos_dicen_lo_mismo_se_conserva(self):
+        self.a.especialidad_habitual = "Terapia individual"
+        self.a.save()
+        self.b.especialidad_habitual = "Terapia individual"
+        self.b.save()
+        self.cita(self.a, -10, n=1)
+        self.assertEqual(self._plan(), "sin cambio")
+
+    def test_manda_la_ficha_con_actividad_mas_reciente(self):
+        self.a.especialidad_habitual = "Consulta psicológica"
+        self.a.save()
+        self.b.especialidad_habitual = "Terapia individual"
+        self.b.save()
+        self.cita(self.a, -30, n=1)
+        self.cita(self.b, -3, n=2)          # la secundaria es la que se usó última
+        self.assertEqual(self._plan(), "Terapia individual")
+
+    def test_si_la_reciente_es_la_principal_se_queda_la_suya(self):
+        self.a.especialidad_habitual = "Terapia individual"
+        self.a.save()
+        self.b.especialidad_habitual = "Consulta psicológica"
+        self.b.save()
+        self.cita(self.a, -3, n=2)
+        self.cita(self.b, -30, n=1)
+        self.assertEqual(self._plan(), "sin cambio")
+
+    def test_sin_actividad_no_se_adivina_y_bloquea(self):
+        """Ninguna tiene citas: no hay con qué saber cuál está vigente."""
+        self.a.especialidad_habitual = "Consulta psicológica"
+        self.a.save()
+        self.b.especialidad_habitual = "Terapia individual"
+        self.b.save()
+        self.assertEqual(self._plan(), "sin cambio")
+        r = fusion.analizar_fusion(self.a, self.b)
+        self.assertFalse(r["puede_fusionar"])
+        self.assertTrue(any("especialidad_habitual" in c for c in r["conflictos"]))
+        with self.assertRaises(fusion.FusionBloqueada):
+            fusion.fusionar_pacientes(self.a, self.b, self.admin)
+        self.assertTrue(Paciente.objects.filter(pk=self.b.pk).exists())
+
+    def test_la_fusion_deja_la_atencion_vigente(self):
+        self.a.especialidad_habitual = "Consulta psicológica"
+        self.a.save()
+        self.b.especialidad_habitual = "Terapia individual"
+        self.b.save()
+        self.cita(self.a, -30, n=1)
+        self.cita(self.b, -3, n=2)
+        fusion.fusionar_pacientes(self.a, self.b, self.admin)
+        self.a.refresh_from_db()
+        self.assertEqual(self.a.especialidad_habitual, "Terapia individual")
+
+    def test_no_se_generaliza_a_los_datos_maestros(self):
+        """La regla es para la atención vigente. Un documento o un teléfono más
+        recientes NO pisan al del principal: eso es identidad, no tratamiento."""
+        self.a.telefono = "987000111"
+        self.a.numero_documento = "70000001"
+        self.a.save()
+        self.b.telefono = "955000222"
+        self.b.numero_documento = ""
+        self.b.save()
+        self.cita(self.a, -30, n=1)
+        self.cita(self.b, -3, n=2)          # la secundaria es la más reciente
+        cambios, _ = fusion.plan_de_campos(self.a, self.b)
+        self.assertNotIn("telefono", cambios)
+        self.assertNotIn("numero_documento", cambios)
 
 
 # ---------------------------------------------------------------------------

@@ -719,6 +719,13 @@ los feriados de Perú. Zona horaria por defecto: `America/Lima` (GMT-5).
      había previsto. Manejo propio: GestionContinuidad (cierra la gestión repetida
      conservando su historial), SeguimientoSesion (une la semana quedándose con la
      sesión más alta) y RevisionDuplicado (se limpia).
+   - **Atención vigente**: `especialidad_habitual` NO se hereda "solo si falta": manda
+     la ficha con actividad más reciente (última cita), porque el dato viejo no es un
+     conflicto sino una etapa superada —"Consulta psicológica" en la antigua vs
+     "Terapia individual" en la reciente—. Si ninguna tiene citas y los valores
+     difieren, **no se adivina**: bloquea pidiendo revisión. La regla NO se extiende a
+     documento, nacimiento ni teléfono: ahí dos valores distintos son un conflicto de
+     identidad. `creado_en` no sirve de desempate (los importadores lo reescribieron).
    - Orden **no negociable**: resolver choques → mover todo → completar la ficha
      maestra → `gestion_continuidad.reconciliar()` (el `update()` no dispara señales)
      → verificar que NADA sigue apuntando al secundario → dejar constancia → borrar.
@@ -741,7 +748,7 @@ los feriados de Perú. Zona horaria por defecto: `America/Lima` (GMT-5).
      con el impacto en Continuidad, comparación lado a lado, elección explícita del
      principal, dry-run en pantalla (campos, relaciones, continuidad antes/después) y
      confirmación que dice qué id sobrevive y cuál desaparece.
-   - Verificado: **53 tests nuevos** (`pacientes/tests_duplicados.py`), 662 de la suite
+   - Verificado: **60 tests nuevos** (`pacientes/tests_duplicados.py`), 662 de la suite
      completa, `manage.py check`, `makemigrations --check`, build de Vite y ESLint
      limpio en el archivo nuevo. **Ninguna fusión ejecutada**: el histórico se limpia
-     caso por caso, a mano, empezando por el dry-run de Ariana (1744 + 1769).
+     caso por caso, a mano, empezando por un dry-run revisado por gerencia.

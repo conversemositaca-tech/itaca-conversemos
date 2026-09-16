@@ -44,7 +44,7 @@ class FusionBloqueada(Exception):
 CAMPOS_HEREDABLES = (
     "numero_documento", "tipo_documento", "fecha_nacimiento", "email", "direccion",
     "telefono", "genero", "tutor_nombre", "tutor_parentesco", "tutor_telefono",
-    "tutor_documento", "profesional_id", "especialidad_habitual", "objetivo_principal",
+    "tutor_documento", "profesional_id", "objetivo_principal",
 )
 
 # Texto clínico libre: si los DOS tienen contenido no se descarta ninguno —se
@@ -54,6 +54,17 @@ CAMPOS_TEXTO = (
     "alergias", "antecedentes", "antecedentes_medicos", "antecedentes_familiares",
     "antecedentes_otros", "medicacion_habitual", "resumen_clinico", "notas_internas",
 )
+
+# Campos que describen la ATENCIÓN VIGENTE, no la identidad: manda la ficha que
+# se usó más recientemente, porque el dato viejo no es un conflicto sino una
+# etapa superada —quien aparece como "Consulta psicológica" en la ficha antigua
+# y como "Terapia individual" en la reciente ya está en terapia—. Y si no se
+# puede afirmar cuál es la más reciente, no se adivina: se pide revisión.
+#
+# Esta regla NO se extiende al documento, la fecha de nacimiento, el teléfono ni
+# al resto de los datos maestros: ahí dos valores distintos son un conflicto de
+# identidad, no una evolución del tratamiento.
+CAMPOS_ATENCION_VIGENTE = ("especialidad_habitual",)
 
 # Estado del proceso: se queda el más avanzado. Una ficha vieja nunca puede
 # hacer retroceder el estado actual de la persona.
@@ -266,11 +277,25 @@ def conflictos(principal, secundario, aceptar_sede_distinta=False):
 # --- Ficha maestra -----------------------------------------------------------
 
 def _mas_reciente(principal, secundario):
-    """Cuál de las dos se usó más recientemente, por su última cita."""
+    """(ficha usada más recientemente, ¿se puede afirmar?).
+
+    Se decide por la última CITA, que es actividad real. `creado_en` NO sirve de
+    desempate: los importadores lo reescribieron con la fecha de alta de
+    AgendaPro, así que una ficha abierta después puede tener fecha de 2024. Si
+    ninguna de las dos tiene citas, no hay con qué decidir y se dice así.
+    """
     def ultima(p):
-        c = Cita.objects.filter(paciente=p).order_by("-inicio").values_list("inicio", flat=True).first()
-        return c or p.creado_en
-    return principal if ultima(principal) >= ultima(secundario) else secundario
+        return (Cita.objects.filter(paciente=p).order_by("-inicio")
+                .values_list("inicio", flat=True).first())
+
+    ua, ub = ultima(principal), ultima(secundario)
+    if ua and ub:
+        return (principal, True) if ua >= ub else (secundario, True)
+    if ua:
+        return principal, True
+    if ub:
+        return secundario, True
+    return principal, False
 
 
 def plan_de_campos(principal, secundario):
@@ -280,7 +305,7 @@ def plan_de_campos(principal, secundario):
     para aplicar y `detalle` explica cada decisión para mostrarla en el dry-run.
     """
     cambios, detalle = {}, []
-    reciente = _mas_reciente(principal, secundario)
+    reciente, reciente_seguro = _mas_reciente(principal, secundario)
 
     for campo in CAMPOS_HEREDABLES:
         actual, otro = getattr(principal, campo), getattr(secundario, campo)
@@ -305,6 +330,26 @@ def plan_de_campos(principal, secundario):
             cambios[campo] = actual + (SEPARADOR_TEXTO % secundario.pk) + otro
             detalle.append({"campo": campo, "accion": "une",
                             "resumen": "se conservan los dos textos"})
+
+    for campo in CAMPOS_ATENCION_VIGENTE:
+        actual, otro = getattr(principal, campo), getattr(secundario, campo)
+        if not otro or _equivalentes(campo, actual, otro):
+            continue
+        if not actual:                       # solo una tiene valor: es ese
+            cambios[campo] = otro
+            detalle.append({"campo": campo, "accion": "hereda", "origen": "secundario",
+                            "resumen": _resumen(campo, otro)})
+            continue
+        if not reciente_seguro:              # ninguna tiene citas: no se adivina
+            detalle.append({"campo": campo, "accion": "requiere revisión",
+                            "resumen": "%s / %s" % (_resumen(campo, actual), _resumen(campo, otro))})
+            continue
+        vigente = getattr(reciente, campo)
+        if vigente and not _equivalentes(campo, actual, vigente):
+            cambios[campo] = vigente
+            detalle.append({"campo": campo, "accion": "atención vigente",
+                            "origen": "ficha #%s" % reciente.pk,
+                            "resumen": "%s → %s" % (_resumen(campo, actual), _resumen(campo, vigente))})
 
     for campo in CAMPOS_MAXIMO:
         actual, otro = getattr(principal, campo) or 0, getattr(secundario, campo) or 0
@@ -376,6 +421,19 @@ def _resumen(campo, valor):
         p = Profesional.objects.filter(pk=valor).first()
         return p.nombre if p else str(valor)
     return str(valor)[:80]
+
+
+def conflictos_de_campos(detalle):
+    """Los campos que `plan_de_campos` no pudo resolver solo.
+
+    Hoy es uno: la atención vigente cuando las dos fichas dicen cosas distintas
+    y ninguna tiene citas con las que saber cuál manda. No se elige a la suerte:
+    alguien corrige el dato en una de las dos y se vuelve a intentar.
+    """
+    return ["%s: las dos fichas dicen cosas distintas (%s) y no hay actividad "
+            "con la que saber cuál está vigente. Corrige el campo en una de las "
+            "dos antes de consolidar." % (d["campo"], d.get("resumen", ""))
+            for d in detalle if d["accion"] == "requiere revisión"]
 
 
 # --- Continuidad -------------------------------------------------------------
@@ -503,6 +561,7 @@ def analizar_fusion(principal, secundario, aceptar_sede_distinta=False):
     plan_rel, bloqueos_rel = plan_de_relaciones(principal, secundario)
     bloqueos = bloqueos + bloqueos_rel
     cambios, detalle = plan_de_campos(principal, secundario)
+    bloqueos = bloqueos + conflictos_de_campos(detalle)
     recomendado, razones = recomendar_principal(principal, secundario)
 
     return {
@@ -558,8 +617,10 @@ def fusionar_pacientes(principal, secundario, usuario, motivo="", aceptar_sede_d
     """
     # Se re-valida DENTRO de la transacción: entre el dry-run que vio la
     # persona y este momento pudo cambiar cualquiera de las dos fichas.
+    cambios, detalle = plan_de_campos(principal, secundario)
     bloqueos = conflictos(principal, secundario, aceptar_sede_distinta)
     bloqueos += plan_de_relaciones(principal, secundario)[1]
+    bloqueos += conflictos_de_campos(detalle)
     if bloqueos:
         raise FusionBloqueada(bloqueos)
 
@@ -583,8 +644,8 @@ def fusionar_pacientes(principal, secundario, usuario, motivo="", aceptar_sede_d
         if n:
             movidas[rel["label"]] = movidas.get(rel["label"], 0) + n
 
-    # 3) La ficha maestra: lo que el principal no tenía y el secundario sí.
-    cambios, detalle = plan_de_campos(principal, secundario)
+    # 3) La ficha maestra: lo que el principal no tenía y el secundario sí
+    #    (el plan se calculó arriba, con las dos fichas todavía intactas).
     if cambios:
         for campo, valor in cambios.items():
             setattr(principal, campo, valor)
