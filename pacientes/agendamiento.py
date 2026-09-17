@@ -26,6 +26,7 @@ from rest_framework.views import APIView
 from core.models import Clinica
 from finanzas.models import Servicio
 from leads import atribucion
+from leads import identidad
 from leads.models import Lead
 from pacientes.models import BloqueoAgenda, Cita, Paciente
 from usuarios.models import Profesional, Usuario
@@ -133,8 +134,6 @@ def _match_paciente(clinica, documento, telefono, nombre="", sede=""):
     la atención de dos hijos, eso colgaba la reserva de la persona equivocada —y
     de paso saltaba el registro de captación (ver `leads.identidad`).
     """
-    from leads import identidad
-
     return identidad.ficha_que_calza(
         clinica, nombre=nombre, telefono=telefono, sede=sede, documento=documento)
 
@@ -254,9 +253,13 @@ class AgendamientoReservarView(_PublicBase):
 
         nombre = str(d.get("nombre") or "").strip()[:200]
         telefono = str(d.get("telefono") or "").strip()[:40]
-        if not nombre or len(_solo_digitos(telefono)) < 6:
-            return Response({"detail": "Necesitamos tu nombre y un teléfono válido."},
-                            status=status.HTTP_400_BAD_REQUEST)
+        # Un movil peruano tiene 9 digitos. Con menos, el numero no sirve para
+        # reconocer a quien vuelve: se le abriria una ficha nueva cada vez y su
+        # historia quedaria partida. Antes se aceptaban desde 6.
+        if not nombre or len(_solo_digitos(telefono)) < identidad.MIN_DIGITOS_TELEFONO:
+            return Response(
+                {"detail": "Necesitamos tu nombre y un celular de 9 dígitos."},
+                status=status.HTTP_400_BAD_REQUEST)
         documento = _solo_digitos(d.get("documento"))[:12]
         email = str(d.get("email") or "").strip()[:200]
         servicio = str(d.get("servicio") or "").strip()[:120]

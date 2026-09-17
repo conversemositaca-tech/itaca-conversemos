@@ -244,6 +244,22 @@ class ReservaWebCreaTodoTests(_Base):
         return self.client.post(f"/api/agendamiento/{self.token}/reservar/", datos,
                                 content_type="application/json")
 
+    def test_un_celular_incompleto_no_deja_reservar(self):
+        """Antes se aceptaba desde 6 dígitos. Un número así no sirve para
+        reconocer a quien vuelve: le abriría una ficha nueva cada vez y su
+        historia quedaría partida. Mejor pedirlo bien al reservar."""
+        antes = Paciente.objects.count()
+        for corto in ("12345", "123456", "98765432"):
+            r = self._reservar(telefono=corto)
+            self.assertEqual(r.status_code, 400, "acepto %r" % corto)
+            self.assertIn("9 dígitos", r.json()["detail"])
+        self.assertEqual(Paciente.objects.count(), antes)
+
+    def test_nueve_digitos_si_entra_y_con_prefijo_tambien(self):
+        self.assertEqual(self._reservar(telefono="987654321").status_code, 201)
+        r = self._reservar(nombre="Otra Persona", telefono="+51 955 444 333")
+        self.assertEqual(r.status_code, 201)
+
     # --- 1 a 6 ---------------------------------------------------------
 
     def test_1_persona_nueva_crea_lead_paciente_y_cita(self):

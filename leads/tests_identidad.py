@@ -198,6 +198,58 @@ class IdentidadDelPacienteTests(_Base):
         self.assertEqual(Paciente.objects.count(), 2)
 
 
+class MenorConTelefonoDelTutorTests(_Base):
+    """Al menor que ya tiene ficha hay que poder RECONOCERLO.
+
+    El fix #86 sacó el número del tutor de `Paciente.telefono` para que madre e
+    hijo dejaran de confundirse. Pero la búsqueda seguía mirando solo ese campo,
+    así que una ficha de menor quedaba inencontrable: cada lead suyo abría una
+    ficha nueva y su historia se partía. Ahora el número del tutor también sirve
+    para reconocerlo — nunca para identificarlo por sí solo, porque el NOMBRE
+    sigue siendo lo que decide.
+    """
+
+    def test_el_menor_que_vuelve_no_abre_otra_ficha(self):
+        menor = self.paciente("Mateo Pérez", telefono="", tutor_telefono="987654321")
+        self.crear_lead(telefono="", contacto_nombre="Rosa Pérez",
+                        contacto_parentesco="madre", contacto_telefono="987654321")
+        self.assertEqual(Paciente.objects.count(), 1)
+        self.assertEqual(Paciente.objects.get().pk, menor.pk)
+
+    def test_la_madre_sigue_siendo_otra_persona(self):
+        """Lo que cerró el fix #86 no se reabre: el nombre manda."""
+        self.paciente("Mateo Pérez", telefono="", tutor_telefono="987654321")
+        self.crear_lead(nombre="Rosa Pérez", telefono="987654321")
+        self.assertEqual(Paciente.objects.count(), 2)
+
+    def test_un_hermano_con_el_mismo_tutor_es_otra_ficha(self):
+        self.paciente("Mateo Pérez", telefono="", tutor_telefono="987654321")
+        self.crear_lead(nombre="Lucía Pérez", telefono="",
+                        contacto_nombre="Rosa Pérez", contacto_telefono="987654321")
+        self.assertEqual(Paciente.objects.count(), 2)
+
+    def test_reconoce_aunque_el_numero_este_en_lados_distintos(self):
+        """La ficha lo tiene como propio y el lead lo trae como del tutor."""
+        adulto = self.paciente("Mateo Pérez", telefono="987654321")
+        self.crear_lead(telefono="", contacto_nombre="Rosa Pérez",
+                        contacto_telefono="987654321")
+        self.assertEqual(Paciente.objects.count(), 1)
+        self.assertEqual(Paciente.objects.get().pk, adulto.pk)
+
+    def test_con_dos_menores_del_mismo_nombre_y_tutor_no_se_elige_ninguno(self):
+        self.paciente("Mateo Pérez", telefono="", tutor_telefono="987654321")
+        self.paciente("Mateo Pérez", telefono="", tutor_telefono="987654321")
+        self.crear_lead(telefono="", contacto_telefono="987654321",
+                        contacto_nombre="Rosa Pérez")
+        self.assertEqual(Paciente.objects.count(), 3)   # ante la duda, se separa
+
+    def test_un_tutor_con_numero_corto_no_reconoce_a_nadie(self):
+        self.paciente("Mateo Pérez", telefono="", tutor_telefono="12345")
+        self.crear_lead(telefono="", contacto_telefono="12345",
+                        contacto_nombre="Rosa Pérez")
+        self.assertEqual(Paciente.objects.count(), 2)
+
+
 class TelefonoRepetidoNoBloqueaTests(_Base):
     """Registrar a un hermano con el número de la madre tiene que poder hacerse."""
 
