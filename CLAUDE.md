@@ -748,7 +748,17 @@ los feriados de Perú. Zona horaria por defecto: `America/Lima` (GMT-5).
      con el impacto en Continuidad, comparación lado a lado, elección explícita del
      principal, dry-run en pantalla (campos, relaciones, continuidad antes/después) y
      confirmación que dice qué id sobrevive y cuál desaparece.
-   - Verificado: **60 tests nuevos** (`pacientes/tests_duplicados.py`), 662 de la suite
+   - Verificado: **60 tests nuevos** (`pacientes/tests_duplicados.py`), 669 de la suite
      completa, `manage.py check`, `makemigrations --check`, build de Vite y ESLint
-     limpio en el archivo nuevo. **Ninguna fusión ejecutada**: el histórico se limpia
-     caso por caso, a mano, empezando por un dry-run revisado por gerencia.
+     limpio en el archivo nuevo. Desplegado en Railway con la migración aplicada.
+   - **Primera consolidación real ejecutada el 2026-09-16**, sobre el único caso que
+     se había validado con dry-run y con autorización explícita de gerencia: 12
+     relaciones movidas (4 citas, 5 mensajes, 1 cobro, 1 lead, 1 gestión de
+     continuidad), **cero filas huérfanas**, ficha secundaria eliminada y
+     `RegistroFusionPaciente` #1 como constancia. Verificado al día siguiente: una
+     sola ficha, **una sola evaluación en la cola** y el detector ya no propone ese
+     par. La `especialidad_habitual` quedó en la de la ficha reciente, que es lo que
+     la regla de atención vigente venía a arreglar.
+   - **El resto del histórico sigue SIN tocar** (a set. 2026: ~51 grupos ALTA, 31 en
+     Revisar, 19 descartados). Se limpia **caso por caso**, con dry-run y aprobación
+     de gerencia por cada par: no hay ni habrá limpieza masiva.
