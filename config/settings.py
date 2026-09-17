@@ -176,6 +176,11 @@ REST_FRAMEWORK = {
     # vistas que declaran throttle_scope="captacion".
     "DEFAULT_THROTTLE_RATES": {
         "captacion": "60/min",
+        # Embudo web: cada visita manda un evento por página y uno por clic.
+        # Alguien que recorre el sitio entero no llega a 10; el margen es para
+        # que una oficina o un locutorio (varias personas, una sola IP) no se
+        # quede sin medir.
+        "embudo": "120/min",
         # Webhook de Evolution (líneas operativas). Más holgado que captación:
         # una conversación activa manda un evento por mensaje y otro por cada
         # acuse de entrega/lectura, así que 60/min se quedaría corto en un día

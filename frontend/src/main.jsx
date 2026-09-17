@@ -5,6 +5,7 @@ import App, { ConsentimientoPublico, AgendarPublico, sincronizarReloj } from './
 import { SitioPublico } from './Sitio.jsx'
 import { esRutaSitio } from './rutas'
 import { recordarOrigen } from './origen'
+import { PASOS, registrar } from './embudo'
 
 // Qué se monta según el path, EN ESTE ORDEN:
 //  /consentimiento/<token>  → firma del consentimiento (público)
@@ -23,6 +24,12 @@ const sitio = !cons && !agen && !gestion && esRutaSitio(RUTA)
 // De dónde llegó la visita (campaña, anuncio, sitio que refirió). Se guarda al
 // entrar porque la reserva ocurre después, cuando la URL ya no lleva nada.
 recordarOrigen()
+
+// Llegó al formulario de reserva. Es el paso donde más se abandona —ya decidió
+// pedir cita y algo lo detiene— y hasta ahora era invisible: solo se veía a
+// quien terminaba. Se cuenta aquí, y no dentro del agendamiento, para no tocar
+// App.jsx por una medición.
+if (agen) registrar(PASOS.ABRE_AGENDA, '/agendar')
 
 function arrancar() {
   createRoot(document.getElementById('root')).render(

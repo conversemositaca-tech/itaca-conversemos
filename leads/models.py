@@ -230,3 +230,54 @@ class Lead(ModeloTenant):
 
     def __str__(self):
         return f"{self.nombre} ({self.get_estado_display()})"
+
+
+class EventoSitio(ModeloTenant):
+    """Los pasos del embudo web, contados sin saber quién los dio.
+
+    Hasta ahora solo se sabía quién RESERVÓ. Una campaña que trae 100 visitas y
+    una reserva se veía igual que otra que trae 10 y una reserva, y la segunda
+    es diez veces mejor. Esto cuenta los pasos previos para poder distinguirlas.
+
+    **Lo que deliberadamente NO guarda**: ni IP, ni navegador, ni cookies, ni
+    nada que permita reconocer a la misma persona en otra visita, ni relación
+    con el `Lead` que después reserva. Es una web de psicología: que alguien
+    mirara "terapia de pareja" o "duelo" es información sensible en cuanto se
+    puede atar a un nombre. Se pierde el recorrido individual a propósito; para
+    decidir en qué invertir bastan los totales.
+
+    `sesion` es un número al azar que vive en la pestaña y muere al cerrarla.
+    Solo sirve para no contar cinco veces a quien mira cinco páginas. No deriva
+    de ningún dato de la persona y no se cruza con nada.
+
+    El último paso del embudo (la reserva) NO se guarda aquí: ya está en `Lead`,
+    con estos mismos ejes de origen. Duplicarlo daría dos cifras que con el
+    tiempo dejarían de coincidir.
+    """
+
+    class Tipo(models.TextChoices):
+        VISITA = "visita", "Vio una página"
+        CLIC_RESERVAR = "clic_reservar", "Hizo clic en reservar"
+        ABRE_AGENDA = "abre_agenda", "Abrió el formulario de reserva"
+
+    tipo = models.CharField("paso", max_length=20, choices=Tipo.choices)
+    ruta = models.CharField("página", max_length=200, blank=True, default="")
+    # Los mismos tres ejes que `Lead` guarda desde el ítem 39: así las visitas y
+    # las reservas se pueden cruzar sin traducir nada.
+    canal = models.CharField("canal de origen", max_length=80, blank=True, default="")
+    medio = models.CharField("medio de origen", max_length=80, blank=True, default="")
+    campania = models.CharField("campaña", max_length=120, blank=True, default="")
+    sesion = models.CharField("visita (efímero)", max_length=32, blank=True, default="")
+    creado_en = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Evento del sitio"
+        verbose_name_plural = "Eventos del sitio"
+        ordering = ["-creado_en"]
+        indexes = [
+            models.Index(fields=["clinica", "creado_en"]),
+            models.Index(fields=["clinica", "tipo", "creado_en"]),
+        ]
+
+    def __str__(self):
+        return f"{self.get_tipo_display()} · {self.ruta or '—'}"

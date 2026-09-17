@@ -25,6 +25,7 @@ import {
   agendaWhatsapp,
 } from "./App.jsx";
 import datosDePaginas from "./paginas.json";
+import { PASOS as PASOS_EMBUDO, registrar } from "./embudo";
 import { SITE_ROUTES, alCambiarRuta, propsEnlace, rutaCanonica } from "./rutas";
 import { INICIO, PASOS, PREGUNTAS, PSICOLOGOS, QUIENES_SOMOS, TERAPIAS, TESTIMONIOS } from "./sitio-textos";
 
@@ -897,6 +898,9 @@ export function SitioPublico() {
     // página por la que se entró; se actualiza para que no quede descolgada.
     const meta = document.querySelector('meta[name="description"]');
     if (meta && pagina.descripcion) meta.setAttribute("content", pagina.descripcion);
+    // Alguien vio esta página. Va en el mismo efecto que el título porque se
+    // dispara igual al entrar y al navegar sin recargar.
+    registrar(PASOS_EMBUDO.VISITA, ruta);
     document.documentElement.lang = "es";
     // Si se entró por un alias (o con barra final), la barra de direcciones se
     // queda con la forma canónica, sin añadir una entrada al historial.
