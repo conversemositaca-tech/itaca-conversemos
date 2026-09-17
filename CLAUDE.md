@@ -896,3 +896,57 @@ los feriados de Perú. Zona horaria por defecto: `America/Lima` (GMT-5).
    - **Pendiente**: desplegar; después, medir los pasos internos del formulario
      (eligió psicólogo, eligió horario) y cruzar con el gasto de `MetricaMensual`
      para tener costo por consulta.
+42. ✓ Identidad del menor y teléfono corto (PR #99, 2026-09-17, **desplegado**).
+   Dos huecos que la auditoría de duplicados había dejado señalados y que se
+   cerraron juntos porque son el mismo error: creer que una persona se identifica
+   por *su* número.
+   - **`leads/identidad.py`**: `numeros_de(paciente)` devuelve los números por los
+     que se llega a esa persona —el suyo **y el de su tutor**— y `ficha_que_calza`
+     busca contra ese conjunto. Un menor cuya ficha solo tiene el celular de la
+     madre era invisible al reconocimiento: volvía a agendar y nacía una ficha
+     nueva. Esto NO relaja la regla de identidad: el teléfono del tutor sigue sin
+     identificar por sí solo (hace falta nombre + sede compatible + un único
+     candidato); lo que cambia es que ahora **cuenta como vía de contacto**.
+   - **`pacientes/agendamiento.py`**: el formulario público aceptaba teléfonos de
+     6 dígitos, por debajo del mínimo con el que el sistema reconoce a alguien
+     (`identidad.MIN_DIGITOS_TELEFONO` = 9). Resultado: la reserva entraba, pero
+     la ficha no se podía emparejar nunca con la que ya existía. Ahora el mínimo
+     es el mismo en los dos lados —una sola constante— y el mensaje dice qué
+     hace falta: "Necesitamos tu nombre y un celular de 9 dígitos."
+   - **Estado del histórico a 17 set. 2026**: **20 consolidaciones ejecutadas**,
+     todas con dry-run y autorización caso por caso, cero filas huérfanas;
+     13 fichas de prueba eliminadas con `RegistroEliminacion`; la base pasó de
+     1.646 a **1.615 pacientes** y de 65 a **31 grupos ALTA**. El lote de "fichas
+     realmente vacías" **se agotó**: ya no queda ninguna de bajo riesgo.
+   - **Por qué se frenó la limpieza, medido**: de los 31 grupos que quedan, **17
+     están bloqueados por registro** (sesiones pasadas sin cerrar o cierres de
+     bloque sin DP dentro del propio grupo), 13 piden revisión individual y 1
+     necesita a un psicólogo porque las dos fichas tienen atenciones clínicas
+     escritas. Es decir: **más de la mitad del trabajo restante no lo desbloquea
+     código, lo desbloquea un dato**. Dentro de esos grupos hay 18 sesiones
+     pasadas sin cerrar y 6 cierres sin decisión.
+   - **El tamaño real de ese hábito, en toda la base**: 676 citas cuya fecha ya
+     pasó siguen en agendada/confirmada (320 pacientes, 610 en Piura); solo el
+     **1,7 %** de las sesiones asistidas lleva DP, y **95,4 %** de las sesiones de
+     cierre (6/12/18/24) no tiene decisión registrada. Eso es lo que sostiene los
+     419 casos de la cola y los 243 procesos anteriores sin cierre. La consecuencia
+     está probada al revés: en una de las consolidaciones la alerta **se apagó
+     sola** en cuanto el DP-09 que ya existía llegó a la ficha consolidada.
+   - **La prevención aún no tiene muestra suficiente**: desde el despliegue se han
+     creado 5 fichas y ninguna cayó en un grupo duplicado, pero 5 en dos días no
+     prueba nada todavía. Lo que sí se comprobó es que los pares con ids casi
+     consecutivos que asustan en el triaje son **todos anteriores** al despliegue.
+   - **Dato sucio conocido**: existe **una** cita con fecha del año 0006 (un año
+     mal tecleado al cargar consultas desde Marketing). Es duplicado exacto de
+     otra cita real del mismo paciente, misma hora y mismo servicio, y como quedó
+     en "agendada" ensucia cualquier conteo de citas pasadas sin cerrar. Es la
+     única fecha imposible de todo el sistema: atenciones, cobros y nacimientos
+     están limpios. Pendiente de decisión (cancelarla, no borrarla).
+   - **Aviso de entorno**: tras un `git pull` que toque `frontend/`, hay que correr
+     `npm install && npm run build` antes de la suite. Los tests de `core/tests_seo`
+     leen el `index.html` **construido**; con un `dist` viejo fallan 10 pruebas que
+     no tienen nada roto detrás, y el rastro lleva horas en la dirección
+     equivocada. `--parallel` además puede tapar el fallo real con un
+     `TypeError: cannot pickle 'traceback' object`: ante errores raros, correr en
+     serie y redirigir a un log (un `| tail` devuelve el código de salida de
+     `tail`, no el de Django).
