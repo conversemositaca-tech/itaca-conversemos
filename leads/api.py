@@ -111,7 +111,10 @@ def _ficha_que_calza(lead):
     return identidad.ficha_que_calza(
         lead.clinica,
         nombre=lead.nombre,
-        telefono=lead.telefono or lead.contacto_telefono,
+        telefono=lead.telefono,
+        # El numero del responsable tambien sirve para RECONOCER al menor que
+        # ya tiene ficha; lo que nunca hace es identificarlo por si solo.
+        tutor_telefono=lead.contacto_telefono,
         sede=lead.sede,
     )
 

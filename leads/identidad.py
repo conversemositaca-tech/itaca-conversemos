@@ -59,7 +59,21 @@ def sedes_compatibles(sede_ficha, sede_nueva):
     return not a or not b or a == b
 
 
-def ficha_que_calza(clinica, *, nombre, telefono="", sede="", documento=""):
+def numeros_de(paciente):
+    """Por qué números se llega a esta persona: el suyo y el de su tutor.
+
+    Un menor no suele tener celular: su número vive en `tutor_telefono`. Hasta
+    ahora la búsqueda solo miraba `telefono`, así que una ficha de menor era
+    **inencontrable** y cada lead suyo abría una ficha nueva. Mirar los dos
+    campos NO reabre el cruce que cerró el fix #86: el nombre sigue siendo lo
+    que decide, y el número solo confirma (ver `ficha_que_calza`).
+    """
+    return {t for t in (norm_tel(paciente.telefono), norm_tel(paciente.tutor_telefono))
+            if len(t) >= MIN_DIGITOS_TELEFONO}
+
+
+def ficha_que_calza(clinica, *, nombre, telefono="", sede="", documento="",
+                    tutor_telefono=""):
     """La ficha que es SIN DUDA de esta persona, o None.
 
     Dos caminos, y los dos exigen que no haya ambigüedad:
@@ -67,7 +81,9 @@ def ficha_que_calza(clinica, *, nombre, telefono="", sede="", documento=""):
     - **Documento**: identifica por sí solo (un DNI es de una persona), pero si
       dos fichas lo comparten es que algo está mal cargado y no se elige.
     - **Teléfono + nombre**: el número solo no basta; tiene que coincidir
-      también el nombre, y la sede no puede contradecir.
+      también el NOMBRE, y la sede no puede contradecir. El número puede ser el
+      del paciente o el de su tutor, en cualquiera de los dos lados: madre e
+      hija comparten celular, pero no nombre, así que siguen separadas.
 
     Si calzan dos fichas no se devuelve ninguna: crear una de más se corrige,
     mezclar dos historias clínicas no.
@@ -82,13 +98,15 @@ def ficha_que_calza(clinica, *, nombre, telefono="", sede="", documento=""):
         if por_doc:
             return None      # el mismo documento en dos fichas: que lo mire una persona
 
-    tel = norm_tel(telefono)
+    buscados = {t for t in (norm_tel(telefono), norm_tel(tutor_telefono))
+                if len(t) >= MIN_DIGITOS_TELEFONO}
     nom = norm_nombre(nombre)
-    if len(tel) < MIN_DIGITOS_TELEFONO or not nom:
+    if not buscados or not nom:
         return None
     candidatos = [
-        p for p in Paciente.objects.filter(clinica=clinica).exclude(telefono="")
-        if norm_tel(p.telefono) == tel
+        p for p in Paciente.objects.filter(clinica=clinica)
+        .exclude(telefono="", tutor_telefono="")
+        if numeros_de(p) & buscados
         and norm_nombre(p.nombre) == nom
         and sedes_compatibles(p.sede, sede)
     ]
