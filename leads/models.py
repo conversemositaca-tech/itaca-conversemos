@@ -145,6 +145,27 @@ class Lead(ModeloTenant):
     seguimiento_frecuencia = models.CharField(max_length=12, choices=Frecuencia.choices, blank=True, default="")
     recontacto_fecha = models.DateField("recontactar el", null=True, blank=True)
     campania = models.CharField("campaña", max_length=120, blank=True)
+    # --- De dónde vino (ver leads/atribucion.py) ------------------------------
+    # `fuente` dice CÓMO llegó (web, whatsapp, referido). Estos dicen DE DÓNDE:
+    # sin ellos, una consulta traída por un anuncio pagado y otra que llegó
+    # buscando en Google son la misma fila, y no se puede saber qué campaña
+    # trae consultas que inician proceso.
+    origen_canal = models.CharField(
+        "canal de origen", max_length=80, blank=True, default="",
+        help_text="De qué plataforma vino (google, instagram, meta…). Se llena solo.",
+    )
+    origen_medio = models.CharField(
+        "medio de origen", max_length=80, blank=True, default="",
+        help_text="Cómo llegó desde ahí (cpc, organic, social…). Se llena solo.",
+    )
+    origen_contenido = models.CharField(
+        "anuncio / variante", max_length=120, blank=True, default="",
+        help_text="Qué anuncio o versión concreta trajo la visita.",
+    )
+    origen_detalle = models.JSONField(
+        "detalle del origen", default=dict, blank=True,
+        help_text="Lo que no tiene columna propia: término, ids de clic, página de entrada y sitio que refirió.",
+    )
     especialidad = models.CharField(max_length=120, blank=True)
     tipo_servicio = models.CharField(max_length=20, choices=TipoServicio.choices, blank=True, default="")
     medico = models.ForeignKey(

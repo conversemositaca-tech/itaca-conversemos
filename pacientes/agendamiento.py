@@ -25,6 +25,7 @@ from rest_framework.views import APIView
 
 from core.models import Clinica
 from finanzas.models import Servicio
+from leads import atribucion
 from leads.models import Lead
 from pacientes.models import BloqueoAgenda, Cita, Paciente
 from usuarios.models import Profesional, Usuario
@@ -263,6 +264,9 @@ class AgendamientoReservarView(_PublicBase):
                      if str(d.get("modalidad") or "").strip().lower().startswith("virt")
                      else Cita.Modalidad.PRESENCIAL)
         mensaje = str(d.get("mensaje") or "").strip()[:1000]
+        # De dónde venía quien reservó (campaña, anuncio, página de entrada).
+        # Es opcional: si no llega nada, la reserva funciona igual que siempre.
+        origen = atribucion.campos_de_lead(d.get("atribucion"))
         categoria = _CAT_MAP.get(str(d.get("categoria") or "").strip().lower(), "")
         # El paciente pidió que el equipo le ayude a elegir el psicólogo ideal.
         ayuda = bool(d.get("ayuda"))
@@ -311,7 +315,8 @@ class AgendamientoReservarView(_PublicBase):
                 fecha_consulta=timezone.localtime(inicio).date(), especialidad=servicio,
                 medico=usuario, estado=Lead.Estado.AGENDADO, motivo_consulta=mensaje,
                 paciente=paciente, cita=cita,
-                notas="Reserva online." if conocido else "Reserva online (paciente nuevo).")
+                notas="Reserva online." if conocido else "Reserva online (paciente nuevo).",
+                **origen)
             # Con `cita` enlazada desde el principio, editar el lead en Marketing
             # MUEVE esta reserva en vez de crear una segunda cita.
             cita.notas = f"{cita.notas} Lead #{lead.id}."

@@ -762,3 +762,30 @@ los feriados de Perú. Zona horaria por defecto: `America/Lima` (GMT-5).
    - **El resto del histórico sigue SIN tocar** (a set. 2026: ~51 grupos ALTA, 31 en
      Revisar, 19 descartados). Se limpia **caso por caso**, con dry-run y aprobación
      de gerencia por cada par: no hay ni habrá limpieza masiva.
+39. ⏳ De dónde vino la reserva (rama `feat/origen-de-la-reserva`, 2026-09-17, SIN
+   desplegar). La auditoría del flujo público confirmó que la reserva ya crea y enlaza
+   Lead + Cita + Paciente, pero que **toda reserva entra con `fuente = WEB`**: una
+   consulta traída por un anuncio pagado y otra que llegó buscando en Google son la
+   misma fila. No se puede saber qué campaña trae consultas que inician proceso.
+   - **`leads/atribucion.py`**: limpia lo que llega del navegador (lista blanca de 10
+     claves: las 5 `utm_*`, `gclid`, `fbclid`, `referrer`, `landing`, `variante`),
+     recorta longitudes y descarta lo vacío. `es_pagado()` marca `es_pauta` solo cuando
+     el medio es de pago o viene el identificador de clic que añaden Google/Meta.
+   - **Reutiliza lo que ya existe**: `campania`, `es_pauta` y `subfuente` son los campos
+     que el reporte de captación (`leads/reporte.py`) YA lee; se llenan desde aquí en
+     vez de abrir un circuito paralelo. `Lead` suma solo `origen_canal`, `origen_medio`,
+     `origen_contenido` y `origen_detalle` (JSON para lo que no tiene columna).
+     Migración **0017, aditiva**.
+   - **Frontend** `origen.js`: recuerda el origen en `sessionStorage` al entrar (la
+     reserva ocurre páginas después, cuando la URL ya no lleva los parámetros) y lo
+     envía en el POST. **El primer origen manda**: si alguien llega por un anuncio, se
+     va a leer las preguntas y vuelve, la consulta sigue siendo del anuncio. Dura solo
+     la visita; no sigue a nadie entre sesiones y no guarda dato personal alguno.
+   - **La reserva nunca depende de esto**: sin origen, con origen corrupto o con el
+     almacenamiento bloqueado, la consulta entra igual (3 tests lo fijan).
+   - Verificado: 12 tests nuevos (`leads/tests_atribucion.py`), **220 de leads+pacientes
+     sin regresión**, `manage.py check`, `makemigrations --check` limpio, build de Vite,
+     ESLint sin avisos, y 7/7 comprobaciones en navegador real (el origen sobrevive a
+     navegar entre páginas y al llegar al agendamiento).
+   - **Pendiente**: que los enlaces de campaña lleven los parámetros (si no, no hay nada
+     que capturar), y mover el dominio a Railway antes de invertir en SEO.

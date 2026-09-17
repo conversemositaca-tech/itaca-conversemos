@@ -4,6 +4,7 @@ import './index.css'
 import App, { ConsentimientoPublico, AgendarPublico, sincronizarReloj } from './App.jsx'
 import { SitioPublico } from './Sitio.jsx'
 import { esRutaSitio } from './rutas'
+import { recordarOrigen } from './origen'
 
 // Qué se monta según el path, EN ESTE ORDEN:
 //  /consentimiento/<token>  → firma del consentimiento (público)
@@ -18,6 +19,10 @@ const cons = RUTA.match(/^\/consentimiento\/([^/]+)/)
 const agen = RUTA.match(/^\/agendar\/([^/]+)/)
 const gestion = /^\/gestion(\/|$)/.test(RUTA)
 const sitio = !cons && !agen && !gestion && esRutaSitio(RUTA)
+
+// De dónde llegó la visita (campaña, anuncio, sitio que refirió). Se guarda al
+// entrar porque la reserva ocurre después, cuando la URL ya no lleva nada.
+recordarOrigen()
 
 function arrancar() {
   createRoot(document.getElementById('root')).render(
