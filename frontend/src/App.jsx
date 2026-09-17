@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { Activity, AlertTriangle, ArrowDown, ArrowUp, Award, BarChart3, Bell, BookUser, Building2, Cake, Calendar, Check, ChevronDown, ChevronLeft, ChevronRight, ClipboardList, Clock, Compass, Copy, DoorOpen, Download, ExternalLink, FileDown, FileSpreadsheet, FileText, FolderOpen, GraduationCap, Heart, HeartHandshake, HeartPulse, Home, KeyRound, Landmark, Leaf, Lightbulb, LogOut, MapPin, Megaphone, Menu, MessageCircle, Mic, Paperclip, Pencil, Phone, Pill, Plus, Presentation, Receipt, RotateCcw, Search, Send, Shield, Smile, Sparkles, Target, Trash2, TrendingUp, Trophy, Upload, UserCog, UserPlus, UserRound, Users, X } from "lucide-react";
 import { api } from "./api";
+import { origenGuardado } from "./origen";
 import { MENU_SITIO, SITE_ROUTES, propsEnlace, normalizarRuta } from "./rutas";
 import { modeloReporte, modeloTabla, exportarExcel, exportarWord, exportarPowerPoint, exportarPDF, exportarCSV } from "./exportGerencia";
 import Login from "./Login";
@@ -14378,6 +14379,8 @@ export function AgendarPublico({ token }) {
         documento: form.documento.trim(), email: form.email.trim(),
         servicio: form.servicio, modalidad: form.modalidad, mensaje: form.mensaje.trim(),
         categoria: via === "ayuda" ? categoria : "", ayuda: via === "ayuda",
+        // De dónde vino esta consulta: se guardó al entrar al sitio.
+        atribucion: origenGuardado(),
       });
       setHecho({ ...r, sede });
     } catch (e) {
