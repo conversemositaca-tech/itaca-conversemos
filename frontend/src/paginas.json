@@ -1,0 +1,41 @@
+{
+  "_comentario": [
+    "Título y descripción de cada página pública. Lo leen DOS lados:",
+    "  - Django (core/seo.py), para escribirlos en el HTML que recibe Google y,",
+    "    sobre todo, el que lee WhatsApp al generar el preview de un enlace:",
+    "    WhatsApp no ejecuta JavaScript, solo ve el HTML crudo.",
+    "  - React (Sitio.jsx), para actualizar el título al navegar sin recargar.",
+    "Una sola fuente: si el título vive en dos sitios, termina diciendo dos cosas.",
+    "Las descripciones salen de los textos del equipo (sitio-textos.js). No se",
+    "prometen resultados ni se citan cifras que la base no sostenga.",
+    "Largo útil de una descripción en Google: ~155 caracteres.",
+    "`imagen` es relativa a los estaticos: Django la resuelve con static() y React con import.meta.env.BASE_URL. Escrita con /sitio/... el preview de WhatsApp cargaba el HTML del SPA en vez de la foto."
+  ],
+  "paginas": {
+    "/": {
+      "titulo": "Ítaca Conversemos · Terapia psicológica en Lima y Piura",
+      "descripcion": "Espacio de terapia psicológica en Lima y Piura, presencial y online. Un lugar para conversar sin miedo a ser juzgados, con acompañamiento seguro y real.",
+      "imagen": "sitio/bienvenida.jpg"
+    },
+    "/quienes-somos": {
+      "titulo": "Quiénes somos · Ítaca Conversemos",
+      "descripcion": "Un espacio creado para cuestionarnos, informarnos y conversar sin miedo a ser juzgados. Conoce cómo acompañamos y nuestro modelo de trabajo.",
+      "imagen": "sitio/equipo.jpg"
+    },
+    "/psicologos": {
+      "titulo": "Nuestros psicólogos · Ítaca Conversemos",
+      "descripcion": "El equipo que atiende hoy en Lima y Piura. Elige por sede, lee el perfil de cada psicólogo colegiado y reserva directamente con quien prefieras.",
+      "imagen": "sitio/sesion.jpg"
+    },
+    "/terapias-online": {
+      "titulo": "Terapias · Ítaca Conversemos",
+      "descripcion": "Terapia para niños, adolescentes, adultos, adultos mayores y parejas, además de los grupos del Círculo de Aliados. Conoce cuál se adapta a lo que necesitas.",
+      "imagen": "sitio/pareja.jpg"
+    },
+    "/preguntas-frecuentes": {
+      "titulo": "Preguntas frecuentes · Ítaca Conversemos",
+      "descripcion": "Lo que más nos preguntan antes de una primera consulta: cómo reservar, cuánto dura, modalidades y sedes. Si te queda una duda, escríbenos.",
+      "imagen": "sitio/consulta.jpg"
+    }
+  }
+}

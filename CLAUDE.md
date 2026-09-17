@@ -797,3 +797,49 @@ los feriados de Perú. Zona horaria por defecto: `America/Lima` (GMT-5).
      navegar entre páginas y al llegar al agendamiento).
    - **Pendiente**: que los enlaces de campaña lleven los parámetros (si no, no hay nada
      que capturar), y mover el dominio a Railway antes de invertir en SEO.
+
+40. ✓ SEO técnico: lo que ven Google y WhatsApp (PR #97, 2026-09-17). El sitio
+   aparecía en Google con el **testimonio de una paciente como descripción** (Google
+   toma el primer texto que encuentra cuando la página no declara ninguna) y
+   cualquier enlace compartido por WhatsApp se veía como "Itaca Conversemos ·
+   Gestión", el título del panel interno, sin imagen.
+   - **La causa**: la app es una sola página de React. El servidor entregaba siempre
+     el mismo `index.html` —`<html lang="en">`, título del sistema, sin descripción—
+     y el contenido lo armaba el navegador. **WhatsApp y Facebook no ejecutan
+     JavaScript**: el preview sale del HTML crudo. Google sí lo ejecuta, pero indexa
+     primero lo que viene en el HTML.
+   - **`core/seo.py`**: `SpaView` reemplaza al `TemplateView` genérico y escribe en el
+     HTML el título, la descripción, la canónica y las etiquetas Open Graph **según la
+     ruta pedida**. `/gestion`, `/agendar/<token>` y `/consentimiento/<token>` salen
+     con `noindex` y sin preview: llevan token o son el panel interno.
+   - **`/robots.txt` y `/sitemap.xml` existían solo de nombre**: caían en el comodín de
+     `config/urls.py` y devolvían la app de React (`text/html`). Ahora son vistas
+     propias registradas ANTES del comodín.
+   - **Una sola fuente**: los textos viven en `frontend/src/paginas.json`, que leen
+     Django (para el HTML) y React (para actualizar el título al navegar sin
+     recargar). El bloque `TITULOS` de `Sitio.jsx` se eliminó: en dos sitios habrían
+     acabado diciendo cosas distintas.
+   - **Las descripciones salen de `sitio-textos.js`** (lo que escribió el equipo), de
+     138 a 156 caracteres. No prometen resultados ni citan cifras que la base no
+     sostenga —misma regla del ítem 33—.
+   - **Ojo con la ruta de la imagen del preview**: escrita como `/sitio/foto.jpg` el
+     comodín devuelve el HTML del SPA y WhatsApp muestra el enlace **sin foto**. Va
+     por `static()`, que resuelve el prefijo real (`/static/sitio/foto.jpg`).
+   - **`SITIO_URL_PUBLICA`** (settings, vacía por defecto): con el sitio en Railway las
+     direcciones absolutas salen del host de la visita; en cuanto
+     conversemos.itaca.com.pe apunte aquí hay que **fijarla**, o la misma página se
+     anuncia con dos direcciones y el buscador reparte la reputación.
+   - Vite conserva intactas las etiquetas `{{ }}` y `{% if %}` del `index.html` al
+     construir (verificado sobre el `dist` real). En desarrollo Vite sirve el archivo
+     tal cual y las llaves se ven literales un instante; React corrige el título al
+     montar.
+   - Verificado: **15 tests nuevos** (`core/tests_seo.py`; el CI corre Django ANTES de
+     construir el frontend, así que añaden `frontend/` a los directorios de
+     plantillas para usar el archivo fuente), suite de core+leads+pacientes sin
+     regresión, build de Vite, ESLint limpio y 8/8 comprobaciones en navegador real
+     (el sitio monta, el título y la descripción siguen a la navegación, sin errores
+     de consola).
+   - **Pendiente**: registrar el sitio en Google Search Console y pedir reindexación
+     (lo desbloquea el dominio); el subdominio `itacaconversemos.site.agendapro.com`
+     sigue rankeando y **redirige a la portada de AgendaPro**, no a Ítaca: decisión
+     de negocio pendiente.

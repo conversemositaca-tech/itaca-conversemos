@@ -4,6 +4,7 @@ from django.urls import include, path, re_path
 from django.views.generic import TemplateView
 from rest_framework.routers import DefaultRouter
 
+from core import seo
 from core.buzon import SugerenciaViewSet
 from core.recursos import RecursoViewSet
 from core.gerencia import (
@@ -186,8 +187,15 @@ urlpatterns = [
     path("api/sitio/", SitioInfoView.as_view(), name="sitio-info"),
 
     path("api/", include(router.urls)),
+    # Lo que leen los buscadores. Van ANTES del comodín: hasta ahora
+    # /robots.txt y /sitemap.xml caían en él y devolvían la app de React, así
+    # que para Google el sitio no tenía ni permisos ni mapa.
+    path("robots.txt", seo.robots_txt, name="robots"),
+    path("sitemap.xml", seo.sitemap_xml, name="sitemap"),
     # Catch-all: cualquier otra ruta sirve la app React (index.html). En producción
     # Django entrega el SPA; en desarrollo el SPA lo sirve Vite (5173), no Django.
-    re_path(r"^(?!api/|admin/|static/|media/).*$",
-            TemplateView.as_view(template_name="index.html"), name="spa"),
+    # SpaView es el TemplateView de siempre más el título, la descripción y la
+    # imagen de la página pedida, escritos en el HTML para quien no ejecuta
+    # JavaScript (WhatsApp al generar un preview, los buscadores al indexar).
+    re_path(r"^(?!api/|admin/|static/|media/).*$", seo.SpaView.as_view(), name="spa"),
 ]
