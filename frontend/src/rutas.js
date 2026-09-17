@@ -12,6 +12,8 @@
  * propósito —es el enlace que ya se reparte por WhatsApp y campañas— así que
  * si alguna vez se regenera desde Captación, hay que actualizarlo AQUÍ.
  */
+import { PASOS, registrar } from "./embudo";
+
 export const SITE_ROUTES = Object.freeze({
   inicio: "/",
   quienesSomos: "/quienes-somos",
@@ -124,7 +126,15 @@ export function propsEnlace(href, externo = false) {
   if (externo) return { href, target: "_blank", rel: "noopener noreferrer" };
   // El agendamiento y el panel son otras aplicaciones dentro del mismo dominio:
   // un pushState no las montaría, así que aquí se navega de verdad.
-  if (esRutaReservada(href)) return { href };
+  if (esRutaReservada(href)) {
+    // Todo enlace a reservar pasa por aquí —cabecera, portada, pie, FAQ—, así
+    // que el clic se cuenta una sola vez y en un solo sitio: si mañana se
+    // agrega otro botón, queda medido sin acordarse de nada.
+    if (href === SITE_ROUTES.agendar) {
+      return { href, onClick: () => registrar(PASOS.CLIC_RESERVAR) };
+    }
+    return { href };
+  }
   return {
     href,
     onClick: (e) => {

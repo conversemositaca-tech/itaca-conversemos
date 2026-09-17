@@ -24,6 +24,7 @@ from core.permisos import (
 )
 from core.tenant import get_clinica_actual
 from finanzas.models import Cobro, Egreso
+from leads import embudo as embudo_mod
 from leads.models import Lead
 from mensajes.models import Mensaje
 from pacientes.models import Atencion, Cita, Paciente
@@ -1076,6 +1077,14 @@ class GerenciaResumenView(APIView):
             leads_dia[k] = leads_dia.get(k, 0) + 1
         captacion["por_dia"] = [{"fecha": k, "leads": v} for k, v in sorted(leads_dia.items())]
 
+        # --- Embudo web (vio → hizo clic → abrió el formulario → reservó) ---
+        # Captación cuenta a quien YA dejó sus datos. Esto cuenta a los de antes:
+        # cuántos llegaron al sitio y se fueron sin pedir cita.
+        # NO se acota por sede a propósito: quien visita la web todavía no eligió
+        # sede —eso pasa recién en el formulario—, así que repartir las visitas
+        # entre Lima y Piura sería inventar un dato.
+        embudo_web = embudo_mod.resumen(get_clinica_actual(), ini, fin)
+
         # --- Pacientes ---
         # Solo pacientes de verdad: las fichas provisionales (consulta agendada,
         # proceso no iniciado) no cuentan ni en el total ni en la demografía.
@@ -1298,6 +1307,10 @@ class GerenciaResumenView(APIView):
             "sede": sede,
             "operacion": operacion,
             "captacion": captacion,
+            # Se llama embudo_web y no embudo: dentro de `diagnostico` ya hay un
+            # "embudo", que es el de estados del lead (nuevo -> ganado). Este es
+            # el del sitio, y confundirlos daría dos lecturas muy distintas.
+            "embudo_web": embudo_web,
             "pacientes": pacientes,
             "demografia": demografia,
             "retencion": retencion,

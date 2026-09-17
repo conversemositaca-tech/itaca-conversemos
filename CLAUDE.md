@@ -421,7 +421,7 @@ los feriados de Perú. Zona horaria por defecto: `America/Lima` (GMT-5).
    - **Pendiente (fuera de alcance)**: `core.whatsapp_cloud._capturar_leads` sigue **sin
      enganchar** al webhook de Meta (`WhatsappWebhookView.post` solo registra en log, como
      antes); mientras la línea oficial viva en Cloud API hay que conectarla ahí.
-30. ⏳ Centro de Continuidad (rama `feature/centro-continuidad`, 2026-09-09, SIN desplegar).
+30. ✓ Centro de Continuidad (2026-09-09; **desplegado**, PR #92 y siguientes).
    "Evaluar continuidad" pasa a ser una herramienta de gestión para Analista + Coordinación.
    - **Cola** (`core/continuidad.py`): 8 estados en 3 grupos — Acción (vencido, cierra hoy,
      **riesgo_s3**, pre-cierre sin cita), Seguimiento (próximo), Calidad (continuó sin decisión,
@@ -843,3 +843,56 @@ los feriados de Perú. Zona horaria por defecto: `America/Lima` (GMT-5).
      (lo desbloquea el dominio); el subdominio `itacaconversemos.site.agendapro.com`
      sigue rankeando y **redirige a la portada de AgendaPro**, no a Ítaca: decisión
      de negocio pendiente.
+
+41. ⏳ Embudo web: cuánta gente llega y dónde se pierde (rama `feat/embudo-web`,
+   2026-09-17, SIN desplegar). El ítem 39 dejó saber **de dónde viene quien
+   reserva**. Faltaba la otra mitad: cuántos llegaron y NO reservaron. Sin eso,
+   una campaña con 100 visitas y 1 reserva se ve idéntica a otra con 10 y 1, y
+   la segunda es diez veces mejor.
+   - **`leads.EventoSitio`** (migración 0018, aditiva): tipo del paso, página,
+     canal/medio/campaña —los MISMOS ejes que el `Lead`, para poder cruzarlos sin
+     traducir nada— y un `sesion` efímero. El recorrido medido es
+     **vio → hizo clic en reservar → abrió el formulario → reservó**; el cuarto
+     paso NO se guarda aquí: ya está en `Lead`, y duplicarlo daría dos cifras que
+     con el tiempo dejarían de coincidir.
+   - **Privacidad como requisito, no como añadido**: sin IP, sin user-agent, sin
+     cookies, sin fingerprinting, sin servicios externos (nada de GA ni Pixel), y
+     **sin relación con el `Lead`**. Es una web de psicología: que alguien mirara
+     "terapia de pareja" o "duelo" es dato sensible en cuanto se puede atar a un
+     nombre. Se pierde el recorrido individual a propósito. `sesion` es un número
+     al azar que vive en la pestaña y muere al cerrarla; solo evita contar cinco
+     veces a quien mira cinco páginas. Un test lo fija: `EventoSitio` no puede
+     tener campos ip/user_agent/lead/paciente/telefono/email/nombre.
+   - **Dónde se engancha**: la visita en el efecto de ruta de `Sitio.jsx`; el clic
+     en **`propsEnlace()`** (`rutas.js`), por donde pasan TODOS los enlaces —así
+     un botón nuevo queda medido sin acordarse de nada—; y "abrió el formulario"
+     en `main.jsx`, **no** dentro de `App.jsx`, para no tocar ese archivo por una
+     medición. El envío usa `navigator.sendBeacon`: un `fetch` normal se cancela a
+     medias cuando la página ya se está yendo, que es justo el caso del clic.
+   - **Dos fallos que solo aparecieron al probar**, y valen como aviso:
+     · El `ordering` del modelo se colaba en el `distinct()` y, como cada visita
+       tiene su hora, las cuatro páginas de una persona contaban como cuatro
+       personas: **toda tasa de conversión salía dividida por las páginas vistas**.
+       Se arregla con un `order_by()` vacío antes del `values(...).distinct()`.
+     · `PASOS` ya existía en `Sitio.jsx` (los cuatro pasos del proceso de terapia,
+       de `sitio-textos.js`); los del embudo van con alias.
+   - **En Gerencia** la clave es **`embudo_web`**, no `embudo`: dentro de
+     `diagnostico` ya hay un `embudo`, que es el de estados del lead
+     (nuevo → ganado). Son dos lecturas distintas y confundirlas sería caro.
+     El bloque **no se acota por sede**: quien visita la web todavía no eligió
+     sede —eso pasa en el formulario—, así que repartir las visitas entre Lima y
+     Piura sería inventar un dato. Mientras no haya visitas medidas, la pantalla
+     **lo dice** en vez de mostrar un 0 % que sería mentira.
+   - Los rastreadores (Google, Meta, monitores) se descartan por user-agent: sí
+     ejecutan JavaScript y sin filtro inflarían las visitas, haciendo que cada
+     campaña pareciera convertir peor de lo que convierte. Ritmo máximo del
+     endpoint público: `embudo` a 120/min.
+   - Verificado: **12 tests nuevos** (`leads/tests_embudo.py`), suite de
+     core+leads+pacientes sin regresión, build de Vite, ESLint sin avisos nuevos
+     (App.jsx queda igual que en `main`, comparado regla por regla), y el circuito
+     completo en navegador real contra una base aislada: **8/8**, con los eventos
+     comprobados EN LA BASE y no en el tráfico —`sendBeacon` manda el cuerpo como
+     Blob y la herramienta lo ve vacío aunque el dato haya llegado bien—.
+   - **Pendiente**: desplegar; después, medir los pasos internos del formulario
+     (eligió psicólogo, eligió horario) y cruzar con el gasto de `MetricaMensual`
+     para tener costo por consulta.

@@ -5,6 +5,7 @@ from django.views.generic import TemplateView
 from rest_framework.routers import DefaultRouter
 
 from core import seo
+from leads import embudo
 from core.buzon import SugerenciaViewSet
 from core.recursos import RecursoViewSet
 from core.gerencia import (
@@ -182,6 +183,8 @@ urlpatterns = [
     path("api/agendamiento/<str:token>/slots/", AgendamientoSlotsView.as_view(), name="agendamiento-slots"),
     path("api/agendamiento/<str:token>/reservar/", AgendamientoReservarView.as_view(), name="agendamiento-reservar"),
     path("api/agendamiento/<str:token>/", AgendamientoInfoView.as_view(), name="agendamiento-info"),
+    # Embudo web: pasos previos a la reserva (público, sin sesión y anónimo).
+    path("api/embudo/", embudo.RegistrarEventoView.as_view(), name="embudo-evento"),
     # Datos públicos del sitio web (sin token en la URL; la clínica sale de settings).
     path("api/sitio/foto/<int:pk>/", SitioFotoView.as_view(), name="sitio-foto"),
     path("api/sitio/", SitioInfoView.as_view(), name="sitio-info"),

@@ -2308,6 +2308,7 @@ function Gerencia({ showToast, clinica }) {
   }, [periodo, sede]);
 
   const op = data?.operacion, cap = data?.captacion, pac = data?.pacientes;
+  const emb = data?.embudo_web;
   const modelo = data ? modeloReporte(data, { clinica }) : null;
 
   return (
@@ -2356,6 +2357,62 @@ function Gerencia({ showToast, clinica }) {
               <MiniBars data={op.por_dia} valor={(d) => d.citas} etiqueta={(d) => dDeISO(d.fecha).getDate()}
                 color="#6E86A8" fmt={(n) => `${n} ${n === 1 ? "sesión" : "sesiones"}`} />
             </div>
+          )}
+
+          {emb && (
+            <>
+              <h2 className="ca-secth" style={{ marginTop: 28 }}>Embudo web</h2>
+              {!emb.total.midiendo ? (
+                <div className="ca-card" style={{ marginTop: 10, fontSize: 13.5, color: "var(--ink-soft)" }}>
+                  Todavía no hay visitas medidas en este período. Las reservas de la web
+                  sí se cuentan ({emb.total.reservas} en total), pero hasta que entren visitas
+                  no se puede calcular qué parte de la gente que llega termina pidiendo cita.
+                </div>
+              ) : (
+                <>
+                  <div className="ca-stats">
+                    <StatCard label="Personas que entraron" valor={emb.total.personas}
+                      sub={`${emb.total.paginas} páginas vistas`} />
+                    <StatCard label="Clic en reservar" valor={emb.total.clic_reservar} />
+                    <StatCard label="Abrieron el formulario" valor={emb.total.abre_agenda} />
+                    <StatCard label="Reservaron" valor={emb.total.reservas} color="#4F8A77" />
+                  </div>
+                  <div style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 6 }}>
+                    De cada 100 personas que entran al sitio, <strong>{emb.total.tasa}</strong> piden cita.
+                    El embudo es del sitio completo: quien visita la web todavía no eligió sede.
+                  </div>
+                  {emb.por_origen.length > 0 && (
+                    <div className="ca-card" style={{ marginTop: 14, overflowX: "auto" }}>
+                      <div className="ca-label" style={{ marginBottom: 10 }}>Por dónde llegaron</div>
+                      <table className="ca-table">
+                        <thead>
+                          <tr>
+                            <th>Origen</th>
+                            <th className="num">Personas</th>
+                            <th className="num">Clic</th>
+                            <th className="num">Formulario</th>
+                            <th className="num">Reservas</th>
+                            <th className="num">Convierte</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {emb.por_origen.map((f) => (
+                            <tr key={f.origen}>
+                              <td>{f.origen}</td>
+                              <td className="num">{f.personas}</td>
+                              <td className="num">{f.clic_reservar}</td>
+                              <td className="num">{f.abre_agenda}</td>
+                              <td className="num">{f.reservas}</td>
+                              <td className="num">{f.tasa === null ? "—" : `${f.tasa}%`}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </>
+              )}
+            </>
           )}
 
           <h2 className="ca-secth" style={{ marginTop: 28 }}>Captación</h2>
