@@ -37,10 +37,27 @@ class LimpiezaDelOrigenTests(TestCase):
         self.assertTrue(atribucion.es_pagado({"utm_medium": "paid-social"}))
         self.assertFalse(atribucion.es_pagado({"utm_medium": "organic"}))
 
-    def test_reconoce_lo_pagado_por_el_identificador_de_clic(self):
-        # Meta y Google los añaden solos al anuncio; son prueba de que se pagó.
-        self.assertTrue(atribucion.es_pagado({"fbclid": "abc"}))
+    def test_gclid_si_prueba_que_se_pago(self):
+        # Google Ads lo añade solo a sus anuncios; una búsqueda orgánica no lo trae.
         self.assertTrue(atribucion.es_pagado({"gclid": "abc"}))
+
+    def test_fbclid_solo_no_prueba_que_se_pago(self):
+        # Meta lo cuelga de TODO clic que sale de Instagram o Facebook, también
+        # del enlace de la bio, que no cuesta nada.
+        self.assertFalse(atribucion.es_pagado({"fbclid": "abc"}))
+
+    def test_el_medio_declarado_manda_sobre_el_identificador_de_clic(self):
+        # La bio etiquetada llega con fbclid y NO es pauta.
+        self.assertFalse(atribucion.es_pagado({"utm_medium": "bio", "fbclid": "abc"}))
+        # El anuncio etiquetado llega igual y SÍ lo es.
+        self.assertTrue(atribucion.es_pagado({"utm_medium": "cpc", "fbclid": "abc"}))
+
+    def test_la_visita_organica_de_instagram_no_ensucia_el_reporte_de_pauta(self):
+        # Caso real: alguien entra por la bio sin etiquetar y reserva. Queda el
+        # rastro de Meta para cruzar, pero sin marcar una pauta que no existió.
+        campos = atribucion.campos_de_lead({"fbclid": "abc", "landing": "/"})
+        self.assertNotIn("es_pauta", campos)
+        self.assertEqual(campos["origen_detalle"]["fbclid"], "abc")
 
     def test_llena_los_campos_que_el_reporte_ya_lee(self):
         campos = atribucion.campos_de_lead({

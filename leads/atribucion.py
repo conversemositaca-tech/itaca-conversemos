@@ -13,7 +13,8 @@ dato personal: describe el origen del tráfico, no a la persona.
 
 # Claves que aceptamos del navegador. Las cinco `utm_*` son el estándar que usan
 # Google, Meta y el resto; `gclid`/`fbclid` los añade la propia plataforma al
-# clic y permiten cruzar con su reporte de gasto; `landing` y `referrer` dicen
+# clic y sirven para cruzar con su reporte (ojo: `fbclid` viene también en los
+# clics orgánicos, no prueba que se haya pagado); `landing` y `referrer` dicen
 # en qué página entró y qué sitio la mandó.
 CLAVES = (
     "utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term",
@@ -52,11 +53,21 @@ def limpiar(datos):
 def es_pagado(atribucion):
     """¿La visita vino de un anuncio pagado?
 
-    Lo dice el medio declarado (cpc, paid_social…) o la presencia del
-    identificador de clic que añaden Google y Meta a sus anuncios.
+    Manda lo declarado: si el enlace trae `utm_medium`, decide ese y nada más.
+    Un enlace etiquetado `bio` no es pauta aunque la plataforma le cuelgue su
+    identificador de clic.
+
+    Sin medio declarado, el único que prueba que se pagó es `gclid`: lo añade
+    Google Ads y nadie más. `fbclid` NO sirve para esto — Meta lo pone en TODO
+    clic que sale de Instagram o Facebook, también en los orgánicos, así que
+    darlo por pauta convertiría la bio del perfil en publicidad pagada y dejaría
+    leads marcados como pauta sin campaña ni canal. Se sigue guardando en
+    `origen_detalle`, que es donde sirve: para cruzar con el reporte de Meta.
     """
     medio = (atribucion.get("utm_medium") or "").lower().replace("-", "_")
-    return medio in MEDIOS_PAGADOS or bool(atribucion.get("gclid") or atribucion.get("fbclid"))
+    if medio:
+        return medio in MEDIOS_PAGADOS
+    return bool(atribucion.get("gclid"))
 
 
 def campos_de_lead(atribucion):
