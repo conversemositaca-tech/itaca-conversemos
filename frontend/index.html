@@ -1,10 +1,29 @@
 <!doctype html>
-<html lang="en">
+<html lang="es">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Itaca Conversemos · Gestión</title>
+
+    <!-- Lo que sigue lo escribe Django según la ruta pedida (core/seo.py), no el
+         navegador: WhatsApp y Facebook arman el preview de un enlace leyendo
+         este HTML sin ejecutar JavaScript. En desarrollo Vite sirve el archivo
+         tal cual y las llaves se ven literales; React corrige el título al
+         montar, así que solo se nota en la pestaña. -->
+    <title>{{ seo_titulo|default:"Ítaca Conversemos" }}</title>
+    {% if seo_descripcion %}<meta name="description" content="{{ seo_descripcion }}" />{% endif %}
+    {% if seo_canonica %}<link rel="canonical" href="{{ seo_canonica }}" />{% endif %}
+    {% if not seo_indexable %}<meta name="robots" content="noindex, nofollow" />{% endif %}
+
+    {% if seo_canonica %}<meta property="og:type" content="website" />
+    <meta property="og:site_name" content="{{ seo_marca }}" />
+    <meta property="og:locale" content="es_PE" />
+    <meta property="og:url" content="{{ seo_canonica }}" />
+    <meta property="og:title" content="{{ seo_titulo }}" />
+    <meta property="og:description" content="{{ seo_descripcion }}" />
+    {% if seo_imagen %}<meta property="og:image" content="{{ seo_imagen }}" />
+    <meta property="og:image:alt" content="{{ seo_marca }}" />
+    <meta name="twitter:card" content="summary_large_image" />{% endif %}{% endif %}
   </head>
   <body>
     <div id="root"></div>

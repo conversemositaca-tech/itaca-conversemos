@@ -24,6 +24,7 @@ import {
   AGENDA_CSS, AGENDA_SEDES, AgendaDuda, AgendaPie, AgendaTop, AgendaWa, agendaFaq,
   agendaWhatsapp,
 } from "./App.jsx";
+import datosDePaginas from "./paginas.json";
 import { SITE_ROUTES, alCambiarRuta, propsEnlace, rutaCanonica } from "./rutas";
 import { INICIO, PASOS, PREGUNTAS, PSICOLOGOS, QUIENES_SOMOS, TERAPIAS, TESTIMONIOS } from "./sitio-textos";
 
@@ -862,12 +863,14 @@ function PaginaPreguntas({ faq }) {
 }
 
 // ── Raíz del sitio: ruta, datos y marco ───────────────────────────────────
-const TITULOS = {
-  [SITE_ROUTES.inicio]: "Ítaca Conversemos · Terapia psicológica en Lima y Piura",
-  [SITE_ROUTES.quienesSomos]: "Quiénes somos · Ítaca Conversemos",
-  [SITE_ROUTES.psicologos]: "Nuestros psicólogos · Ítaca Conversemos",
-  [SITE_ROUTES.terapias]: "Terapias · Ítaca Conversemos",
-  [SITE_ROUTES.preguntas]: "Preguntas frecuentes · Ítaca Conversemos",
+// El título y la descripción de cada página salen del MISMO archivo que usa el
+// servidor para escribirlos en el HTML (`core/seo.py`). Al navegar sin recargar
+// no hay ida al servidor, así que hay que actualizarlos aquí —pero leyendo de
+// una sola fuente: en dos sitios distintos acabarían diciendo dos cosas.
+const PAGINAS = datosDePaginas.paginas;
+const PAGINA_POR_DEFECTO = PAGINAS[SITE_ROUTES.inicio] || {
+  titulo: "Ítaca Conversemos",
+  descripcion: "",
 };
 
 export function SitioPublico() {
@@ -888,7 +891,12 @@ export function SitioPublico() {
   }, []);
 
   useEffect(() => {
-    document.title = TITULOS[ruta] || TITULOS[SITE_ROUTES.inicio];
+    const pagina = PAGINAS[ruta] || PAGINA_POR_DEFECTO;
+    document.title = pagina.titulo;
+    // Al navegar sin recargar, la descripción del HTML sigue siendo la de la
+    // página por la que se entró; se actualiza para que no quede descolgada.
+    const meta = document.querySelector('meta[name="description"]');
+    if (meta && pagina.descripcion) meta.setAttribute("content", pagina.descripcion);
     document.documentElement.lang = "es";
     // Si se entró por un alias (o con barra final), la barra de direcciones se
     // queda con la forma canónica, sin añadir una entrada al historial.

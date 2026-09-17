@@ -227,6 +227,14 @@ SOTO_PUSH_ENABLED = env_bool("SOTO_PUSH_ENABLED", False)
 # sola; con varias hay que declararlo o el sitio responde 404 (aislamiento).
 SITIO_CLINICA_TOKEN = os.getenv("SITIO_CLINICA_TOKEN", "")
 
+# Direccion publica del sitio, para las direcciones absolutas que leen Google y
+# WhatsApp (canonica, sitemap, imagen del preview). Vacia = se usa el dominio por
+# el que entro la visita, que es lo correcto mientras el sitio viva en Railway.
+# En cuanto conversemos.itaca.com.pe apunte aqui, fijarla con el dominio final:
+# si no, una misma pagina se anuncia con dos direcciones y el buscador reparte
+# la reputacion entre las dos.
+SITIO_URL_PUBLICA = os.getenv("SITIO_URL_PUBLICA", "")
+
 # --- WhatsApp vía Evolution API ---
 # URL y API key del servidor Evolution (en EasyPanel). La "instancia" es la conexión
 # de WhatsApp; puede definirse global aquí o por clínica (Clinica.whatsapp_instance).
