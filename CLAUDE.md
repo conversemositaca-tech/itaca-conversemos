@@ -762,15 +762,23 @@ los feriados de Perú. Zona horaria por defecto: `America/Lima` (GMT-5).
    - **El resto del histórico sigue SIN tocar** (a set. 2026: ~51 grupos ALTA, 31 en
      Revisar, 19 descartados). Se limpia **caso por caso**, con dry-run y aprobación
      de gerencia por cada par: no hay ni habrá limpieza masiva.
-39. ⏳ De dónde vino la reserva (rama `feat/origen-de-la-reserva`, 2026-09-17, SIN
-   desplegar). La auditoría del flujo público confirmó que la reserva ya crea y enlaza
+39. ✓ De dónde vino la reserva (PR #95, 2026-09-17, **desplegado**). La auditoría del flujo público confirmó que la reserva ya crea y enlaza
    Lead + Cita + Paciente, pero que **toda reserva entra con `fuente = WEB`**: una
    consulta traída por un anuncio pagado y otra que llegó buscando en Google son la
    misma fila. No se puede saber qué campaña trae consultas que inician proceso.
    - **`leads/atribucion.py`**: limpia lo que llega del navegador (lista blanca de 10
      claves: las 5 `utm_*`, `gclid`, `fbclid`, `referrer`, `landing`, `variante`),
-     recorta longitudes y descarta lo vacío. `es_pagado()` marca `es_pauta` solo cuando
-     el medio es de pago o viene el identificador de clic que añaden Google/Meta.
+     recorta longitudes y descarta lo vacío. `es_pagado()` marca `es_pauta` según
+     **lo declarado**: si el enlace trae `utm_medium`, decide ese y nada más.
+   - **Corrección el mismo día (PR #96)**: la primera versión daba `fbclid` por prueba
+     de pauta y estaba mal. Meta lo cuelga de TODO clic que sale de Instagram o
+     Facebook, **también de los orgánicos**, así que el enlace de la bio —que no cuesta
+     nada— entraba como publicidad pagada, y encima sin campaña ni canal (un clic
+     orgánico no trae `utm_source`): el indicador "% de pauta" de Gerencia se inflaba
+     con leads que nadie pagó. Ahora, sin medio declarado, el único que prueba el pago
+     es **`gclid`**, que Google Ads añade solo a sus anuncios. `fbclid` se sigue
+     guardando en `origen_detalle` —sirve para cruzar con el reporte de Meta—, pero
+     ya no decide nada. Detectado al preparar los enlaces etiquetados, no por un fallo.
    - **Reutiliza lo que ya existe**: `campania`, `es_pauta` y `subfuente` son los campos
      que el reporte de captación (`leads/reporte.py`) YA lee; se llenan desde aquí en
      vez de abrir un circuito paralelo. `Lead` suma solo `origen_canal`, `origen_medio`,
