@@ -415,7 +415,8 @@ export const api = {
   // --- Calidad de datos: posibles pacientes duplicados ---
   // El detector PROPONE; consolidar es siempre una decisión humana y la
   // ejecuta gerencia. `analizar` es el dry-run: no escribe nada.
-  duplicados: (confianza = "alta") => req(`/api/duplicados/?confianza=${confianza}`),
+  duplicados: (confianza = "alta", sede = "") =>
+    req(`/api/duplicados/?confianza=${confianza}${sede ? `&sede=${sede}` : ""}`),
   analizarFusion: (principal, secundario, opts = {}) =>
     req("/api/duplicados/analizar/", {
       method: "POST",

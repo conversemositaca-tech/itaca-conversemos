@@ -389,13 +389,16 @@ export default function Duplicados({ showToast, puedeFusionar }) {
   // Se incrementa tras consolidar o descartar: la lista se vuelve a pedir
   // porque el caso que se acaba de resolver ya no debe aparecer.
   const [recarga, setRecarga] = useState(0);
+  // Piura y Lima se reparten el trabajo, pero ninguna pierde el acceso a
+  // la otra sede: esto es un filtro, no un permiso.
+  const [sede, setSede] = useState("");
 
   useEffect(() => {
     let vivo = true;
     (async () => {
       setCargando(true);
       try {
-        const r = await api.duplicados(pestana);
+        const r = await api.duplicados(pestana, sede);
         if (vivo) setData(r);
       } catch (e) {
         if (!vivo) return;
@@ -406,7 +409,7 @@ export default function Duplicados({ showToast, puedeFusionar }) {
       }
     })();
     return () => { vivo = false; };
-  }, [pestana, recarga, showToast]);
+  }, [pestana, sede, recarga, showToast]);
 
   const grupos = useMemo(() => {
     const t = busca.trim().toLowerCase();
@@ -443,6 +446,16 @@ export default function Duplicados({ showToast, puedeFusionar }) {
           <Search size={15} />
           <input placeholder="Buscar por nombre o id…" value={busca} onChange={(e) => setBusca(e.target.value)} />
         </div>
+        {/* Reparto del trabajo entre Piura y Lima. Es un filtro: ninguna pierde
+            el acceso a la otra sede, y un par con una ficha en cada una sale en
+            los dos filtros porque es el caso que más necesita mirarse. */}
+        <select className="ca-input" style={{ width: "auto", padding: "6px 10px" }}
+          value={sede} onChange={(e) => setSede(e.target.value)}
+          title="Filtra por sede para repartirse la revisión">
+          <option value="">Las dos sedes</option>
+          <option value="piura">Piura</option>
+          <option value="lima">Lima</option>
+        </select>
         <span className="ca-sub">
           {cargando ? "Buscando…" : `${grupos.length} caso(s)`}
         </span>

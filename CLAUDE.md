@@ -993,3 +993,43 @@ los feriados de Perú. Zona horaria por defecto: `America/Lima` (GMT-5).
      reporte que separe la web del resto (incluido el embudo del ítem 41): con
      ellas dentro, la web parecía cancelar 7 veces más que el equipo. Limpiar esa
      marca **escribe en producción** y queda pendiente de autorización.
+
+44. ⏳ Consolidar duplicados pasa a coordinación; la sede es un filtro (rama
+   `feat/coordinacion-consolida`, 2026-09-18, SIN desplegar). **Cambio de
+   política pedido por el usuario**, no una mejora técnica.
+   - **Por qué**: el ítem 38 dejó consolidar solo en `admin` —"coordinación
+     prepara el caso, quien aprieta el botón es gerencia"—. En la práctica
+     gerencia no entra a hacerlo y el trabajo se quedó parado con **31 grupos
+     ALTA** esperando. Quien conoce a los pacientes y sabe si dos fichas son la
+     misma persona es coordinación. El riesgo (fusionar a dos personas distintas
+     mezcla dos historias clínicas) pasa a ellas; se dijo explícitamente.
+   - **`ROLES_FUSIONAN_PACIENTES` = ("admin", "asistente")**. Alcanza justo a
+     Yazmin y Ayvi porque **son las únicas dos cuentas con ese rol**: las otras
+     dos (`Recepción`, `Coordinadora (prueba)`) **se eliminaron el 18 set. 2026**
+     tras comprobar que no tenían **ninguna** referencia —no habían firmado
+     atenciones, cobros ni mensajes—. Borrar un usuario que firmó algo dejaría
+     esas filas sin saber quién las hizo; el script lo re-verifica antes de
+     borrar y aborta si aparece algo.
+   - **La sede es un FILTRO de pantalla, no un permiso.** La primera versión
+     acotaba con `Usuario.sede` y estaba mal: ese campo lo usa
+     `pacientes_del_rol` en TODAS las pantallas (Hoy, Continuidad, Gerencia), así
+     que ponerlo les habría quitado media operación. Las dos coordinadoras **se
+     cubren entre sí** y necesitan ver ambas sedes. El reparto se hace con un
+     selector `?sede=piura|lima` en la lista de duplicados; un grupo con una
+     ficha en cada sede sale en **los dos** filtros, porque es el que más
+     necesita mirarse. Un valor inventado no acota nada: vale más devolver de
+     más que esconder un caso por un typo.
+   - **Una sola fuente para el permiso**: el payload de sesión (`/api/auth/me/`)
+     expone `puede_consolidar` y el frontend lo lee. Antes `App.jsx` deduía
+     `usuario?.rol === "admin"` a mano.
+   - **Un test que afirmaba lo contrario se actualizó, no se borró**:
+     `test_coordinacion_revisa_pero_no_fusiona` fijaba la política vieja; ahora
+     es `test_coordinacion_revisa_Y_consolida` y se le sumó otro que comprueba
+     que **la confirmación explícita no se relajó** al abrir el permiso.
+   - Verificado: **14 tests nuevos**, **75 con los de duplicados**, `manage.py
+     check`, build de Vite y ESLint limpio (`Duplicados.jsx`, `api.js`).
+   - **Estado de la limpieza al 18 set. 2026** (medido, solo lectura): 31 grupos
+     ALTA con 32 fichas de más, 31 MEDIA, 18 BAJA. De los ALTA, **16 están listos
+     para consolidar** y **15 frenados por sesiones pasadas sin cerrar** —doce de
+     ellos por UNA sola—. **Cerrando 18 sesiones se desbloquean los 15**, de las
+     678 sin cerrar que hay en toda la base (617 en Piura, 61 en Lima).

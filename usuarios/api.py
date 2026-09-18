@@ -1,4 +1,6 @@
 from django.contrib.auth import authenticate, login, logout
+
+from core import permisos as permisos_mod
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.http import FileResponse
@@ -52,6 +54,10 @@ def datos_usuario(user):
         "especialidad": user.especialidad,
         "sede": user.sede,
         "sede_label": user.get_sede_display() if user.sede else "",
+        # Quien puede consolidar fichas duplicadas lo decide el servidor, no la
+        # pantalla: la regla mezcla rol y sede y repetirla en el frontend
+        # terminaría con las dos versiones diciendo cosas distintas.
+        "puede_consolidar": permisos_mod.puede_fusionar_pacientes(user),
         "clinica": (
             {"nombre": clinica.nombre, "ciudad": clinica.ciudad} if clinica else None
         ),

@@ -124,10 +124,25 @@ class BloqueoEscrituraAnalista(BasePermission):
 # la analista también: es solo lectura y nunca toca datos de contacto.
 ROLES_REVISAN_DUPLICADOS = ("admin", "asistente")
 
-# CONSOLIDAR dos fichas es irreversible: la secundaria se elimina. Se restringe
-# a gerencia, igual que eliminar un paciente. Coordinación prepara el caso y
-# deja el dry-run listo; quien aprieta el botón es admin.
-ROLES_FUSIONAN_PACIENTES = ("admin",)
+# CONSOLIDAR dos fichas es irreversible: la secundaria se elimina.
+#
+# Lo hace **gerencia o coordinación**. La regla original lo dejaba solo en
+# gerencia, pero en la práctica gerencia no entra a hacerlo y el trabajo se
+# quedaba parado: quien conoce a los pacientes y sabe si dos fichas son la
+# misma persona es coordinación. Cambiado a pedido, sabiendo que el riesgo
+# (fusionar a dos personas distintas mezcla dos historias clínicas) pasa a
+# ellas. Las guardas siguen: documentos o nacimientos distintos bloquean, el
+# dry-run es obligatorio, la confirmación es explícita y cada consolidación
+# queda firmada en `RegistroFusionPaciente`. Alcanza a las dos coordinadoras
+# porque son las únicas dos cuentas con ese rol (las otras dos se eliminaron
+# el 18 set. 2026: no habían firmado nada).
+ROLES_FUSIONAN_PACIENTES = ("admin", "asistente")
+
+# Repartirse Piura y Lima es un FILTRO de pantalla, no un muro: las dos
+# coordinadoras se cubren entre sí y necesitan seguir viendo las dos sedes.
+# Por eso `Usuario.sede` NO se usa aquí —ese campo acota de verdad, en todas
+# las pantallas (`pacientes_del_rol`), y ponerlo les quitaría media operación—.
+# El reparto se hace con el selector de sede de la pantalla.
 
 
 def puede_revisar_duplicados(user):

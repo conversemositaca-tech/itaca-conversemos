@@ -98,6 +98,15 @@ class DuplicadosListaView(APIView):
             return Response({"detail": "Confianza no válida."}, status=status.HTTP_400_BAD_REQUEST)
 
         grupos, por_id = duplicados_mod.grupos(clinica, confianza=confianza)
+
+        # Filtro de sede OPCIONAL, para que cada coordinadora se quede con lo
+        # suyo sin perder el acceso a la otra sede. Un grupo con una ficha en
+        # cada sede aparece en ambos filtros: es el caso que más necesita mirarse.
+        sede = texto(request.query_params.get("sede")).lower()
+        if sede in ("piura", "lima"):
+            grupos = [(g, s) for g, s in grupos
+                      if any((por_id[i]["sede"] or "").strip() == sede for i in g)]
+
         ids = [i for g, _s in grupos for i in g]
         citas = {}
         for c in (Cita.objects.filter(paciente_id__in=ids)
