@@ -950,3 +950,46 @@ los feriados de Perú. Zona horaria por defecto: `America/Lima` (GMT-5).
      `TypeError: cannot pickle 'traceback' object`: ante errores raros, correr en
      serie y redirigir a un log (un `| tail` devuelve el código de salida de
      `tail`, no el de Django).
+
+
+43. ⏳ La lista de reactivación, priorizada (rama `feat/reactivacion-priorizada`,
+   2026-09-17, SIN desplegar). Salió de un análisis **solo lectura sobre
+   producción**, no de un pedido de funcionalidad.
+   - **Lo que mostró el análisis** (set. 2026, datos reales): de 1.358 personas que
+     se sentaron alguna vez, **1.243 no tienen próxima cita**. Pero repartidas por
+     antigüedad: 105 de menos de un mes, 127 de 1-3 meses, 208 de 3-6, 536 de
+     6-12 y 267 de más de un año. **Las ≈232 de los últimos tres meses son la
+     oportunidad real**; los 803 de más de seis meses ya cerraron proceso y
+     llamarlos es ruido. Una persona que inicia proceso deja **S/ 251** de media.
+   - **El filtro "⏰ Sin próxima sesión" YA existía** (ítem 12) y funcionaba, pero
+     entregaba las 1.243 fichas **sin ningún orden**: los recientes quedaban
+     mezclados con los de hace años y Coordinación no tenía por dónde empezar.
+     No se construyó una pantalla nueva: se hizo usable la que había.
+   - **`PacienteSerializer.dias_sin_venir`** (sin migración): días desde la última
+     **cita asistida**. `ultima` ya daba la fecha, pero como texto para leer
+     ("12 set"): sirve para mirar UNA ficha, no para ordenar mil. Devuelve `None`
+     cuando la persona nunca vino —"abandonó" y "todavía no tuvo su primera
+     sesión" no son lo mismo, y confundirlos metería gente nueva en la lista de
+     reactivación—. Una cita cancelada o con inasistencia **no** cuenta como haber
+     venido.
+   - **`_ultima_sesion()` cachea el cálculo por paciente**: lo piden dos campos y
+     esto se serializa sobre más de mil fichas; sin guardarlo, cada lista
+     recorría las citas de cada paciente dos veces para llegar al mismo sitio.
+   - **Frontend**: con el filtro activo la lista se **ordena por `dias_sin_venir`
+     ascendente** (quien nunca vino, al final), cada fila muestra una etiqueta
+     "hace 8 días / hace 4 meses" con color por tramo, y aparece un acotador
+     "menos de 3 meses / 3-6 / más de 6". **El corte en 90 días sale de los datos**,
+     no de una preferencia.
+   - **La lista NO sale del sistema**: son personas en tratamiento psicológico
+     (Ley 29733). Nada de exportarla a un archivo, pegarla en un chat ni mandarla
+     por WhatsApp; se arma dentro, detrás de login y permisos.
+   - Verificado: **7 tests nuevos** (`pacientes/tests_reactivacion.py`), suite de
+     pacientes+core sin regresión, build de Vite, ESLint **idéntico a `main`**
+     (106 avisos en ambos, comparado archivo contra archivo), y **11/11 en
+     navegador real** con datos sintéticos: login, filtro, orden correcto
+     (8 días → 25 → 120 → 400 → nunca vino), etiquetas y acotador.
+   - **Ojo**: el análisis también destapó que **217 citas importadas de AgendaPro
+     están marcadas con `agendado_web=True`** sin serlo. Contaminan cualquier
+     reporte que separe la web del resto (incluido el embudo del ítem 41): con
+     ellas dentro, la web parecía cancelar 7 veces más que el equipo. Limpiar esa
+     marca **escribe en producción** y queda pendiente de autorización.

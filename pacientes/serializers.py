@@ -97,6 +97,7 @@ class PacienteSerializer(serializers.ModelSerializer):
     modalidad_label = serializers.CharField(source="get_modalidad_display", read_only=True)
     seguimiento = serializers.SerializerMethodField()
     ultima = serializers.SerializerMethodField()
+    dias_sin_venir = serializers.SerializerMethodField()
     proxima = serializers.SerializerMethodField()
     alertas_continuidad = serializers.SerializerMethodField()
     sesion_real = serializers.SerializerMethodField()
@@ -127,7 +128,7 @@ class PacienteSerializer(serializers.ModelSerializer):
             "alertas", "notas_internas",
             "brujula_motivo", "brujula_hipotesis", "brujula_objetivos", "brujula_fortalezas",
             "brujula_factores_protectores", "brujula_factores_riesgo", "brujula_barreras", "brujula_plan",
-            "ultima", "proxima", "alertas_continuidad", "sesion_real", "proceso_actual", "historial", "adjuntos", "cuenta", "paquetes", "citas",
+            "ultima", "dias_sin_venir", "proxima", "alertas_continuidad", "sesion_real", "proceso_actual", "historial", "adjuntos", "cuenta", "paquetes", "citas",
         ]
 
     def to_representation(self, instance):
@@ -247,8 +248,38 @@ class PacienteSerializer(serializers.ModelSerializer):
         # la mayoría de las sesiones se cierran sin dejar ficha (ver el
         # hallazgo de "las dos puertas"), y antes esto mostraba "—" aunque la
         # sesión sí hubiera ocurrido.
-        cita = continuidad.ultima_sesion_real(list(obj.citas.all()))
+        cita = self._ultima_sesion(obj)
         return fecha_corta(timezone.localtime(cita.inicio)) if cita else "—"
+
+    @staticmethod
+    def _ultima_sesion(obj):
+        """La última sesión real, calculada UNA vez por paciente.
+
+        La piden dos campos (`ultima` y `dias_sin_venir`) y esto se serializa
+        sobre más de mil fichas: sin guardar el resultado, cada lista recorría
+        las citas de cada paciente dos veces para llegar al mismo sitio.
+        """
+        if not hasattr(obj, "_cache_ultima_sesion"):
+            obj._cache_ultima_sesion = continuidad.ultima_sesion_real(list(obj.citas.all()))
+        return obj._cache_ultima_sesion
+
+    def get_dias_sin_venir(self, obj):
+        """Cuántos días hace que esta persona no se sienta en sesión.
+
+        `ultima` ya dice la fecha, pero como texto para leer ("12 set"): sirve
+        para mirar una ficha y no para ORDENAR mil. Sin un número, la lista de
+        "sin próxima sesión" entrega a Coordinación más de mil nombres sin decir
+        por cuál empezar, y quien dejó de venir hace dos semanas —que es a quien
+        sí se puede recuperar— queda enterrado entre los que ya cerraron su
+        proceso hace más de un año.
+
+        `None` cuando nunca vino: no es lo mismo "no tiene próxima cita porque
+        abandonó" que "todavía no ha tenido la primera".
+        """
+        cita = self._ultima_sesion(obj)
+        if not cita or not cita.inicio:
+            return None
+        return (timezone.now() - cita.inicio).days
 
     def get_historial(self, obj):
         # Usa el prefetch (ya ordenado por -fecha); no re-consultar por paciente.

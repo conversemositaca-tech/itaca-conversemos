@@ -318,6 +318,32 @@ const dDeISO = (iso) => { const [y, m, d] = iso.split("-").map(Number); return n
 const sumarDias = (iso, n) => { const d = dDeISO(iso); d.setDate(d.getDate() + n); return aISO(d); };
 const cap = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
 
+// Tramos de "hace cuánto dejó de venir", para la lista de reactivación.
+// El corte en 90 días no es caprichoso: sobre los datos reales, más allá de
+// tres meses la mayoría ya había cerrado su proceso, y llamarlos es ruido.
+const TRAMOS_SIN_VENIR = {
+  reciente: [0, 90],
+  medio: [90, 180],
+  antiguo: [180, Infinity],
+};
+
+function dentroDeTramo(dias, tramo) {
+  const rango = TRAMOS_SIN_VENIR[tramo];
+  if (!rango || dias === null || dias === undefined) return false;
+  return dias >= rango[0] && dias < rango[1];
+}
+
+/** "hace 12 días" / "hace 3 meses". Vacío si nunca vino. */
+function haceCuanto(dias) {
+  if (dias === null || dias === undefined) return "";
+  if (dias < 1) return "hoy";
+  if (dias < 31) return `hace ${dias} días`;
+  const meses = Math.round(dias / 30);
+  if (meses < 12) return `hace ${meses} ${meses === 1 ? "mes" : "meses"}`;
+  const anios = Math.floor(dias / 365);
+  return `hace ${anios} año${anios === 1 ? "" : "s"}`;
+}
+
 // ---- Reloj sincronizado con el SERVIDOR (no con el reloj del equipo) ----
 // "Hoy" no se toma del reloj del PC/celular (que a veces está mal de fecha o zona
 // horaria), sino del servidor, que corre en la hora de la clínica. Guardamos el
@@ -581,6 +607,9 @@ export default function ClinicaApp() {
   const [filterProf, setFilterProf] = useState("");
   const [filterFrec, setFilterFrec] = useState("");
   const [soloSinProxima, setSoloSinProxima] = useState(false);
+  // Cuánto hace que dejó de venir. Solo aplica junto a "Sin próxima sesión":
+  // "" = sin acotar.
+  const [antiguedad, setAntiguedad] = useState("");
   const [filtroRiesgoS3, setFiltroRiesgoS3] = useState(false);
   const [filtroFinBloque, setFiltroFinBloque] = useState(false);
   // Ver las fichas provisionales (consulta agendada, proceso no iniciado). Fuera
@@ -716,7 +745,7 @@ export default function ClinicaApp() {
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return basePacientes.filter((p) =>
+    let lista = basePacientes.filter((p) =>
       (!q || coincideBusqueda(p.nombre, query) || (p.tel || "").toLowerCase().includes(q) || (p.numero_documento || "").toLowerCase().includes(q)) &&
       (!filterEsp || p.especialidad === filterEsp) &&
       (!filterSede || p.sede === filterSede) &&
@@ -724,8 +753,23 @@ export default function ClinicaApp() {
       (!filterFrec || p.frecuencia === filterFrec) &&
       (!soloSinProxima || !p.proxima) &&
       (!filtroRiesgoS3 || p.alertas_continuidad?.includes("riesgo_abandono_s3")) &&
-      (!filtroFinBloque || p.alertas_continuidad?.includes("fin_bloque_sin_decision")));
-  }, [basePacientes, query, filterEsp, filterSede, filterProf, filterFrec, soloSinProxima, filtroRiesgoS3, filtroFinBloque]);
+      (!filtroFinBloque || p.alertas_continuidad?.includes("fin_bloque_sin_decision")) &&
+      (!antiguedad || !soloSinProxima || dentroDeTramo(p.dias_sin_venir, antiguedad)));
+
+    // Con "Sin próxima sesión" activo, la lista se ordena por quien dejó de
+    // venir hace MENOS: son los que todavía se pueden recuperar. Sin esto
+    // Coordinación recibe más de mil nombres sin saber por cuál empezar, y los
+    // recientes quedan mezclados con los que cerraron proceso hace años.
+    if (soloSinProxima) {
+      lista = [...lista].sort((a, b) => {
+        const x = a.dias_sin_venir, y = b.dias_sin_venir;
+        if (x === null || x === undefined) return 1;   // los que nunca vinieron, al final
+        if (y === null || y === undefined) return -1;
+        return x - y;
+      });
+    }
+    return lista;
+  }, [basePacientes, query, filterEsp, filterSede, filterProf, filterFrec, soloSinProxima, antiguedad, filtroRiesgoS3, filtroFinBloque]);
 
   // Psicólogos presentes en la lista de pacientes (para el filtro).
   // Psicólogos del filtro: solo los que tienen pacientes en la sede elegida.
@@ -1689,6 +1733,16 @@ export default function ClinicaApp() {
               </select>
               <button className={`ca-fchip ${soloSinProxima ? "on" : ""}`} onClick={() => setSoloSinProxima((v) => !v)}
                 style={{ marginLeft: 6, color: soloSinProxima ? undefined : "#B0822F" }}>⏰ Sin próxima sesión</button>
+              {soloSinProxima && (
+                <select className="ca-input" style={{ width: "auto", padding: "6px 10px", marginLeft: 6 }}
+                  value={antiguedad} onChange={(e) => setAntiguedad(e.target.value)}
+                  title="Cuánto hace que dejó de venir. Los de menos de 3 meses son los que más chance tienen de volver.">
+                  <option value="">Todas las antigüedades</option>
+                  <option value="reciente">Dejó de venir hace menos de 3 meses</option>
+                  <option value="medio">Entre 3 y 6 meses</option>
+                  <option value="antiguo">Más de 6 meses</option>
+                </select>
+              )}
               <button className={`ca-fchip ${filtroRiesgoS3 ? "on" : ""}`} onClick={() => setFiltroRiesgoS3((v) => !v)}
                 title="Sesión 3 sin próxima cita agendada: riesgo de abandono."
                 style={{ marginLeft: 6, color: filtroRiesgoS3 ? undefined : "#B23A3A" }}>🚩 Riesgo S3</button>
@@ -1717,6 +1771,16 @@ export default function ClinicaApp() {
                       <div className="ca-pname">{p.nombre}</div>
                       <div className="ca-pmeta">{p.profesional_nombre ? `${p.profesional_nombre} · ` : ""}{meta || `última visita ${p.ultima}`}</div>
                     </div>
+                    {soloSinProxima && p.dias_sin_venir !== null && p.dias_sin_venir !== undefined && (
+                      // En la lista de reactivación lo único que decide a quién
+                      // llamar primero es hace cuánto dejó de venir, así que va
+                      // visible y no escondido dentro de la ficha.
+                      <Tag colors={p.dias_sin_venir < 90
+                        ? { bg: "#E4F3E8", fg: "#1E7D45" }
+                        : p.dias_sin_venir < 180
+                          ? { bg: "#FCF3D4", fg: "#8A6D14" }
+                          : { bg: "#EFEDE9", fg: "#6B6760" }}>{haceCuanto(p.dias_sin_venir)}</Tag>
+                    )}
                     {p.provisional && <Tag colors={{ bg: "#FCF3D4", fg: "#8A6D14" }}>Consulta agendada</Tag>}
                     {p.alertas_continuidad?.includes("riesgo_abandono_s3") && <Tag colors={{ bg: "#FBE1E1", fg: "#B23A3A" }}>🚩 Riesgo S3</Tag>}
                     {p.alertas_continuidad?.includes("fin_bloque_sin_decision") && <Tag colors={{ bg: "#FCF3D4", fg: "#8A6D14" }}>🔔 Fin de bloque</Tag>}
