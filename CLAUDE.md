@@ -1033,3 +1033,42 @@ los feriados de Perú. Zona horaria por defecto: `America/Lima` (GMT-5).
      para consolidar** y **15 frenados por sesiones pasadas sin cerrar** —doce de
      ellos por UNA sola—. **Cerrando 18 sesiones se desbloquean los 15**, de las
      678 sin cerrar que hay en toda la base (617 en Piura, 61 en Lima).
+45. ⏳ Registrar el cierre desde el Centro de Continuidad (rama
+   `feat/dp-desde-continuidad`, 2026-09-18, SIN desplegar).
+   - **El problema, medido**: de 585 sesiones de cierre (la 6, la 12, la 18…),
+     **558 no tienen decisión registrada. El 95 %.** El DP es lo único que le
+     dice al sistema que el bloque se cerró: sin él sigue reclamando para
+     siempre, aunque el equipo ya haya hablado con la persona y sepa
+     perfectamente qué pasó. Eso es lo que produce los avisos que no sirven, y
+     lo que frena 15 de las 31 consolidaciones de duplicados pendientes.
+   - **No era desconocimiento, era fricción**: anotarlo obligaba a salir del
+     Centro, buscar la cita en la Agenda y editarla ahí. Cinco pantallas para un
+     dato que ya se sabía. El caso, mientras tanto, **ya calculaba en qué cita
+     va cada DP** (`evento.cita_referencia`, `anteriores_evento`) pero ese dato
+     no llegaba a la pantalla.
+   - **`cierres_del_proceso(asistidas, n, sesiones_proceso)`**: todos los cierres
+     del proceso —pasados y vigente— con su cita, su fecha, el DP que ya tengan
+     y quién lo registró. `campos_asistidas` suma `decision_registrada_en` y
+     `decision_registrada_por__nombre` para no hacer una consulta por caso.
+   - **El "vigente" es el ÚLTIMO cierre que quedó atrás, no el próximo.** La
+     primera versión tomó `proxima_meta()` y con n=13 dejaba la lista entera sin
+     ninguno marcado: en la sesión 58 lo pendiente es el cierre 54, y es sobre
+     ese que alguien puede decir algo hoy. Lo encontró un test.
+   - **Un selector POR CIERRE, nunca un "marcar todos igual"** (decisión
+     explícita del usuario al pedirlo): cada DP queda firmado con quién y
+     cuándo, y nueve decisiones que nadie miró son nueve datos falsos con nombre
+     y apellido. Los cierres sin cita se muestran igual —no hay dónde escribir
+     el DP, pero esconderlos haría parecer que no existen—.
+   - **Registrar el DP ya era de coordinación por diseño**: `CitaViewSet
+     .perform_update` descarta `decision` si quien edita es médico. El psicólogo
+     no sabe si la persona renovó; eso se habla por teléfono. No hubo que tocar
+     permisos.
+   - Al guardar, el caso se vuelve a pedir: la alerta puede haberse apagado sola
+     y la pantalla tiene que reflejarlo. La línea "Decisión: Sin registrar"
+     —que estaba escrita a mano y siempre decía lo mismo— pasa a contar cuántos
+     cierres llevan decisión.
+   - Verificado: **16 tests nuevos** (`core/tests_cierres.py` y
+     `core/tests_dp_desde_continuidad.py`), incluido que el DP se escribe en la
+     cita correcta cuando el proceso se reinició, que queda firmado, que el
+     psicólogo no puede y que se puede corregir un código equivocado. Build de
+     Vite y ESLint idéntico a `main` (106 avisos en ambos).

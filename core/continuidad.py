@@ -557,6 +557,57 @@ def metas_cerradas(n, sesiones_proceso):
     return metas
 
 
+def cierres_del_proceso(asistidas, n_actual, sesiones_proceso):
+    """Todos los cierres de bloque del proceso: los que ya pasaron y el vigente.
+
+    Devuelve, por cada uno, la cita donde va el DP y la decisión que ya tenga.
+    Es lo que permite registrar el cierre desde el Centro de Continuidad en vez
+    de salir a buscar la cita en la Agenda —que es la razón por la que el 95 %
+    de los cierres está sin decisión: no es que nadie sepa qué pasó, es que
+    anotarlo cuesta cinco pantallas—.
+
+    El vigente va marcado: es el único sobre el que alguien puede decir algo
+    con criterio hoy. Los anteriores se muestran igual, porque esconderlos no
+    los resuelve, pero cada uno se decide por separado.
+    """
+    metas = list(metas_cerradas(n_actual, sesiones_proceso))
+    # `metas_cerradas` deja fuera el cierre que coincide exactamente con la
+    # sesión actual (con n=6 devuelve []), y ese es el que hay que decidir.
+    siguiente = proxima_meta(n_actual, sesiones_proceso)
+    if siguiente and n_actual >= siguiente and siguiente not in metas:
+        metas.append(siguiente)
+    metas = sorted(set(metas))
+
+    # El vigente es el ÚLTIMO cierre que quedó atrás, no el próximo: en la
+    # sesión 58 lo que está pendiente es el cierre 54, y es sobre ese que alguien
+    # puede decir algo hoy. Tomarlo como "el que viene" dejaba la lista entera
+    # sin ninguno marcado.
+    vigente = metas[-1] if metas else None
+
+    fuera = []
+    for m in metas:
+        cita, origen = cita_de_sesion(asistidas, m)
+        if not cita:
+            # Sin cita no hay dónde escribir el DP. Se informa igual para que
+            # no parezca que el cierre no existe.
+            fuera.append({"meta": m, "cita_id": None, "fecha": None, "decision": "",
+                          "origen": origen, "vigente": m == vigente})
+            continue
+        inicio = cita.get("inicio")
+        fuera.append({
+            "meta": m,
+            "cita_id": cita.get("id"),
+            "fecha": inicio.isoformat() if inicio else None,
+            "decision": cita.get("decision") or "",
+            "decision_en": (cita.get("decision_registrada_en").isoformat()
+                            if cita.get("decision_registrada_en") else None),
+            "decision_por": cita.get("decision_registrada_por__nombre") or "",
+            "origen": origen,
+            "vigente": m == vigente,
+        })
+    return fuera
+
+
 def cita_de_sesion(asistidas, k):
     """La cita asistida que corresponde a la sesión k: (cita, de_dónde_salió).
 
@@ -698,6 +749,9 @@ def evaluar_paciente(r, historia, proximas, senales_pac=(), migrado=False, hoy=N
             {"meta": m, "cita_referencia": (cita_de_sesion(citas, m)[0] or {}).get("id")}
             for m in anteriores
         ]
+        # Todos los cierres del proceso con su cita y su DP: lo que hace falta
+        # para registrar el cierre desde aquí, sin salir a buscar la cita.
+        fila["cierres"] = cierres_del_proceso(citas, n, r["sesiones_proceso"])
         filas.append(fila)
 
     # 1) Riesgo de abandono en la sesión 3: misma regla que `evaluar()` —llegó
@@ -796,8 +850,11 @@ def cola_de_continuidad(pacientes, hoy=None, dias_proximos=None, dias_backlog=No
     if not ids:
         return []
 
+    # `decision_registrada_*` viajan para poder mostrar quién cerró cada bloque
+    # y cuándo, sin una consulta por caso.
     campos_asistidas = ["id", "paciente_id", "n_sesion", "inicio", "estado", "decision",
-                        "especialidad"]
+                        "especialidad", "decision_registrada_en",
+                        "decision_registrada_por__nombre"]
     campos_futuras = ["id", "paciente_id", "n_sesion", "inicio"]
     if con_contexto:
         campos_asistidas.append("notas")
@@ -854,6 +911,7 @@ def _fila_proceso_anterior(r, pa, ant, migrado, hoy):
     fila["evento"] = {"tipo": "proceso_anterior", "meta": ant["n"], "cita_referencia": None,
                       "referencia_origen": "proceso_anterior", "anclas": []}
     fila["anteriores_evento"] = []
+    fila.setdefault("cierres", [])
     return fila
 
 

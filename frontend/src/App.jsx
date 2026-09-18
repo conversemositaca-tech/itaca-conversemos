@@ -1561,6 +1561,16 @@ export default function ClinicaApp() {
         .cc-tabla tbody tr:hover .cc-pac { background:var(--hover); }
         .cc-tabla tbody tr.on .cc-pac { background:var(--accent-soft); }
         .cc-sub { font-size:11.5px; color:var(--muted); margin-top:2px; }
+        /* Cierres del proceso: una fila por bloque, con su DP. El vigente va
+           destacado porque es el único sobre el que alguien puede decidir hoy. */
+        .cc-cierres { display:flex; flex-direction:column; gap:6px; }
+        .cc-cierre { display:flex; align-items:center; justify-content:space-between;
+          gap:10px; padding:7px 10px; border:1px solid var(--line); border-radius:9px;
+          background:var(--surface); }
+        .cc-cierre.vigente { border-color:#D8C48A; background:#FDFAF1; }
+        .cc-cierre-que { min-width:0; }
+        .cc-cierre-tag { margin-left:6px; font-size:10.5px; padding:1px 6px;
+          border-radius:999px; background:#FCF3D4; color:#8A6D14; }
         .cc-conf { font-size:12.5px; color:var(--ink-soft); max-width:230px; line-height:1.45; }
         .cc-aviso { font-size:11.5px; color:#8A6D14; background:#FCF3D4; border-radius:6px;
           padding:3px 7px; margin-top:4px; display:inline-block; line-height:1.4; }
@@ -5315,6 +5325,76 @@ function ContactarWhatsappPanel({ id, contacto, onActualizado, showToast }) {
   );
 }
 
+
+// Los cierres de bloque del proceso, para registrar el DP aquí mismo.
+//
+// El 95 % de los cierres está sin decisión. No es que nadie sepa qué pasó: es
+// que anotarlo obligaba a salir de esta pantalla, buscar la cita en la Agenda
+// y editarla ahí. El caso ya sabe en qué cita va cada DP — solo faltaba poder
+// escribirlo sin moverse.
+//
+// Un selector POR CIERRE, nunca un "marcar todos igual": cada decisión queda
+// firmada con quién y cuándo, y nueve decisiones que nadie miró son nueve
+// datos falsos con nombre y apellido.
+function CierresDelProceso({ cierres, onCambio, showToast }) {
+  const [guardando, setGuardando] = useState(null);
+  const opciones = DECISIONES.filter((d) => d.g === "Continuidad");
+
+  if (!cierres?.length) return null;
+
+  const registrar = (cierre, valor) => {
+    if (!cierre.cita_id || guardando) return;
+    setGuardando(cierre.meta);
+    api.actualizarCita(cierre.cita_id, { decision: valor })
+      .then(() => {
+        showToast(valor ? `Cierre ${cierre.meta}: ${valor} registrado` : `Cierre ${cierre.meta}: decisión quitada`);
+        onCambio?.();
+      })
+      .catch((e) => showToast("No se pudo registrar: " + e.message))
+      .finally(() => setGuardando(null));
+  };
+
+  return (
+    <div style={{ marginBottom: 12 }}>
+      <div className="ca-label" style={{ marginBottom: 6 }}>
+        Cierres de este proceso
+      </div>
+      <div className="cc-cierres">
+        {cierres.map((c) => (
+          <div key={c.meta} className={`cc-cierre${c.vigente ? " vigente" : ""}`}>
+            <div className="cc-cierre-que">
+              <strong>Cierre {c.meta}</strong>
+              {c.vigente && <span className="cc-cierre-tag">pendiente</span>}
+              <div className="cc-sub">
+                {c.fecha ? fechaCortaISO(c.fecha) : "sin cita registrada"}
+                {c.decision_por && ` · lo registró ${c.decision_por}`}
+              </div>
+            </div>
+            {c.cita_id ? (
+              <select
+                className="ca-input"
+                style={{ width: "auto", padding: "5px 8px" }}
+                value={c.decision || ""}
+                disabled={guardando === c.meta}
+                onChange={(e) => registrar(c, e.target.value)}
+              >
+                <option value="">Sin registrar</option>
+                {opciones.map((o) => (
+                  <option key={o.v} value={o.v}>{o.l}</option>
+                ))}
+              </select>
+            ) : (
+              <span className="ca-sub" title="Sin cita no hay dónde escribir el DP">
+                sin cita
+              </span>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function ContinuidadDetalle({ id, onCerrar, onOpen, showToast, onGestionGuardada }) {
   const [caso, setCaso] = useState(null);
   const [error, setError] = useState("");
@@ -5324,6 +5404,10 @@ function ContinuidadDetalle({ id, onCerrar, onOpen, showToast, onGestionGuardada
   const [guardando, setGuardando] = useState(false);
   const setG = (k, v) => setGestion((g) => ({ ...g, [k]: v }));
 
+  // Al registrar un cierre hay que volver a pedir el caso: la alerta puede
+  // haberse apagado sola y la pantalla tiene que reflejarlo.
+  const [recargaCaso, setRecargaCaso] = useState(0);
+
   useEffect(() => {
     let vivo = true;
     setCaso(null); setError(""); setVerNotas(false); setGestion(GESTION_VACIA);
@@ -5331,7 +5415,7 @@ function ContinuidadDetalle({ id, onCerrar, onOpen, showToast, onGestionGuardada
       .then((d) => { if (vivo) { setCaso(d); setGestion(gestionAForm(d.gestion)); } })
       .catch((e) => { if (vivo) { setError(e.message); showToast("Error: " + e.message); } });
     return () => { vivo = false; };
-  }, [id]);
+  }, [id, recargaCaso]);
 
   const f = caso?.fila;
   const e = f ? etiquetaCierre(f) : null;
@@ -5428,9 +5512,20 @@ function ContinuidadDetalle({ id, onCerrar, onOpen, showToast, onGestionGuardada
               <dd style={{ color: f.proxima_fecha ? "#3E7A65" : "#9C4646" }}>
                 {f.proxima_fecha ? fechaCortaISO(f.proxima_fecha) : "Sin agendar"}
               </dd>
-              <dt>Decisión</dt><dd style={{ color: "#9C4646" }}>Sin registrar</dd>
+              <dt>Decisión</dt>
+              <dd style={{ color: f.cierres?.some((c) => c.decision) ? "#3E7A65" : "#9C4646" }}>
+                {f.cierres?.length
+                  ? `${f.cierres.filter((c) => c.decision).length} de ${f.cierres.length} cierre(s) registrado(s)`
+                  : "Sin registrar"}
+              </dd>
             </dl>
           </div>
+
+          <CierresDelProceso
+            cierres={f.cierres}
+            showToast={showToast}
+            onCambio={() => setRecargaCaso((n) => n + 1)}
+          />
 
           {/* Contexto de notas. Nunca decide: solo resume y, si la nota roza algo
               clínico, pide verificar el registro formal. */}
