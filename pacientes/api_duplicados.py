@@ -99,14 +99,13 @@ class DuplicadosListaView(APIView):
 
         grupos, por_id = duplicados_mod.grupos(clinica, confianza=confianza)
 
-        # Coordinación ve los candidatos de SU sede. Antes la pantalla mostraba
-        # los de las dos y cada una tenía que adivinar cuáles le tocaban; con dos
-        # personas trabajando en paralelo eso termina en la misma ficha revisada
-        # dos veces, o en ninguna. Gerencia las sigue viendo todas.
-        sede = permisos_mod.sede_que_consolida(request.user)
-        if sede:
+        # Filtro de sede OPCIONAL, para que cada coordinadora se quede con lo
+        # suyo sin perder el acceso a la otra sede. Un grupo con una ficha en
+        # cada sede aparece en ambos filtros: es el caso que más necesita mirarse.
+        sede = texto(request.query_params.get("sede")).lower()
+        if sede in ("piura", "lima"):
             grupos = [(g, s) for g, s in grupos
-                      if all((por_id[i]["sede"] or "").strip() == sede for i in g)]
+                      if any((por_id[i]["sede"] or "").strip() == sede for i in g)]
 
         ids = [i for g, _s in grupos for i in g]
         citas = {}
@@ -191,13 +190,6 @@ class DuplicadoFusionarView(APIView):
         a, b, err = _par(request, d.get("principal"), d.get("secundario"))
         if err is not None:
             return err
-        # El permiso de rol ya pasó; falta que el par sea de SU sede. Se
-        # comprueba aquí porque este endpoint es alcanzable con la sesión de
-        # cualquiera que tenga el permiso, no solo desde el botón.
-        if not permisos_mod.puede_consolidar_estas_fichas(request.user, a, b):
-            return Response(
-                {"detail": "Solo puedes consolidar fichas de tu sede."},
-                status=status.HTTP_403_FORBIDDEN)
         try:
             registro = fusion_mod.fusionar_pacientes(
                 a, b, request.user, motivo=texto(d.get("motivo")),

@@ -133,14 +133,16 @@ ROLES_REVISAN_DUPLICADOS = ("admin", "asistente")
 # (fusionar a dos personas distintas mezcla dos historias clínicas) pasa a
 # ellas. Las guardas siguen: documentos o nacimientos distintos bloquean, el
 # dry-run es obligatorio, la confirmación es explícita y cada consolidación
-# queda firmada en `RegistroFusionPaciente`.
+# queda firmada en `RegistroFusionPaciente`. Alcanza a las dos coordinadoras
+# porque son las únicas dos cuentas con ese rol (las otras dos se eliminaron
+# el 18 set. 2026: no habían firmado nada).
 ROLES_FUSIONAN_PACIENTES = ("admin", "asistente")
 
-# ...pero coordinación solo dentro de SU sede, y **solo si la tiene asignada**.
-# Sin sede, una cuenta de coordinación mira y descarta, pero no elimina nada:
-# así el permiso alcanza a quien debe alcanzar sin abrir la mano al resto del
-# rol (recepción, cuentas de prueba) solo por compartir etiqueta.
-ROLES_FUSIONAN_SOLO_SU_SEDE = ("asistente",)
+# Repartirse Piura y Lima es un FILTRO de pantalla, no un muro: las dos
+# coordinadoras se cubren entre sí y necesitan seguir viendo las dos sedes.
+# Por eso `Usuario.sede` NO se usa aquí —ese campo acota de verdad, en todas
+# las pantallas (`pacientes_del_rol`), y ponerlo les quitaría media operación—.
+# El reparto se hace con el selector de sede de la pantalla.
 
 
 def puede_revisar_duplicados(user):
@@ -148,33 +150,7 @@ def puede_revisar_duplicados(user):
 
 
 def puede_fusionar_pacientes(user):
-    rol = getattr(user, "rol", None)
-    if rol not in ROLES_FUSIONAN_PACIENTES:
-        return False
-    if rol in ROLES_FUSIONAN_SOLO_SU_SEDE:
-        return bool((getattr(user, "sede", "") or "").strip())
-    return True
-
-
-def sede_que_consolida(user):
-    """La sede a la que está limitada esta persona. "" = sin límite (gerencia)."""
-    if getattr(user, "rol", None) in ROLES_FUSIONAN_SOLO_SU_SEDE:
-        return (getattr(user, "sede", "") or "").strip()
-    return ""
-
-
-def puede_consolidar_estas_fichas(user, *pacientes):
-    """Consolidar un par que no es de tu sede no se te permite.
-
-    Se comprueba en el servidor y no solo al pintar la pantalla: el endpoint
-    de fusión es alcanzable con la sesión de cualquiera que tenga el permiso.
-    """
-    if not puede_fusionar_pacientes(user):
-        return False
-    sede = sede_que_consolida(user)
-    if not sede:
-        return True
-    return all((getattr(p, "sede", "") or "").strip() == sede for p in pacientes)
+    return getattr(user, "rol", None) in ROLES_FUSIONAN_PACIENTES
 
 
 class PuedeRevisarDuplicados(BasePermission):

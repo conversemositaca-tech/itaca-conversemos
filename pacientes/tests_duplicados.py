@@ -674,7 +674,11 @@ class PermisosTests(Base):
         self.a = self.pac("Ana Pérez", sede="lima", telefono="987000111")
         self.b = self.pac("Ana Pérez", sede="lima", telefono="987000111")
 
-    def test_coordinacion_revisa_pero_no_fusiona(self):
+    def test_coordinacion_revisa_Y_consolida(self):
+        # Antes esto exigía 403: consolidar era solo de gerencia. Cambió el 18
+        # set. 2026 porque gerencia no entraba a hacerlo y había 31 grupos
+        # esperando. Lo que protege el dato sigue siendo lo mismo: el dry-run,
+        # los bloqueos por documento/nacimiento y la confirmación explícita.
         self.client.force_login(self.coord)
         self.assertEqual(self.client.get("/api/duplicados/").status_code, 200)
         r = self.client.post("/api/duplicados/analizar/",
@@ -684,7 +688,16 @@ class PermisosTests(Base):
         r = self.client.post("/api/duplicados/fusionar/",
                              {"principal": self.a.pk, "secundario": self.b.pk, "confirmar": True},
                              content_type="application/json")
-        self.assertEqual(r.status_code, 403)
+        self.assertEqual(r.status_code, 200, r.content[:200])
+        self.assertEqual(Paciente.objects.count(), 1)
+
+    def test_coordinacion_tampoco_consolida_sin_confirmar(self):
+        # La confirmación explícita no se relajó al abrir el permiso.
+        self.client.force_login(self.coord)
+        r = self.client.post("/api/duplicados/fusionar/",
+                             {"principal": self.a.pk, "secundario": self.b.pk},
+                             content_type="application/json")
+        self.assertEqual(r.status_code, 400)
         self.assertEqual(Paciente.objects.count(), 2)
 
     def test_el_psicologo_no_entra(self):

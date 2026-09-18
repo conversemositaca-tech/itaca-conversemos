@@ -1,10 +1,13 @@
-"""Coordinación consolida, pero solo en su sede.
+"""Coordinación consolida, y la sede reparte el trabajo sin cerrar puertas.
 
-Consolidar elimina la ficha de una persona real. Al abrir el permiso a
-coordinación, lo que impide que se vaya de las manos es que cada una solo
-alcance su sede, y que sin sede asignada no alcance nada. Eso se comprueba en
-el SERVIDOR: el endpoint es alcanzable con cualquier sesión que tenga el
-permiso, no solo desde el botón de la pantalla.
+Dos decisiones que conviene no perder:
+
+- Consolidar elimina la ficha de una persona real. Pasó de gerencia a
+  coordinación porque gerencia no entraba a hacerlo y el trabajo se paraba.
+- El reparto Piura/Lima es un FILTRO de pantalla, no un permiso. Las dos
+  coordinadoras se cubren entre sí: quitarles la otra sede les quitaría media
+  operación. Por eso NO se usa `Usuario.sede`, que sí acota de verdad en todas
+  las pantallas.
 """
 from django.test import TestCase
 
@@ -20,114 +23,103 @@ class QuienPuedeConsolidarTests(TestCase):
         cls.clinica = Clinica.objects.create(nombre="Ítaca", ciudad="Piura",
                                              slug="itaca-coord", token_captacion="tok-coord")
 
-    def _usuario(self, rol, sede="", nombre="X"):
-        u = Usuario.objects.create_user(
-            email=f"{rol}{sede or 'sin'}{nombre}@demo.pe", password="x",
+    def _usuario(self, rol, nombre="X"):
+        return Usuario.objects.create_user(
+            email=f"{rol}{nombre}@demo.pe", password="clave-larga-1",
             nombre=nombre, rol=rol, clinica=self.clinica)
-        u.sede = sede
-        u.save(update_fields=["sede"])
-        return u
 
-    def test_gerencia_consolida_sin_limite_de_sede(self):
-        admin = self._usuario("admin")
-        self.assertTrue(permisos.puede_fusionar_pacientes(admin))
-        self.assertEqual(permisos.sede_que_consolida(admin), "")
+    def test_coordinacion_puede(self):
+        # El cambio pedido: gerencia no entraba a hacerlo y había 31 grupos
+        # esperando. Quien sabe si dos fichas son la misma persona es quien la
+        # atiende por teléfono.
+        self.assertTrue(permisos.puede_fusionar_pacientes(
+            self._usuario("asistente", "Yaz")))
 
-    def test_coordinacion_con_sede_si_puede(self):
-        # El cambio pedido: gerencia no entraba a hacerlo y el trabajo se paraba.
-        coord = self._usuario("asistente", sede="piura", nombre="Yaz")
-        self.assertTrue(permisos.puede_fusionar_pacientes(coord))
-        self.assertEqual(permisos.sede_que_consolida(coord), "piura")
-
-    def test_coordinacion_SIN_sede_no_puede(self):
-        # Así el permiso no alcanza a recepción ni a cuentas de prueba solo por
-        # compartir el rol.
-        recepcion = self._usuario("asistente", nombre="Recep")
-        self.assertFalse(permisos.puede_fusionar_pacientes(recepcion))
+    def test_gerencia_sigue_pudiendo(self):
+        self.assertTrue(permisos.puede_fusionar_pacientes(self._usuario("admin")))
 
     def test_el_psicologo_sigue_fuera(self):
+        # Ve solo a sus pacientes y no gestiona identidad.
         self.assertFalse(permisos.puede_fusionar_pacientes(self._usuario("medico")))
 
     def test_la_analista_sigue_fuera(self):
         # Es solo lectura: no elimina nada.
         self.assertFalse(permisos.puede_fusionar_pacientes(self._usuario("analista")))
 
+    def test_el_comercial_sigue_fuera(self):
+        self.assertFalse(permisos.puede_fusionar_pacientes(self._usuario("comercial")))
 
-class SoloFichasDeSuSedeTests(TestCase):
+
+class LaSedeNoCierraPuertasTests(TestCase):
+    """La sede reparte, no bloquea: cualquiera de las dos alcanza ambas."""
+
     @classmethod
     def setUpTestData(cls):
         cls.clinica = Clinica.objects.create(nombre="Ítaca", ciudad="Piura",
                                              slug="itaca-coord2", token_captacion="tok-coord2")
         cls.yaz = Usuario.objects.create_user(
-            email="yaz@demo.pe", password="x", nombre="Yaz",
+            email="yaz@demo.pe", password="clave-larga-1", nombre="Yaz",
             rol=Usuario.Rol.ASISTENTE, clinica=cls.clinica)
-        cls.yaz.sede = "piura"
-        cls.yaz.save(update_fields=["sede"])
-        cls.ayvi = Usuario.objects.create_user(
-            email="ayvi@demo.pe", password="x", nombre="Ayvi",
-            rol=Usuario.Rol.ASISTENTE, clinica=cls.clinica)
-        cls.ayvi.sede = "lima"
-        cls.ayvi.save(update_fields=["sede"])
-        cls.admin = Usuario.objects.create_user(
-            email="ger@demo.pe", password="x", nombre="Ger",
-            rol=Usuario.Rol.ADMIN, clinica=cls.clinica)
+        cls.piura = Paciente.objects.create(clinica=cls.clinica, nombre="P A", sede="piura")
+        cls.lima = Paciente.objects.create(clinica=cls.clinica, nombre="L A", sede="lima")
 
-        cls.piura_a = Paciente.objects.create(clinica=cls.clinica, nombre="P A", sede="piura")
-        cls.piura_b = Paciente.objects.create(clinica=cls.clinica, nombre="P B", sede="piura")
-        cls.lima_a = Paciente.objects.create(clinica=cls.clinica, nombre="L A", sede="lima")
-        cls.lima_b = Paciente.objects.create(clinica=cls.clinica, nombre="L B", sede="lima")
+    def test_una_coordinadora_alcanza_las_dos_sedes(self):
+        # Se cubren entre ellas; el reparto lo hace el selector de la pantalla.
+        self.assertTrue(permisos.puede_fusionar_pacientes(self.yaz))
 
-    def test_cada_una_consolida_lo_suyo(self):
-        self.assertTrue(permisos.puede_consolidar_estas_fichas(
-            self.yaz, self.piura_a, self.piura_b))
-        self.assertTrue(permisos.puede_consolidar_estas_fichas(
-            self.ayvi, self.lima_a, self.lima_b))
-
-    def test_ninguna_alcanza_la_sede_de_la_otra(self):
-        self.assertFalse(permisos.puede_consolidar_estas_fichas(
-            self.yaz, self.lima_a, self.lima_b))
-        self.assertFalse(permisos.puede_consolidar_estas_fichas(
-            self.ayvi, self.piura_a, self.piura_b))
-
-    def test_un_par_a_caballo_entre_sedes_no_lo_toca_coordinacion(self):
-        # Una ficha en cada sede es justo el caso que pide criterio: queda para
-        # gerencia, que ve las dos.
-        self.assertFalse(permisos.puede_consolidar_estas_fichas(
-            self.yaz, self.piura_a, self.lima_a))
-        self.assertTrue(permisos.puede_consolidar_estas_fichas(
-            self.admin, self.piura_a, self.lima_a))
-
-    def test_gerencia_alcanza_cualquier_sede(self):
-        self.assertTrue(permisos.puede_consolidar_estas_fichas(
-            self.admin, self.lima_a, self.lima_b))
-        self.assertTrue(permisos.puede_consolidar_estas_fichas(
-            self.admin, self.piura_a, self.piura_b))
+    def test_no_se_toca_el_campo_sede_del_usuario(self):
+        # `Usuario.sede` acota de verdad en TODAS las pantallas
+        # (`pacientes_del_rol`). Usarlo aquí les habría quitado media operación,
+        # así que el permiso no depende de él.
+        self.assertFalse((self.yaz.sede or "").strip())
+        self.assertTrue(permisos.puede_fusionar_pacientes(self.yaz))
 
 
-class ElServidorLoHaceCumplirTests(TestCase):
-    """No basta con esconder el botón: el endpoint se puede llamar directo."""
+class ElFiltroDeSedeTests(TestCase):
+    """El selector de la pantalla acota la lista, y solo la lista."""
 
     @classmethod
     def setUpTestData(cls):
         cls.clinica = Clinica.objects.create(nombre="Ítaca", ciudad="Piura",
                                              slug="itaca-coord3", token_captacion="tok-coord3")
-        cls.yaz = Usuario.objects.create_user(
-            email="yaz3@demo.pe", password="clave-larga-1", nombre="Yaz",
+        cls.coord = Usuario.objects.create_user(
+            email="coord@demo.pe", password="clave-larga-1", nombre="Coord",
             rol=Usuario.Rol.ASISTENTE, clinica=cls.clinica)
-        cls.yaz.sede = "piura"
-        cls.yaz.save(update_fields=["sede"])
-        cls.lima_a = Paciente.objects.create(clinica=cls.clinica, nombre="L A", sede="lima")
-        cls.lima_b = Paciente.objects.create(clinica=cls.clinica, nombre="L B", sede="lima")
+        # Un par claro en cada sede: mismo nombre y mismo teléfono.
+        for sede, tel in (("piura", "987111222"), ("lima", "987333444")):
+            for i in (1, 2):
+                Paciente.objects.create(clinica=cls.clinica, nombre=f"Ana Torres {sede}",
+                                        sede=sede, telefono=tel)
 
-    def test_consolidar_fichas_de_otra_sede_devuelve_403(self):
-        self.client.force_login(self.yaz)
-        r = self.client.post("/api/duplicados/fusionar/", {
-            "principal": self.lima_a.id, "secundario": self.lima_b.id,
-            "confirmar": True, "motivo": "prueba",
-        }, content_type="application/json")
-        self.assertEqual(r.status_code, 403, r.content[:200])
-        # Y sobre todo: no se borró nada.
-        self.assertTrue(Paciente.objects.filter(id=self.lima_b.id).exists())
+    def _pedir(self, sede=""):
+        self.client.force_login(self.coord)
+        url = "/api/duplicados/?confianza=alta" + (f"&sede={sede}" if sede else "")
+        return self.client.get(url).json()
+
+    @staticmethod
+    def _sedes(grupos):
+        # La sede vive en cada ficha del grupo, no en el grupo.
+        return {(f.get("sede") or "") for g in grupos for f in g.get("fichas", [])}
+
+    def test_sin_filtro_llegan_las_dos_sedes(self):
+        sedes = self._sedes(self._pedir().get("grupos", []))
+        self.assertIn("piura", sedes)
+        self.assertIn("lima", sedes)
+
+    def test_filtrando_por_piura_no_salen_los_de_lima(self):
+        sedes = self._sedes(self._pedir("piura").get("grupos", []))
+        self.assertIn("piura", sedes)
+        self.assertNotIn("lima", sedes)
+
+    def test_y_al_reves(self):
+        sedes = self._sedes(self._pedir("lima").get("grupos", []))
+        self.assertIn("lima", sedes)
+        self.assertNotIn("piura", sedes)
+
+    def test_un_filtro_inventado_no_acota_nada(self):
+        # Vale más devolver de más que esconder un caso por un typo en la URL.
+        todos = len(self._pedir().get("grupos", []))
+        self.assertEqual(len(self._pedir("marte").get("grupos", [])), todos)
 
 
 class LaSesionDiceElPermisoTests(TestCase):
@@ -138,21 +130,15 @@ class LaSesionDiceElPermisoTests(TestCase):
         cls.clinica = Clinica.objects.create(nombre="Ítaca", ciudad="Piura",
                                              slug="itaca-coord4", token_captacion="tok-coord4")
 
-    def _me(self, rol, sede=""):
+    def _me(self, rol):
         u = Usuario.objects.create_user(
-            email=f"me{rol}{sede or 'sin'}@demo.pe", password="clave-larga-1",
+            email=f"me{rol}@demo.pe", password="clave-larga-1",
             nombre="N", rol=rol, clinica=self.clinica)
-        if sede:
-            u.sede = sede
-            u.save(update_fields=["sede"])
         self.client.force_login(u)
         return self.client.get("/api/auth/me/").json()
 
-    def test_coordinacion_con_sede_recibe_el_permiso(self):
-        self.assertTrue(self._me(Usuario.Rol.ASISTENTE, "piura")["puede_consolidar"])
-
-    def test_coordinacion_sin_sede_no_lo_recibe(self):
-        self.assertFalse(self._me(Usuario.Rol.ASISTENTE)["puede_consolidar"])
+    def test_coordinacion_recibe_el_permiso(self):
+        self.assertTrue(self._me(Usuario.Rol.ASISTENTE)["puede_consolidar"])
 
     def test_gerencia_lo_recibe(self):
         self.assertTrue(self._me(Usuario.Rol.ADMIN)["puede_consolidar"])
