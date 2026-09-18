@@ -993,3 +993,47 @@ los feriados de Perú. Zona horaria por defecto: `America/Lima` (GMT-5).
      reporte que separe la web del resto (incluido el embudo del ítem 41): con
      ellas dentro, la web parecía cancelar 7 veces más que el equipo. Limpiar esa
      marca **escribe en producción** y queda pendiente de autorización.
+
+44. ⏳ Consolidar duplicados pasa a coordinación, acotada por sede (rama
+   `feat/coordinacion-consolida`, 2026-09-18, SIN desplegar). **Cambio de
+   política pedido por el usuario**, no una mejora técnica.
+   - **Por qué**: el ítem 38 dejó consolidar solo en `admin` —"coordinación
+     prepara el caso, quien aprieta el botón es gerencia"—. En la práctica
+     gerencia no entra a hacerlo y el trabajo se quedó parado con **31 grupos
+     ALTA** esperando. Quien conoce a los pacientes y sabe si dos fichas son la
+     misma persona es coordinación. El riesgo (fusionar a dos personas distintas
+     mezcla dos historias clínicas) pasa a ellas; se les dijo explícitamente.
+   - **`ROLES_FUSIONAN_PACIENTES` = ("admin", "asistente")**, pero coordinación
+     **solo dentro de su sede y solo si la tiene asignada**
+     (`ROLES_FUSIONAN_SOLO_SU_SEDE`). Esto resuelve el problema de que los
+     permisos van por rol y no por persona: el rol `asistente` lo comparten
+     Yazmin, Ayvi, "Recepción" y una cuenta de prueba. Con sede asignada solo a
+     las dos coordinadoras, las otras siguen viendo y descartando pero **no
+     eliminan nada**. Sin inventar un rol nuevo ni listas de personas.
+   - **Un par a caballo entre sedes queda para gerencia**: es justo el caso que
+     pide criterio, y ninguna coordinadora lo alcanza.
+   - **Se comprueba en el SERVIDOR** (`puede_consolidar_estas_fichas`, llamado
+     en `DuplicadoFusionarView`), no solo al pintar la pantalla: el endpoint de
+     fusión es alcanzable con la sesión de cualquiera que tenga el permiso. Un
+     test manda ese POST con fichas de otra sede y exige **403 + que la ficha
+     siga existiendo**.
+   - **La lista también se acota**: `DuplicadosListaView` filtra los grupos por
+     la sede de quien mira. Antes mostraba los de ambas sedes y, con dos
+     personas trabajando en paralelo, eso termina en la misma ficha revisada dos
+     veces o en ninguna.
+   - **Una sola fuente para el permiso**: el payload de sesión (`/api/auth/me/`)
+     expone `puede_consolidar`, y el frontend lo lee. Antes `App.jsx` deduía
+     `usuario?.rol === "admin"` a mano; con una regla que mezcla rol y sede,
+     repetirla habría acabado con las dos versiones diciendo cosas distintas.
+   - **Falta el dato, no el código**: las cuatro cuentas de coordinación están
+     con sede vacía. Hasta que Yazmin tenga `piura` y Ayvi `lima` (desde la
+     pantalla Equipo), el permiso no se activa para nadie —que es el
+     comportamiento seguro por defecto—.
+   - Verificado: **14 tests nuevos** (`pacientes/tests_coordinacion_consolida.py`)
+     y **74 con los 60 de duplicados, sin regresión**; `manage.py check`, build de
+     Vite y ESLint idéntico a `main` (106 avisos en ambos), `Duplicados.jsx` limpio.
+   - **Estado de la limpieza al 18 set. 2026** (medido, solo lectura): 31 grupos
+     ALTA con 32 fichas de más, 31 MEDIA, 18 BAJA. De los ALTA, **16 están listos
+     para consolidar** y **15 frenados por sesiones pasadas sin cerrar** —doce de
+     ellos por UNA sola—. **Cerrando 18 sesiones se desbloquean los 15**, de las
+     678 sin cerrar que hay en toda la base (617 en Piura, 61 en Lima).

@@ -1860,7 +1860,7 @@ export default function ClinicaApp() {
         )}
 
         {view === "duplicados" && (
-          <Duplicados showToast={showToast} puedeFusionar={usuario?.rol === "admin"} />
+          <Duplicados showToast={showToast} puedeFusionar={!!usuario?.puede_consolidar} />
         )}
 
         {view === "profesionales" && <Profesionales showToast={showToast} esAdmin={usuario?.rol === "admin"} />}

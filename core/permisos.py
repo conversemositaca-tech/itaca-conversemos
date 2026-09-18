@@ -124,10 +124,23 @@ class BloqueoEscrituraAnalista(BasePermission):
 # la analista también: es solo lectura y nunca toca datos de contacto.
 ROLES_REVISAN_DUPLICADOS = ("admin", "asistente")
 
-# CONSOLIDAR dos fichas es irreversible: la secundaria se elimina. Se restringe
-# a gerencia, igual que eliminar un paciente. Coordinación prepara el caso y
-# deja el dry-run listo; quien aprieta el botón es admin.
-ROLES_FUSIONAN_PACIENTES = ("admin",)
+# CONSOLIDAR dos fichas es irreversible: la secundaria se elimina.
+#
+# Lo hace **gerencia o coordinación**. La regla original lo dejaba solo en
+# gerencia, pero en la práctica gerencia no entra a hacerlo y el trabajo se
+# quedaba parado: quien conoce a los pacientes y sabe si dos fichas son la
+# misma persona es coordinación. Cambiado a pedido, sabiendo que el riesgo
+# (fusionar a dos personas distintas mezcla dos historias clínicas) pasa a
+# ellas. Las guardas siguen: documentos o nacimientos distintos bloquean, el
+# dry-run es obligatorio, la confirmación es explícita y cada consolidación
+# queda firmada en `RegistroFusionPaciente`.
+ROLES_FUSIONAN_PACIENTES = ("admin", "asistente")
+
+# ...pero coordinación solo dentro de SU sede, y **solo si la tiene asignada**.
+# Sin sede, una cuenta de coordinación mira y descarta, pero no elimina nada:
+# así el permiso alcanza a quien debe alcanzar sin abrir la mano al resto del
+# rol (recepción, cuentas de prueba) solo por compartir etiqueta.
+ROLES_FUSIONAN_SOLO_SU_SEDE = ("asistente",)
 
 
 def puede_revisar_duplicados(user):
@@ -135,7 +148,33 @@ def puede_revisar_duplicados(user):
 
 
 def puede_fusionar_pacientes(user):
-    return getattr(user, "rol", None) in ROLES_FUSIONAN_PACIENTES
+    rol = getattr(user, "rol", None)
+    if rol not in ROLES_FUSIONAN_PACIENTES:
+        return False
+    if rol in ROLES_FUSIONAN_SOLO_SU_SEDE:
+        return bool((getattr(user, "sede", "") or "").strip())
+    return True
+
+
+def sede_que_consolida(user):
+    """La sede a la que está limitada esta persona. "" = sin límite (gerencia)."""
+    if getattr(user, "rol", None) in ROLES_FUSIONAN_SOLO_SU_SEDE:
+        return (getattr(user, "sede", "") or "").strip()
+    return ""
+
+
+def puede_consolidar_estas_fichas(user, *pacientes):
+    """Consolidar un par que no es de tu sede no se te permite.
+
+    Se comprueba en el servidor y no solo al pintar la pantalla: el endpoint
+    de fusión es alcanzable con la sesión de cualquiera que tenga el permiso.
+    """
+    if not puede_fusionar_pacientes(user):
+        return False
+    sede = sede_que_consolida(user)
+    if not sede:
+        return True
+    return all((getattr(p, "sede", "") or "").strip() == sede for p in pacientes)
 
 
 class PuedeRevisarDuplicados(BasePermission):
