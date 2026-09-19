@@ -13,8 +13,11 @@ from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
+from django.utils import timezone
+
+from core import permisos
 from . import instrumentos, registro
-from .models import Aplicacion
+from .models import Alerta, Aplicacion
 
 
 class PanelFaroView(APIView):
@@ -120,3 +123,125 @@ class CuestionarioView(APIView):
         # una pantalla de que uno "salió en rojo", solo y en un salón, es
         # exactamente lo que el protocolo evita: eso se conversa en persona.
         return Response({"ok": True}, status=status.HTTP_201_CREATED)
+
+
+# ── Panel interno del psicólogo ────────────────────────────────────────────
+# Acceso restringido a psicólogo y gerencia (ver core/permisos.ROLES_FARO). Aquí
+# SÍ aparecen nombres: el protocolo obliga a poder llegar al estudiante el mismo
+# día. Lo que no aparece en ninguna parte es en el panel del colegio.
+
+class _PanelBase(APIView):
+    permission_classes = [permisos.PuedeVerFaro]
+
+
+def _dato_alerta(a):
+    r = a.respuesta
+    return {
+        "id": a.id,
+        "institucion": r.aplicacion.institucion,
+        "ciudad": r.aplicacion.ciudad,
+        "estudiante": r.nombre,
+        "grado": r.grado,
+        "seccion": r.seccion,
+        "motivos": a.motivos,
+        "aviso": a.aviso,
+        "aviso_label": a.get_aviso_display(),
+        "avisado_en": a.avisado_en.isoformat() if a.avisado_en else None,
+        "atendida": a.atendida,
+        "atendida_en": a.atendida_en.isoformat() if a.atendida_en else None,
+        "atendida_por": getattr(a.atendida_por, "nombre", "") or getattr(a.atendida_por, "email", ""),
+        "acciones": a.acciones,
+        "creado_en": a.creado_en.isoformat(),
+        "phq_total": r.phq_total,
+        "gad_total": r.gad_total,
+        "asq_positivo": r.asq_positivo,
+        "ebipq_rol": r.ebipq_rol,
+        "completa": r.completa,
+    }
+
+
+class AlertasView(_PanelBase):
+    """GET /api/faro/panel/alertas/ → los casos rojos, sin atender primero.
+
+    El orden no es por fecha sino por atención pendiente: quien abre esto está
+    buscando a quién le falta llamar, no leyendo historia.
+    """
+
+    def get(self, request):
+        qs = (Alerta.objects.del_tenant_actual()
+              .select_related("respuesta", "respuesta__aplicacion", "atendida_por")
+              .order_by("atendida", "-creado_en"))
+        if request.query_params.get("pendientes") == "1":
+            qs = qs.filter(atendida=False)
+        datos = [_dato_alerta(a) for a in qs[:300]]
+        return Response({
+            "alertas": datos,
+            "pendientes": sum(1 for d in datos if not d["atendida"]),
+            "sin_avisar": sum(1 for d in datos
+                              if d["aviso"] in ("pendiente", "fallido", "sin_canal")
+                              and not d["atendida"]),
+        })
+
+
+class AtenderAlertaView(_PanelBase):
+    """POST /api/faro/panel/alertas/<pk>/ → registrar qué se hizo con el caso.
+
+    Exige texto. Marcar "atendida" sin decir qué se hizo deja el registro sin
+    valor justo donde más falta hace: si alguien cuestiona la actuación meses
+    después, una casilla marcada no sostiene nada.
+    """
+
+    def post(self, request, pk):
+        a = (Alerta.objects.del_tenant_actual()
+             .select_related("respuesta", "respuesta__aplicacion").filter(pk=pk).first())
+        if a is None:
+            raise Http404
+        acciones = str((request.data or {}).get("acciones") or "").strip()
+        if len(acciones) < 10:
+            return Response(
+                {"detail": "Escribe qué se hizo con el caso: con quién se habló, "
+                           "qué se acordó y qué derivación hubo."},
+                status=status.HTTP_400_BAD_REQUEST)
+        a.acciones = acciones[:4000]
+        a.atendida = True
+        a.atendida_en = timezone.now()
+        a.atendida_por = request.user
+        a.save(update_fields=["acciones", "atendida", "atendida_en", "atendida_por"])
+        return Response(_dato_alerta(a))
+
+
+class ResultadosView(_PanelBase):
+    """GET /api/faro/panel/resultados/<pk>/ → la hoja de resultados de un colegio.
+
+    Sale como datos y no como archivo: el panel ya arma sus exportables con
+    exceljs en el navegador, y repetir esa maquinaria en el servidor solo para
+    Faro sería una segunda forma de hacer lo mismo.
+    """
+
+    def get(self, request, pk):
+        ap = Aplicacion.objects.del_tenant_actual().filter(pk=pk).first()
+        if ap is None:
+            raise Http404
+        filas = []
+        for r in ap.respuestas.select_related("alerta").order_by("grado", "seccion", "nombre"):
+            filas.append({
+                "estudiante": r.nombre, "grado": r.grado, "seccion": r.seccion,
+                "codigo": r.codigo, "nivel": r.nivel,
+                "phq_total": r.phq_total, "gad_total": r.gad_total,
+                "asq_positivo": "Sí" if r.asq_positivo else "No",
+                "ebipq_rol": r.ebipq_rol,
+                "completa": "Sí" if r.completa else "No",
+                "motivos": " · ".join(r.motivos),
+                "fecha": r.creado_en.date().isoformat(),
+            })
+        return Response({
+            "institucion": ap.institucion, "ciudad": ap.ciudad,
+            "estado": ap.get_estado_display(), "filas": filas,
+            "totales": {
+                "evaluados": len(filas),
+                "rojo": sum(1 for f in filas if f["nivel"] == "rojo"),
+                "ambar": sum(1 for f in filas if f["nivel"] == "ambar"),
+                "verde": sum(1 for f in filas if f["nivel"] == "verde"),
+                "incompletos": sum(1 for f in filas if f["completa"] == "No"),
+            },
+        })

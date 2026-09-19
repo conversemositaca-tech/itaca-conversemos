@@ -171,3 +171,30 @@ class PuedeFusionarPacientes(BasePermission):
     def has_permission(self, request, view):
         return bool(request.user and request.user.is_authenticated
                     and puede_fusionar_pacientes(request.user))
+
+
+# ── Faro · tamizaje escolar ────────────────────────────────────────────────
+# Los casos de Faro son datos de salud mental de MENORES que confía un colegio.
+# El acceso es más estrecho que el de cualquier otro módulo del panel, y a
+# propósito:
+#   - coordinación agenda y contacta pacientes, pero no lee el tamizaje de un
+#     alumno de secundaria: no le corresponde y el convenio no lo autoriza;
+#   - comercial no tiene nada que hacer aquí;
+#   - la analista, que ve indicadores en todo lo demás, tampoco: el informe
+#     institucional ya le da el agregado, y el detalle individual es clínico.
+# Queda el psicólogo responsable, y gerencia porque responde por el convenio.
+ROLES_FARO = ("medico", "admin")
+
+
+def puede_ver_faro(user):
+    return bool(user and user.is_authenticated
+                and getattr(user, "rol", None) in ROLES_FARO)
+
+
+class PuedeVerFaro(BasePermission):
+    """Acceso a los casos del tamizaje escolar. Ver `ROLES_FARO`."""
+
+    message = "Tu perfil no puede ver los casos del tamizaje escolar."
+
+    def has_permission(self, request, view):
+        return puede_ver_faro(request.user)
