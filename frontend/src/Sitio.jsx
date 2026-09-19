@@ -804,6 +804,28 @@ function PaginaTerapias({ datos }) {
         </section>
       )}
 
+      {/* La Brújula va antes del Círculo de Aliados porque es una puerta de
+          entrada, no un servicio más del catálogo. La duda que más le llega al
+          equipo por WhatsApp es en qué se diferencia de la primera consulta, así
+          que se responde aquí mismo y no en una pregunta frecuente. */}
+      <section className="sw-sec">
+        <div className="sw-wrap">
+          <p className="sw-eyebrow">{t.brujulaRotulo}</p>
+          <h2 className="sw-h2">{t.brujulaTitulo}</h2>
+          <p className="sw-intro">{t.brujulaEntrada}</p>
+          <ol className="sw-pasos" style={{ marginTop: 30 }}>
+            {t.brujulaIncluye.map((p) => (
+              <li key={p.t} className="sw-paso">
+                <h3>{p.t}</h3>
+                <p>{p.d}</p>
+              </li>
+            ))}
+          </ol>
+          <p className="sw-intro" style={{ marginTop: 30 }}>{t.brujulaPara}</p>
+          <p className="sw-cita">{t.brujulaDiferencia}</p>
+        </div>
+      </section>
+
       <section className="sw-sec sw-celeste">
         <div className="sw-wrap">
           <p className="sw-eyebrow">{t.circuloRotulo}</p>

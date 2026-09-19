@@ -137,6 +137,23 @@ export const TERAPIAS = {
     "Problemas familiares", "Exploración de tu sexualidad", "Crecimiento personal", "Adicciones",
     "Somatizaciones", "Manejo de los conflictos", "Duelos (pareja, familia, perinatal)",
   ],
+  // Sesión Brújula. El texto es el mismo con el que el equipo la explica por
+  // WhatsApp: si la web dijera otra cosa, quien pregunta por los dos canales
+  // recibiría dos versiones de un mismo servicio.
+  brujulaRotulo: "Antes de empezar",
+  brujulaTitulo: "Sesión Brújula",
+  brujulaEntrada:
+    "A veces sabemos que necesitamos ayuda, pero no sabemos por dónde empezar. La Sesión Brújula es una sesión de evaluación y orientación con un psicólogo de nuestro equipo, especializado en evaluación y orientación clínica, que conoce a todos los terapeutas. No es una sesión de terapia ni un diagnóstico: es el paso ideal para quien no sabe por dónde empezar.",
+  brujulaIncluye: [
+    { t: "Una entrevista profunda", d: "Para entender lo que estás atravesando, con calma y sin apuro." },
+    { t: "Pruebas psicológicas", d: "Para conocer cómo está hoy tu bienestar emocional." },
+    { t: "Exploración de tu contexto", d: "Qué quieres trabajar y cómo te relacionas con la terapia." },
+    { t: "Una recomendación para ti", d: "El terapeuta y el enfoque que mejor se ajustan a tu caso, y un pequeño mapa para empezar con más seguridad y menos ensayo y error." },
+  ],
+  brujulaPara:
+    "Es para ti si no sabes por dónde empezar, si tuviste malas experiencias previas en terapia, o si quieres una orientación personalizada antes de elegir psicólogo.",
+  brujulaDiferencia:
+    "La primera consulta es conocer a tu psicólogo. La Brújula es que alguien que conoce a todo el equipo te ayude a descubrir cuál psicólogo y qué enfoque te convienen.",
   circuloTitulo: "Círculo de Aliados",
   circuloRotulo: "Terapia grupal",
   circuloEntrada:
