@@ -12283,10 +12283,14 @@ function Profesionales({ showToast, esAdmin }) {
 
   const nActivos = (p) => p.pacientes_stats ? (frec ? (p.pacientes_stats[frec] || 0) : p.pacientes_stats.activos) : 0;
 
-  async function guardar(data, foto) {
+  async function guardar(data, foto, video, quitarVideo) {
     try {
       const prof = data.id ? await api.actualizarProfesional(data.id, data) : await api.crearProfesional(data);
       if (foto) await api.subirFotoProfesional(prof.id, foto);
+      // El video va aparte del resto de la ficha: es un archivo y puede fallar
+      // por tamaño, sin que eso deba tumbar el guardado de lo demás.
+      if (video) await api.subirVideoProfesional(prof.id, video);
+      else if (quitarVideo) await api.quitarVideoProfesional(prof.id);
       await cargar();
       setEditar(null);
       showToast(data.id ? "Ficha actualizada ✓" : "Profesional agregado ✓");
@@ -12471,13 +12475,16 @@ function ProfesionalModal({ prof, onClose, onSave }) {
     sede: prof?.sede || "piura", modalidad: prof?.modalidad || "ambas",
     enfoque: prof?.enfoque || "", poblaciones: prof?.poblaciones || "",
     problematicas: prof?.problematicas || "", formacion: prof?.formacion || "", trayectoria: prof?.trayectoria || "",
-    frase: prof?.frase || "", video_url: prof?.video_url || "", activo: prof?.activo ?? true,
+    frase: prof?.frase || "", activo: prof?.activo ?? true,
     horas_disponibles: prof?.horas_disponibles ?? 0,
     porcentaje_liquidacion: prof?.porcentaje_liquidacion ?? 0,
     horario_semanal: prof?.horario_semanal || {},
     horario_modalidad: prof?.horario_modalidad || {},
   });
   const [foto, setFoto] = useState(null);
+  const [video, setVideo] = useState(null);
+  const [quitarVideo, setQuitarVideo] = useState(false);
+  const [avisoVideo, setAvisoVideo] = useState("");
   const set = (k) => (e) => setF((prev) => ({ ...prev, [k]: e.target.value }));
   const canSave = f.nombre.trim().length > 0;
   const ta = { minHeight: 70, resize: "vertical", lineHeight: 1.5 };
@@ -12539,16 +12546,6 @@ function ProfesionalModal({ prof, onClose, onSave }) {
         <div style={{ marginBottom: 12 }}><div className="ca-label">Formación / especialidades</div><textarea className="ca-input" style={ta} value={f.formacion} onChange={set("formacion")} /></div>
         <div style={{ marginBottom: 12 }}><div className="ca-label">Trayectoria</div><textarea className="ca-input" style={ta} value={f.trayectoria} onChange={set("trayectoria")} /></div>
         <div style={{ marginBottom: 12 }}><div className="ca-label">Frase / lema</div><input className="ca-input" value={f.frase} onChange={set("frase")} /></div>
-        <div style={{ marginBottom: 12 }}>
-          <div className="ca-label">Video de presentación</div>
-          <input className="ca-input" value={f.video_url} onChange={set("video_url")}
-            placeholder="https://youtu.be/..." />
-          <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 4 }}>
-            {f.video_url && !/(?:youtu\.be\/|youtube\.com\/(?:watch\?(?:.*&)?v=|embed\/|shorts\/|live\/))[A-Za-z0-9_-]{11}/.test(f.video_url)
-              ? "Ese enlace no parece de YouTube: el video no se mostrará en la web."
-              : "Súbelo a YouTube como \"no listado\" y pega el enlace. Se ve dentro de la web, sin mandar a nadie a YouTube."}
-          </div>
-        </div>
 
         <div className="ca-secth" style={{ margin: "4px 0 8px" }}>Horario de atención <span style={{ color: "var(--muted)", fontWeight: 400, fontSize: 12 }}>(clic para ciclar: presencial → virtual → mixto → libre)</span></div>
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 8, fontSize: 12 }}>
@@ -12584,6 +12581,40 @@ function ProfesionalModal({ prof, onClose, onSave }) {
             <Paperclip size={14} strokeWidth={2} /> {foto ? foto.name : "Subir foto"}
             <input type="file" accept="image/*" hidden onChange={(e) => setFoto(e.target.files[0] || null)} />
           </label>
+
+          {/* El tope de 25 MB se avisa ANTES de subir: un video de celular sin
+              comprimir pasa de 60 MB, y el error del servidor llegaría recién
+              después de haber esperado toda la subida. */}
+          <label className="ca-upload" style={{ cursor: "pointer" }}>
+            <Play size={14} strokeWidth={2} />
+            {video ? video.name : (prof?.video_nombre && !quitarVideo ? prof.video_nombre : "Subir video")}
+            <input type="file" accept="video/*" hidden onChange={(e) => {
+              const v = e.target.files[0] || null;
+              if (v && v.size > 25 * 1024 * 1024) {
+                setAvisoVideo(`Ese video pesa ${(v.size / 1048576).toFixed(0)} MB y el límite son 25 MB. Vuelve a compartirlo desde el celular en calidad media, o recórtalo.`);
+                setVideo(null);
+                return;
+              }
+              setAvisoVideo(""); setVideo(v); setQuitarVideo(false);
+            }} />
+          </label>
+          {(prof?.video_nombre || video) && !quitarVideo ? (
+            <button type="button" className="ca-btn-texto"
+              onClick={() => { setVideo(null); setQuitarVideo(true); setAvisoVideo(""); }}>
+              Quitar video
+            </button>
+          ) : null}
+          {quitarVideo ? (
+            <span style={{ fontSize: 13, color: "var(--muted)" }}>
+              Se quitará al guardar.{" "}
+              <button type="button" className="ca-btn-texto" onClick={() => setQuitarVideo(false)}>Deshacer</button>
+            </span>
+          ) : null}
+          {avisoVideo ? (
+            <p style={{ flexBasis: "100%", margin: 0, fontSize: 13, color: "var(--danger, #b3261e)" }}>
+              {avisoVideo}
+            </p>
+          ) : null}
           <label style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 13.5, color: "var(--ink-soft)", cursor: "pointer" }}>
             <input type="checkbox" checked={f.activo} onChange={(e) => setF((prev) => ({ ...prev, activo: e.target.checked }))} /> Activo
           </label>
@@ -12592,7 +12623,7 @@ function ProfesionalModal({ prof, onClose, onSave }) {
         <div style={{ display: "flex", gap: 9, justifyContent: "flex-end" }}>
           <button className="ca-btn ghost" onClick={onClose}>Cancelar</button>
           <button className="ca-btn" style={{ opacity: canSave ? 1 : 0.5, pointerEvents: canSave ? "auto" : "none" }}
-            onClick={() => onSave({ ...(prof?.id ? { id: prof.id } : {}), ...f, nombre: f.nombre.trim(), horas_disponibles: Number(f.horas_disponibles) || 0, porcentaje_liquidacion: Number(f.porcentaje_liquidacion) || 0 }, foto)}>Guardar</button>
+            onClick={() => onSave({ ...(prof?.id ? { id: prof.id } : {}), ...f, nombre: f.nombre.trim(), horas_disponibles: Number(f.horas_disponibles) || 0, porcentaje_liquidacion: Number(f.porcentaje_liquidacion) || 0 }, foto, video, quitarVideo)}>Guardar</button>
         </div>
       </div>
     </div>
@@ -14555,9 +14586,9 @@ export const AGENDA_CSS = `
   .ag-sede:hover, .ag-via:hover, .ag-hora:hover, .ag-cat:hover, .ag-btn:hover { transform:none; }
 }
 
-/* Video de presentación. El reproductor NO se carga hasta que alguien le da
-   play: así el perfil no arrastra el peso de un iframe de YouTube que casi
-   nadie abre, y quien solo lee el perfil no queda registrado por Google. */
+/* Video de presentación. El archivo NO se pide hasta que alguien le da play:
+   así el perfil no arrastra varios megas que casi nadie abre, ni se gasta el
+   ancho de banda del servidor en quien solo vino a leer. */
 .ag-video-btn {
   display:inline-flex; align-items:center; justify-content:center; gap:9px; width:100%;
   padding:13px 18px; margin:0 0 18px; border-radius:12px;
@@ -14567,11 +14598,15 @@ export const AGENDA_CSS = `
 }
 .ag-video-btn:hover { background:var(--acento-suave); transform:translateY(-1px); }
 .ag-video-btn svg { color:var(--acento); flex-shrink:0; }
-.ag-video {
-  position:relative; width:100%; aspect-ratio:16/9; margin:0 0 18px;
-  border-radius:12px; overflow:hidden; background:#000;
+/* Sin proporcion fija: los videos del equipo son verticales (1080x1920, como
+   un Reel), y forzar 16:9 los dejaba diminutos entre dos franjas negras. El
+   navegador los dimensiona solo; el tope de ancho evita que uno vertical ocupe
+   la pantalla entera. */
+.ag-video { max-width:300px; margin:0 auto 18px; }
+.ag-video video {
+  display:block; width:100%; height:auto; border:0;
+  border-radius:12px; background:#000;
 }
-.ag-video iframe { position:absolute; inset:0; width:100%; height:100%; border:0; }
 `;
 
 export function AgendarPublico({ token }) {
@@ -15251,9 +15286,10 @@ export function AgendarPublico({ token }) {
             {perfil.video ? (
               verVideo ? (
                 <div className="ag-video">
-                  <iframe src={`${perfil.video}&autoplay=1`} title={`Presentación de ${perfil.nombre}`}
-                    allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture"
-                    allowFullScreen />
+                  {/* playsInline: sin eso, iOS abre el video a pantalla completa
+                      y saca a la persona de la reserva a medio llenar. */}
+                  <video src={perfil.video} controls autoPlay playsInline
+                    aria-label={`Presentación de ${perfil.nombre}`} />
                 </div>
               ) : (
                 <button className="ag-video-btn" onClick={() => setVerVideo(true)}>

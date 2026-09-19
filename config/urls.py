@@ -55,7 +55,7 @@ from mensajes.materiales import MaterialViewSet
 from mensajes.monitor_evolution import EvolutionEstadoView, EvolutionInstanciasView
 from mensajes.webhook_evolution import EvolutionWebhookView
 from pacientes.api import AdjuntoViewSet, AplicacionEscalaViewSet, AtencionViewSet, BloqueoAgendaViewSet, CitaViewSet, ContactoProfesionalViewSet, ObjetivoTerapeuticoViewSet, PacienteViewSet, RespuestaNPSViewSet, TareaViewSet, TranscribirView
-from core.sitio import SitioFotoView, SitioInfoView
+from core.sitio import SitioFotoView, SitioVideoView, SitioInfoView
 from pacientes.api_duplicados import (
     DuplicadoAnalizarView, DuplicadoDescartarView, DuplicadoFusionarView,
     DuplicadosListaView,
@@ -66,6 +66,7 @@ from pacientes.agendamiento import (
     AgendamientoReservarView,
     AgendamientoSlotsView,
     AgendamientoSolicitarView,
+    AgendamientoVideoView,
 )
 from pacientes.consentimiento import (
     AceptarConsentimientoView,
@@ -181,6 +182,7 @@ urlpatterns = [
     path("api/consentimiento/<str:token>/", ConsentimientoPublicoView.as_view(), name="consentimiento-publico"),
     # Auto-agendamiento público por token (sin login). Rutas específicas antes del comodín.
     path("api/agendamiento/<str:token>/foto/<int:pk>/", AgendamientoFotoView.as_view(), name="agendamiento-foto"),
+    path("api/agendamiento/<str:token>/video/<int:pk>/", AgendamientoVideoView.as_view(), name="agendamiento-video"),
     path("api/agendamiento/<str:token>/slots/", AgendamientoSlotsView.as_view(), name="agendamiento-slots"),
     path("api/agendamiento/<str:token>/reservar/", AgendamientoReservarView.as_view(), name="agendamiento-reservar"),
     path("api/agendamiento/<str:token>/solicitar/", AgendamientoSolicitarView.as_view(), name="agendamiento-solicitar"),
@@ -189,6 +191,7 @@ urlpatterns = [
     path("api/embudo/", embudo.RegistrarEventoView.as_view(), name="embudo-evento"),
     # Datos públicos del sitio web (sin token en la URL; la clínica sale de settings).
     path("api/sitio/foto/<int:pk>/", SitioFotoView.as_view(), name="sitio-foto"),
+    path("api/sitio/video/<int:pk>/", SitioVideoView.as_view(), name="sitio-video"),
     path("api/sitio/", SitioInfoView.as_view(), name="sitio-info"),
 
     path("api/", include(router.urls)),

@@ -259,6 +259,12 @@ export const api = {
     return req(`/api/profesionales/${id}/foto/`, { method: "POST", body: fd });
   },
   urlFotoProfesional: (id) => `/api/profesionales/${id}/foto/`,
+  subirVideoProfesional: (id, file) => {
+    const fd = new FormData();
+    fd.append("video", file);
+    return req(`/api/profesionales/${id}/video/`, { method: "POST", body: fd });
+  },
+  quitarVideoProfesional: (id) => req(`/api/profesionales/${id}/video/`, { method: "DELETE" }),
   // Documentos legales (contratos / adendas)
   documentosLegales: (profId) => req(`/api/documentos-legales/${profId ? `?profesional=${profId}` : ""}`),
   subirDocumentoLegal: (data) => {
