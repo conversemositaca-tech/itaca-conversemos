@@ -59,9 +59,6 @@ class Aplicacion(ModeloTenant):
     autorizados = models.PositiveIntegerField(
         "con autorización firmada", default=0,
         help_text="Apoderados que autorizaron. Sin esto, el estudiante no participa.")
-    evaluados = models.PositiveIntegerField(
-        "efectivamente evaluados", default=0,
-        help_text="Estudiantes que completaron el tamizaje. Es lo que se factura.")
 
     fecha_aplicacion = models.DateField(null=True, blank=True)
     fecha_informe = models.DateField(null=True, blank=True)
@@ -89,6 +86,19 @@ class Aplicacion(ModeloTenant):
 
     def __str__(self):
         return f"{self.institucion} ({self.get_estado_display()})"
+
+    @property
+    def evaluados(self):
+        """Cuántos contestaron. Se CUENTA, no se guarda.
+
+        Fue un campo que se llenaba a mano y que ningún código llenaba nunca:
+        el panel del colegio leía ese cero y anunciaba "todavía no hay
+        resultados" mientras el panel interno mostraba los casos que sí habían
+        llegado. Dos verdades distintas sobre la misma pregunta, y la que veía
+        el cliente era la falsa. `matriculados` y `autorizados` siguen a mano
+        porque no se pueden deducir de nadie que contestó; este sí.
+        """
+        return self.respuestas.count()
 
     @property
     def participacion(self):

@@ -13,7 +13,9 @@ import datetime as dt
 from django.test import TestCase
 
 from core.models import Clinica
+from faro import instrumentos as ins
 from faro.models import Aplicacion
+from faro.registro import registrar
 
 
 class PanelFaroTests(TestCase):
@@ -21,9 +23,19 @@ class PanelFaroTests(TestCase):
         self.clinica = Clinica.objects.create(nombre="Ítaca Conversemos", slug="itaca-faro-panel")
         self.ap = Aplicacion.objects.create(
             clinica=self.clinica, institucion="I.E. San Martín", ciudad="Piura",
-            contacto="Ana Chávez", matriculados=400, autorizados=350, evaluados=322,
+            contacto="Ana Chávez", matriculados=400, autorizados=25,
             estado=Aplicacion.Estado.CERRADA,
             fecha_aplicacion=dt.date(2026, 9, 10), fecha_informe=dt.date(2026, 9, 25))
+        # Los evaluados se CUENTAN de las respuestas reales. Antes este test los
+        # escribía a mano y pasaba en verde mientras en producción el panel
+        # anunciaba "todavía no hay resultados" con el colegio entero contestado.
+        self.responden(23)
+
+    def responden(self, cuantos):
+        vacias = {i["id"]: 0 for i in ins.ORDEN}
+        for n in range(cuantos):
+            registrar(self.ap, nombre=f"Estudiante {n}", grado="3.° secundaria",
+                      respuestas=vacias)
 
     def panel(self, token=None):
         return self.client.get(f"/api/faro/{token or self.ap.token}/")
@@ -39,30 +51,40 @@ class PanelFaroTests(TestCase):
         d = self.panel().json()
         self.assertEqual(d["institucion"], "I.E. San Martín")
         self.assertEqual(d["ciudad"], "Piura")
-        self.assertEqual(d["evaluados"], 322)
-        self.assertEqual(d["autorizados"], 350)
+        self.assertEqual(d["evaluados"], 23)
+        self.assertEqual(d["autorizados"], 25)
         self.assertEqual(d["estado_label"], "Informe entregado")
         self.assertTrue(d["hay_datos"])
 
     def test_la_participacion_se_mide_sobre_los_autorizados(self):
-        # Sobre matriculados (400) daría 81% y castigaría al colegio por una
-        # decisión de las familias. Sobre autorizados (350) da 92%, que es lo
+        # Sobre matriculados (400) daría 6% y castigaría al colegio por una
+        # decisión de las familias. Sobre autorizados (25) da 92%, que es lo
         # que la institución sí puede mover.
         self.assertEqual(self.panel().json()["participacion"], 92)
 
     def test_sin_autorizados_la_participacion_no_es_cero_sino_nada(self):
         # Decir 0% da a entender que fue mal. Todavía no empezó.
         self.ap.autorizados = 0
-        self.ap.evaluados = 0
-        self.ap.save(update_fields=["autorizados", "evaluados"])
+        self.ap.save(update_fields=["autorizados"])
+        self.ap.respuestas.all().delete()
         self.assertIsNone(self.panel().json()["participacion"])
 
     def test_sin_aplicar_avisa_que_no_hay_datos(self):
-        self.ap.evaluados = 0
-        self.ap.save(update_fields=["evaluados"])
+        self.ap.respuestas.all().delete()
         d = self.panel().json()
         self.assertFalse(d["hay_datos"])
         self.assertEqual(d["grados"], [])
+
+    def test_en_cuanto_alguien_contesta_el_panel_deja_de_decir_que_no_hay_nada(self):
+        # El error que se vio en producción: el panel interno mostraba el caso
+        # y el del colegio seguía anunciando que el tamizaje no se había
+        # aplicado. Dos verdades sobre lo mismo, y el cliente veía la falsa.
+        self.ap.respuestas.all().delete()
+        self.assertFalse(self.panel().json()["hay_datos"])
+        self.responden(1)
+        d = self.panel().json()
+        self.assertTrue(d["hay_datos"])
+        self.assertEqual(d["evaluados"], 1)
 
     def test_no_se_filtra_ningun_estudiante(self):
         # La prueba que importa: en TODO el cuerpo no puede aparecer nada que
