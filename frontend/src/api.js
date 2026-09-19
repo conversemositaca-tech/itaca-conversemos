@@ -138,6 +138,8 @@ export const api = {
   miPanel: () => req("/api/mi-panel/"),
 
   // Auto-agendamiento público (landing por token, sin login)
+  // Faro: un colegio pide información. No pasa por el embudo de pacientes.
+  solicitarFaro: (data) => req("/api/sitio/faro/", { method: "POST", body: JSON.stringify(data) }),
   agendaInfo: (token) => req(`/api/agendamiento/${token}/`),
   agendaSlots: (token, profId, dias = 14) => req(`/api/agendamiento/${token}/slots/?profesional=${profId}&dias=${dias}`),
   agendaReservar: (token, data) => req(`/api/agendamiento/${token}/reservar/`, { method: "POST", body: JSON.stringify(data) }),

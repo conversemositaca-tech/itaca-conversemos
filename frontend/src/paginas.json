@@ -36,6 +36,11 @@
       "titulo": "Preguntas frecuentes · Ítaca Conversemos",
       "descripcion": "Lo que más nos preguntan antes de una primera consulta: cómo reservar, cuánto dura, modalidades y sedes. Si te queda una duda, escríbenos.",
       "imagen": "sitio/consulta.jpg"
+    },
+    "/faro": {
+      "titulo": "Faro · Tamizaje escolar de bienestar emocional · Ítaca Conversemos",
+      "descripcion": "Programa preventivo para colegios: identifica a tiempo las necesidades emocionales de los estudiantes de secundaria y orienta el acompañamiento. Lima y Piura.",
+      "imagen": "sitio/equipo.jpg"
     }
   }
 }

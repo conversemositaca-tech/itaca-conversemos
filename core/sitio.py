@@ -16,6 +16,7 @@ from django.conf import settings
 from django.http import FileResponse, Http404
 
 from core import rangos
+from rest_framework import status
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -23,6 +24,7 @@ from rest_framework.views import APIView
 from core.models import Clinica
 from finanzas.models import Servicio
 from pacientes.agendamiento import _profesionales_agendables
+from leads.models import SolicitudInstitucional
 from usuarios.models import Profesional
 
 
@@ -138,3 +140,60 @@ class SitioFotoView(_SitioBase):
             return FileResponse(prof.foto.open("rb"))
         except (FileNotFoundError, ValueError, OSError):
             raise Http404
+
+
+class SitioFaroView(_SitioBase):
+    """POST /api/sitio/faro/ → un colegio pide información sobre el tamizaje.
+
+    Público y sin token: es un formulario de la web abierta. Se limita por el
+    throttle de `_SitioBase`. No crea un `Lead`: un colegio no es un paciente, y
+    mezclarlos falsearía la tasa de cierre y el CAC del embudo de terapia.
+    """
+
+    def post(self, request):
+        clinica = clinica_del_sitio()
+        if clinica is None:
+            raise Http404
+        d = request.data if isinstance(request.data, dict) else {}
+
+        institucion = str(d.get("institucion") or "").strip()[:200]
+        responsable = str(d.get("responsable") or "").strip()[:200]
+        whatsapp = str(d.get("whatsapp") or "").strip()[:40]
+        correo = str(d.get("correo") or "").strip()[:200]
+
+        # Sin colegio y sin persona no hay a quién devolverle la llamada, y sin
+        # un canal de contacto tampoco.
+        if not institucion or not responsable:
+            return Response({"detail": "Necesitamos el nombre de la institución y de la persona de contacto."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        if not whatsapp and not correo:
+            return Response({"detail": "Déjanos un WhatsApp o un correo para responderte."},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            estudiantes = int(str(d.get("estudiantes") or "").strip() or 0) or None
+        except (TypeError, ValueError):
+            estudiantes = None
+        if estudiantes is not None and not (0 < estudiantes <= 20000):
+            estudiantes = None
+
+        nivel = str(d.get("nivel") or "").strip().lower()
+        if nivel not in dict(SolicitudInstitucional.Nivel.choices):
+            nivel = ""
+        interes = str(d.get("interes") or "").strip().lower()
+        if interes not in dict(SolicitudInstitucional.Interes.choices):
+            interes = ""
+
+        SolicitudInstitucional.objects.create(
+            clinica=clinica,
+            institucion=institucion,
+            responsable=responsable,
+            cargo=str(d.get("cargo") or "").strip()[:120],
+            estudiantes=estudiantes,
+            nivel=nivel,
+            interes=interes,
+            whatsapp=whatsapp,
+            correo=correo,
+            mensaje=str(d.get("mensaje") or "").strip()[:2000],
+        )
+        return Response({"ok": True}, status=status.HTTP_201_CREATED)

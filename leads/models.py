@@ -281,3 +281,59 @@ class EventoSitio(ModeloTenant):
 
     def __str__(self):
         return f"{self.get_tipo_display()} · {self.ruta or '—'}"
+
+
+class SolicitudInstitucional(ModeloTenant):
+    """Colegio que pide información sobre Faro, el tamizaje escolar.
+
+    Deliberadamente separado de `Lead`: un colegio no es un paciente. Metidos en
+    la misma tabla, estas solicitudes contaminarían la tasa de cierre, el CAC y
+    el reporte de captación, que se calculan sobre personas que vienen a
+    terapia. Aquí el cliente es la institución.
+    """
+
+    class Nivel(models.TextChoices):
+        SECUNDARIA = "secundaria", "Secundaria"
+        PRIMARIA = "primaria", "Primaria"
+        AMBOS = "ambos", "Primaria y secundaria"
+        OTRO = "otro", "Otro"
+
+    class Interes(models.TextChoices):
+        TAMIZAJE = "tamizaje", "Tamizaje preventivo (Faro)"
+        EVALUACION = "evaluacion", "Evaluación de casos puntuales"
+        TALLERES = "talleres", "Talleres y capacitación"
+        PROGRAMA = "programa", "Programa de bienestar escolar"
+        NO_SABE = "no_sabe", "Aún no lo tiene claro"
+
+    class Estado(models.TextChoices):
+        NUEVA = "nueva", "Nueva"
+        CONTACTADA = "contactada", "Contactada"
+        REUNION = "reunion", "Reunión agendada"
+        PROPUESTA = "propuesta", "Propuesta enviada"
+        GANADA = "ganada", "Convenio firmado"
+        PERDIDA = "perdida", "Perdida"
+
+    institucion = models.CharField("institución educativa", max_length=200)
+    responsable = models.CharField("persona responsable", max_length=200)
+    cargo = models.CharField(max_length=120, blank=True, default="")
+    # Aproximado a propósito: en la primera conversación nadie tiene el número
+    # exacto, y pedirlo exacto hace que abandonen el formulario.
+    estudiantes = models.PositiveIntegerField(
+        "estudiantes aproximados", null=True, blank=True)
+    nivel = models.CharField(max_length=12, choices=Nivel.choices, blank=True, default="")
+    interes = models.CharField("qué busca", max_length=12, choices=Interes.choices,
+                               blank=True, default="")
+    whatsapp = models.CharField(max_length=40, blank=True, default="")
+    correo = models.EmailField(blank=True, default="")
+    mensaje = models.TextField(blank=True, default="")
+    estado = models.CharField(max_length=12, choices=Estado.choices, default=Estado.NUEVA)
+    notas = models.TextField(blank=True, default="")
+
+    class Meta:
+        verbose_name = "Solicitud de institución educativa"
+        verbose_name_plural = "Solicitudes de instituciones educativas"
+        ordering = ["-creado_en"]
+        indexes = [models.Index(fields=["clinica", "estado"])]
+
+    def __str__(self):
+        return f"{self.institucion} ({self.get_estado_display()})"

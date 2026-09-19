@@ -10,7 +10,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   ArrowRight, Check, ChevronDown, Clock, Compass, GraduationCap, Heart, HeartHandshake, MapPin,
-  MessageCircle, MessagesSquare, Play, Shield, Sprout, User, Users,
+  Check as Tilde, MessageCircle, MessagesSquare, Play, Shield, Sprout, User, Users,
 } from "lucide-react";
 
 // Iconos lineales de los servicios y los principios, en un solo lugar para que
@@ -27,7 +27,8 @@ import {
 import datosDePaginas from "./paginas.json";
 import { PASOS as PASOS_EMBUDO, registrar } from "./embudo";
 import { SITE_ROUTES, alCambiarRuta, propsEnlace, rutaCanonica } from "./rutas";
-import { INICIO, PASOS, PREGUNTAS, PSICOLOGOS, QUIENES_SOMOS, TERAPIAS, TESTIMONIOS } from "./sitio-textos";
+import { api } from "./api";
+import { FARO, INICIO, PASOS, PREGUNTAS, PSICOLOGOS, QUIENES_SOMOS, TERAPIAS, TESTIMONIOS } from "./sitio-textos";
 
 // Estilos propios de las páginas de contenido. Se apoyan en los tokens del
 // agendamiento (papel crema, tinta cálida, acento turquesa legible): aquí solo
@@ -203,6 +204,22 @@ const SW_CSS = `
 }
 .sw-campo span { font-size:14.5px; line-height:1.55; color:var(--txt-2); }
 .sw-corta { display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
+/* Faro. Reutiliza los campos de formulario del agendamiento (AGENDA_CSS ya
+   está cargado en esta misma página), así que aquí solo van las piezas que no
+   existían: las dos tarjetas de plan y el bloque de lo que el colegio no
+   recibe, que tiene que leerse distinto del resto para que nadie lo pase. */
+.sw-planes { display:grid; gap:clamp(18px,2.4vw,26px); grid-template-columns:repeat(auto-fit,minmax(min(280px,100%),1fr)); margin-top:26px; }
+.sw-plan { padding:26px; border-radius:16px; border:1px solid var(--t-suave); background:#fff; }
+.sw-plan h3 { margin:0 0 14px; font-size:18px; font-weight:600; color:var(--txt); letter-spacing:-0.02em; }
+.sw-plan ul { list-style:none; margin:0; padding:0; }
+.sw-plan li { display:flex; gap:9px; align-items:flex-start; margin-bottom:10px; font-size:14.5px; line-height:1.55; color:var(--txt-2); }
+.sw-plan li svg { flex-shrink:0; margin-top:3px; color:var(--t-sobre-suave); }
+.sw-limite { margin-top:22px; padding:20px 22px; border-radius:14px; background:var(--t-suave); border-left:5px solid var(--t-sobre-suave); }
+.sw-limite p { margin:0; font-size:14.5px; line-height:1.65; color:var(--txt); }
+.sw-form { max-width:620px; margin-top:26px; }
+.sw-form .ag-campo { margin-bottom:14px; }
+.sw-gracias { max-width:620px; margin-top:26px; padding:26px; border-radius:16px; background:var(--t-suave); }
+
 .sw-video-btn {
   display:inline-flex; align-items:center; justify-content:center; gap:9px; width:100%;
   margin:18px 0 0; padding:12px 18px; border-radius:12px; cursor:pointer;
@@ -713,6 +730,192 @@ function TarjetaProfesional({ p }) {
   );
 }
 
+
+// ── Página: Faro, el tamizaje escolar ────────────────────────────────────────
+// Landing B2B. Quien la lee decide por una institución, no por sí mismo: por eso
+// no hay ningún botón de reservar, y por eso lo que el servicio NO hace está
+// arriba y no escondido al final.
+function PaginaFaro() {
+  const t = FARO;
+  const [f, setF] = useState({
+    institucion: "", responsable: "", cargo: "", estudiantes: "",
+    nivel: "secundaria", interes: "tamizaje", whatsapp: "", correo: "", mensaje: "",
+  });
+  const set = (k) => (e) => setF((p) => ({ ...p, [k]: e.target.value }));
+  const [enviando, setEnviando] = useState(false);
+  const [err, setErr] = useState("");
+  const [hecho, setHecho] = useState(false);
+
+  async function enviar() {
+    if (!f.institucion.trim() || !f.responsable.trim()) {
+      setErr("Necesitamos el nombre de la institución y de la persona de contacto."); return;
+    }
+    if (!f.whatsapp.trim() && !f.correo.trim()) {
+      setErr("Déjenos un WhatsApp o un correo para responderle."); return;
+    }
+    setEnviando(true); setErr("");
+    try {
+      await api.solicitarFaro(f);
+      setHecho(true);
+      // No se registra en el embudo: ese mide visitas que terminan en reserva de
+      // terapia. Un colegio que pide información no es un paciente, y contarlo
+      // ahí falsearía la conversión del sitio.
+    } catch (e) {
+      setErr(e.message || "No pudimos enviar su solicitud. Intente de nuevo.");
+    } finally { setEnviando(false); }
+  }
+
+  return (
+    <>
+      <section className="sw-sec sw-hero">
+        <div className="sw-wrap sw-hero-in">
+          <p className="sw-eyebrow">{t.rotulo}</p>
+          <h1 className="sw-h">{t.titulo}</h1>
+          <p className="sw-intro" style={{ maxWidth: "46ch" }}>{t.bajada}</p>
+          <div className="sw-acciones">
+            <a className="sw-btn" href="#solicitar">
+              {t.cta} <ArrowRight size={16} strokeWidth={2.2} aria-hidden="true" />
+            </a>
+          </div>
+        </div>
+      </section>
+
+      <section className="sw-sec">
+        <div className="sw-wrap">
+          <h2 className="sw-h2">{t.porqueTitulo}</h2>
+          {t.porque.map((p, i) => <p key={i} className="sw-intro">{p}</p>)}
+        </div>
+      </section>
+
+      <section className="sw-sec sw-celeste">
+        <div className="sw-wrap">
+          <h2 className="sw-h2">{t.queEsTitulo}</h2>
+          <p className="sw-intro">{t.queEs}</p>
+          <div className="sw-limite">
+            <p><strong>Lo que Faro no hace:</strong></p>
+            <ul style={{ margin: "10px 0 0", paddingLeft: 18 }}>
+              {t.noEs.map((x, i) => (
+                <li key={i} style={{ marginBottom: 6, fontSize: 14.5, lineHeight: 1.6 }}>{x}</li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <section className="sw-sec">
+        <div className="sw-wrap">
+          <h2 className="sw-h2">{t.pasosTitulo}</h2>
+          <ol className="sw-pasos" style={{ marginTop: 26 }}>
+            {t.pasos.map((p) => (
+              <li key={p.t} className="sw-paso">
+                <h3>{p.t}</h3>
+                <p>{p.d}</p>
+              </li>
+            ))}
+          </ol>
+        </div>
+      </section>
+
+      <section className="sw-sec sw-celeste">
+        <div className="sw-wrap">
+          <h2 className="sw-h2">{t.planesTitulo}</h2>
+          <div className="sw-planes">
+            {t.planes.map((pl) => (
+              <div key={pl.nombre} className="sw-plan">
+                <h3>{pl.nombre}</h3>
+                <ul>
+                  {pl.items.map((it) => (
+                    <li key={it}><Tilde size={16} strokeWidth={2.4} aria-hidden="true" />{it}</li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="sw-sec">
+        <div className="sw-wrap">
+          <h2 className="sw-h2">{t.recibeTitulo}</h2>
+          <p className="sw-intro">{t.recibe}</p>
+          <div className="sw-limite"><p>{t.noRecibe}</p></div>
+        </div>
+      </section>
+
+      <section className="sw-sec sw-hondo" id="solicitar">
+        <div className="sw-wrap">
+          <h2 className="sw-h2">{t.formTitulo}</h2>
+          {hecho ? (
+            <div className="sw-gracias">
+              <p style={{ margin: 0, fontSize: 15.5, lineHeight: 1.65 }}>{t.gracias}</p>
+            </div>
+          ) : (
+            <>
+              <p className="sw-intro">{t.formBajada}</p>
+              <div className="sw-form">
+                <label className="ag-campo">
+                  <span className="ag-label">Institución educativa</span>
+                  <input className="ag-input" value={f.institucion} onChange={set("institucion")} autoComplete="organization" />
+                </label>
+                <label className="ag-campo">
+                  <span className="ag-label">Persona de contacto</span>
+                  <input className="ag-input" value={f.responsable} onChange={set("responsable")} autoComplete="name" />
+                </label>
+                <label className="ag-campo">
+                  <span className="ag-label">Cargo <span className="ag-opt">opcional</span></span>
+                  <input className="ag-input" value={f.cargo} onChange={set("cargo")} placeholder="Dirección, psicología, coordinación…" />
+                </label>
+                <label className="ag-campo">
+                  <span className="ag-label">Nivel</span>
+                  <select className="ag-input ag-select" value={f.nivel} onChange={set("nivel")}>
+                    <option value="secundaria">Secundaria</option>
+                    <option value="primaria">Primaria</option>
+                    <option value="ambos">Primaria y secundaria</option>
+                    <option value="otro">Otro</option>
+                  </select>
+                </label>
+                <label className="ag-campo">
+                  <span className="ag-label">Estudiantes aproximados <span className="ag-opt">opcional</span></span>
+                  <input className="ag-input" value={f.estudiantes} onChange={set("estudiantes")} inputMode="numeric" placeholder="No hace falta el número exacto" />
+                </label>
+                <label className="ag-campo">
+                  <span className="ag-label">¿Qué están buscando?</span>
+                  <select className="ag-input ag-select" value={f.interes} onChange={set("interes")}>
+                    <option value="tamizaje">Tamizaje preventivo de estudiantes</option>
+                    <option value="evaluacion">Evaluación de casos puntuales</option>
+                    <option value="talleres">Talleres y capacitación</option>
+                    <option value="programa">Un programa de bienestar escolar</option>
+                    <option value="no_sabe">Aún no lo tenemos claro</option>
+                  </select>
+                </label>
+                <label className="ag-campo">
+                  <span className="ag-label">WhatsApp</span>
+                  <input className="ag-input" value={f.whatsapp} onChange={set("whatsapp")} inputMode="tel" autoComplete="tel" />
+                </label>
+                <label className="ag-campo">
+                  <span className="ag-label">Correo</span>
+                  <input className="ag-input" value={f.correo} onChange={set("correo")} inputMode="email" autoComplete="email" />
+                </label>
+                <label className="ag-campo">
+                  <span className="ag-label">Cuéntenos brevemente <span className="ag-opt">opcional</span></span>
+                  <textarea className="ag-input ag-textarea" value={f.mensaje} onChange={set("mensaje")} placeholder="Qué los trae, qué han observado, en qué plazo lo están pensando…" />
+                </label>
+
+                {err ? <p className="ag-error" role="alert">{err}</p> : null}
+
+                <button className="sw-btn" onClick={enviar} disabled={enviando} style={{ marginTop: 8 }}>
+                  {enviando ? "Enviando…" : "Enviar solicitud"}
+                  {enviando ? null : <ArrowRight size={16} strokeWidth={2.2} aria-hidden="true" />}
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      </section>
+    </>
+  );
+}
+
 function PaginaPsicologos({ datos, cargando }) {
   const [sede, setSede] = useState("");
   const equipo = useMemo(() => datos?.equipo || [], [datos]);
@@ -973,6 +1176,7 @@ export function SitioPublico() {
       : ruta === SITE_ROUTES.psicologos ? <PaginaPsicologos datos={datos} cargando={cargando} />
         : ruta === SITE_ROUTES.terapias ? <PaginaTerapias datos={datos} />
           : ruta === SITE_ROUTES.preguntas ? <PaginaPreguntas faq={faq} />
+            : ruta === SITE_ROUTES.faro ? <PaginaFaro />
             : <PaginaInicio datos={datos} faq={faq} />;
 
   return (

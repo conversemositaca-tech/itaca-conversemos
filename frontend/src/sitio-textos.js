@@ -196,3 +196,71 @@ export const PSICOLOGOS = {
   rotulo: "Conócelos un poco más aquí",
   entrada: "Este es el equipo que atiende hoy en Lima y Piura. Puedes elegir por sede, leer el perfil de cada uno y reservar directamente con quien prefieras.",
 };
+
+// ── Faro · tamizaje escolar ──────────────────────────────────────────────────
+// Landing B2B: quien la lee es el director o el psicólogo de un colegio, no un
+// paciente. Por eso no hay "reserva tu cita" en ninguna parte, y por eso se dice
+// desde el principio lo que el servicio NO hace: un director que se entera
+// después de que no recibirá los nombres se siente engañado, y con razón.
+export const FARO = {
+  rotulo: "Para instituciones educativas",
+  titulo: "Faro",
+  bajada: "Un faro no acompaña a nadie: mira lejos y avisa a tiempo. Eso hace este programa con el bienestar emocional de los estudiantes de secundaria.",
+  cta: "Solicitar información",
+
+  porqueTitulo: "Por qué ahora",
+  porque: [
+    "La mayoría de los colegios se entera de que un estudiante la está pasando mal cuando el problema ya es visible: cuando bajan las notas, cuando falta, cuando hay un incidente. Para entonces el acompañamiento llega tarde y cuesta más.",
+    "Faro invierte ese orden. En quince minutos por estudiante, una vez al año, la institución sabe dónde están las necesidades y qué grados requieren atención.",
+  ],
+
+  queEsTitulo: "Qué es, y qué no es",
+  queEs: "Un tamizaje es una primera mirada: un cuestionario breve, aplicado por psicólogos colegiados, que identifica señales que merecen una mirada más cercana.",
+  noEs: [
+    "No diagnostica. Ningún estudiante sale de aquí con una etiqueta.",
+    "No entrega al colegio una lista de estudiantes con sus resultados.",
+    "No sustituye las obligaciones de la institución en convivencia escolar.",
+    "No reemplaza una evaluación psicológica individual.",
+  ],
+
+  pasosTitulo: "Cómo funciona",
+  pasos: [
+    { t: "Coordinación", d: "Una reunión breve para conocer al colegio, ajustar el alcance y firmar el convenio y el protocolo de atención." },
+    { t: "Autorizaciones", d: "El colegio recoge el consentimiento de los apoderados. Nosotros entregamos los formatos listos para usar." },
+    { t: "Aplicación", d: "Por aulas, en horario de tutoría, con el tutor presente y personal nuestro acompañando. Quince minutos por estudiante." },
+    { t: "Resultados", d: "Informe institucional por grado y sección, reunión de devolución con la dirección, y recomendaciones priorizadas." },
+  ],
+
+  planesTitulo: "Qué incluye",
+  planes: [
+    {
+      nombre: "Plan Preventivo",
+      items: [
+        "Aplicación del tamizaje a secundaria",
+        "Revisión profesional por psicólogo colegiado",
+        "Protocolo de atención inmediata ante casos de riesgo",
+        "Informe institucional por grado y sección",
+        "Reunión de devolución con el equipo directivo",
+      ],
+    },
+    {
+      nombre: "Plan Integral",
+      items: [
+        "Todo lo del Plan Preventivo",
+        "Evaluación individual de los casos identificados",
+        "Informe y orientación a cada familia",
+        "Taller por grado según los resultados",
+        "Capacitación a tutores en detección temprana",
+        "Verificación de seguimiento a los tres meses",
+      ],
+    },
+  ],
+
+  recibeTitulo: "Qué recibe el colegio, y qué no",
+  recibe: "La institución recibe el panorama de su comunidad: qué porcentaje de cada grado muestra indicadores de ansiedad, de ánimo o de problemas de convivencia. Con eso puede decidir dónde intervenir.",
+  noRecibe: "La institución no recibe resultados individuales asociados a nombres. Los casos que requieren atención se manejan con la familia y con el psicólogo del colegio, dentro de un protocolo firmado por ambas partes. No es una limitación nuestra: son datos de salud mental de menores, y entregar esa lista es cómo un estudiante termina etiquetado por el resto de su escolaridad.",
+
+  formTitulo: "Conversemos sobre su institución",
+  formBajada: "Déjenos sus datos y le escribimos para conocer las necesidades del colegio y armar una propuesta a su medida. Sin compromiso.",
+  gracias: "Gracias por escribirnos. Nuestro equipo se comunicará con usted para conocer las necesidades de su institución y preparar una propuesta adecuada.",
+};
