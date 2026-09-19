@@ -22,7 +22,8 @@ from django.utils import timezone
 # Apps del negocio, de padres a hijos: Clinica (core) y Usuario (usuarios) van
 # antes que todo lo que apunta a ellos. Lo que no está aquí —sesiones, permisos,
 # logs del admin, contenttypes— se regenera solo y solo abultaría el archivo.
-APPS = ["core", "usuarios", "pacientes", "finanzas", "leads", "mensajes", "espacios"]
+APPS = ["core", "usuarios", "pacientes", "finanzas", "leads", "mensajes", "espacios",
+        "faro"]
 
 
 def modelos_a_respaldar():
