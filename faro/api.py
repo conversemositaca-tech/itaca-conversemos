@@ -245,3 +245,33 @@ class ResultadosView(_PanelBase):
                 "incompletos": sum(1 for f in filas if f["completa"] == "No"),
             },
         })
+
+
+class AplicacionesView(_PanelBase):
+    """GET /api/faro/panel/aplicaciones/ → los colegios y sus dos enlaces.
+
+    Devuelve los tokens porque el psicólogo necesita repartirlos: el del
+    estudiante va al aula, el del panel va a la dirección. Son distintos a
+    propósito y aquí se ven juntos para no confundirlos al copiar.
+    """
+
+    def get(self, request):
+        base = request.build_absolute_uri("/").rstrip("/")
+        salida = []
+        for ap in Aplicacion.objects.del_tenant_actual().order_by("-creado_en")[:200]:
+            rs = ap.respuestas.all()
+            salida.append({
+                "id": ap.id,
+                "institucion": ap.institucion,
+                "ciudad": ap.ciudad,
+                "estado": ap.estado,
+                "estado_label": ap.get_estado_display(),
+                "avisar_whatsapp": ap.avisar_whatsapp,
+                "enlace_estudiante": f"{base}/faro/t/{ap.token_estudiante}",
+                "enlace_colegio": f"{base}/faro/{ap.token}",
+                "autorizados": ap.autorizados,
+                "evaluados": rs.count(),
+                "rojos": rs.filter(nivel="rojo").count(),
+                "ambares": rs.filter(nivel="ambar").count(),
+            })
+        return Response({"aplicaciones": salida})
