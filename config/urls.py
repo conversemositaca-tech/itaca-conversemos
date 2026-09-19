@@ -55,7 +55,8 @@ from mensajes.materiales import MaterialViewSet
 from mensajes.monitor_evolution import EvolutionEstadoView, EvolutionInstanciasView
 from mensajes.webhook_evolution import EvolutionWebhookView
 from pacientes.api import AdjuntoViewSet, AplicacionEscalaViewSet, AtencionViewSet, BloqueoAgendaViewSet, CitaViewSet, ContactoProfesionalViewSet, ObjetivoTerapeuticoViewSet, PacienteViewSet, RespuestaNPSViewSet, TareaViewSet, TranscribirView
-from faro.api import PanelFaroView
+from faro.api import (AlertasView, AplicacionesView, AtenderAlertaView,
+                      CuestionarioView, PanelFaroView, ResultadosView)
 from core.sitio import SitioFaroView, SitioFotoView, SitioVideoView, SitioInfoView
 from pacientes.api_duplicados import (
     DuplicadoAnalizarView, DuplicadoDescartarView, DuplicadoFusionarView,
@@ -192,6 +193,14 @@ urlpatterns = [
     path("api/embudo/", embudo.RegistrarEventoView.as_view(), name="embudo-evento"),
     # Datos públicos del sitio web (sin token en la URL; la clínica sale de settings).
     # Panel del colegio, por token permanente (sin cuentas).
+    # El cuestionario va ANTES del comodin del panel: si no, "cuestionario"
+    # se leeria como un token.
+    path("api/faro/cuestionario/<str:token>/", CuestionarioView.as_view(), name="faro-cuestionario"),
+    # Panel interno del psicologo. Van antes del comodin por la misma razon.
+    path("api/faro/panel/aplicaciones/", AplicacionesView.as_view(), name="faro-aplicaciones"),
+    path("api/faro/panel/alertas/", AlertasView.as_view(), name="faro-alertas"),
+    path("api/faro/panel/alertas/<int:pk>/", AtenderAlertaView.as_view(), name="faro-atender"),
+    path("api/faro/panel/resultados/<int:pk>/", ResultadosView.as_view(), name="faro-resultados"),
     path("api/faro/<str:token>/", PanelFaroView.as_view(), name="faro-panel"),
     path("api/sitio/faro/", SitioFaroView.as_view(), name="sitio-faro"),
     path("api/sitio/foto/<int:pk>/", SitioFotoView.as_view(), name="sitio-foto"),

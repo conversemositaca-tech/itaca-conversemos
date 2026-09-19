@@ -343,6 +343,66 @@ const SW_CSS = `
     opacity:1; transform:none; }
 }
 
+/* ── Cuestionario del estudiante ──────────────────────────────────────────
+   Se responde en un salón, con el tutor caminando entre las filas y un
+   compañero al lado, y se pregunta si ha deseado estar muerto. La pantalla
+   tiene que ser aburrida a tres metros y clara a treinta centímetros: si desde
+   atrás se lee de qué va la pregunta, el chico miente.
+
+   Por eso la barra dice "12 de 38" y NUNCA el nombre de la sección, y por eso
+   las cuatro opciones son idénticas entre sí. Pintarlas por gravedad —verde,
+   ámbar, rojo— le enseñaría cuál es la respuesta "mala" antes de contestar,
+   que es sesgo inducido por la interfaz. */
+.fa-q-barra {
+  position:sticky; top:0; z-index:5; padding:13px 20px 11px;
+  background:rgba(255,255,255,.8); backdrop-filter:blur(18px) saturate(160%);
+  -webkit-backdrop-filter:blur(18px) saturate(160%); border-bottom:1px solid var(--b);
+}
+.fa-q-barra-in { max-width:620px; margin:0 auto; }
+.fa-q-fila { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.fa-q-paso { font-size:13px; color:var(--t2); font-variant-numeric:tabular-nums; }
+.fa-q-riel { height:3px; background:rgba(11,22,32,.07); border-radius:2px; margin-top:11px; overflow:hidden; }
+.fa-q-riel span { display:block; height:100%; background:var(--m); border-radius:2px; transition:width .45s var(--curva); }
+
+.fa-q-wrap { max-width:620px; margin:0 auto; padding:clamp(26px,5vw,48px) 20px 150px; }
+.fa-q-marco { font-size:17px; line-height:1.55; color:var(--t2); margin:0 0 14px; }
+.fa-q-texto { font-size:clamp(23px,4.6vw,28px); font-weight:600; line-height:1.32;
+  letter-spacing:-0.025em; margin:0 0 32px; text-wrap:balance; }
+
+.fa-q-ops { display:grid; gap:10px; }
+.fa-q-op {
+  display:flex; align-items:center; gap:15px; width:100%; text-align:left;
+  background:var(--v); backdrop-filter:blur(20px) saturate(160%);
+  -webkit-backdrop-filter:blur(20px) saturate(160%);
+  border:1px solid var(--b); border-radius:var(--r); box-shadow:var(--s);
+  padding:19px 20px; cursor:pointer; font:inherit; font-size:17px; color:var(--t);
+  min-height:66px; transition:border-color .18s var(--curva), transform .18s var(--curva);
+}
+.fa-q-op:hover { transform:translateY(-1px); }
+.fa-q-punto { width:21px; height:21px; border-radius:50%; border:1.5px solid #B4BBC2;
+  flex-shrink:0; position:relative; }
+.fa-q-op[aria-checked="true"] { border-color:var(--m); }
+.fa-q-op[aria-checked="true"] .fa-q-punto { border-color:var(--m); }
+.fa-q-op[aria-checked="true"] .fa-q-punto::after {
+  content:""; position:absolute; inset:4px; border-radius:50%; background:var(--m); }
+
+.fa-q-pie {
+  position:fixed; left:0; right:0; bottom:0; z-index:5;
+  background:rgba(255,255,255,.84); backdrop-filter:blur(18px) saturate(160%);
+  -webkit-backdrop-filter:blur(18px) saturate(160%); border-top:1px solid var(--b);
+  padding:13px 20px calc(13px + env(safe-area-inset-bottom));
+}
+.fa-q-pie-in { max-width:620px; margin:0 auto; display:grid; gap:10px; }
+.fa-q-botones { display:flex; gap:11px; align-items:center; }
+.fa-q-atras { padding:15px 22px; border:1px solid var(--b); border-radius:100px;
+  background:transparent; color:var(--t2); font:600 17px inherit; cursor:pointer; }
+.fa-q-seguir { flex:1; padding:16px; border:0; border-radius:100px; background:var(--t);
+  color:#fff; font:600 17px inherit; cursor:pointer;
+  box-shadow:0 10px 26px -12px rgba(11,22,32,.6); }
+.fa-q-seguir:disabled { background:transparent; border:1px solid var(--b); color:var(--t3);
+  cursor:default; box-shadow:none; }
+.fa-q-ayuda { font-size:13px; color:var(--t2); text-align:center; margin:0; }
+
 /* ── Panel del colegio ────────────────────────────────────────────────────
    Herramienta de trabajo, no pieza de venta: quien la abre es un director
    entre dos cosas. Lo que busca —en qué va el proceso y cuántos faltan— va
@@ -1124,6 +1184,174 @@ function PaginaFaro() {
         </div>
       </section>
     </div>
+  );
+}
+
+// ── Cuestionario del estudiante ─────────────────────────────────────────────
+// Entra por el enlace del AULA, distinto del de la dirección. Al terminar NO se
+// le dice en qué nivel quedó: enterarse por una pantalla de que uno "salió en
+// rojo", solo y en un salón, es exactamente lo que el protocolo evita. Eso se
+// conversa en persona y el mismo día.
+export function TamizajeFaro({ token }) {
+  const [info, setInfo] = useState(null);
+  const [err, setErr] = useState("");
+  const [paso, setPaso] = useState(-1);            // -1 presentación · 0..n-1 ítems · n final
+  const [datos, setDatos] = useState({ nombre: "", grado: "", seccion: "" });
+  const [resp, setResp] = useState({});
+  const [enviando, setEnviando] = useState(false);
+
+  useEffect(() => {
+    api.faroCuestionario(token).then(setInfo).catch((e) => setErr(e.message));
+    const prev = document.title;
+    document.title = "Faro";
+    return () => { document.title = prev; };
+  }, [token]);
+  useEffect(() => { window.scrollTo(0, 0); }, [paso]);
+
+  const marco = (hijos) => (
+    <div className="ag sw-sitio sw-tema">
+      <style>{AGENDA_CSS}{SW_CSS}</style>
+      <div className="fa">{hijos}</div>
+    </div>
+  );
+
+  if (err) return marco(
+    <div className="fa-q-wrap">
+      <h1 className="fa-h2">Este enlace no está disponible</h1>
+      <p className="fa-p">Avísale a tu tutor para que te pase el correcto.</p>
+    </div>
+  );
+  if (!info) return marco(<div className="fa-q-wrap"><p className="fa-p">Cargando…</p></div>);
+  if (!info.abierto) return marco(
+    <div className="fa-q-wrap">
+      <h1 className="fa-h2">Este tamizaje ya cerró</h1>
+      <p className="fa-p">Avísale a tu tutor si necesitabas responderlo.</p>
+    </div>
+  );
+
+  const items = info.items || [];
+  const enItems = paso >= 0 && paso < items.length;
+  const it = enItems ? items[paso] : null;
+
+  async function enviar() {
+    setEnviando(true); setErr("");
+    try {
+      await api.faroResponder(token, { ...datos, respuestas: resp });
+      setPaso(items.length);
+    } catch (e) {
+      setErr(e.message || "No pudimos guardar tus respuestas. Avísale a tu tutor.");
+    } finally { setEnviando(false); }
+  }
+
+  // ── Presentación y datos ──
+  if (paso === -1) return marco(
+    <div className="fa-q-wrap">
+      <h1 className="fa-h2">Antes de empezar, queremos que sepas de qué se trata</h1>
+      <p className="fa-p">
+        Somos psicólogos de Ítaca Conversemos y venimos con Faro, un programa para saber
+        cómo están los estudiantes de tu colegio. Te vamos a hacer unas preguntas sobre
+        cómo te has sentido últimamente. Léete esto antes de decidir si quieres hacerlo.
+      </p>
+      <ul className="fa-limites">
+        <li>No hay respuestas correctas ni incorrectas.</li>
+        <li>No tiene nota y no afecta tus calificaciones.</li>
+        <li>Tus profesores y tus compañeros no ven tus respuestas.</li>
+        <li>Puedes parar cuando quieras.</li>
+      </ul>
+      <div className="fa-card" style={{ marginTop: 22 }}>
+        <p className="fa-p" style={{ margin: 0 }}>
+          <b>Y algo importante, porque no te vamos a mentir:</b> si nos contestas algo que
+          nos hace pensar que estás en peligro o que alguien te está haciendo daño, vamos a
+          buscar ayudarte. Eso significa que un adulto se va a enterar. Antes de hacer nada,
+          un psicólogo va a conversar contigo en privado.
+        </p>
+      </div>
+
+      <div className="fa-form" style={{ marginTop: 28 }}>
+        <label className="fa-campo">
+          <span>Tu nombre completo</span>
+          <input value={datos.nombre} onChange={(e) => setDatos((p) => ({ ...p, nombre: e.target.value }))}
+            autoComplete="name" />
+        </label>
+        <label className="fa-campo">
+          <span>Grado</span>
+          <input value={datos.grado} onChange={(e) => setDatos((p) => ({ ...p, grado: e.target.value }))}
+            placeholder="3.° secundaria" />
+        </label>
+        <label className="fa-campo">
+          <span>Sección</span>
+          <input value={datos.seccion} onChange={(e) => setDatos((p) => ({ ...p, seccion: e.target.value }))}
+            placeholder="B" />
+        </label>
+      </div>
+      <button className="fa-enviar" onClick={() => setPaso(0)}
+        disabled={datos.nombre.trim().length < 3}>
+        Empezar <ArrowRight size={17} strokeWidth={2.2} aria-hidden="true" />
+      </button>
+    </div>
+  );
+
+  // ── Cierre ──
+  if (paso >= items.length) return marco(
+    <div className="fa-q-wrap">
+      <h1 className="fa-h2">Listo, gracias por contestar</h1>
+      <p className="fa-p">
+        Tus respuestas las va a revisar un psicólogo del equipo. Si algo de lo que
+        contestaste hace falta conversarlo, te vamos a buscar.
+      </p>
+      <p className="fa-p">
+        Si en algún momento quieres hablar con alguien y no sabes con quién, puedes llamar
+        gratis a la <b>Línea 113, opción 5</b>, de salud mental del Ministerio de Salud.
+        Atienden todos los días.
+      </p>
+    </div>
+  );
+
+  // ── Una pregunta ──
+  const elegido = resp[it.id];
+  return marco(
+    <>
+      <div className="fa-q-barra">
+        <div className="fa-q-barra-in">
+          <div className="fa-q-fila">
+            {/* Nunca el nombre de la sección: eso le cuenta al de al lado de qué
+                va la pregunta. */}
+            <span className="fa-q-paso">Pregunta {paso + 1} de {items.length}</span>
+          </div>
+          <div className="fa-q-riel">
+            <span style={{ width: `${((paso + 1) / items.length) * 100}%` }} />
+          </div>
+        </div>
+      </div>
+
+      <div className="fa-q-wrap">
+        <p className="fa-q-marco">{it.marco}</p>
+        <h1 className="fa-q-texto">{it.texto}</h1>
+        <div className="fa-q-ops" role="radiogroup" aria-label="Respuesta">
+          {it.escala.map((etiqueta, k) => (
+            <button key={etiqueta} className="fa-q-op" role="radio"
+              aria-checked={elegido === k}
+              onClick={() => setResp((p) => ({ ...p, [it.id]: k }))}>
+              <span className="fa-q-punto" />{etiqueta}
+            </button>
+          ))}
+        </div>
+        {err ? <p className="fa-error" role="alert">{err}</p> : null}
+      </div>
+
+      <div className="fa-q-pie">
+        <div className="fa-q-pie-in">
+          <div className="fa-q-botones">
+            <button className="fa-q-atras" onClick={() => setPaso((p) => p - 1)}>Atrás</button>
+            <button className="fa-q-seguir" disabled={elegido === undefined || enviando}
+              onClick={() => (paso === items.length - 1 ? enviar() : setPaso((p) => p + 1))}>
+              {enviando ? "Guardando…" : paso === items.length - 1 ? "Terminar" : "Siguiente"}
+            </button>
+          </div>
+          <p className="fa-q-ayuda">Si necesitas hablar con alguien, avísale al psicólogo que está en tu salón.</p>
+        </div>
+      </div>
+    </>
   );
 }
 

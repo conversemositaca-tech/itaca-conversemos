@@ -821,6 +821,10 @@ export default function ClinicaApp() {
     ...((usuario?.rol === "admin" || usuario?.rol === "asistente") ? [{ id: "duplicados", label: "Posibles duplicados", icon: Users }] : []),
     // El buzón de sugerencias lo ve todo el equipo (dejar sugerencia); gerencia además ve la bandeja.
     // El rol de solo lectura no escribe (tampoco sugerencias), así que no lo ve.
+    // Faro (tamizaje escolar): psicólogo y gerencia, nadie más. Son datos de
+    // salud mental de menores que confía un colegio, y el convenio limita
+    // quién ve el detalle individual. Ver core/permisos.ROLES_FARO.
+    ...((usuario?.rol === "medico" || usuario?.rol === "admin") ? [{ id: "faro", label: "Faro (colegios)", icon: Compass }] : []),
     ...(esAnalista ? [] : [{ id: "buzon", label: "Buzón", icon: MessageCircle }]),
   ];
 
@@ -1868,6 +1872,8 @@ export default function ClinicaApp() {
             }}
           />
         )}
+
+        {view === "faro" && <Faro showToast={showToast} />}
 
         {view === "duplicados" && (
           <Duplicados showToast={showToast} puedeFusionar={!!usuario?.puede_consolidar} />
@@ -12270,6 +12276,242 @@ const PROCESOS = ["", "consulta", "primero", "segundo", "tercero", "cuarto", "qu
 const MODALIDADES = [
   { v: "presencial", l: "Presencial" }, { v: "virtual", l: "Virtual" }, { v: "ambas", l: "Presencial y virtual" },
 ];
+
+
+// ── Faro · tamizaje escolar ─────────────────────────────────────────────────
+// Herramienta de trabajo, no pieza de venta. Quien la abre busca UNA cosa: a
+// quién le falta llamar hoy. Por eso lo pendiente va arriba y grande, el resto
+// queda debajo, y el único acento fuerte de la pantalla es el rojo de los casos
+// sin atender. Si todo estuviera resaltado, nada lo estaría.
+function Faro({ showToast }) {
+  const [alertas, setAlertas] = useState(null);
+  const [aplicaciones, setAplicaciones] = useState([]);
+  const [soloPendientes, setSoloPendientes] = useState(true);
+  const [atendiendo, setAtendiendo] = useState(null);   // alerta abierta
+  const [acciones, setAcciones] = useState("");
+  const [guardando, setGuardando] = useState(false);
+  const [resultados, setResultados] = useState(null);   // {aplicacion, filas}
+
+  async function cargar() {
+    const [a, ap] = await Promise.all([api.faroAlertas(soloPendientes), api.faroAplicaciones()]);
+    setAlertas(a);
+    setAplicaciones(ap.aplicaciones || []);
+  }
+  useEffect(() => { cargar().catch((e) => showToast("Error: " + e.message)); }, [soloPendientes]);
+
+  async function guardarActuacion() {
+    if (acciones.trim().length < 10) {
+      showToast("Escribe qué se hizo con el caso."); return;
+    }
+    setGuardando(true);
+    try {
+      await api.faroAtender(atendiendo.id, acciones.trim());
+      setAtendiendo(null); setAcciones("");
+      await cargar();
+      showToast("Caso registrado ✓");
+    } catch (e) { showToast("Error: " + e.message); }
+    finally { setGuardando(false); }
+  }
+
+  async function verResultados(ap) {
+    try { setResultados({ ...(await api.faroResultados(ap.id)), id: ap.id }); }
+    catch (e) { showToast("Error: " + e.message); }
+  }
+
+  const copiar = (txt) => {
+    navigator.clipboard?.writeText(txt).then(
+      () => showToast("Enlace copiado ✓"), () => showToast("No se pudo copiar"));
+  };
+
+  if (!alertas) return <div className="ca-card"><p className="ca-muted">Cargando…</p></div>;
+
+  const pend = alertas.pendientes || 0;
+  const lista = alertas.alertas || [];
+
+  return (
+    <div>
+      <h1 className="ca-h1">Faro · tamizaje escolar</h1>
+
+      {/* Un solo acento urgente en toda la pantalla. */}
+      <div className="ca-card" style={{ marginBottom: 16,
+        borderLeft: `5px solid ${pend ? "#B3261E" : "#2E7D5B"}` }}>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
+          <span style={{ fontSize: 34, fontWeight: 700, lineHeight: 1,
+            fontVariantNumeric: "tabular-nums", color: pend ? "#B3261E" : "var(--ink)" }}>{pend}</span>
+          <span style={{ fontSize: 15.5 }}>
+            {pend === 0 ? "No hay casos pendientes de atender."
+              : pend === 1 ? "caso rojo sin atender." : "casos rojos sin atender."}
+          </span>
+        </div>
+        {alertas.sin_avisar > 0 && (
+          <p style={{ margin: "10px 0 0", fontSize: 14, color: "#B3261E" }}>
+            {alertas.sin_avisar} de esos <b>no llegaron por WhatsApp</b>. Revisa el número de alertas
+            de esa aplicación: un caso esperando a alguien que nunca fue avisado es el peor escenario.
+          </p>
+        )}
+      </div>
+
+      <div style={{ display: "flex", gap: 9, alignItems: "center", marginBottom: 12 }}>
+        <button className={`ca-btn ${soloPendientes ? "" : "ghost"}`}
+          onClick={() => setSoloPendientes(true)}>Pendientes</button>
+        <button className={`ca-btn ${soloPendientes ? "ghost" : ""}`}
+          onClick={() => setSoloPendientes(false)}>Todos los casos</button>
+      </div>
+
+      {lista.length === 0 ? (
+        <div className="ca-card">
+          <p style={{ margin: 0, fontSize: 15.5 }}>
+            {soloPendientes
+              ? "Ningún caso rojo pendiente. Los que ya atendiste están en «Todos los casos»."
+              : "Todavía no hay casos rojos. Aparecen solos en cuanto un estudiante responde el tamizaje con una señal de riesgo."}
+          </p>
+        </div>
+      ) : (
+        <div className="ca-card" style={{ padding: 0, overflowX: "auto" }}>
+          <table className="ca-table">
+            <thead><tr>
+              <th>Estudiante</th><th>Colegio</th><th>Por qué</th><th>Aviso</th><th></th>
+            </tr></thead>
+            <tbody>
+              {lista.map((a) => (
+                <tr key={a.id} style={{ background: a.atendida ? "transparent" : "#FDECEA" }}>
+                  <td>
+                    <b>{a.estudiante}</b>
+                    <div className="ca-muted" style={{ fontSize: 12.5 }}>
+                      {[a.grado, a.seccion].filter(Boolean).join(" · ")}
+                    </div>
+                  </td>
+                  <td style={{ fontSize: 13.5 }}>{a.institucion}<div className="ca-muted" style={{ fontSize: 12.5 }}>{a.ciudad}</div></td>
+                  <td style={{ fontSize: 13, maxWidth: 340 }}>
+                    {a.motivos.map((m, i) => <div key={i}>{m}</div>)}
+                    {!a.completa && <div className="ca-muted">Cuestionario incompleto: revisar a mano.</div>}
+                  </td>
+                  <td style={{ fontSize: 12.5, whiteSpace: "nowrap" }}>
+                    {a.aviso === "enviado"
+                      ? <span style={{ color: "#2E7D5B" }}>Enviado</span>
+                      : <span style={{ color: "#B3261E" }}>{a.aviso_label}</span>}
+                  </td>
+                  <td style={{ whiteSpace: "nowrap" }}>
+                    {a.atendida ? (
+                      <span className="ca-muted" style={{ fontSize: 12.5 }}>
+                        Atendido{a.atendida_por ? ` · ${a.atendida_por}` : ""}
+                      </span>
+                    ) : (
+                      <button className="ca-btn" onClick={() => { setAtendiendo(a); setAcciones(""); }}>
+                        Registrar actuación
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* ── Colegios ── */}
+      <h2 className="ca-secth" style={{ marginTop: 30 }}>Colegios</h2>
+      {aplicaciones.length === 0 ? (
+        <div className="ca-card">
+          <p style={{ margin: 0, fontSize: 15.5 }}>
+            Todavía no hay ninguna aplicación creada. Se crean desde el administrador de Django
+            (Faro → Aplicaciones), y ahí salen los dos enlaces: el del aula y el de la dirección.
+          </p>
+        </div>
+      ) : (
+        <div className="ca-card" style={{ padding: 0, overflowX: "auto" }}>
+          <table className="ca-table">
+            <thead><tr>
+              <th>Institución</th><th>Estado</th><th style={{ textAlign: "right" }}>Evaluados</th>
+              <th style={{ textAlign: "right" }}>Rojos</th><th style={{ textAlign: "right" }}>Ámbares</th>
+              <th>Enlaces</th><th></th>
+            </tr></thead>
+            <tbody>
+              {aplicaciones.map((ap) => (
+                <tr key={ap.id}>
+                  <td><b>{ap.institucion}</b><div className="ca-muted" style={{ fontSize: 12.5 }}>{ap.ciudad}</div></td>
+                  <td style={{ fontSize: 13 }}>{ap.estado_label}</td>
+                  <td style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{ap.evaluados}</td>
+                  <td style={{ textAlign: "right", fontVariantNumeric: "tabular-nums", color: ap.rojos ? "#B3261E" : "inherit" }}>{ap.rojos}</td>
+                  <td style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{ap.ambares}</td>
+                  <td style={{ whiteSpace: "nowrap" }}>
+                    <button className="ca-link" onClick={() => copiar(ap.enlace_estudiante)}>Para el aula</button>
+                    {" · "}
+                    <button className="ca-link" onClick={() => copiar(ap.enlace_colegio)}>Para la dirección</button>
+                  </td>
+                  <td><button className="ca-btn ghost" onClick={() => verResultados(ap)}>Resultados</button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* ── Registrar actuación ── */}
+      {atendiendo && (
+        <div className="ca-modal-bg" onClick={() => setAtendiendo(null)}>
+          <div className="ca-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 560 }}>
+            <h2 className="ca-secth">{atendiendo.estudiante}</h2>
+            <p className="ca-muted" style={{ marginTop: -6 }}>
+              {atendiendo.institucion} · {[atendiendo.grado, atendiendo.seccion].filter(Boolean).join(" ")}
+            </p>
+            <div style={{ margin: "14px 0", padding: "12px 14px", background: "var(--bg)", borderRadius: 8 }}>
+              {atendiendo.motivos.map((m, i) => <div key={i} style={{ fontSize: 13.5 }}>{m}</div>)}
+            </div>
+            <div className="ca-label">Qué se hizo</div>
+            <textarea className="ca-input" rows={5} value={acciones} onChange={(e) => setAcciones(e.target.value)}
+              placeholder="Entrevista de contención, con quién se habló, qué se acordó y qué derivación hubo." />
+            <p className="ca-muted" style={{ fontSize: 12.5, marginTop: 6 }}>
+              Queda como registro con tu nombre y la hora. Es el respaldo de la actuación si
+              alguien la cuestiona después, así que conviene que diga lo suficiente.
+            </p>
+            <div style={{ display: "flex", gap: 9, justifyContent: "flex-end", marginTop: 14 }}>
+              <button className="ca-btn ghost" onClick={() => setAtendiendo(null)}>Cancelar</button>
+              <button className="ca-btn" onClick={guardarActuacion} disabled={guardando}>
+                {guardando ? "Guardando…" : "Registrar y cerrar el caso"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Resultados de un colegio ── */}
+      {resultados && (
+        <div className="ca-modal-bg" onClick={() => setResultados(null)}>
+          <div className="ca-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 820 }}>
+            <h2 className="ca-secth">{resultados.institucion}</h2>
+            <p className="ca-muted" style={{ marginTop: -6 }}>
+              {resultados.totales.evaluados} evaluados · {resultados.totales.rojo} rojos ·
+              {" "}{resultados.totales.ambar} ámbares · {resultados.totales.verde} verdes
+              {resultados.totales.incompletos ? ` · ${resultados.totales.incompletos} incompletos` : ""}
+            </p>
+            <div style={{ margin: "14px 0" }}>
+              <ExportBtns
+                nombre={`faro-${resultados.institucion}`.replace(/\s+/g, "-").toLowerCase()}
+                titulo={`Faro · ${resultados.institucion}`}
+                contexto={resultados.ciudad}
+                headers={["Estudiante", "Grado", "Sección", "Código", "Nivel", "PHQ-A", "GAD-7",
+                          "ASQ positivo", "Rol EBIPQ", "Completa", "Por qué", "Fecha"]}
+                filas={resultados.filas.map((f) => [f.estudiante, f.grado, f.seccion, f.codigo,
+                  f.nivel, f.phq_total, f.gad_total, f.asq_positivo, f.ebipq_rol, f.completa,
+                  f.motivos, f.fecha])}
+                showToast={showToast}
+              />
+            </div>
+            <p className="ca-muted" style={{ fontSize: 12.5 }}>
+              Esta hoja lleva nombres y es para el equipo clínico. <b>El colegio no la recibe</b>:
+              a la institución se le entrega el informe agregado por grado y sección, según el
+              convenio firmado.
+            </p>
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 14 }}>
+              <button className="ca-btn ghost" onClick={() => setResultados(null)}>Cerrar</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 function Profesionales({ showToast, esAdmin }) {
   const [lista, setLista] = useState(null);

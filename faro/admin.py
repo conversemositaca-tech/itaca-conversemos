@@ -9,5 +9,5 @@ class AplicacionAdmin(admin.ModelAdmin):
                     "fecha_aplicacion", "clinica", "creado_en")
     list_filter = ("clinica", "estado", "ciudad")
     search_fields = ("institucion", "contacto", "token")
-    readonly_fields = ("token",)
+    readonly_fields = ("token", "token_estudiante")
     date_hierarchy = "creado_en"

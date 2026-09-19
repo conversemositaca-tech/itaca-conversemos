@@ -42,6 +42,11 @@ class Aplicacion(ModeloTenant):
     # El enlace que se le entrega al colegio. Se genera solo y no se deriva de
     # nada adivinable: con el nombre del colegio no se llega al panel de nadie.
     token = models.CharField(max_length=64, unique=True, default=_token_nuevo, editable=False)
+    # El enlace que abren los ESTUDIANTES es distinto del de la dirección. Con
+    # uno solo, cualquier alumno que lo copiara entraría al panel del colegio;
+    # y el del alumno se reparte en un aula entera, así que se asume público.
+    token_estudiante = models.CharField(
+        max_length=64, unique=True, default=_token_nuevo, editable=False)
 
     estado = models.CharField(max_length=14, choices=Estado.choices, default=Estado.PREPARANDO)
 
@@ -68,6 +73,14 @@ class Aplicacion(ModeloTenant):
 
     notas = models.TextField(blank=True, default="")
 
+    # A dónde se avisa cuando un tamizaje sale rojo. Vacío = no se avisa por
+    # WhatsApp y la alerta queda solo en el panel: apagado por defecto a
+    # propósito, para que ninguna línea empiece a mandar mensajes sola.
+    avisar_whatsapp = models.CharField(
+        "WhatsApp para alertas", max_length=40, blank=True, default="",
+        help_text="Número de la coordinadora que recibe las alertas rojas. Si se deja vacío, "
+                  "las alertas solo aparecen en el panel.")
+
     class Meta:
         verbose_name = "Aplicación de Faro"
         verbose_name_plural = "Aplicaciones de Faro"
@@ -88,3 +101,89 @@ class Aplicacion(ModeloTenant):
         if not self.autorizados:
             return None
         return round(self.evaluados * 100 / self.autorizados)
+
+
+class Respuesta(ModeloTenant):
+    """Un tamizaje contestado por un estudiante.
+
+    Guarda el nombre a propósito. El protocolo obliga a poder llegar al
+    estudiante el mismo día cuando aparece una señal de riesgo, y un tamizaje
+    anónimo haría imposible cumplir lo que el consentimiento promete. Lo que sí
+    está prohibido es que el COLEGIO vea esto: el panel institucional solo
+    entrega agregados, y hay un test que falla si alguien expone un nombre ahí.
+    """
+
+    aplicacion = models.ForeignKey(Aplicacion, on_delete=models.CASCADE, related_name="respuestas")
+    nombre = models.CharField(max_length=200)
+    grado = models.CharField(max_length=30, blank=True, default="")
+    seccion = models.CharField(max_length=10, blank=True, default="")
+    codigo = models.CharField("código del estudiante", max_length=40, blank=True, default="")
+
+    # Las respuestas crudas, tal como llegaron. Se guardan enteras para poder
+    # recalcular si algún día se corrige un corte: sin ellas, un cambio de
+    # criterio obligaría a volver a aplicar el tamizaje.
+    respuestas = models.JSONField(default=dict)
+    completa = models.BooleanField(default=True)
+
+    # Resultado ya calculado. Se guarda y no se recalcula al vuelo para que un
+    # cambio posterior en los cortes no reescriba en silencio la historia de un
+    # caso que ya se atendió.
+    nivel = models.CharField(max_length=6, default="verde")
+    motivos = models.JSONField(default=list)
+    phq_total = models.PositiveSmallIntegerField(default=0)
+    gad_total = models.PositiveSmallIntegerField(default=0)
+    asq_positivo = models.BooleanField(default=False)
+    ebipq_rol = models.CharField(max_length=24, blank=True, default="")
+
+    class Meta:
+        verbose_name = "Respuesta de tamizaje"
+        verbose_name_plural = "Respuestas de tamizaje"
+        ordering = ["-creado_en"]
+        indexes = [models.Index(fields=["aplicacion", "nivel"])]
+
+    def __str__(self):
+        return f"{self.nombre} · {self.nivel}"
+
+
+class Alerta(ModeloTenant):
+    """Un caso de nivel rojo, y qué se hizo con él.
+
+    Se crea SIEMPRE que un tamizaje sale rojo, antes de intentar avisar a nadie.
+    Si el aviso falla —no hay línea configurada, se cae la red, Evolution
+    responde mal— la alerta ya existe y aparece en el panel del psicólogo. Un
+    aviso perdido no puede llevarse por delante la detección: eso es exactamente
+    el "detectar sin responder" que el protocolo prohíbe.
+    """
+
+    class Aviso(models.TextChoices):
+        PENDIENTE = "pendiente", "Sin avisar"
+        ENVIADO = "enviado", "Aviso enviado"
+        FALLIDO = "fallido", "El aviso falló"
+        SIN_CANAL = "sin_canal", "No hay canal configurado"
+
+    respuesta = models.OneToOneField(Respuesta, on_delete=models.CASCADE, related_name="alerta")
+    motivos = models.JSONField(default=list)
+
+    aviso = models.CharField(max_length=10, choices=Aviso.choices, default=Aviso.PENDIENTE)
+    aviso_detalle = models.CharField(max_length=300, blank=True, default="")
+    avisado_en = models.DateTimeField(null=True, blank=True)
+
+    # El registro de actuación que exige el protocolo. Sin esto no hay cómo
+    # sostener lo que se hizo si alguien lo cuestiona después.
+    atendida = models.BooleanField(default=False)
+    atendida_en = models.DateTimeField(null=True, blank=True)
+    atendida_por = models.ForeignKey(
+        "usuarios.Usuario", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="alertas_faro")
+    acciones = models.TextField(
+        blank=True, default="",
+        help_text="Qué se hizo: entrevista, con quién se habló, qué se acordó y qué derivación.")
+
+    class Meta:
+        verbose_name = "Alerta de Faro"
+        verbose_name_plural = "Alertas de Faro"
+        ordering = ["atendida", "-creado_en"]
+        indexes = [models.Index(fields=["clinica", "atendida"])]
+
+    def __str__(self):
+        return f"Alerta · {self.respuesta.nombre}"

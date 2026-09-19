@@ -239,7 +239,7 @@ export const FARO = {
   cifras: [
     { v: 15, suf: " min", r: "Duración por estudiante" },
     { v: 4, suf: "", r: "Áreas evaluadas" },
-    { v: 42, suf: "", r: "Preguntas en total" },
+    { v: 38, suf: "", r: "Preguntas en total" },
   ],
 
   procesoTitulo: "Proceso de implementación",

@@ -142,6 +142,14 @@ export const api = {
   solicitarFaro: (data) => req("/api/sitio/faro/", { method: "POST", body: JSON.stringify(data) }),
   // Panel del colegio: entra por enlace permanente, sin cuenta ni contraseña.
   faroPanel: (token) => req(`/api/faro/${token}/`),
+  // El cuestionario del estudiante. Token DISTINTO del panel del colegio.
+  faroCuestionario: (token) => req(`/api/faro/cuestionario/${token}/`),
+  faroResponder: (token, data) => req(`/api/faro/cuestionario/${token}/`, { method: "POST", body: JSON.stringify(data) }),
+  // Panel interno: solo psicólogo y gerencia (core/permisos.ROLES_FARO).
+  faroAlertas: (soloPendientes) => req(`/api/faro/panel/alertas/${soloPendientes ? "?pendientes=1" : ""}`),
+  faroAtender: (id, acciones) => req(`/api/faro/panel/alertas/${id}/`, { method: "POST", body: JSON.stringify({ acciones }) }),
+  faroAplicaciones: () => req("/api/faro/panel/aplicaciones/"),
+  faroResultados: (id) => req(`/api/faro/panel/resultados/${id}/`),
   agendaInfo: (token) => req(`/api/agendamiento/${token}/`),
   agendaSlots: (token, profId, dias = 14) => req(`/api/agendamiento/${token}/slots/?profesional=${profId}&dias=${dias}`),
   agendaReservar: (token, data) => req(`/api/agendamiento/${token}/reservar/`, { method: "POST", body: JSON.stringify(data) }),
