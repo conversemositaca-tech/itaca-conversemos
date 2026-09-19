@@ -13863,6 +13863,31 @@ const AGENDA_CATS = [
 // preferencia para coordinación, no un horario reservado.
 const TURNO_LABEL = { manana: "mañana", tarde: "tarde", noche: "noche" };
 
+// El catálogo trae diecisiete servicios entre consultas, sesiones sueltas y
+// paquetes. Puestos en un desplegable son una pared; agrupados son tres caminos
+// que se entienden de un vistazo. El nombre manda porque es lo que gerencia
+// edita en el panel: no hay una segunda lista que mantener sincronizada.
+const AGENDA_GRUPOS = [
+  { v: "consulta", titulo: "Primera consulta",
+    sub: "Tu primer encuentro con este psicólogo, para conocerlo y contarle lo que estás viviendo." },
+  { v: "brujula", titulo: "Sesión Brújula",
+    sub: "Orientación con un psicólogo que conoce a todo el equipo y te ayuda a encontrar el terapeuta y el enfoque que mejor te calzan." },
+  { v: "sesion", titulo: "Sesión de terapia",
+    sub: "Ya estás en proceso y vienes a tu siguiente sesión." },
+  { v: "paquete", titulo: "Paquete de sesiones",
+    sub: "Varias sesiones acordadas por adelantado." },
+  { v: "otro", titulo: "Otros servicios", sub: "" },
+];
+
+function _grupoServicio(nombre) {
+  const n = (nombre || "").toLowerCase();
+  if (n.includes("brujula") || n.includes("brújula")) return "brujula";
+  if (/^\s*\d+\s+sesion/.test(n)) return "paquete";
+  if (n.includes("consulta inicial") || n.includes("primera consulta")) return "consulta";
+  if (n.includes("sesion") || n.includes("sesión")) return "sesion";
+  return "otro";
+}
+
 // Categoría implícita de un servicio (por su nombre) y si el psicólogo la atiende
 // (según su campo `poblaciones`). Evita ofrecer en la web servicios que ese
 // profesional no da (ej. lenguaje, pareja). Lenient: si falta info, se muestra.
@@ -14658,7 +14683,11 @@ export function AgendarPublico({ token }) {
     setSlotsData(null); setSlot(null);
     setForm((p) => ({
       ...p,
-      servicio: (((info?.servicios || []).filter((s) => _profSirveServicio(prof, s.nombre))[0] || (info?.servicios || [])[0] || {}).nombre) || "",
+      // Vacío a propósito: antes venía con la primera consulta ya puesta y el
+      // desplegable quedaba al final del formulario, así que quien venía a su
+      // sesión número cinco terminaba reservando una consulta inicial sin
+      // darse cuenta. Ahora se elige en su propio paso, antes del horario.
+      servicio: "",
       modalidad: prof.modalidad === "virtual" ? "virtual" : "presencial",
     }));
     api.agendaSlots(token, prof.id, 21).then(setSlotsData).catch(() => setSlotsData({ dias: [] }));
@@ -14877,19 +14906,27 @@ export function AgendarPublico({ token }) {
   const showTipo = sede && ayuda && modoPref && !tipoSesion;
   const showSolicitud = sede && ayuda && tipoSesion;
   const needProf = sede && via === "elegir" && !prof;
-  const showSlots = via === "elegir" && prof && !slot;
+  // Servicios que ofrece ESTE psicólogo, agrupados. Si su ficha no declara
+  // público, se muestra el catálogo entero y coordinación verifica al confirmar.
+  const serviciosProf = (() => {
+    const propios = (info.servicios || []).filter((s) => _profSirveServicio(prof, s.nombre));
+    return propios.length ? propios : (info.servicios || []);
+  })();
+  const showServicio = via === "elegir" && prof && !form.servicio && serviciosProf.length > 0;
+  const showSlots = via === "elegir" && prof && (form.servicio || !serviciosProf.length) && !slot;
   const showDatos = via === "elegir" && prof && slot;
 
   const PASOS = ayuda
     ? ["Sede", "Con quién", "Para quién", "Horario", "Modalidad", "Qué prefieres", "Tus datos"]
-    : ["Sede", "Con quién", "Profesional", "Horario", "Tus datos"];
+    : ["Sede", "Con quién", "Profesional", "Qué reservas", "Horario", "Tus datos"];
   const stepIdx = ayuda
     ? (!sede ? 0 : !via ? 1 : !categoria ? 2 : !turno ? 3 : !modoPref ? 4 : !tipoSesion ? 5 : 6)
-    : (!sede ? 0 : !via ? 1 : needProf ? 2 : !slot ? 3 : 4);
+    : (!sede ? 0 : !via ? 1 : needProf ? 2 : showServicio ? 3 : !slot ? 4 : 5);
 
   const volver = () => {
     setErr("");
     if (slot) return setSlot(null);
+    if (form.servicio && via === "elegir") return setForm((p) => ({ ...p, servicio: "" }));
     if (prof) return setProf(null);
     if (tipoSesion) return setTipoSesion(null);
     if (modoPref) return setModoPref(null);
@@ -15179,6 +15216,40 @@ export function AgendarPublico({ token }) {
         )}
 
         {/* ── Paso 4: horario ── */}
+        {/* ── Rama "elegir yo": qué viene a reservar ──
+            Antes esto era un desplegable de diecisiete opciones al final del
+            formulario, ya relleno con la primera consulta. Quien venía a su
+            sesión de terapia no lo veía, y reservaba una consulta inicial. */}
+        {showServicio && (
+          <section className="ag-paso ag-entra">
+            <h2 className="ag-h2">¿Qué quieres reservar con {prof.nombre.replace(/^lic\.?\s*/i, "").trim().split(" ")[0]}?</h2>
+            <p className="ag-sub">Elige según cómo llegas hoy. El horario lo eliges después.</p>
+            {AGENDA_GRUPOS.map((g) => {
+              const items = serviciosProf.filter((s) => _grupoServicio(s.nombre) === g.v);
+              if (!items.length) return null;
+              return (
+                <div key={g.v} style={{ marginBottom: 22 }}>
+                  <h3 className="ag-rotulo">{g.titulo}</h3>
+                  {g.sub ? <p className="ag-nota-suave" style={{ marginTop: 0 }}>{g.sub}</p> : null}
+                  <div className="ag-opciones">
+                    {items.map((s) => (
+                      <button key={s.nombre} className="ag-sede"
+                        onClick={() => setForm((p) => ({ ...p, servicio: s.nombre }))}>
+                        <span className="ag-sede-nombre">{s.nombre}</span>
+                        {s.precio && Number(s.precio) > 0
+                          ? <span className="ag-sede-dir">S/ {Number(s.precio).toFixed(0)}</span>
+                          : null}
+                        <ChevronRight className="ag-flecha" size={20} strokeWidth={1.8} />
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+            <AgendaDudas faq={faq} ids={["costo", "frecuencia"]} titulo="Sobre precios y frecuencia" />
+          </section>
+        )}
+
         {showSlots && (
           <section className="ag-paso ag-entra">
             <div className="ag-elegido">
@@ -15248,24 +15319,23 @@ export function AgendarPublico({ token }) {
               </label>
             </div>
 
-            {(() => {
-              const servs = (info.servicios || []).filter((s) => _profSirveServicio(prof, s.nombre));
-              const lista = servs.length ? servs : (info.servicios || []);
-              if (!lista.length) return null;
-              const val = lista.some((s) => s.nombre === form.servicio) ? form.servicio : (lista[0]?.nombre || "");
-              return (
-                <label className="ag-campo">
-                  <span className="ag-label">Tipo de sesión</span>
-                  <select className="ag-input ag-select" value={val} onChange={setF("servicio")}>
-                    {lista.map((s) => (
-                      <option key={s.nombre} value={s.nombre}>
-                        {s.nombre}{s.precio && Number(s.precio) > 0 ? ` — S/${Number(s.precio).toFixed(0)}` : ""}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              );
-            })()}
+            {/* Ya se eligió en su propio paso: aquí solo se recuerda, con salida
+                para cambiarlo sin perder lo que ya escribió. */}
+            {form.servicio ? (
+              <div className="ag-resumen">
+                <div>
+                  <span className="ag-resumen-prof">{form.servicio}</span>
+                  {(() => {
+                    const sv = (info.servicios || []).find((s) => s.nombre === form.servicio);
+                    return sv && Number(sv.precio) > 0
+                      ? <span className="ag-resumen-cuando">S/ {Number(sv.precio).toFixed(0)}</span>
+                      : null;
+                  })()}
+                </div>
+                <button className="ag-btn-texto"
+                  onClick={() => { setSlot(null); setForm((p) => ({ ...p, servicio: "" })); }}>Cambiar</button>
+              </div>
+            ) : null}
 
             {prof.modalidad === "ambas" && (
               <label className="ag-campo">
