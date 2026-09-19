@@ -12283,17 +12283,18 @@ function Profesionales({ showToast, esAdmin }) {
 
   const nActivos = (p) => p.pacientes_stats ? (frec ? (p.pacientes_stats[frec] || 0) : p.pacientes_stats.activos) : 0;
 
-  async function guardar(data, foto, video, quitarVideo) {
+  async function guardar(data, foto, video, quitarVideo, onProgreso) {
     try {
       const prof = data.id ? await api.actualizarProfesional(data.id, data) : await api.crearProfesional(data);
       if (foto) await api.subirFotoProfesional(prof.id, foto);
       // El video va aparte del resto de la ficha: es un archivo y puede fallar
       // por tamaño, sin que eso deba tumbar el guardado de lo demás.
-      if (video) await api.subirVideoProfesional(prof.id, video);
+      if (video) await api.subirVideoProfesional(prof.id, video, onProgreso);
       else if (quitarVideo) await api.quitarVideoProfesional(prof.id);
       await cargar();
       setEditar(null);
-      showToast(data.id ? "Ficha actualizada ✓" : "Profesional agregado ✓");
+      showToast(video ? "Ficha actualizada y video subido ✓"
+        : data.id ? "Ficha actualizada ✓" : "Profesional agregado ✓");
     } catch (e) { showToast("Error: " + e.message); }
   }
   async function eliminar(p) {
@@ -12485,6 +12486,10 @@ function ProfesionalModal({ prof, onClose, onSave }) {
   const [video, setVideo] = useState(null);
   const [quitarVideo, setQuitarVideo] = useState(false);
   const [avisoVideo, setAvisoVideo] = useState("");
+  // null = no hay subida en curso · 0-99 = subiendo · "guardando" = ya llegó al
+  // servidor y falta que lo escriba. El salto a "guardando" importa: el 100%
+  // aparece mucho antes de que la ficha esté lista.
+  const [subiendo, setSubiendo] = useState(null);
   const set = (k) => (e) => setF((prev) => ({ ...prev, [k]: e.target.value }));
   const canSave = f.nombre.trim().length > 0;
   const ta = { minHeight: 70, resize: "vertical", lineHeight: 1.5 };
@@ -12620,10 +12625,43 @@ function ProfesionalModal({ prof, onClose, onSave }) {
           </label>
         </div>
 
+        {/* Mientras sube no se puede cerrar ni volver a darle a Guardar: cortar
+            a medio camino deja la ficha guardada y el video no. */}
+        {subiendo !== null ? (
+          <div style={{ marginBottom: 12 }}>
+            <div style={{ height: 6, borderRadius: 3, background: "var(--line, #e6e1d8)", overflow: "hidden" }}>
+              <div style={{
+                height: "100%", borderRadius: 3, background: "var(--brand, #00788C)",
+                width: subiendo === "guardando" ? "100%" : `${subiendo}%`,
+                transition: "width .2s linear",
+              }} />
+            </div>
+            <p style={{ margin: "6px 0 0", fontSize: 13, color: "var(--muted)" }}>
+              {subiendo === "guardando"
+                ? "Video recibido. Guardando la ficha…"
+                : `Subiendo ${video?.name || "el video"}… ${subiendo}%`}
+            </p>
+          </div>
+        ) : null}
+
         <div style={{ display: "flex", gap: 9, justifyContent: "flex-end" }}>
-          <button className="ca-btn ghost" onClick={onClose}>Cancelar</button>
-          <button className="ca-btn" style={{ opacity: canSave ? 1 : 0.5, pointerEvents: canSave ? "auto" : "none" }}
-            onClick={() => onSave({ ...(prof?.id ? { id: prof.id } : {}), ...f, nombre: f.nombre.trim(), horas_disponibles: Number(f.horas_disponibles) || 0, porcentaje_liquidacion: Number(f.porcentaje_liquidacion) || 0 }, foto, video, quitarVideo)}>Guardar</button>
+          <button className="ca-btn ghost" onClick={onClose} disabled={subiendo !== null}
+            style={{ opacity: subiendo !== null ? 0.5 : 1 }}>Cancelar</button>
+          <button className="ca-btn"
+            style={{ opacity: canSave && subiendo === null ? 1 : 0.5, pointerEvents: canSave && subiendo === null ? "auto" : "none" }}
+            onClick={async () => {
+              if (video) setSubiendo(0);
+              try {
+                await onSave(
+                  { ...(prof?.id ? { id: prof.id } : {}), ...f, nombre: f.nombre.trim(), horas_disponibles: Number(f.horas_disponibles) || 0, porcentaje_liquidacion: Number(f.porcentaje_liquidacion) || 0 },
+                  foto, video, quitarVideo,
+                  (pct) => setSubiendo(pct >= 100 ? "guardando" : pct));
+              } finally { setSubiendo(null); }
+            }}>
+            {subiendo === null ? "Guardar"
+              : subiendo === "guardando" ? "Guardando…"
+              : `Subiendo… ${subiendo}%`}
+          </button>
         </div>
       </div>
     </div>
