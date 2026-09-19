@@ -65,6 +65,7 @@ from pacientes.agendamiento import (
     AgendamientoInfoView,
     AgendamientoReservarView,
     AgendamientoSlotsView,
+    AgendamientoSolicitarView,
 )
 from pacientes.consentimiento import (
     AceptarConsentimientoView,
@@ -182,6 +183,7 @@ urlpatterns = [
     path("api/agendamiento/<str:token>/foto/<int:pk>/", AgendamientoFotoView.as_view(), name="agendamiento-foto"),
     path("api/agendamiento/<str:token>/slots/", AgendamientoSlotsView.as_view(), name="agendamiento-slots"),
     path("api/agendamiento/<str:token>/reservar/", AgendamientoReservarView.as_view(), name="agendamiento-reservar"),
+    path("api/agendamiento/<str:token>/solicitar/", AgendamientoSolicitarView.as_view(), name="agendamiento-solicitar"),
     path("api/agendamiento/<str:token>/", AgendamientoInfoView.as_view(), name="agendamiento-info"),
     # Embudo web: pasos previos a la reserva (público, sin sesión y anónimo).
     path("api/embudo/", embudo.RegistrarEventoView.as_view(), name="embudo-evento"),

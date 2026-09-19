@@ -13818,6 +13818,10 @@ const AGENDA_CATS = [
   { v: "parejas", emoji: "💞", label: "Atención a parejas", match: ["pareja"] },
 ];
 
+// Turno que prefiere quien entra por "ayúdenme a encontrar al indicado". Es una
+// preferencia para coordinación, no un horario reservado.
+const TURNO_LABEL = { manana: "mañana", tarde: "tarde", noche: "noche" };
+
 // Categoría implícita de un servicio (por su nombre) y si el psicólogo la atiende
 // (según su campo `poblaciones`). Evita ofrecer en la web servicios que ese
 // profesional no da (ej. lenguaje, pareja). Lenient: si falta info, se muestra.
@@ -14548,6 +14552,11 @@ export function AgendarPublico({ token }) {
   const [sede, setSede] = useState(null);          // "lima" | "piura"
   const [via, setVia] = useState(null);            // "elegir" | "ayuda"
   const [categoria, setCategoria] = useState(null);// solo rama "ayuda"
+  // Preferencias de la rama "ayuda". No reservan nada: son lo que coordinación
+  // necesita saber para llamar y proponer psicólogo con criterio.
+  const [turno, setTurno] = useState(null);        // "manana" | "tarde" | "noche"
+  const [modoPref, setModoPref] = useState(null);  // "presencial" | "virtual"
+  const [tipoSesion, setTipoSesion] = useState(null); // "consulta" | "brujula"
   const [prof, setProf] = useState(null);
   const [perfil, setPerfil] = useState(null);      // psicólogo en el modal "Ver perfil"
   const [slotsData, setSlotsData] = useState(null);
@@ -14640,34 +14649,85 @@ export function AgendarPublico({ token }) {
   );
   if (!info) return marco(<div className="ag-cargando">Cargando…</div>);
 
+  // La rama "ayuda" no reserva: deja una solicitud para que coordinación llame.
+  // Por eso no valida horario ni psicólogo, solo que se pueda devolver la llamada.
+  async function solicitar() {
+    if (form.nombre.trim().length < 3 || form.telefono.replace(/\D/g, "").length < 9) {
+      setErr("Escribe tu nombre y un celular de 9 dígitos."); return;
+    }
+    setEnviando(true); setErr("");
+    try {
+      const r = await api.agendaSolicitar(token, {
+        sede, categoria, turno, modalidad: modoPref, tipo: tipoSesion,
+        nombre: form.nombre.trim(), telefono: form.telefono.trim(),
+        email: form.email.trim(), mensaje: form.mensaje.trim(),
+        atribucion: origenGuardado(),
+      });
+      setHecho({ solicitud: true, tipo: r.tipo || tipoSesion, sede });
+    } catch (e) {
+      setErr(e.message);
+    } finally { setEnviando(false); }
+  }
+
   // ── Pantalla final: pre-reserva registrada ────────────────────────────
   if (hecho) {
     const sedesContacto = AGENDA_SEDES[hecho.sede] ? [hecho.sede] : ["piura", "lima"];
     return marco(
           <div className="ag-entra">
             <div className="ag-ok-marca"><Check size={26} strokeWidth={2.5} /></div>
-            <h1 className="ag-h1 ag-h1-sm">Tu hora quedó apartada</h1>
+            {/* Quien pidió ayuda no apartó ninguna hora: prometerle lo contrario
+                sería mentirle en la única pantalla que va a recordar. */}
+            <h1 className="ag-h1 ag-h1-sm">
+              {hecho.solicitud ? "Recibimos tu solicitud" : "Tu hora quedó apartada"}
+            </h1>
             <p className="ag-lead">
-              {hecho.profesional} · {hecho.inicio_label}
+              {hecho.solicitud
+                ? (hecho.tipo === "brujula"
+                    ? "Nos comunicaremos contigo para confirmar tu Sesión Brújula, que será la sesión de orientación para ayudarte a escoger el enfoque y al terapeuta ideal para acompañarte."
+                    : "Nos comunicaremos contigo para que, a partir de tu motivo de consulta y tus preferencias de horario y disponibilidad, te ayudemos a escoger al psicólogo ideal para ti.")
+                : `${hecho.profesional} · ${hecho.inicio_label}`}
             </p>
 
             <section className="ag-panel">
               <h2 className="ag-rotulo">Qué pasa ahora</h2>
-              <ol className="ag-pasos-lista">
-                <li>
-                  <strong>Te llamamos o escribimos</strong> al número que dejaste, para confirmar
-                  horario, sede y profesional.
-                </li>
-                <li>
-                  <strong>Te enviamos</strong> los medios de pago y las políticas de atención.
-                </li>
-                <li>
-                  <strong>Con el pago hecho</strong>, tu cita queda confirmada.
-                </li>
-              </ol>
-              <p className="ag-nota-suave">
-                Hasta entonces es una pre-reserva: no tienes que pagar nada todavía.
-              </p>
+              {hecho.solicitud ? (
+                <>
+                  <ol className="ag-pasos-lista">
+                    <li>
+                      <strong>Te escribimos o llamamos</strong> al número que dejaste, para conversar
+                      sobre lo que necesitas.
+                    </li>
+                    <li>
+                      <strong>Te proponemos</strong> al profesional que mejor calce con tu caso, tu
+                      horario y tu modalidad.
+                    </li>
+                    <li>
+                      <strong>Recién ahí</strong> coordinamos día y hora, y te enviamos los medios de pago.
+                    </li>
+                  </ol>
+                  <p className="ag-nota-suave">
+                    Todavía no tienes una cita reservada ni tienes que pagar nada.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <ol className="ag-pasos-lista">
+                    <li>
+                      <strong>Te llamamos o escribimos</strong> al número que dejaste, para confirmar
+                      horario, sede y profesional.
+                    </li>
+                    <li>
+                      <strong>Te enviamos</strong> los medios de pago y las políticas de atención.
+                    </li>
+                    <li>
+                      <strong>Con el pago hecho</strong>, tu cita queda confirmada.
+                    </li>
+                  </ol>
+                  <p className="ag-nota-suave">
+                    Hasta entonces es una pre-reserva: no tienes que pagar nada todavía.
+                  </p>
+                </>
+              )}
             </section>
 
             <section className="ag-panel">
@@ -14687,7 +14747,8 @@ export function AgendarPublico({ token }) {
               })}
             </section>
 
-            <AgendaDudas faq={faq} ids={["dia", "cambiar", "contacto-fuera"]} titulo="Lo que suelen preguntarnos después de reservar" />
+            <AgendaDudas faq={faq} ids={["dia", "cambiar", "contacto-fuera"]}
+              titulo={hecho.solicitud ? "Lo que suelen preguntarnos en este punto" : "Lo que suelen preguntarnos después de reservar"} />
 
             <p className="ag-cierre">
               Nos alegra acompañarte en este primer paso.
@@ -14698,29 +14759,40 @@ export function AgendarPublico({ token }) {
 
   // ── Derivados de estado ───────────────────────────────────────────────
   const profsSede = info.profesionales.filter((p) => p.sede === sede);
-  const catDef = AGENDA_CATS.find((c) => c.v === categoria);
-  const matchCat = (p) => {
-    if (!catDef) return true;
-    const pob = (p.poblaciones || "").toLowerCase();
-    if (!pob) return true; // sin público declarado: se muestra igual y el coordinador verifica
-    return catDef.match.some((m) => pob.includes(m));
-  };
-  const profsAyuda = profsSede.filter(matchCat);
-  const profsMostrar = via === "ayuda" ? (profsAyuda.length ? profsAyuda : profsSede) : profsSede;
+
+  // Antes esta rama era la misma pantalla que "quiero elegir yo" con un filtro
+  // por población, y el filtro era blando: si el psicólogo no tenía declarado su
+  // público se mostraba igual, y si nadie calzaba se mostraban TODOS los de la
+  // sede. Quien entraba aquí porque no sabía a quién elegir terminaba viendo la
+  // lista completa, que es justo lo que venía a evitar. Ahora no lista a nadie:
+  // recoge preferencias y las deja en manos de coordinación.
+  const ayuda = via === "ayuda";
 
   const showSede = !sede;
   const showVia = sede && !via;
-  const showCat = sede && via === "ayuda" && !categoria;
-  const needProf = sede && via && (via === "elegir" || categoria) && !prof;
-  const showSlots = prof && !slot;
-  const showDatos = prof && slot;
-  const stepIdx = !sede ? 0 : !via ? 1 : (showCat || needProf) ? 2 : !slot ? 3 : 4;
-  const PASOS = ["Sede", "Con quién", "Profesional", "Horario", "Tus datos"];
+  const showCat = sede && ayuda && !categoria;
+  const showTurno = sede && ayuda && categoria && !turno;
+  const showModo = sede && ayuda && turno && !modoPref;
+  const showTipo = sede && ayuda && modoPref && !tipoSesion;
+  const showSolicitud = sede && ayuda && tipoSesion;
+  const needProf = sede && via === "elegir" && !prof;
+  const showSlots = via === "elegir" && prof && !slot;
+  const showDatos = via === "elegir" && prof && slot;
+
+  const PASOS = ayuda
+    ? ["Sede", "Con quién", "Para quién", "Horario", "Modalidad", "Qué prefieres", "Tus datos"]
+    : ["Sede", "Con quién", "Profesional", "Horario", "Tus datos"];
+  const stepIdx = ayuda
+    ? (!sede ? 0 : !via ? 1 : !categoria ? 2 : !turno ? 3 : !modoPref ? 4 : !tipoSesion ? 5 : 6)
+    : (!sede ? 0 : !via ? 1 : needProf ? 2 : !slot ? 3 : 4);
 
   const volver = () => {
     setErr("");
     if (slot) return setSlot(null);
     if (prof) return setProf(null);
+    if (tipoSesion) return setTipoSesion(null);
+    if (modoPref) return setModoPref(null);
+    if (turno) return setTurno(null);
     if (via === "ayuda" && categoria) return setCategoria(null);
     if (via) return setVia(null);
     if (sede) return setSede(null);
@@ -14840,7 +14912,9 @@ export function AgendarPublico({ token }) {
                 { v: "elegir", Icono: Search, label: "Quiero elegir yo", desc: "Verás a los psicólogos disponibles, con su perfil y sus horarios." },
                 { v: "ayuda", Icono: HeartHandshake, label: "Ayúdenme a encontrar al indicado", desc: "Nos cuentas para quién es la consulta y te acompañamos a elegir." },
               ].map(({ v, Icono, label, desc }) => (
-                <button key={v} className="ag-via" onClick={() => setVia(v)}>
+                <button key={v} className="ag-via" onClick={() => {
+                  setVia(v); setCategoria(null); setTurno(null); setModoPref(null); setTipoSesion(null);
+                }}>
                   <span className="ag-via-icono"><Icono size={20} strokeWidth={1.7} /></span>
                   <span className="ag-via-txt">
                     <span className="ag-via-label">{label}</span>
@@ -14854,11 +14928,11 @@ export function AgendarPublico({ token }) {
           </section>
         )}
 
-        {/* ── Rama "ayuda": categoría ── */}
+        {/* ── Rama "ayuda": población ── */}
         {showCat && (
           <section className="ag-paso ag-entra">
             <h2 className="ag-h2">¿Para quién es la consulta?</h2>
-            <p className="ag-sub">Te mostraremos a los psicólogos con horario disponible y un coordinador confirmará contigo que sea el ideal.</p>
+            <p className="ag-sub">Con esto y un par de preferencias más, te proponemos al psicólogo o psicóloga que mejor te calce.</p>
             <div className="ag-cats">
               {AGENDA_CATS.map((c) => (
                 <button key={c.v} className="ag-cat" onClick={() => setCategoria(c.v)}>
@@ -14869,6 +14943,120 @@ export function AgendarPublico({ token }) {
           </section>
         )}
 
+        {/* ── Rama "ayuda": turno ── */}
+        {showTurno && (
+          <section className="ag-paso ag-entra">
+            <h2 className="ag-h2">¿En qué horario te queda mejor?</h2>
+            <p className="ag-sub">No estás reservando una hora todavía. Es para proponerte a quien tenga libre ese turno.</p>
+            <div className="ag-cats">
+              {[["manana", "Mañana"], ["tarde", "Tarde"], ["noche", "Noche"]].map(([v, l]) => (
+                <button key={v} className="ag-cat" onClick={() => setTurno(v)}>{l}</button>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {/* ── Rama "ayuda": modalidad ── */}
+        {showModo && (
+          <section className="ag-paso ag-entra">
+            <h2 className="ag-h2">¿Cómo prefieres atenderte?</h2>
+            <p className="ag-sub">
+              Si eliges presencial, sería en nuestra sede de {AGENDA_SEDES[sede]?.label}.
+            </p>
+            <div className="ag-cats">
+              {[["presencial", "Presencial"], ["virtual", "Virtual"]].map(([v, l]) => (
+                <button key={v} className="ag-cat" onClick={() => setModoPref(v)}>{l}</button>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {/* ── Rama "ayuda": primera consulta o Sesión Brújula ──
+            Las dos se explican aquí porque es la duda más frecuente que le llega
+            al equipo por WhatsApp: una es conocer a TU psicólogo, la otra es que
+            alguien que conoce a todos te ayude a descubrir CUÁL te conviene. */}
+        {showTipo && (
+          <section className="ag-paso ag-entra">
+            <h2 className="ag-h2">¿Con qué te gustaría empezar?</h2>
+            <p className="ag-sub">Las dos son un primer paso válido. Si dudas, elige la que más se parezca a cómo llegas hoy.</p>
+            <div className="ag-opciones">
+              {[
+                {
+                  v: "consulta", Icono: Clock, label: "Primera consulta",
+                  desc: "Tu primer encuentro con un psicólogo que ya podría acompañarte: le cuentas lo que estás viviendo y definen juntos el plan. Dura entre 30 y 40 minutos.",
+                },
+                {
+                  v: "brujula", Icono: Compass, label: "Sesión Brújula",
+                  desc: "Una sesión de orientación con un psicólogo que conoce a todo el equipo y te ayuda a encontrar el terapeuta y el enfoque que mejor se ajustan a ti. Dura 45 minutos. No es terapia ni un diagnóstico.",
+                },
+              ].map(({ v, Icono, label, desc }) => (
+                <button key={v} className="ag-via" onClick={() => setTipoSesion(v)}>
+                  <span className="ag-via-icono"><Icono size={20} strokeWidth={1.7} /></span>
+                  <span className="ag-via-txt">
+                    <span className="ag-via-label">{label}</span>
+                    <span className="ag-via-desc">{desc}</span>
+                  </span>
+                  <ChevronRight className="ag-flecha" size={20} strokeWidth={1.8} />
+                </button>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {/* ── Rama "ayuda": datos de contacto ── */}
+        {showSolicitud && (
+          <section className="ag-paso ag-entra">
+            <div className="ag-resumen">
+              <div>
+                <span className="ag-resumen-prof">
+                  {tipoSesion === "brujula" ? "Sesión Brújula" : "Primera consulta"}
+                </span>
+                <span className="ag-resumen-cuando">
+                  {AGENDA_SEDES[sede]?.label} · {modoPref === "virtual" ? "Virtual" : "Presencial"} · Turno de {TURNO_LABEL[turno]}
+                </span>
+              </div>
+              <button className="ag-btn-texto" onClick={() => setTipoSesion(null)}>Cambiar</button>
+            </div>
+
+            <h2 className="ag-h2">¿Dónde te ubicamos?</h2>
+            <p className="ag-sub">Aquí no reservas una hora: con estos datos te escribimos y coordinamos contigo.</p>
+
+            <label className="ag-campo">
+              <span className="ag-label">Nombre y apellidos</span>
+              <input className="ag-input" value={form.nombre} onChange={setF("nombre")} autoFocus
+                autoComplete="name" placeholder="Como quieres que te llamemos" />
+            </label>
+
+            <label className="ag-campo">
+              <span className="ag-label">Teléfono o WhatsApp</span>
+              <input className="ag-input" value={form.telefono} onChange={setF("telefono")}
+                inputMode="tel" autoComplete="tel" placeholder="Aquí te escribimos" />
+            </label>
+
+            <label className="ag-campo">
+              <span className="ag-label">Correo <span className="ag-opt">opcional</span></span>
+              <input className="ag-input" value={form.email} onChange={setF("email")}
+                inputMode="email" autoComplete="email" />
+            </label>
+
+            <label className="ag-campo">
+              <span className="ag-label">¿Qué te gustaría trabajar? <span className="ag-opt">opcional</span></span>
+              <textarea className="ag-input ag-textarea" value={form.mensaje} onChange={setF("mensaje")}
+                placeholder="Cuéntanos lo que quieras. Nos ayuda a proponerte a la persona indicada." />
+            </label>
+
+            {err ? <p className="ag-error" role="alert">{err}</p> : null}
+
+            <button className="ag-btn ag-btn-grande" onClick={solicitar} disabled={enviando}>
+              {enviando ? "Enviando…" : "Enviar mi solicitud"}
+            </button>
+            <p className="ag-nota-suave ag-centro">
+              No pagas nada ahora ni quedas comprometido a nada.
+            </p>
+            <AgendaDudas faq={faq} ids={["confidencial", "elegir"]} titulo="Antes de enviar tus datos" />
+          </section>
+        )}
+
         {/* ── Paso 3: profesional ── */}
         {needProf && (
           <section className="ag-paso ag-entra">
@@ -14876,16 +15064,15 @@ export function AgendarPublico({ token }) {
                 equipo, no pone a los colegas a competir por la reserva. */}
             <h2 className="ag-h2">Nuestro equipo en {AGENDA_SEDES[sede]?.label}</h2>
             <p className="ag-sub">
-              {via === "ayuda"
-                ? "Todos ellos atienden lo que nos contaste. Elige por el horario que mejor te quede: un coordinador te acompaña después para confirmar que estés en buenas manos."
-                : "Puedes ver el perfil de cada uno. Si no sabes por cuál decidirte, elige por el horario que mejor te quede y coordinación te orienta."}
+              Puedes ver el perfil de cada uno. Si no sabes por cuál decidirte, elige por el
+              horario que mejor te quede y coordinación te orienta.
             </p>
-            {profsMostrar.length === 0 ? (
+            {profsSede.length === 0 ? (
               <div className="ag-aviso ag-aviso-ojo">
                 No hay psicólogos con horario en línea en {AGENDA_SEDES[sede]?.label} por ahora.
                 Escríbenos por WhatsApp y te ayudamos a agendar.
               </div>
-            ) : <div className="ag-profs">{profsMostrar.map((p) => ProfCard(p))}</div>}
+            ) : <div className="ag-profs">{profsSede.map((p) => ProfCard(p))}</div>}
             <AgendaDudas faq={faq} ids={["conexion", "problemas"]} />
           </section>
         )}

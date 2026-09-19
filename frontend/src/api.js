@@ -141,6 +141,8 @@ export const api = {
   agendaInfo: (token) => req(`/api/agendamiento/${token}/`),
   agendaSlots: (token, profId, dias = 14) => req(`/api/agendamiento/${token}/slots/?profesional=${profId}&dias=${dias}`),
   agendaReservar: (token, data) => req(`/api/agendamiento/${token}/reservar/`, { method: "POST", body: JSON.stringify(data) }),
+  // Rama "ayúdenme a encontrar al indicado": deja un lead, sin cita ni horario.
+  agendaSolicitar: (token, data) => req(`/api/agendamiento/${token}/solicitar/`, { method: "POST", body: JSON.stringify(data) }),
 
   // Leads / captación
   medicos: () => req("/api/medicos/"),

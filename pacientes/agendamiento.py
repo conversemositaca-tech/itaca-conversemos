@@ -26,6 +26,7 @@ from rest_framework.views import APIView
 from core.models import Clinica
 from finanzas.models import Servicio
 from leads import atribucion
+from leads import captacion
 from leads import identidad
 from leads.models import Lead
 from pacientes.models import BloqueoAgenda, Cita, Paciente
@@ -331,3 +332,111 @@ class AgendamientoReservarView(_PublicBase):
                 "profesional": prof.nombre,
                 "inicio_label": timezone.localtime(inicio).strftime("%d/%m/%Y a las %H:%M"),
             }, status=status.HTTP_201_CREATED)
+
+
+# ── Rama "ayúdenme a encontrar al indicado" ──────────────────────────────────
+# Esta vía NO muestra psicólogos ni reserva horario: recoge preferencias y deja
+# un lead para que coordinación llame y asigne. Antes compartía pantalla con
+# "quiero elegir yo" y terminaba listando a todo el equipo — justo lo que viene
+# a evitar quien entra por aquí porque no sabe a quién elegir.
+
+# Preferencia horaria. Se guarda como etiqueta y no como rango de horas: quien
+# llama necesita saber "prefiere tarde", no un intervalo que todavía nadie ha
+# cuadrado con la agenda del psicólogo que aún no se le asigna.
+_TURNOS = {
+    "manana": "Mañana",
+    "mañana": "Mañana",
+    "tarde": "Tarde",
+    "noche": "Noche",
+}
+
+# Qué vino a pedir. La Brújula es una sesión de orientación de 45 minutos que no
+# da cualquiera del equipo, así que esta vía solo recoge el interés: la
+# coordinadora confirma con quien la atiende antes de dar fecha.
+_TIPOS = {
+    "consulta": "Primera consulta",
+    "brujula": "Sesión Brújula",
+}
+
+# Población elegida -> tipo de servicio del lead, para que estas solicitudes
+# cuenten en los reportes de Marketing junto con las demás y no caigan en "otro".
+_TIPO_SERVICIO_MAP = {
+    "adultos": Lead.TipoServicio.ADULTOS,
+    "ninos": Lead.TipoServicio.NINOS,
+    "niños": Lead.TipoServicio.NINOS,
+    "adolescentes": Lead.TipoServicio.ADOLESCENTES,
+    "parejas": Lead.TipoServicio.PAREJA,
+}
+
+
+class AgendamientoSolicitarView(_PublicBase):
+    """POST /api/agendamiento/<token>/solicitar/ → deja un lead SIN cita.
+
+    body: {sede, categoria, turno, modalidad, tipo, nombre, telefono, email,
+           mensaje, atribucion}
+
+    A propósito no crea Cita ni Paciente: nadie eligió horario todavía. Una cita
+    tentativa obligaría a Coordinación a borrarla al asignar al psicólogo de
+    verdad, y mientras tanto ocuparía un hueco real en la agenda de alguien que
+    ni siquiera fue elegido.
+    """
+
+    def post(self, request, token):
+        clinica = _clinica_por_token(token)
+        if clinica is None:
+            return Response({"detail": "Enlace no válido."}, status=status.HTTP_404_NOT_FOUND)
+        d = request.data if isinstance(request.data, dict) else {}
+
+        nombre = str(d.get("nombre") or "").strip()[:200]
+        telefono = str(d.get("telefono") or "").strip()[:40]
+        # Mismo mínimo que al reservar: con menos de 9 dígitos el número no sirve
+        # para devolver la llamada, que es todo lo que esta vía promete.
+        if not nombre or len(_solo_digitos(telefono)) < identidad.MIN_DIGITOS_TELEFONO:
+            return Response({"detail": "Necesitamos tu nombre y un celular de 9 dígitos."},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        sede = str(d.get("sede") or "").strip().lower()
+        if sede not in dict(Lead.Sede.choices):
+            return Response({"detail": "Elige una sede."}, status=status.HTTP_400_BAD_REQUEST)
+
+        categoria = str(d.get("categoria") or "").strip().lower()
+        turno = _TURNOS.get(str(d.get("turno") or "").strip().lower(), "")
+        modalidad = ("virtual" if str(d.get("modalidad") or "").strip().lower().startswith("virt")
+                     else "presencial")
+        tipo_key = "brujula" if str(d.get("tipo") or "").strip().lower() == "brujula" else "consulta"
+        tipo = _TIPOS[tipo_key]
+
+        email = str(d.get("email") or "").strip()[:200]
+        mensaje = str(d.get("mensaje") or "").strip()[:1000]
+        origen = atribucion.campos_de_lead(d.get("atribucion"))
+
+        # Lo que coordinación necesita leer de un vistazo antes de marcar.
+        preferencias = " · ".join(x for x in [
+            f"Pidió: {tipo}",
+            f"Para: {categoria}" if categoria else "",
+            f"Turno: {turno}" if turno else "",
+            f"Modalidad: {modalidad.capitalize()}",
+        ] if x)
+
+        # Quien ya escribió hace poco no se duplica: se le suma la nota a su lead
+        # abierto. Si no, la misma persona aparece dos veces en la bandeja y dos
+        # coordinadoras terminan llamándola.
+        existente = captacion._lead_existente(clinica, telefono)
+        if existente:
+            captacion._agregar_nota(existente, f"Volvió a solicitar por la web. {preferencias}.")
+            return Response({"ok": True, "duplicado": True, "tipo": tipo_key})
+
+        Lead.objects.create(
+            clinica=clinica, nombre=nombre, telefono=telefono, email=email, sede=sede,
+            fuente=Lead.Fuente.WEB,
+            # No agendó nada: vino precisamente a que le ayudemos a elegir.
+            agendo_consulta=False,
+            estado=Lead.Estado.NUEVO,
+            especialidad=tipo,
+            tipo_servicio=_TIPO_SERVICIO_MAP.get(categoria, Lead.TipoServicio.OTRO),
+            modalidad_consulta=modalidad,
+            motivo_consulta=mensaje,
+            notas=f"Solicitud web — pidió ayuda para elegir psicólogo/a. {preferencias}.",
+            **origen)
+        return Response({"ok": True, "duplicado": False, "tipo": tipo_key},
+                        status=status.HTTP_201_CREATED)
