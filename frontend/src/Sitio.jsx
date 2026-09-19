@@ -211,13 +211,15 @@ const SW_CSS = `
 }
 .sw-video-btn:hover { filter:brightness(.96); transform:translateY(-1px); }
 .sw-video-btn svg { color:var(--t-sobre-suave); flex-shrink:0; }
-/* El iframe solo se monta cuando le dan play: si no, cada visita a la página
-   cargaría un reproductor de YouTube por psicólogo. */
-.sw-video {
-  position:relative; width:100%; aspect-ratio:16/9; margin:18px 0 0;
-  border-radius:12px; overflow:hidden; background:#000;
+/* El archivo solo se pide cuando le dan play: si no, cada visita a la página
+   se traería varios megas por psicólogo sin que nadie los mire. */
+/* Sin proporcion fija: los videos del equipo son verticales y forzar 16:9 los
+   dejaba diminutos entre franjas negras. */
+.sw-video { max-width:300px; margin:18px auto 0; }
+.sw-video video {
+  display:block; width:100%; height:auto; border:0;
+  border-radius:12px; background:#000;
 }
-.sw-video iframe { position:absolute; inset:0; width:100%; height:100%; border:0; }
 .sw-prof-pie { margin-top:auto; padding-top:22px; display:flex; flex-wrap:wrap; gap:10px 16px; align-items:center; }
 .sw-prof-pie .sw-btn { padding:12px 20px; font-size:14.5px; }
 .sw-mas { margin-top:18px; border-top:1px solid var(--linea-cl); padding-top:14px; }
@@ -668,9 +670,8 @@ function TarjetaProfesional({ p }) {
       {p.video ? (
         verVideo ? (
           <div className="sw-video">
-            <iframe src={`${p.video}&autoplay=1`} title={`Presentación de ${p.nombre}`}
-              allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture"
-              allowFullScreen />
+            <video src={p.video} controls autoPlay playsInline
+              aria-label={`Presentación de ${p.nombre}`} />
           </div>
         ) : (
           <button type="button" className="sw-video-btn" onClick={() => setVerVideo(true)}>

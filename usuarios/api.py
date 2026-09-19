@@ -14,6 +14,7 @@ from rest_framework.response import Response
 from rest_framework.throttling import SimpleRateThrottle
 from rest_framework.views import APIView
 
+from core import rangos
 from core.tenant import get_clinica_actual
 
 from .models import DocumentoLegal, Profesional, Usuario
@@ -276,6 +277,8 @@ class ProfesionalViewSet(viewsets.ModelViewSet):
         self._solo_admin()
         if instance.foto:
             instance.foto.delete(save=False)
+        if instance.video:
+            instance.video.delete(save=False)
         instance.delete()
 
     @action(detail=True, methods=["get", "post"])
@@ -295,6 +298,51 @@ class ProfesionalViewSet(viewsets.ModelViewSet):
         if not prof.foto:
             return Response({"detail": "Sin foto."}, status=status.HTTP_404_NOT_FOUND)
         return FileResponse(prof.foto.open("rb"))
+
+
+    @action(detail=True, methods=["get", "post", "delete"])
+    def video(self, request, pk=None):
+        """Video de presentación: subirlo, verlo desde el panel o quitarlo.
+
+        El tope de 25 MB no es arbitrario: son presentaciones de medio minuto,
+        el disco del contenedor es un volumen pequeño y cada reproducción sale
+        por el ancho de banda de Railway. Un archivo de celular sin comprimir
+        pasa de 60 MB con facilidad, y ahí es donde se nota.
+        """
+        prof = self.get_object()
+        if request.method == "POST":
+            self._solo_admin()
+            archivo = request.FILES.get("video")
+            if archivo is None:
+                return Response({"detail": "No se recibió ningún video."},
+                                status=status.HTTP_400_BAD_REQUEST)
+            if archivo.size > 25 * 1024 * 1024:
+                mb = archivo.size / (1024 * 1024)
+                return Response(
+                    {"detail": f"El video pesa {mb:.0f} MB y el límite es 25 MB. "
+                               f"Compártelo desde el celular en calidad media, o recórtalo."},
+                    status=status.HTTP_400_BAD_REQUEST)
+            if not rangos.tipo_de_video(archivo.name).startswith("video/"):
+                return Response({"detail": "Ese archivo no parece un video."},
+                                status=status.HTTP_400_BAD_REQUEST)
+            # Reemplazar deja huérfano el anterior si no se borra a mano.
+            if prof.video:
+                prof.video.delete(save=False)
+            prof.video = archivo
+            prof.save(update_fields=["video"])
+            return Response(ProfesionalSerializer(prof).data)
+
+        if request.method == "DELETE":
+            self._solo_admin()
+            if prof.video:
+                prof.video.delete(save=False)
+                prof.video = None
+                prof.save(update_fields=["video"])
+            return Response(ProfesionalSerializer(prof).data)
+
+        if not prof.video:
+            return Response({"detail": "Sin video."}, status=status.HTTP_404_NOT_FOUND)
+        return rangos.respuesta_de_archivo(request, prof.video)
 
 
 class DocumentoLegalViewSet(viewsets.ModelViewSet):
