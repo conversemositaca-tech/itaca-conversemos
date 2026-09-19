@@ -13836,10 +13836,10 @@ const AGENDA_WA_SALUDO = "Hola, escribo desde la página de Ítaca Conversemos";
  *  atiende su ciudad, no a un número personal: antes todos los botones del
  *  sitio apuntaban al celular de una sola persona, que terminaba derivando a
  *  mano cada consulta. */
-export function agendaWhatsapp(sede) {
+export function agendaWhatsapp(sede, texto) {
   const info = AGENDA_SEDES[sede] || AGENDA_SEDES.piura;
   const numero = (info.telefono || "").replace(/\D/g, "");
-  return `https://api.whatsapp.com/send?phone=${numero}&text=${encodeURIComponent(AGENDA_WA_SALUDO)}`;
+  return `https://api.whatsapp.com/send?phone=${numero}&text=${encodeURIComponent(texto || AGENDA_WA_SALUDO)}`;
 }
 
 // Las sedes en el orden en que se ofrecen, para los botones y enlaces que no
@@ -14602,6 +14602,19 @@ export const AGENDA_CSS = `
    un Reel), y forzar 16:9 los dejaba diminutos entre dos franjas negras. El
    navegador los dimensiona solo; el tope de ancho evita que uno vertical ocupe
    la pantalla entera. */
+/* Escribir por WhatsApp tras dejar la solicitud. Verde de WhatsApp y no el
+   color de la marca: quien lo pulsa tiene que saber a qué aplicación va antes
+   de que el celular cambie de pantalla. */
+.ag-btn-wa {
+  display:flex; align-items:center; justify-content:center; gap:9px;
+  width:100%; padding:16px 20px; margin:0 0 8px; border:0; border-radius:12px;
+  background:#25D366; color:#fff; font-size:15.5px; font-weight:600;
+  text-decoration:none; cursor:pointer;
+  transition:transform .15s var(--curva), box-shadow .15s;
+  box-shadow:0 4px 14px rgba(37,211,102,.3);
+}
+.ag-btn-wa:hover { transform:translateY(-1px); box-shadow:0 8px 20px rgba(37,211,102,.36); }
+
 .ag-video { max-width:300px; margin:0 auto 18px; }
 .ag-video video {
   display:block; width:100%; height:auto; border:0;
@@ -14730,7 +14743,7 @@ export function AgendarPublico({ token }) {
         email: form.email.trim(), mensaje: form.mensaje.trim(),
         atribucion: origenGuardado(),
       });
-      setHecho({ solicitud: true, tipo: r.tipo || tipoSesion, sede });
+      setHecho({ solicitud: true, tipo: r.tipo || tipoSesion, sede, nombre: form.nombre.trim() });
     } catch (e) {
       setErr(e.message);
     } finally { setEnviando(false); }
@@ -14755,14 +14768,35 @@ export function AgendarPublico({ token }) {
                 : `${hecho.profesional} · ${hecho.inicio_label}`}
             </p>
 
+            {/* La solicitud ya quedó guardada antes de llegar aquí: este botón es
+                un atajo para quien no quiere esperar la llamada, no el único
+                camino. Quien no lo pulse igual va a ser contactado. */}
+            {hecho.solicitud ? (
+              <section className="ag-panel">
+                <h2 className="ag-rotulo">¿Prefieres escribirnos tú?</h2>
+                <p className="ag-nota-suave" style={{ marginTop: 0 }}>
+                  No hace falta: te vamos a contactar igual. Pero si quieres adelantar,
+                  escríbenos ahora y seguimos por ahí.
+                </p>
+                <a className="ag-btn-wa"
+                  href={agendaWhatsapp(hecho.sede, `Hola, soy ${hecho.nombre}. Acabo de enviar una solicitud desde la web para ${hecho.tipo === "brujula" ? "una Sesión Brújula" : "una primera consulta"}.`)}
+                  {..._ext}>
+                  <MessageCircle size={19} strokeWidth={2} /> Escribirnos por WhatsApp
+                </a>
+                <p className="ag-nota-suave ag-centro" style={{ marginBottom: 0 }}>
+                  Escribes a la sede de {AGENDA_SEDES[hecho.sede]?.label || "tu ciudad"}, no a un número personal.
+                </p>
+              </section>
+            ) : null}
+
             <section className="ag-panel">
               <h2 className="ag-rotulo">Qué pasa ahora</h2>
               {hecho.solicitud ? (
                 <>
                   <ol className="ag-pasos-lista">
                     <li>
-                      <strong>Te escribimos o llamamos</strong> al número que dejaste, para conversar
-                      sobre lo que necesitas.
+                      <strong>Te escribimos o llamamos</strong> al número que dejaste, salvo que nos
+                      hayas escrito tú antes.
                     </li>
                     <li>
                       <strong>Te proponemos</strong> al profesional que mejor calce con tu caso, tu
