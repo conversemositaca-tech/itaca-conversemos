@@ -139,7 +139,7 @@ class Profesional(ModeloTenant):
         help_text="Cupos de sesión que ofrece a la semana (para la ocupación de agenda).",
     )
     # Horario semanal de atención: { "1": [15,16,17], ... } donde la clave es el día
-    # (1=Lunes … 6=Sábado) y el valor las horas (enteras, 0-23) en que atiende.
+    # (1=Lunes … 7=Domingo) y el valor las horas (enteras, 0-23) en que atiende.
     horario_semanal = models.JSONField(default=dict, blank=True)
     # Modalidad por turno: { "1": {"15": "virtual"|"presencial"|"mixto"} }. Opcional;
     # si una hora no está, se asume la modalidad general del profesional.
