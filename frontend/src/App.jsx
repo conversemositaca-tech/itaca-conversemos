@@ -12291,6 +12291,9 @@ function Faro({ showToast }) {
   const [acciones, setAcciones] = useState("");
   const [guardando, setGuardando] = useState(false);
   const [resultados, setResultados] = useState(null);   // {aplicacion, filas}
+  const [nuevo, setNuevo] = useState(null);             // formulario de colegio nuevo
+  const [creando, setCreando] = useState(false);
+  const [recien, setRecien] = useState(null);           // el colegio recién creado, con sus enlaces
 
   async function cargar() {
     const [a, ap] = await Promise.all([api.faroAlertas(soloPendientes), api.faroAplicaciones()]);
@@ -12311,6 +12314,23 @@ function Faro({ showToast }) {
       showToast("Caso registrado ✓");
     } catch (e) { showToast("Error: " + e.message); }
     finally { setGuardando(false); }
+  }
+
+  const FORM_VACIO = { institucion: "", ciudad: "", contacto: "", estado: "preparando",
+    matriculados: "", autorizados: "", avisar_whatsapp: "" };
+
+  async function crearColegio() {
+    if ((nuevo.institucion || "").trim().length < 3) {
+      showToast("Falta el nombre de la institución."); return;
+    }
+    setCreando(true);
+    try {
+      const ap = await api.faroCrearAplicacion(nuevo);
+      setNuevo(null);
+      setRecien(ap);           // los enlaces se muestran de una: es lo que se venía a buscar
+      await cargar();
+    } catch (e) { showToast("Error: " + e.message); }
+    finally { setCreando(false); }
   }
 
   async function verResultados(ap) {
@@ -12410,12 +12430,16 @@ function Faro({ showToast }) {
       )}
 
       {/* ── Colegios ── */}
-      <h2 className="ca-secth" style={{ marginTop: 30 }}>Colegios</h2>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between",
+        gap: 12, marginTop: 30 }}>
+        <h2 className="ca-secth" style={{ margin: 0 }}>Colegios</h2>
+        <button className="ca-btn" onClick={() => setNuevo({ ...FORM_VACIO })}>Nuevo colegio</button>
+      </div>
       {aplicaciones.length === 0 ? (
         <div className="ca-card">
           <p style={{ margin: 0, fontSize: 15.5 }}>
-            Todavía no hay ninguna aplicación creada. Se crean desde el administrador de Django
-            (Faro → Aplicaciones), y ahí salen los dos enlaces: el del aula y el de la dirección.
+            Todavía no hay ningún colegio. Al crear uno salen sus dos enlaces: el que se
+            reparte en el aula y el que recibe la dirección.
           </p>
         </div>
       ) : (
@@ -12444,6 +12468,108 @@ function Faro({ showToast }) {
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* ── Colegio nuevo ── */}
+      {nuevo && (
+        <div className="ca-modal-bg" onClick={() => setNuevo(null)}>
+          <div className="ca-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 560 }}>
+            <h2 className="ca-secth">Nuevo colegio</h2>
+            <p className="ca-muted" style={{ marginTop: -6, fontSize: 13.5 }}>
+              Al guardar se generan los dos enlaces. Lo demás se puede completar después.
+            </p>
+
+            <div className="ca-label" style={{ marginTop: 14 }}>Institución educativa</div>
+            <input className="ca-input" value={nuevo.institucion} autoFocus
+              placeholder="I.E. San Martín de Porres"
+              onChange={(e) => setNuevo({ ...nuevo, institucion: e.target.value })} />
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 12 }}>
+              <div>
+                <div className="ca-label">Ciudad</div>
+                <input className="ca-input" value={nuevo.ciudad}
+                  onChange={(e) => setNuevo({ ...nuevo, ciudad: e.target.value })} />
+              </div>
+              <div>
+                <div className="ca-label">Estado</div>
+                <select className="ca-input" value={nuevo.estado}
+                  onChange={(e) => setNuevo({ ...nuevo, estado: e.target.value })}>
+                  <option value="preparando">Preparando</option>
+                  <option value="autorizando">Recogiendo autorizaciones</option>
+                  <option value="en_curso">Aplicación en curso</option>
+                  <option value="analizando">En análisis</option>
+                  <option value="cerrada">Informe entregado</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="ca-label" style={{ marginTop: 12 }}>Enlace institucional</div>
+            <input className="ca-input" value={nuevo.contacto}
+              placeholder="Nombre y cargo de quién coordina en el colegio"
+              onChange={(e) => setNuevo({ ...nuevo, contacto: e.target.value })} />
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 12 }}>
+              <div>
+                <div className="ca-label">Matriculados en secundaria</div>
+                <input className="ca-input" type="number" min="0" value={nuevo.matriculados}
+                  onChange={(e) => setNuevo({ ...nuevo, matriculados: e.target.value })} />
+              </div>
+              <div>
+                <div className="ca-label">Con autorización firmada</div>
+                <input className="ca-input" type="number" min="0" value={nuevo.autorizados}
+                  onChange={(e) => setNuevo({ ...nuevo, autorizados: e.target.value })} />
+              </div>
+            </div>
+
+            <div className="ca-label" style={{ marginTop: 12 }}>WhatsApp para alertas rojas</div>
+            <input className="ca-input" value={nuevo.avisar_whatsapp} placeholder="51983292173"
+              onChange={(e) => setNuevo({ ...nuevo, avisar_whatsapp: e.target.value })} />
+            <p className="ca-muted" style={{ fontSize: 12.5, marginTop: 6 }}>
+              Si lo dejas vacío no sale ningún mensaje: las alertas rojas quedan solo en este panel
+              y hay que entrar a mirarlas. Para una prueba está bien dejarlo así.
+            </p>
+
+            <div style={{ display: "flex", gap: 9, justifyContent: "flex-end", marginTop: 16 }}>
+              <button className="ca-btn ghost" onClick={() => setNuevo(null)}>Cancelar</button>
+              <button className="ca-btn" onClick={crearColegio} disabled={creando}>
+                {creando ? "Creando…" : "Crear y ver los enlaces"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Los dos enlaces del colegio recién creado ── */}
+      {recien && (
+        <div className="ca-modal-bg" onClick={() => setRecien(null)}>
+          <div className="ca-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 620 }}>
+            <h2 className="ca-secth">{recien.institucion}</h2>
+            <p className="ca-muted" style={{ marginTop: -6, fontSize: 13.5 }}>
+              Son dos enlaces distintos a propósito. No se cambian ni vencen, así que el del aula
+              se puede dejar impreso o en la pizarra.
+            </p>
+
+            {[["Para el aula", recien.enlace_estudiante,
+               "Lo abre cada estudiante y responde el tamizaje. No muestra resultados de nadie."],
+              ["Para la dirección", recien.enlace_colegio,
+               "Panel del colegio. Solo cifras del conjunto: nunca un nombre."]].map(
+              ([titulo, enlace, nota]) => (
+                <div key={titulo} style={{ marginTop: 14, padding: "12px 14px",
+                  background: "var(--bg)", borderRadius: 8 }}>
+                  <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10 }}>
+                    <b style={{ fontSize: 14.5 }}>{titulo}</b>
+                    <button className="ca-link" onClick={() => copiar(enlace)}>Copiar</button>
+                  </div>
+                  <div style={{ fontSize: 12.5, wordBreak: "break-all", marginTop: 4 }}>{enlace}</div>
+                  <div className="ca-muted" style={{ fontSize: 12.5, marginTop: 6 }}>{nota}</div>
+                </div>
+              ))}
+
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 16 }}>
+              <button className="ca-btn" onClick={() => setRecien(null)}>Listo</button>
+            </div>
+          </div>
         </div>
       )}
 

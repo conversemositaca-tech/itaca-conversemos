@@ -247,31 +247,77 @@ class ResultadosView(_PanelBase):
         })
 
 
+def _dato_aplicacion(ap, base, rs=None):
+    rs = ap.respuestas.all() if rs is None else rs
+    return {
+        "id": ap.id,
+        "institucion": ap.institucion,
+        "ciudad": ap.ciudad,
+        "contacto": ap.contacto,
+        "estado": ap.estado,
+        "estado_label": ap.get_estado_display(),
+        "avisar_whatsapp": ap.avisar_whatsapp,
+        "enlace_estudiante": f"{base}/faro/t/{ap.token_estudiante}",
+        "enlace_colegio": f"{base}/faro/{ap.token}",
+        "autorizados": ap.autorizados,
+        "evaluados": rs.count(),
+        "rojos": rs.filter(nivel="rojo").count(),
+        "ambares": rs.filter(nivel="ambar").count(),
+    }
+
+
 class AplicacionesView(_PanelBase):
-    """GET /api/faro/panel/aplicaciones/ → los colegios y sus dos enlaces.
+    """Los colegios y sus dos enlaces. GET los lista, POST crea uno.
 
     Devuelve los tokens porque el psicólogo necesita repartirlos: el del
     estudiante va al aula, el del panel va a la dirección. Son distintos a
     propósito y aquí se ven juntos para no confundirlos al copiar.
+
+    Crear se hace desde aquí y no desde el admin de Django a propósito. El
+    admin exige `is_staff`, que es una llave de servidor —abre todas las tablas
+    del sistema, no solo las de Faro— y nadie debería necesitarla para abrir un
+    colegio. Además el admin no respeta el filtro por clínica: la aplicación
+    creada ahí puede quedar colgada del tenant equivocado sin que se note.
     """
 
     def get(self, request):
         base = request.build_absolute_uri("/").rstrip("/")
-        salida = []
-        for ap in Aplicacion.objects.del_tenant_actual().order_by("-creado_en")[:200]:
-            rs = ap.respuestas.all()
-            salida.append({
-                "id": ap.id,
-                "institucion": ap.institucion,
-                "ciudad": ap.ciudad,
-                "estado": ap.estado,
-                "estado_label": ap.get_estado_display(),
-                "avisar_whatsapp": ap.avisar_whatsapp,
-                "enlace_estudiante": f"{base}/faro/t/{ap.token_estudiante}",
-                "enlace_colegio": f"{base}/faro/{ap.token}",
-                "autorizados": ap.autorizados,
-                "evaluados": rs.count(),
-                "rojos": rs.filter(nivel="rojo").count(),
-                "ambares": rs.filter(nivel="ambar").count(),
-            })
+        salida = [_dato_aplicacion(ap, base)
+                  for ap in Aplicacion.objects.del_tenant_actual().order_by("-creado_en")[:200]]
         return Response({"aplicaciones": salida})
+
+    def post(self, request):
+        d = request.data or {}
+        institucion = str(d.get("institucion") or "").strip()
+        if len(institucion) < 3:
+            return Response({"detail": "Escribe el nombre de la institución educativa."},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        estado = str(d.get("estado") or "").strip() or Aplicacion.Estado.PREPARANDO
+        if estado not in Aplicacion.Estado.values:
+            return Response({"detail": "Ese estado no existe."},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        # `autorizados` entra porque de él sale el % de participación, y un
+        # colegio que empieza con 0 mostraría participación vacía todo el ciclo.
+        try:
+            autorizados = max(0, int(d.get("autorizados") or 0))
+            matriculados = d.get("matriculados")
+            matriculados = int(matriculados) if str(matriculados or "").strip() else None
+        except (TypeError, ValueError):
+            return Response({"detail": "Los totales deben ser números."},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        ap = Aplicacion.objects.create(
+            clinica=request.user.clinica,
+            institucion=institucion,
+            ciudad=str(d.get("ciudad") or "").strip(),
+            contacto=str(d.get("contacto") or "").strip(),
+            estado=estado,
+            autorizados=autorizados,
+            matriculados=matriculados,
+            avisar_whatsapp=str(d.get("avisar_whatsapp") or "").strip(),
+            notas=str(d.get("notas") or "").strip(),
+        )
+        base = request.build_absolute_uri("/").rstrip("/")
+        return Response(_dato_aplicacion(ap, base), status=status.HTTP_201_CREATED)

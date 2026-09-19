@@ -133,6 +133,58 @@ class AtenderTests(_Base):
         self.assertEqual(r.status_code, 404)
 
 
+class CrearAplicacionTests(_Base):
+    """Abrir un colegio se hace desde el panel, no desde el admin de Django.
+
+    El admin exige `is_staff`, que abre TODAS las tablas del sistema, y encima
+    no filtra por clínica. Pedirle eso a alguien para dar de alta un colegio es
+    entregar una llave de servidor por una tarea de rutina.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.yo = self.usuario(Usuario.Rol.MEDICO)
+
+    def crear(self, **kw):
+        cuerpo = {"institucion": "I.E. José Olaya", "ciudad": "Piura"}
+        cuerpo.update(kw)
+        return self.client.post("/api/faro/panel/aplicaciones/", data=json.dumps(cuerpo),
+                                content_type="application/json")
+
+    def test_crea_el_colegio_y_devuelve_sus_dos_enlaces(self):
+        r = self.crear(avisar_whatsapp="51983292173", autorizados=40)
+        self.assertEqual(r.status_code, 201, r.content)
+        d = r.json()
+        ap = Aplicacion.objects.get(institucion="I.E. José Olaya")
+        self.assertEqual(ap.clinica, self.clinica)
+        self.assertEqual(ap.autorizados, 40)
+        self.assertEqual(ap.avisar_whatsapp, "51983292173")
+        self.assertIn(ap.token_estudiante, d["enlace_estudiante"])
+        self.assertIn(ap.token, d["enlace_colegio"])
+        self.assertNotEqual(d["enlace_estudiante"], d["enlace_colegio"])
+
+    def test_nace_preparando_si_no_se_dice_otra_cosa(self):
+        self.crear()
+        self.assertEqual(Aplicacion.objects.get(institucion="I.E. José Olaya").estado,
+                         Aplicacion.Estado.PREPARANDO)
+
+    def test_sin_nombre_de_colegio_no_se_crea(self):
+        antes = Aplicacion.objects.count()
+        for malo in ["", "   ", "IE"]:
+            self.assertEqual(self.crear(institucion=malo).status_code, 400, repr(malo))
+        self.assertEqual(Aplicacion.objects.count(), antes)
+
+    def test_un_estado_inventado_no_pasa(self):
+        self.assertEqual(self.crear(estado="lo_que_sea").status_code, 400)
+
+    def test_los_totales_tienen_que_ser_numeros(self):
+        self.assertEqual(self.crear(autorizados="cuarenta").status_code, 400)
+
+    def test_coordinacion_no_puede_abrir_colegios(self):
+        self.usuario(Usuario.Rol.ASISTENTE, "asis-crea@test.pe")
+        self.assertEqual(self.crear().status_code, 403)
+
+
 class ResultadosTests(_Base):
     def setUp(self):
         super().setUp()

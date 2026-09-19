@@ -149,6 +149,7 @@ export const api = {
   faroAlertas: (soloPendientes) => req(`/api/faro/panel/alertas/${soloPendientes ? "?pendientes=1" : ""}`),
   faroAtender: (id, acciones) => req(`/api/faro/panel/alertas/${id}/`, { method: "POST", body: JSON.stringify({ acciones }) }),
   faroAplicaciones: () => req("/api/faro/panel/aplicaciones/"),
+  faroCrearAplicacion: (data) => req("/api/faro/panel/aplicaciones/", { method: "POST", body: JSON.stringify(data) }),
   faroResultados: (id) => req(`/api/faro/panel/resultados/${id}/`),
   agendaInfo: (token) => req(`/api/agendamiento/${token}/`),
   agendaSlots: (token, profId, dias = 14) => req(`/api/agendamiento/${token}/slots/?profesional=${profId}&dias=${dias}`),
