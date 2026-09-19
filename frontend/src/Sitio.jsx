@@ -7,7 +7,7 @@
 //
 // El equipo y los precios NO están escritos aquí: salen de `GET /api/sitio/`,
 // o sea de la base del sistema. Si entra o sale un psicólogo, la web cambia sola.
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowRight, Check, ChevronDown, Clock, Compass, GraduationCap, Heart, HeartHandshake, MapPin,
   MessageCircle, MessagesSquare, Play, Shield, Sprout, User, Users,
@@ -1199,6 +1199,11 @@ export function TamizajeFaro({ token }) {
   const [datos, setDatos] = useState({ nombre: "", grado: "", seccion: "" });
   const [resp, setResp] = useState({});
   const [enviando, setEnviando] = useState(false);
+  // Avance automático al elegir. Se guarda el temporizador para poder cancelarlo:
+  // dos toques seguidos dejarían dos avances encolados y se saltaría una pregunta.
+  const avance = useRef(null);
+  const cancelarAvance = () => { clearTimeout(avance.current); avance.current = null; };
+  useEffect(() => cancelarAvance, []);
 
   useEffect(() => {
     api.faroCuestionario(token).then(setInfo).catch((e) => setErr(e.message));
@@ -1241,6 +1246,22 @@ export function TamizajeFaro({ token }) {
     } catch (e) {
       setErr(e.message || "No pudimos guardar tus respuestas. Avísale a tu tutor.");
     } finally { setEnviando(false); }
+  }
+
+  // Elegir una opción pasa sola a la siguiente: son 38 preguntas y obligar a un
+  // segundo toque en cada una es medio centenar de toques de más en un celular.
+  //
+  // Dos excepciones deliberadas:
+  //   · La ÚLTIMA no avanza sola, porque avanzar ahí es ENVIAR. Un toque de más
+  //     no puede cerrar el cuestionario sin que el estudiante quiera.
+  //   · Hay una pausa corta antes de pasar. Sin ella la pantalla cambia antes de
+  //     que se vea la opción marcada y parece que el toque no se registró.
+  function elegir(k) {
+    cancelarAvance();
+    setResp((p) => ({ ...p, [it.id]: k }));
+    if (paso < items.length - 1) {
+      avance.current = setTimeout(() => setPaso((p) => p + 1), 260);
+    }
   }
 
   // ── Presentación y datos ──
@@ -1331,7 +1352,7 @@ export function TamizajeFaro({ token }) {
           {it.escala.map((etiqueta, k) => (
             <button key={etiqueta} className="fa-q-op" role="radio"
               aria-checked={elegido === k}
-              onClick={() => setResp((p) => ({ ...p, [it.id]: k }))}>
+              onClick={() => elegir(k)}>
               <span className="fa-q-punto" />{etiqueta}
             </button>
           ))}
@@ -1342,9 +1363,13 @@ export function TamizajeFaro({ token }) {
       <div className="fa-q-pie">
         <div className="fa-q-pie-in">
           <div className="fa-q-botones">
-            <button className="fa-q-atras" onClick={() => setPaso((p) => p - 1)}>Atrás</button>
+            <button className="fa-q-atras"
+              onClick={() => { cancelarAvance(); setPaso((p) => p - 1); }}>Atrás</button>
             <button className="fa-q-seguir" disabled={elegido === undefined || enviando}
-              onClick={() => (paso === items.length - 1 ? enviar() : setPaso((p) => p + 1))}>
+              onClick={() => {
+                cancelarAvance();
+                if (paso === items.length - 1) enviar(); else setPaso((p) => p + 1);
+              }}>
               {enviando ? "Guardando…" : paso === items.length - 1 ? "Terminar" : "Siguiente"}
             </button>
           </div>
