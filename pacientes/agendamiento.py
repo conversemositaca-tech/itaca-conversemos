@@ -182,6 +182,10 @@ class AgendamientoInfoView(_PublicBase):
                 # La foto se sirve por un endpoint público propio (Django no publica /media).
                 "foto": (request.build_absolute_uri(f"/api/agendamiento/{token}/foto/{p.id}/")
                          if p.foto else ""),
+                # Video de presentación, ya convertido a enlace de reproductor.
+                # Va resuelto desde aquí para que la landing y la página de
+                # psicólogos no interpreten el enlace cada una a su manera.
+                "video": p.video_embed_url,
             } for p in profs],
         })
 

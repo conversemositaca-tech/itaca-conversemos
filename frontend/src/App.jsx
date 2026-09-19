@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
-import { Activity, AlertTriangle, ArrowDown, ArrowUp, Award, BarChart3, Bell, BookUser, Building2, Cake, Calendar, Check, ChevronDown, ChevronLeft, ChevronRight, ClipboardList, Clock, Compass, Copy, DoorOpen, Download, ExternalLink, FileDown, FileSpreadsheet, FileText, FolderOpen, GraduationCap, Heart, HeartHandshake, HeartPulse, Home, KeyRound, Landmark, Leaf, Lightbulb, LogOut, MapPin, Megaphone, Menu, MessageCircle, Mic, Paperclip, Pencil, Phone, Pill, Plus, Presentation, Receipt, RotateCcw, Search, Send, Shield, Smile, Sparkles, Target, Trash2, TrendingUp, Trophy, Upload, UserCog, UserPlus, UserRound, Users, X } from "lucide-react";
+import { Activity, AlertTriangle, ArrowDown, ArrowUp, Award, BarChart3, Bell, BookUser, Building2, Cake, Calendar, Check, ChevronDown, ChevronLeft, ChevronRight, ClipboardList, Clock, Compass, Copy, DoorOpen, Download, ExternalLink, FileDown, FileSpreadsheet, FileText, FolderOpen, GraduationCap, Heart, HeartHandshake, HeartPulse, Home, KeyRound, Landmark, Leaf, Lightbulb, LogOut, MapPin, Megaphone, Menu, MessageCircle, Mic, Paperclip, Pencil, Phone, Pill, Play, Plus, Presentation, Receipt, RotateCcw, Search, Send, Shield, Smile, Sparkles, Target, Trash2, TrendingUp, Trophy, Upload, UserCog, UserPlus, UserRound, Users, X } from "lucide-react";
 import { api } from "./api";
 import { origenGuardado } from "./origen";
 import { MENU_SITIO, SITE_ROUTES, propsEnlace, normalizarRuta } from "./rutas";
@@ -12471,7 +12471,7 @@ function ProfesionalModal({ prof, onClose, onSave }) {
     sede: prof?.sede || "piura", modalidad: prof?.modalidad || "ambas",
     enfoque: prof?.enfoque || "", poblaciones: prof?.poblaciones || "",
     problematicas: prof?.problematicas || "", formacion: prof?.formacion || "", trayectoria: prof?.trayectoria || "",
-    frase: prof?.frase || "", activo: prof?.activo ?? true,
+    frase: prof?.frase || "", video_url: prof?.video_url || "", activo: prof?.activo ?? true,
     horas_disponibles: prof?.horas_disponibles ?? 0,
     porcentaje_liquidacion: prof?.porcentaje_liquidacion ?? 0,
     horario_semanal: prof?.horario_semanal || {},
@@ -12539,6 +12539,16 @@ function ProfesionalModal({ prof, onClose, onSave }) {
         <div style={{ marginBottom: 12 }}><div className="ca-label">Formación / especialidades</div><textarea className="ca-input" style={ta} value={f.formacion} onChange={set("formacion")} /></div>
         <div style={{ marginBottom: 12 }}><div className="ca-label">Trayectoria</div><textarea className="ca-input" style={ta} value={f.trayectoria} onChange={set("trayectoria")} /></div>
         <div style={{ marginBottom: 12 }}><div className="ca-label">Frase / lema</div><input className="ca-input" value={f.frase} onChange={set("frase")} /></div>
+        <div style={{ marginBottom: 12 }}>
+          <div className="ca-label">Video de presentación</div>
+          <input className="ca-input" value={f.video_url} onChange={set("video_url")}
+            placeholder="https://youtu.be/..." />
+          <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 4 }}>
+            {f.video_url && !/(?:youtu\.be\/|youtube\.com\/(?:watch\?(?:.*&)?v=|embed\/|shorts\/|live\/))[A-Za-z0-9_-]{11}/.test(f.video_url)
+              ? "Ese enlace no parece de YouTube: el video no se mostrará en la web."
+              : "Súbelo a YouTube como \"no listado\" y pega el enlace. Se ve dentro de la web, sin mandar a nadie a YouTube."}
+          </div>
+        </div>
 
         <div className="ca-secth" style={{ margin: "4px 0 8px" }}>Horario de atención <span style={{ color: "var(--muted)", fontWeight: 400, fontSize: 12 }}>(clic para ciclar: presencial → virtual → mixto → libre)</span></div>
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 8, fontSize: 12 }}>
@@ -14544,6 +14554,24 @@ export const AGENDA_CSS = `
   }
   .ag-sede:hover, .ag-via:hover, .ag-hora:hover, .ag-cat:hover, .ag-btn:hover { transform:none; }
 }
+
+/* Video de presentación. El reproductor NO se carga hasta que alguien le da
+   play: así el perfil no arrastra el peso de un iframe de YouTube que casi
+   nadie abre, y quien solo lee el perfil no queda registrado por Google. */
+.ag-video-btn {
+  display:inline-flex; align-items:center; justify-content:center; gap:9px; width:100%;
+  padding:13px 18px; margin:0 0 18px; border-radius:12px;
+  border:1px solid var(--linea); background:var(--papel); color:var(--tinta);
+  font-size:14.5px; font-weight:600; cursor:pointer;
+  transition:background .15s, transform .15s var(--curva);
+}
+.ag-video-btn:hover { background:var(--acento-suave); transform:translateY(-1px); }
+.ag-video-btn svg { color:var(--acento); flex-shrink:0; }
+.ag-video {
+  position:relative; width:100%; aspect-ratio:16/9; margin:0 0 18px;
+  border-radius:12px; overflow:hidden; background:#000;
+}
+.ag-video iframe { position:absolute; inset:0; width:100%; height:100%; border:0; }
 `;
 
 export function AgendarPublico({ token }) {
@@ -14559,6 +14587,7 @@ export function AgendarPublico({ token }) {
   const [tipoSesion, setTipoSesion] = useState(null); // "consulta" | "brujula"
   const [prof, setProf] = useState(null);
   const [perfil, setPerfil] = useState(null);      // psicólogo en el modal "Ver perfil"
+  const [verVideo, setVerVideo] = useState(false); // si ya pidió ver la presentación
   const [slotsData, setSlotsData] = useState(null);
   const [slot, setSlot] = useState(null);          // {inicio, hora, diaLabel}
   const [form, setForm] = useState({ nombre: "", telefono: "", documento: "", email: "", servicio: "", modalidad: "presencial", mensaje: "" });
@@ -14586,6 +14615,9 @@ export function AgendarPublico({ token }) {
     }));
     api.agendaSlots(token, prof.id, 21).then(setSlotsData).catch(() => setSlotsData({ dias: [] }));
   }, [prof]); // eslint-disable-line
+
+  // Abrir otro perfil no debe dejar sonando el video del anterior.
+  useEffect(() => { setVerVideo(false); }, [perfil]);
 
   const diaLabel = (iso) => {
     const s = new Date(iso + "T12:00:00").toLocaleDateString("es-PE", { weekday: "long", day: "numeric", month: "long" });
@@ -15211,6 +15243,24 @@ export function AgendarPublico({ token }) {
               </div>
             </div>
             {perfil.frase ? <blockquote className="ag-frase">{perfil.frase}</blockquote> : null}
+
+            {/* El video vive aquí y no en la tarjeta de la lista: ahí todas las
+                tarjetas se ven iguales a propósito, y un ícono en solo algunas
+                volvería a convertir la lista en una comparación entre colegas
+                mientras no todos tengan grabado el suyo. */}
+            {perfil.video ? (
+              verVideo ? (
+                <div className="ag-video">
+                  <iframe src={`${perfil.video}&autoplay=1`} title={`Presentación de ${perfil.nombre}`}
+                    allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture"
+                    allowFullScreen />
+                </div>
+              ) : (
+                <button className="ag-video-btn" onClick={() => setVerVideo(true)}>
+                  <Play size={17} strokeWidth={2} /> Ver su presentación
+                </button>
+              )
+            ) : null}
             {[
               { l: "Especialidades y enfoque", v: [perfil.enfoque, perfil.problematicas].filter(Boolean).join("\n\n") },
               { l: "Formación y experiencia", v: [perfil.formacion, perfil.trayectoria].filter(Boolean).join("\n\n") },

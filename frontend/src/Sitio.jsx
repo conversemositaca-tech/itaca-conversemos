@@ -10,7 +10,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   ArrowRight, Check, ChevronDown, Clock, Compass, GraduationCap, Heart, HeartHandshake, MapPin,
-  MessageCircle, MessagesSquare, Shield, Sprout, User, Users,
+  MessageCircle, MessagesSquare, Play, Shield, Sprout, User, Users,
 } from "lucide-react";
 
 // Iconos lineales de los servicios y los principios, en un solo lugar para que
@@ -203,6 +203,21 @@ const SW_CSS = `
 }
 .sw-campo span { font-size:14.5px; line-height:1.55; color:var(--txt-2); }
 .sw-corta { display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
+.sw-video-btn {
+  display:inline-flex; align-items:center; justify-content:center; gap:9px; width:100%;
+  margin:18px 0 0; padding:12px 18px; border-radius:12px; cursor:pointer;
+  border:1px solid var(--t-suave); background:var(--t-suave); color:var(--txt);
+  font-size:14.5px; font-weight:600; font-family:inherit; transition:filter .15s, transform .15s;
+}
+.sw-video-btn:hover { filter:brightness(.96); transform:translateY(-1px); }
+.sw-video-btn svg { color:var(--t-sobre-suave); flex-shrink:0; }
+/* El iframe solo se monta cuando le dan play: si no, cada visita a la página
+   cargaría un reproductor de YouTube por psicólogo. */
+.sw-video {
+  position:relative; width:100%; aspect-ratio:16/9; margin:18px 0 0;
+  border-radius:12px; overflow:hidden; background:#000;
+}
+.sw-video iframe { position:absolute; inset:0; width:100%; height:100%; border:0; }
 .sw-prof-pie { margin-top:auto; padding-top:22px; display:flex; flex-wrap:wrap; gap:10px 16px; align-items:center; }
 .sw-prof-pie .sw-btn { padding:12px 20px; font-size:14.5px; }
 .sw-mas { margin-top:18px; border-top:1px solid var(--linea-cl); padding-top:14px; }
@@ -632,6 +647,7 @@ function PaginaQuienes() {
 // ── Página: psicólogos (la lista sale de la base) ─────────────────────────
 function TarjetaProfesional({ p }) {
   const hrefCita = hrefReserva();
+  const [verVideo, setVerVideo] = useState(false);
   const extra = [p.problematicas, p.formacion, p.trayectoria].some(Boolean);
   return (
     <article className="sw-prof">
@@ -649,6 +665,19 @@ function TarjetaProfesional({ p }) {
         </div>
       </div>
       {p.frase ? <p className="sw-prof-frase">{p.frase}</p> : null}
+      {p.video ? (
+        verVideo ? (
+          <div className="sw-video">
+            <iframe src={`${p.video}&autoplay=1`} title={`Presentación de ${p.nombre}`}
+              allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture"
+              allowFullScreen />
+          </div>
+        ) : (
+          <button type="button" className="sw-video-btn" onClick={() => setVerVideo(true)}>
+            <Play size={17} strokeWidth={2} aria-hidden="true" /> Ver su presentación
+          </button>
+        )
+      ) : null}
       <div className="sw-prof-campos">
         {p.enfoque ? <p className="sw-campo"><strong>Enfoque</strong><span className="sw-corta">{p.enfoque}</span></p> : null}
         {p.poblaciones ? <p className="sw-campo"><strong>Atiende a</strong><span>{p.poblaciones}</span></p> : null}
