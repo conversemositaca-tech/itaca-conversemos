@@ -55,7 +55,8 @@ from mensajes.materiales import MaterialViewSet
 from mensajes.monitor_evolution import EvolutionEstadoView, EvolutionInstanciasView
 from mensajes.webhook_evolution import EvolutionWebhookView
 from pacientes.api import AdjuntoViewSet, AplicacionEscalaViewSet, AtencionViewSet, BloqueoAgendaViewSet, CitaViewSet, ContactoProfesionalViewSet, ObjetivoTerapeuticoViewSet, PacienteViewSet, RespuestaNPSViewSet, TareaViewSet, TranscribirView
-from core.sitio import SitioFotoView, SitioVideoView, SitioInfoView
+from faro.api import PanelFaroView
+from core.sitio import SitioFaroView, SitioFotoView, SitioVideoView, SitioInfoView
 from pacientes.api_duplicados import (
     DuplicadoAnalizarView, DuplicadoDescartarView, DuplicadoFusionarView,
     DuplicadosListaView,
@@ -190,6 +191,9 @@ urlpatterns = [
     # Embudo web: pasos previos a la reserva (público, sin sesión y anónimo).
     path("api/embudo/", embudo.RegistrarEventoView.as_view(), name="embudo-evento"),
     # Datos públicos del sitio web (sin token en la URL; la clínica sale de settings).
+    # Panel del colegio, por token permanente (sin cuentas).
+    path("api/faro/<str:token>/", PanelFaroView.as_view(), name="faro-panel"),
+    path("api/sitio/faro/", SitioFaroView.as_view(), name="sitio-faro"),
     path("api/sitio/foto/<int:pk>/", SitioFotoView.as_view(), name="sitio-foto"),
     path("api/sitio/video/<int:pk>/", SitioVideoView.as_view(), name="sitio-video"),
     path("api/sitio/", SitioInfoView.as_view(), name="sitio-info"),

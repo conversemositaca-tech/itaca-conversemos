@@ -20,6 +20,8 @@ export const SITE_ROUTES = Object.freeze({
   psicologos: "/psicologos",
   terapias: "/terapias-online",
   preguntas: "/preguntas-frecuentes",
+  // Faro: tamizaje escolar. El cliente aquí es el colegio, no el paciente.
+  faro: "/faro",
   agendar: "/agendar/PmFaG9KH4EOQF2BZ2MCHcupVu70rUxZG",
   gestion: "/gestion",
 });
@@ -51,6 +53,7 @@ export const MENU_SITIO = [
   { label: "Psicólogos", href: SITE_ROUTES.psicologos },
   { label: "Terapias", href: SITE_ROUTES.terapias },
   { label: "Preguntas", href: SITE_ROUTES.preguntas },
+  { label: "Colegios", href: SITE_ROUTES.faro },
   // Reservar, también arriba: es la acción que la gente viene a hacer y ocupa
   // el lugar que dejó el Blog.
   { label: "Agendar", href: SITE_ROUTES.agendar },
@@ -64,7 +67,7 @@ export const ALIAS_RUTAS = Object.freeze({ "/preguntas": SITE_ROUTES.preguntas }
 
 export const RUTAS_SITIO = [
   SITE_ROUTES.inicio, SITE_ROUTES.quienesSomos, SITE_ROUTES.psicologos,
-  SITE_ROUTES.terapias, SITE_ROUTES.preguntas, ...Object.keys(ALIAS_RUTAS),
+  SITE_ROUTES.terapias, SITE_ROUTES.preguntas, SITE_ROUTES.faro, ...Object.keys(ALIAS_RUTAS),
 ];
 
 // Prefijos que NO son del sitio: el panel interno, las páginas públicas por
