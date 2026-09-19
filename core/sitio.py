@@ -43,7 +43,7 @@ def _publicables(clinica):
     """
     fichas = (Profesional.objects.filter(clinica=clinica, activo=True)
               .select_related("usuario").order_by("orden", "nombre"))
-    return [p for p in fichas if (p.foto or p.frase or p.enfoque)]
+    return [p for p in fichas if (p.foto or p.frase or p.enfoque or p.video_url)]
 
 
 class _SitioBase(APIView):
@@ -89,6 +89,7 @@ class SitioInfoView(_SitioBase):
                 "trayectoria": (p.trayectoria or "")[:800],
                 "agendable": p.id in agendables,
                 "foto": (request.build_absolute_uri(f"/api/sitio/foto/{p.id}/") if p.foto else ""),
+                "video": p.video_embed_url,
             } for p in equipo],
         })
 

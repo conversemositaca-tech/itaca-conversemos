@@ -1,3 +1,5 @@
+import re
+
 from django.contrib.auth.models import AbstractUser, BaseUserManager
 from django.db import models
 
@@ -147,12 +149,40 @@ class Profesional(ModeloTenant):
         help_text="Porcentaje de lo cobrado en sus sesiones que se le paga al psicólogo (ej: 40 = 40%).",
     )
     foto = models.FileField(upload_to=ruta_foto_profesional, null=True, blank=True)
+    # Video de presentación. Se guarda el ENLACE y no el archivo: servir video
+    # desde el contenedor obligaría a implementar envío por tramos (sin eso,
+    # Safari en iPhone no reproduce) y ataría un worker de Gunicorn durante toda
+    # la descarga. Alojado en YouTube como "no listado": no sale en búsquedas ni
+    # en el canal, pero se reproduce dentro de la web.
+    video_url = models.URLField(
+        "video de presentación", max_length=400, blank=True, default="",
+        help_text="Enlace del video en YouTube (súbelo como 'no listado'). Se ve dentro de la web, sin mandar a nadie a YouTube.",
+    )
     usuario = models.OneToOneField(
         "usuarios.Usuario", on_delete=models.SET_NULL, related_name="ficha", null=True, blank=True,
         help_text="Cuenta de login enlazada (si atiende sesiones en la agenda).",
     )
     activo = models.BooleanField(default=True)
     orden = models.PositiveIntegerField(default=0)
+
+    @property
+    def video_embed_url(self):
+        """URL para incrustar el video, o "" si el enlace no es de YouTube.
+
+        Se usa el dominio sin cookies: en un sitio de salud mental, quien solo
+        mira el perfil de un psicólogo no tiene por qué quedar registrado por
+        Google antes siquiera de darle play.
+        """
+        url = (self.video_url or "").strip()
+        if not url:
+            return ""
+        m = re.search(
+            r"(?:youtu\.be/|youtube\.com/(?:watch\?(?:.*&)?v=|embed/|shorts/|live/))([A-Za-z0-9_-]{11})",
+            url)
+        if not m:
+            return ""
+        # rel=0 evita que al terminar aparezcan videos de otras clínicas.
+        return f"https://www.youtube-nocookie.com/embed/{m.group(1)}?rel=0&modestbranding=1"
 
     class Meta:
         verbose_name = "Profesional"
