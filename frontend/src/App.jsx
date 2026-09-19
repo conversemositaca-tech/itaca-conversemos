@@ -12470,6 +12470,17 @@ function PacientesDeProfesionalModal({ prof, onClose, showToast }) {
   );
 }
 
+// Días de la grilla de horarios: 1=Lunes … 7=Domingo, igual que en el backend
+// (`Profesional.horario_semanal` y `pacientes/agendamiento.py`). En un solo sitio
+// a propósito: estaban repetidos en tres —cabecera, celdas y tooltip— y el
+// domingo faltaba en los tres, así que no se le podía marcar horario a nadie
+// aunque el motor de agenda sí lo soportara.
+const DIAS_HORARIO = [
+  ["1", "Lun", "Lunes"], ["2", "Mar", "Martes"], ["3", "Mié", "Miércoles"],
+  ["4", "Jue", "Jueves"], ["5", "Vie", "Viernes"], ["6", "Sáb", "Sábado"],
+  ["7", "Dom", "Domingo"],
+];
+
 function ProfesionalModal({ prof, onClose, onSave }) {
   const [f, setF] = useState({
     nombre: prof?.nombre || "", titulo: prof?.titulo || "Lic. Psicología", colegiatura: prof?.colegiatura || "",
@@ -12560,17 +12571,17 @@ function ProfesionalModal({ prof, onClose, onSave }) {
         </div>
         <div style={{ overflowX: "auto", marginBottom: 16 }}>
           <table style={{ borderCollapse: "collapse", fontSize: 11 }}>
-            <thead><tr><th></th>{[["1", "Lun"], ["2", "Mar"], ["3", "Mié"], ["4", "Jue"], ["5", "Vie"], ["6", "Sáb"]].map(([d, l]) => <th key={d} style={{ padding: "2px 5px", color: "var(--muted)", fontWeight: 600 }}>{l}</th>)}</tr></thead>
+            <thead><tr><th></th>{DIAS_HORARIO.map(([d, corto]) => <th key={d} style={{ padding: "2px 5px", color: "var(--muted)", fontWeight: 600 }}>{corto}</th>)}</tr></thead>
             <tbody>
               {Array.from({ length: 15 }, (_, i) => 7 + i).map((h) => (
                 <tr key={h}>
                   <td style={{ color: "var(--muted)", paddingRight: 6, textAlign: "right", whiteSpace: "nowrap" }}>{h}:00</td>
-                  {["1", "2", "3", "4", "5", "6"].map((d) => {
+                  {DIAS_HORARIO.map(([d, , largo]) => {
                     const est = estadoDe(d, h);
                     const bg = est === "activo" ? "#9AA0A6" : (MOD_COLOR[est] || "var(--bg)");
                     return (
                       <td key={d} style={{ padding: 2 }}>
-                        <button type="button" title={`${["", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"][d]} ${h}:00${est && est !== "activo" ? ` · ${est}` : est === "activo" ? " · sin modalidad" : ""}`} onClick={() => toggleHora(d, h)}
+                        <button type="button" title={`${largo} ${h}:00${est && est !== "activo" ? ` · ${est}` : est === "activo" ? " · sin modalidad" : ""}`} onClick={() => toggleHora(d, h)}
                           style={{ width: 36, height: 20, borderRadius: 4, cursor: "pointer", border: "1px solid var(--line)", background: bg }} />
                       </td>
                     );
