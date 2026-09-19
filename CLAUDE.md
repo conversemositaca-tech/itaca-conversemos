@@ -988,11 +988,36 @@ los feriados de Perú. Zona horaria por defecto: `America/Lima` (GMT-5).
      (106 avisos en ambos, comparado archivo contra archivo), y **11/11 en
      navegador real** con datos sintéticos: login, filtro, orden correcto
      (8 días → 25 → 120 → 400 → nunca vino), etiquetas y acotador.
-   - **Ojo**: el análisis también destapó que **217 citas importadas de AgendaPro
-     están marcadas con `agendado_web=True`** sin serlo. Contaminan cualquier
-     reporte que separe la web del resto (incluido el embudo del ítem 41): con
-     ellas dentro, la web parecía cancelar 7 veces más que el equipo. Limpiar esa
-     marca **escribe en producción** y queda pendiente de autorización.
+   - **Marca `agendado_web` corregida en producción (17 set. 2026, autorizada)**.
+     El análisis destapó que **217 citas importadas de AgendaPro estaban marcadas
+     con `agendado_web=True`** sin serlo, contaminando cualquier reporte que
+     separe la web del resto (incluido el embudo del ítem 41).
+     · **Cómo se separaron, por dos vías independientes**: sus notas dicen
+       "AgendaPro"/"importado" (las reales dicen "Reserva online"), y arrancan en
+       **junio de 2025**, mientras que la primera reserva real es del **3 de julio
+       de 2026**, el día que se publicó el agendamiento. Control previo: **cero**
+       de las 217 decía "Reserva online". Ninguna zona gris.
+     · **Cómo se ejecutó**: dry-run primero, luego la lista EXACTA de 217 ids
+       (no un criterio) dentro de `transaction.atomic()`, tocando **solo** el
+       campo `agendado_web`. Nada de notas, estado, fechas ni datos clínicos.
+       Verificado después: 0 de la lista siguen marcadas, quedan **28** reservas
+       web reales y el total de citas no se movió (**8.990**). Reversible
+       reidentificando por el mismo criterio de notas.
+     · **Lo que NO pasó, y se esperaba**: al limpiar, los porcentajes casi no se
+       movieron (cancelación 36,3 % → 35,7 %). Es decir: **las reservas web sí se
+       cancelan más que las del equipo** (35,7 % vs 12,1 %) y eso NO era un
+       artefacto de los datos sucios. Con 28 casos sigue siendo poco para
+       concluir; la señal queda para vigilar con el embudo del ítem 41.
+     · **Aviso sobre el razonamiento**: durante el análisis se usó "no tiene lead
+       asociado" como prueba de que una cita era importada. **No sirve**: de 245
+       citas web solo 1 tenía lead enlazado —tampoco las reales—. La conclusión
+       coincidió por casualidad, no por el argumento.
+   - **Pendiente de mirar (hipótesis, sin confirmar)**: el enlace `Lead.cita` se
+     pierde. De 6 citas cuya nota dice "Lead #N", **ninguna** tenía ese lead
+     apuntándole: 4 leads sin cita y 1 apuntando a otra. Puede ser normal al
+     reagendar o cancelar, pero el ítem 39 dice que ese enlace existe para que
+     editar un lead MUEVA la cita en vez de duplicarla; si se pierde, esa
+     protección no está actuando.
 
 44. ⏳ Consolidar duplicados pasa a coordinación; la sede es un filtro (rama
    `feat/coordinacion-consolida`, 2026-09-18, SIN desplegar). **Cambio de
