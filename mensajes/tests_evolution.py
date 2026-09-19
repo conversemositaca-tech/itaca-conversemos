@@ -127,6 +127,29 @@ class SeleccionDeInstanciaTests(_Base):
         self.assertNotIn("clave-de-prueba", mensaje.detalle)
 
 
+class SedeEscritaAManoTests(_Base):
+    """La sede no siempre viene de un campo de opciones.
+
+    `paciente.sede` viene limpia, pero la ciudad de un colegio de Faro la
+    escribe una persona en un formulario libre. "Lima" con mayúscula no casaba
+    con nada y la alerta de ese colegio se iba por la línea de respaldo, o peor,
+    por la de la otra sede.
+    """
+
+    def test_la_sede_se_reconoce_venga_como_venga_escrita(self):
+        for escrita in ("Lima", "LIMA", " lima ", "Líma"):
+            elegida = evolution.instancia_para(self.clinica, escrita)
+            self.assertEqual(elegida, self.lima, repr(escrita))
+        for escrita in ("Piura", "PIURA", " piura "):
+            self.assertEqual(evolution.instancia_para(self.clinica, escrita),
+                             self.piura, repr(escrita))
+
+    def test_una_ciudad_que_no_es_sede_no_roba_la_linea_de_nadie(self):
+        # Un colegio de Sullana no tiene línea propia: cae al respaldo, no a
+        # Lima ni a Piura por parecido.
+        self.assertIsNone(evolution.instancia_para(self.clinica, "Sullana"))
+
+
 class RespuestasAutomaticasTests(_Base):
     """Las líneas oficiales NO contestan solas.
 

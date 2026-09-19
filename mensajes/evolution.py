@@ -6,6 +6,7 @@ respaldo manual, para que el sistema siga siendo útil sin depender del servidor
 import logging
 import re
 import time
+import unicodedata
 from urllib.parse import quote
 
 import requests
@@ -189,6 +190,12 @@ def wa_link(tel, texto):
     return f"https://wa.me/{numero}?text={quote(texto)}"
 
 
+def _sede_normalizada(sede):
+    """"Lima " y "LIMA" son Lima. Cualquier otra ciudad no es ninguna sede."""
+    t = unicodedata.normalize("NFKD", str(sede or "").strip().lower())
+    return "".join(c for c in t if not unicodedata.combining(c))
+
+
 def instancia_para(clinica, sede="", automatico=False):
     """Instancia de Evolution activa que atiende a esa sede, o None.
 
@@ -218,6 +225,11 @@ def instancia_para(clinica, sede="", automatico=False):
           .order_by("id"))
     if automatico:
         qs = qs.filter(respuestas_automaticas=True)
+    # La sede llega de sitios distintos. `paciente.sede` es un campo de opciones
+    # y viene limpia; la ciudad de un colegio de Faro la escribe una persona, y
+    # "Lima" con mayúscula no casaba con nada: la alerta de un colegio piqueño
+    # podía salir por el número de Lima sin que nadie lo notara.
+    sede = _sede_normalizada(sede)
     if sede in ("lima", "piura"):
         propia = qs.filter(sede=sede).first()
         if propia is not None:
