@@ -14,8 +14,8 @@ class LeadAdmin(admin.ModelAdmin):
 
 @admin.register(SolicitudInstitucional)
 class SolicitudInstitucionalAdmin(admin.ModelAdmin):
-    list_display = ("institucion", "responsable", "nivel", "estudiantes", "interes",
-                    "estado", "clinica", "creado_en")
+    list_display = ("institucion", "ciudad", "responsable", "nivel", "estudiantes",
+                    "interes", "estado", "clinica", "creado_en")
     list_filter = ("clinica", "estado", "nivel", "interes")
-    search_fields = ("institucion", "responsable", "whatsapp", "correo")
+    search_fields = ("institucion", "ciudad", "responsable", "whatsapp", "correo")
     date_hierarchy = "creado_en"

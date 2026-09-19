@@ -26,7 +26,7 @@ class FaroTests(TestCase):
     def pedir(self, **extra):
         cuerpo = {
             "institucion": "I.E. San Martín", "responsable": "Ana Chávez",
-            "cargo": "Dirección", "estudiantes": "320", "nivel": "secundaria",
+            "cargo": "Dirección", "ciudad": "Piura", "estudiantes": "320", "nivel": "secundaria",
             "interes": "tamizaje", "whatsapp": "987654321",
             "correo": "direccion@sanmartin.edu.pe", "mensaje": "Nos interesa para este año.",
         }
@@ -40,6 +40,7 @@ class FaroTests(TestCase):
         s = SolicitudInstitucional.objects.get()
         self.assertEqual(s.institucion, "I.E. San Martín")
         self.assertEqual(s.responsable, "Ana Chávez")
+        self.assertEqual(s.ciudad, "Piura")
         self.assertEqual(s.estudiantes, 320)
         self.assertEqual(s.nivel, "secundaria")
         self.assertEqual(s.interes, "tamizaje")

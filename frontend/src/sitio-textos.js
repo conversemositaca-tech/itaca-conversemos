@@ -203,64 +203,64 @@ export const PSICOLOGOS = {
 // desde el principio lo que el servicio NO hace: un director que se entera
 // después de que no recibirá los nombres se siente engañado, y con razón.
 export const FARO = {
-  rotulo: "Para instituciones educativas",
-  titulo: "Faro",
-  bajada: "Un faro no acompaña a nadie: mira lejos y avisa a tiempo. Eso hace este programa con el bienestar emocional de los estudiantes de secundaria.",
+  hero: ["Bienestar emocional", "escolar, con una", "mirada preventiva"],
+  bajada: "Faro evalúa las necesidades emocionales de los estudiantes de secundaria para que el colegio pueda acompañar mejor, y a tiempo.",
   cta: "Solicitar información",
 
-  porqueTitulo: "Por qué ahora",
-  porque: [
-    "La mayoría de los colegios se entera de que un estudiante la está pasando mal cuando el problema ya es visible: cuando bajan las notas, cuando falta, cuando hay un incidente. Para entonces el acompañamiento llega tarde y cuesta más.",
-    "Faro invierte ese orden. En quince minutos por estudiante, una vez al año, la institución sabe dónde están las necesidades y qué grados requieren atención.",
+  queEsTitulo: "Qué es un tamizaje",
+  queEs: [
+    "Una evaluación preventiva breve, aplicada por psicólogos colegiados, que identifica señales que merecen una mirada más cercana.",
+    "Quince minutos por estudiante, una vez al año. Con eso la institución sabe dónde están las necesidades y qué grados requieren atención, en lugar de enterarse cuando el problema ya es visible.",
   ],
-
-  queEsTitulo: "Qué es, y qué no es",
-  queEs: "Un tamizaje es una primera mirada: un cuestionario breve, aplicado por psicólogos colegiados, que identifica señales que merecen una mirada más cercana.",
   noEs: [
-    "No diagnostica. Ningún estudiante sale de aquí con una etiqueta.",
-    "No entrega al colegio una lista de estudiantes con sus resultados.",
-    "No sustituye las obligaciones de la institución en convivencia escolar.",
-    "No reemplaza una evaluación psicológica individual.",
+    ["No diagnostica.", "Ningún estudiante sale de aquí con una etiqueta."],
+    ["No entrega listas de alumnos.", "El colegio recibe el panorama por grado, nunca nombres junto a resultados."],
+    ["No reemplaza una evaluación clínica.", "Es una primera mirada, no un informe psicológico."],
+    ["No sustituye la convivencia escolar.", "Las obligaciones de la institución siguen siendo suyas."],
   ],
 
   pasosTitulo: "Cómo funciona",
   pasos: [
-    { t: "Coordinación", d: "Una reunión breve para conocer al colegio, ajustar el alcance y firmar el convenio y el protocolo de atención." },
-    { t: "Autorizaciones", d: "El colegio recoge el consentimiento de los apoderados. Nosotros entregamos los formatos listos para usar." },
-    { t: "Aplicación", d: "Por aulas, en horario de tutoría, con el tutor presente y personal nuestro acompañando. Quince minutos por estudiante." },
-    { t: "Resultados", d: "Informe institucional por grado y sección, reunión de devolución con la dirección, y recomendaciones priorizadas." },
+    { n: "01", t: "Consentimiento informado", d: "El colegio recoge la autorización de los apoderados y el asentimiento de cada estudiante. Entregamos los formatos listos." },
+    { n: "02", t: "Aplicación", d: "Por aulas, en horario de tutoría, con el tutor presente y personal nuestro acompañando." },
+    { n: "03", t: "Análisis profesional", d: "Un psicólogo colegiado revisa los resultados y clasifica lo que requiere atención." },
+    { n: "04", t: "Informe institucional", d: "Panorama por grado y sección, con recomendaciones priorizadas y reunión de devolución." },
+    { n: "05", t: "Acompañamiento", d: "Evaluación individual de los casos identificados, talleres por grado y capacitación a tutores." },
   ],
 
-  planesTitulo: "Qué incluye",
-  planes: [
-    {
-      nombre: "Plan Preventivo",
-      items: [
-        "Aplicación del tamizaje a secundaria",
-        "Revisión profesional por psicólogo colegiado",
-        "Protocolo de atención inmediata ante casos de riesgo",
-        "Informe institucional por grado y sección",
-        "Reunión de devolución con el equipo directivo",
-      ],
-    },
-    {
-      nombre: "Plan Integral",
-      items: [
-        "Todo lo del Plan Preventivo",
-        "Evaluación individual de los casos identificados",
-        "Informe y orientación a cada familia",
-        "Taller por grado según los resultados",
-        "Capacitación a tutores en detección temprana",
-        "Verificación de seguimiento a los tres meses",
-      ],
-    },
+  areasTitulo: "Qué se evalúa",
+  areas: [
+    { t: "Estado de ánimo", d: "Indicadores emocionales de las últimas dos semanas." },
+    { t: "Ansiedad", d: "Preocupación, nerviosismo y dificultad para relajarse." },
+    { t: "Convivencia escolar", d: "Experiencias de maltrato entre pares, vividas o ejercidas." },
+    { t: "Señales de riesgo", d: "Preguntas directas de tamizaje, con protocolo de atención inmediata." },
   ],
 
-  recibeTitulo: "Qué recibe el colegio, y qué no",
-  recibe: "La institución recibe el panorama de su comunidad: qué porcentaje de cada grado muestra indicadores de ansiedad, de ánimo o de problemas de convivencia. Con eso puede decidir dónde intervenir.",
-  noRecibe: "La institución no recibe resultados individuales asociados a nombres. Los casos que requieren atención se manejan con la familia y con el psicólogo del colegio, dentro de un protocolo firmado por ambas partes. No es una limitación nuestra: son datos de salud mental de menores, y entregar esa lista es cómo un estudiante termina etiquetado por el resto de su escolaridad.",
+  cifras: [
+    { v: 15, suf: " min", r: "Duración por estudiante" },
+    { v: 4, suf: "", r: "Áreas evaluadas" },
+    { v: 42, suf: "", r: "Preguntas en total" },
+  ],
+
+  procesoTitulo: "Proceso de implementación",
+  proceso: [
+    { t: "Reunión con el colegio", d: "Treinta minutos para conocer la institución y ajustar el alcance." },
+    { t: "Convenio y protocolo", d: "Se firman antes de aplicar nada. El protocolo define quién responde ante una alerta, y en cuánto tiempo." },
+    { t: "Consentimientos", d: "El colegio los recoge. Sin autorización firmada, ese estudiante no participa." },
+    { t: "Aplicación", d: "Por aulas, en horario de tutoría." },
+    { t: "Informe y devolución", d: "Quince días hábiles, más una reunión con el equipo directivo." },
+  ],
+
+  seguridadTitulo: "Privacidad",
+  seguridadLead: "Son datos de salud mental de menores. El diseño del servicio parte de ahí, no lo agrega al final.",
+  seguridad: [
+    { t: "Consentimiento antes que nada", d: "Autorización firmada del apoderado y asentimiento del propio estudiante. Cualquiera de los dos puede retirarse en cualquier momento, sin consecuencias." },
+    { t: "El colegio recibe agregados", d: "Porcentajes por grado y sección. Nunca el nombre de un estudiante junto a un resultado. Profesores y tutores no ven nada individual." },
+    { t: "Protocolo firmado ante alertas", d: "Si aparece una señal de riesgo, hay una ruta escrita y con plazos. Detectar sin poder responder es peor que no detectar." },
+    { t: "Ley N.° 29733", d: "Tratamiento de datos sensibles con acceso restringido, finalidad declarada y derecho a solicitar eliminación." },
+  ],
 
   formTitulo: "Conversemos sobre su institución",
-  formBajada: "Déjenos sus datos y le escribimos para conocer las necesidades del colegio y armar una propuesta a su medida. Sin compromiso.",
+  formBajada: "Le escribimos para conocer las necesidades del colegio y preparar una propuesta a su medida. Sin compromiso.",
   gracias: "Gracias por escribirnos. Nuestro equipo se comunicará con usted para conocer las necesidades de su institución y preparar una propuesta adecuada.",
 };

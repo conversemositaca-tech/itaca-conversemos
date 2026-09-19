@@ -189,6 +189,7 @@ class SitioFaroView(_SitioBase):
             institucion=institucion,
             responsable=responsable,
             cargo=str(d.get("cargo") or "").strip()[:120],
+            ciudad=str(d.get("ciudad") or "").strip()[:120],
             estudiantes=estudiantes,
             nivel=nivel,
             interes=interes,

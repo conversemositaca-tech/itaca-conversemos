@@ -316,6 +316,7 @@ class SolicitudInstitucional(ModeloTenant):
     institucion = models.CharField("institución educativa", max_length=200)
     responsable = models.CharField("persona responsable", max_length=200)
     cargo = models.CharField(max_length=120, blank=True, default="")
+    ciudad = models.CharField(max_length=120, blank=True, default="")
     # Aproximado a propósito: en la primera conversación nadie tiene el número
     # exacto, y pedirlo exacto hace que abandonen el formulario.
     estudiantes = models.PositiveIntegerField(

@@ -10,7 +10,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   ArrowRight, Check, ChevronDown, Clock, Compass, GraduationCap, Heart, HeartHandshake, MapPin,
-  Check as Tilde, MessageCircle, MessagesSquare, Play, Shield, Sprout, User, Users,
+  MessageCircle, MessagesSquare, Play, Shield, Sprout, User, Users,
 } from "lucide-react";
 
 // Iconos lineales de los servicios y los principios, en un solo lugar para que
@@ -208,17 +208,140 @@ const SW_CSS = `
    está cargado en esta misma página), así que aquí solo van las piezas que no
    existían: las dos tarjetas de plan y el bloque de lo que el colegio no
    recibe, que tiene que leerse distinto del resto para que nadie lo pase. */
-.sw-planes { display:grid; gap:clamp(18px,2.4vw,26px); grid-template-columns:repeat(auto-fit,minmax(min(280px,100%),1fr)); margin-top:26px; }
-.sw-plan { padding:26px; border-radius:16px; border:1px solid var(--t-suave); background:#fff; }
-.sw-plan h3 { margin:0 0 14px; font-size:18px; font-weight:600; color:var(--txt); letter-spacing:-0.02em; }
-.sw-plan ul { list-style:none; margin:0; padding:0; }
-.sw-plan li { display:flex; gap:9px; align-items:flex-start; margin-bottom:10px; font-size:14.5px; line-height:1.55; color:var(--txt-2); }
-.sw-plan li svg { flex-shrink:0; margin-top:3px; color:var(--t-sobre-suave); }
-.sw-limite { margin-top:22px; padding:20px 22px; border-radius:14px; background:var(--t-suave); border-left:5px solid var(--t-sobre-suave); }
-.sw-limite p { margin:0; font-size:14.5px; line-height:1.65; color:var(--txt); }
-.sw-form { max-width:620px; margin-top:26px; }
-.sw-form .ag-campo { margin-bottom:14px; }
-.sw-gracias { max-width:620px; margin-top:26px; padding:26px; border-radius:16px; background:var(--t-suave); }
+/* ═══ Faro ═══════════════════════════════════════════════════════════════
+   Dirección elegida por Mirai: Apple Health · Vercel · Linear. Blanco, vidrio,
+   radio 24, sombra suave, mucho aire y jerarquía editorial.
+
+   Dos decisiones técnicas que sostienen eso sin tocar el stack:
+   · El vidrio necesita algo detrás que desenfocar. Sobre blanco puro no se ve
+     nada, así que la página lleva dos lavados radiales muy tenues del celeste
+     de la marca. Un solo tono, no degradado de dos colores.
+   · El reveal y los números animados van con IntersectionObserver y CSS. No
+     hace falta traer una librería de animación para siete secciones. */
+.fa { --v:rgba(255,255,255,.72); --b:rgba(11,22,32,.09); --t:#0B1620; --t2:#55606B;
+  --m:#00788C; --m-luz:#00B8D8; --r:24px;
+  --s:0 1px 2px rgba(11,22,32,.04), 0 14px 38px -14px rgba(11,22,32,.16);
+  --curva:cubic-bezier(.22,1,.36,1);
+  position:relative; background:#fff; color:var(--t); isolation:isolate;
+}
+.fa::before {
+  content:""; position:absolute; inset:0; z-index:-1; pointer-events:none;
+  background:
+    radial-gradient(900px 620px at 78% -8%, rgba(0,184,216,.13), transparent 62%),
+    radial-gradient(760px 520px at 8% 34%, rgba(0,120,140,.08), transparent 60%);
+}
+.fa-wrap { max-width:1080px; margin:0 auto; padding:0 clamp(20px,5vw,40px); }
+.fa-sec { padding:clamp(72px,11vw,140px) 0; }
+
+/* Jerarquía editorial: saltos grandes, no seis tamaños pegados. */
+.fa-display { font-size:clamp(40px,7.2vw,72px); line-height:1.04; letter-spacing:-0.035em;
+  font-weight:600; margin:0; text-wrap:balance; }
+.fa-h2 { font-size:clamp(28px,4.2vw,44px); line-height:1.1; letter-spacing:-0.03em;
+  font-weight:600; margin:0 0 20px; text-wrap:balance; }
+.fa-lead { font-size:clamp(17px,2vw,21px); line-height:1.6; color:var(--t2);
+  margin:22px 0 0; max-width:54ch; }
+.fa-p { font-size:17px; line-height:1.72; color:var(--t2); margin:0 0 16px; max-width:64ch; }
+.fa-kicker { font-size:13px; font-weight:600; letter-spacing:.02em; color:var(--m);
+  margin:0 0 18px; }
+
+/* Vidrio */
+.fa-card {
+  background:var(--v); backdrop-filter:blur(22px) saturate(160%);
+  -webkit-backdrop-filter:blur(22px) saturate(160%);
+  border:1px solid var(--b); border-radius:var(--r); box-shadow:var(--s);
+  padding:clamp(24px,3.4vw,34px);
+}
+
+/* Reveal al entrar en pantalla */
+.fa-rev { opacity:0; transform:translateY(22px); transition:opacity .7s var(--curva), transform .7s var(--curva); }
+.fa-rev.dentro { opacity:1; transform:none; }
+.fa-rev[data-r="1"] { transition-delay:.08s } .fa-rev[data-r="2"] { transition-delay:.16s }
+.fa-rev[data-r="3"] { transition-delay:.24s } .fa-rev[data-r="4"] { transition-delay:.32s }
+
+/* Hero: el título aparece por líneas */
+.fa-hero { padding:clamp(88px,13vw,168px) 0 clamp(56px,8vw,96px); }
+.fa-linea { display:block; overflow:hidden; }
+.fa-linea > span { display:block; transform:translateY(105%); opacity:0;
+  animation:fa-sube .95s var(--curva) forwards; }
+.fa-linea:nth-child(2) > span { animation-delay:.1s }
+.fa-linea:nth-child(3) > span { animation-delay:.2s }
+@keyframes fa-sube { to { transform:none; opacity:1 } }
+
+.fa-cta { display:inline-flex; align-items:center; gap:10px; margin-top:38px;
+  padding:16px 30px; border-radius:100px; background:var(--t); color:#fff;
+  font-size:16px; font-weight:600; text-decoration:none;
+  transition:transform .25s var(--curva), box-shadow .25s var(--curva);
+  box-shadow:0 10px 26px -12px rgba(11,22,32,.6); }
+.fa-cta:hover { transform:translateY(-2px); box-shadow:0 16px 34px -12px rgba(11,22,32,.55); }
+
+/* Pasos 01–05 */
+.fa-pasos { display:grid; gap:14px; margin-top:44px;
+  grid-template-columns:repeat(auto-fit,minmax(min(230px,100%),1fr)); }
+.fa-paso .n { font-size:13px; font-weight:600; color:var(--m); letter-spacing:.06em;
+  font-variant-numeric:tabular-nums; display:block; margin-bottom:14px; }
+.fa-paso h3 { font-size:18px; font-weight:600; letter-spacing:-0.02em; margin:0 0 8px; }
+.fa-paso p { font-size:15px; line-height:1.6; color:var(--t2); margin:0; }
+
+/* Áreas */
+.fa-areas { display:grid; gap:16px; margin-top:44px;
+  grid-template-columns:repeat(auto-fit,minmax(min(250px,100%),1fr)); }
+.fa-area h3 { font-size:19px; font-weight:600; letter-spacing:-0.02em; margin:0 0 10px; }
+.fa-area p { font-size:15px; line-height:1.62; color:var(--t2); margin:0; }
+.fa-area .ico { width:42px; height:42px; border-radius:13px; display:flex;
+  align-items:center; justify-content:center; background:rgba(0,184,216,.12);
+  color:var(--m); margin-bottom:18px; }
+
+/* Cifras */
+.fa-cifras { display:grid; gap:16px; margin-top:8px;
+  grid-template-columns:repeat(auto-fit,minmax(min(200px,100%),1fr)); }
+.fa-cifra .v { font-size:clamp(38px,5.6vw,56px); font-weight:600; letter-spacing:-0.04em;
+  line-height:1; font-variant-numeric:tabular-nums; display:block; }
+.fa-cifra .r { font-size:14.5px; color:var(--t2); margin:12px 0 0; }
+
+/* Línea de tiempo */
+.fa-linea-t { margin-top:44px; display:grid; gap:0; }
+.fa-hito { display:grid; grid-template-columns:auto 1fr; gap:22px; }
+.fa-hito .eje { display:flex; flex-direction:column; align-items:center; }
+.fa-hito .bolita { width:11px; height:11px; border-radius:50%; background:var(--m); margin-top:7px; flex-shrink:0; }
+.fa-hito .tallo { width:1px; flex:1; background:var(--b); margin:8px 0 0; }
+.fa-hito:last-child .tallo { display:none; }
+.fa-hito .cuerpo { padding-bottom:34px; }
+.fa-hito h3 { font-size:17.5px; font-weight:600; letter-spacing:-0.02em; margin:0 0 6px; }
+.fa-hito p { font-size:15px; line-height:1.6; color:var(--t2); margin:0; }
+
+/* Lo que no hace */
+.fa-limites { list-style:none; margin:22px 0 0; padding:0; display:grid; gap:12px; }
+.fa-limites li { display:flex; gap:12px; align-items:flex-start; font-size:16px;
+  line-height:1.6; color:var(--t2); }
+.fa-limites li b { color:var(--t); font-weight:600; }
+
+/* Formulario: editorial, no formulario. Campos sin caja, separados por línea. */
+.fa-form { margin-top:8px; display:grid; gap:0; }
+.fa-campo { border-bottom:1px solid var(--b); padding:20px 2px 14px; display:grid; gap:7px; }
+.fa-campo:first-child { border-top:1px solid var(--b); }
+.fa-campo label { font-size:13px; font-weight:600; color:var(--t2); letter-spacing:.01em; }
+.fa-campo .opt { font-weight:400; color:#8A939C; }
+.fa-campo input, .fa-campo select, .fa-campo textarea {
+  border:0; background:none; padding:0; font:inherit; font-size:18px; color:var(--t);
+  width:100%; outline:none; letter-spacing:-0.01em;
+}
+.fa-campo textarea { resize:vertical; min-height:74px; line-height:1.6; }
+.fa-campo input::placeholder, .fa-campo textarea::placeholder { color:#9BA4AD; }
+.fa-campo:focus-within { border-bottom-color:var(--m); }
+.fa-campo:focus-within label { color:var(--m); }
+.fa-enviar { margin-top:30px; display:inline-flex; align-items:center; gap:10px;
+  padding:17px 34px; border:0; border-radius:100px; background:var(--t); color:#fff;
+  font:600 16px inherit; cursor:pointer;
+  transition:transform .25s var(--curva), box-shadow .25s var(--curva);
+  box-shadow:0 10px 26px -12px rgba(11,22,32,.6); }
+.fa-enviar:hover:not(:disabled) { transform:translateY(-2px); }
+.fa-enviar:disabled { background:#C3CAD1; cursor:default; box-shadow:none; }
+.fa-error { color:#B3261E; font-size:15px; margin:18px 0 0; }
+
+@media (prefers-reduced-motion:reduce) {
+  .fa-rev, .fa-linea > span, .fa-cta, .fa-enviar { transition:none; animation:none;
+    opacity:1; transform:none; }
+}
 
 .sw-video-btn {
   display:inline-flex; align-items:center; justify-content:center; gap:9px; width:100%;
@@ -733,18 +856,51 @@ function TarjetaProfesional({ p }) {
 
 // ── Página: Faro, el tamizaje escolar ────────────────────────────────────────
 // Landing B2B. Quien la lee decide por una institución, no por sí mismo: por eso
-// no hay ningún botón de reservar, y por eso lo que el servicio NO hace está
-// arriba y no escondido al final.
+// no hay ningún botón de reservar, y por eso "lo que Faro no hace" está arriba y
+// no escondido al final. Un director que se entera después de que no recibirá
+// los nombres de sus estudiantes se siente engañado, y con razón.
+//
+// Dirección visual: Apple Health · Vercel · Linear. Blanco, vidrio, radio 24,
+// jerarquía editorial. El reveal y las cifras van con IntersectionObserver;
+// no se trae una librería de animación para siete secciones.
 function PaginaFaro() {
   const t = FARO;
   const [f, setF] = useState({
-    institucion: "", responsable: "", cargo: "", estudiantes: "",
+    institucion: "", responsable: "", cargo: "", estudiantes: "", ciudad: "",
     nivel: "secundaria", interes: "tamizaje", whatsapp: "", correo: "", mensaje: "",
   });
   const set = (k) => (e) => setF((p) => ({ ...p, [k]: e.target.value }));
   const [enviando, setEnviando] = useState(false);
   const [err, setErr] = useState("");
   const [hecho, setHecho] = useState(false);
+
+  useEffect(() => {
+    const suave = !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const obs = new IntersectionObserver((filas) => {
+      filas.forEach((fila) => {
+        if (!fila.isIntersecting) return;
+        const el = fila.target;
+        obs.unobserve(el);
+        el.classList.add("dentro");
+        // Las cifras cuentan hasta su valor real. Son datos del servicio
+        // (duración, áreas, preguntas), no métricas de relleno.
+        const n = el.querySelector?.("[data-hasta]");
+        if (!n) return;
+        const hasta = Number(n.dataset.hasta) || 0;
+        if (!suave) { n.textContent = hasta + (n.dataset.suf || ""); return; }
+        const t0 = performance.now(), dur = 900;
+        const paso = (ahora) => {
+          const p = Math.min((ahora - t0) / dur, 1);
+          const e = 1 - Math.pow(1 - p, 3);
+          n.textContent = Math.round(hasta * e) + (n.dataset.suf || "");
+          if (p < 1) requestAnimationFrame(paso);
+        };
+        requestAnimationFrame(paso);
+      });
+    }, { threshold: 0.2, rootMargin: "0px 0px -8% 0px" });
+    document.querySelectorAll(".fa-rev").forEach((el) => obs.observe(el));
+    return () => obs.disconnect();
+  }, [hecho]);
 
   async function enviar() {
     if (!f.institucion.trim() || !f.responsable.trim()) {
@@ -758,161 +914,179 @@ function PaginaFaro() {
       await api.solicitarFaro(f);
       setHecho(true);
       // No se registra en el embudo: ese mide visitas que terminan en reserva de
-      // terapia. Un colegio que pide información no es un paciente, y contarlo
-      // ahí falsearía la conversión del sitio.
+      // terapia. Un colegio que pide información no es un paciente.
     } catch (e) {
       setErr(e.message || "No pudimos enviar su solicitud. Intente de nuevo.");
     } finally { setEnviando(false); }
   }
 
+  const campo = (k, etiqueta, extra = {}) => (
+    <label className="fa-campo">
+      <span>{etiqueta}{extra.opcional ? <span className="opt"> · opcional</span> : null}</span>
+      {extra.opciones
+        ? <select value={f[k]} onChange={set(k)}>{extra.opciones.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
+        : extra.largo
+          ? <textarea value={f[k]} onChange={set(k)} placeholder={extra.ph} />
+          : <input value={f[k]} onChange={set(k)} placeholder={extra.ph} inputMode={extra.modo} autoComplete={extra.auto} />}
+    </label>
+  );
+
   return (
-    <>
-      <section className="sw-sec sw-hero">
-        <div className="sw-wrap sw-hero-in">
-          <p className="sw-eyebrow">{t.rotulo}</p>
-          <h1 className="sw-h">{t.titulo}</h1>
-          <p className="sw-intro" style={{ maxWidth: "46ch" }}>{t.bajada}</p>
-          <div className="sw-acciones">
-            <a className="sw-btn" href="#solicitar">
-              {t.cta} <ArrowRight size={16} strokeWidth={2.2} aria-hidden="true" />
-            </a>
+    <div className="fa">
+      {/* Hero */}
+      <section className="fa-sec fa-hero">
+        <div className="fa-wrap">
+          <p className="fa-kicker">Para instituciones educativas</p>
+          <h1 className="fa-display">
+            {t.hero.map((l) => <span className="fa-linea" key={l}><span>{l}</span></span>)}
+          </h1>
+          <p className="fa-lead">{t.bajada}</p>
+          <a className="fa-cta" href="#solicitar">
+            {t.cta} <ArrowRight size={17} strokeWidth={2.2} aria-hidden="true" />
+          </a>
+        </div>
+      </section>
+
+      {/* Qué es */}
+      <section className="fa-sec">
+        <div className="fa-wrap">
+          <div className="fa-rev">
+            <h2 className="fa-h2">{t.queEsTitulo}</h2>
+            {t.queEs.map((p, i) => <p className="fa-p" key={i}>{p}</p>)}
           </div>
-        </div>
-      </section>
-
-      <section className="sw-sec">
-        <div className="sw-wrap">
-          <h2 className="sw-h2">{t.porqueTitulo}</h2>
-          {t.porque.map((p, i) => <p key={i} className="sw-intro">{p}</p>)}
-        </div>
-      </section>
-
-      <section className="sw-sec sw-celeste">
-        <div className="sw-wrap">
-          <h2 className="sw-h2">{t.queEsTitulo}</h2>
-          <p className="sw-intro">{t.queEs}</p>
-          <div className="sw-limite">
-            <p><strong>Lo que Faro no hace:</strong></p>
-            <ul style={{ margin: "10px 0 0", paddingLeft: 18 }}>
-              {t.noEs.map((x, i) => (
-                <li key={i} style={{ marginBottom: 6, fontSize: 14.5, lineHeight: 1.6 }}>{x}</li>
-              ))}
+          <div className="fa-card fa-rev" data-r="1" style={{ marginTop: 34 }}>
+            <p className="fa-kicker" style={{ marginBottom: 4 }}>Lo que Faro no hace</p>
+            <ul className="fa-limites">
+              {t.noEs.map(([b, d]) => <li key={b}><b>{b}</b> {d}</li>)}
             </ul>
           </div>
         </div>
       </section>
 
-      <section className="sw-sec">
-        <div className="sw-wrap">
-          <h2 className="sw-h2">{t.pasosTitulo}</h2>
-          <ol className="sw-pasos" style={{ marginTop: 26 }}>
-            {t.pasos.map((p) => (
-              <li key={p.t} className="sw-paso">
+      {/* Cómo funciona */}
+      <section className="fa-sec">
+        <div className="fa-wrap">
+          <h2 className="fa-h2 fa-rev">{t.pasosTitulo}</h2>
+          <div className="fa-pasos">
+            {t.pasos.map((p, i) => (
+              <div className="fa-card fa-paso fa-rev" data-r={String((i % 4) + 1)} key={p.n}>
+                <span className="n">{p.n}</span>
                 <h3>{p.t}</h3>
                 <p>{p.d}</p>
-              </li>
-            ))}
-          </ol>
-        </div>
-      </section>
-
-      <section className="sw-sec sw-celeste">
-        <div className="sw-wrap">
-          <h2 className="sw-h2">{t.planesTitulo}</h2>
-          <div className="sw-planes">
-            {t.planes.map((pl) => (
-              <div key={pl.nombre} className="sw-plan">
-                <h3>{pl.nombre}</h3>
-                <ul>
-                  {pl.items.map((it) => (
-                    <li key={it}><Tilde size={16} strokeWidth={2.4} aria-hidden="true" />{it}</li>
-                  ))}
-                </ul>
               </div>
             ))}
           </div>
         </div>
       </section>
 
-      <section className="sw-sec">
-        <div className="sw-wrap">
-          <h2 className="sw-h2">{t.recibeTitulo}</h2>
-          <p className="sw-intro">{t.recibe}</p>
-          <div className="sw-limite"><p>{t.noRecibe}</p></div>
+      {/* Áreas */}
+      <section className="fa-sec">
+        <div className="fa-wrap">
+          <h2 className="fa-h2 fa-rev">{t.areasTitulo}</h2>
+          <div className="fa-areas">
+            {t.areas.map((a, i) => (
+              <div className="fa-card fa-area fa-rev" data-r={String((i % 4) + 1)} key={a.t}>
+                <span className="ico"><Sprout size={20} strokeWidth={1.8} aria-hidden="true" /></span>
+                <h3>{a.t}</h3>
+                <p>{a.d}</p>
+              </div>
+            ))}
+          </div>
         </div>
       </section>
 
-      <section className="sw-sec sw-hondo" id="solicitar">
-        <div className="sw-wrap">
-          <h2 className="sw-h2">{t.formTitulo}</h2>
+      {/* Cifras */}
+      <section className="fa-sec">
+        <div className="fa-wrap">
+          <div className="fa-cifras">
+            {t.cifras.map((c, i) => (
+              <div className="fa-card fa-cifra fa-rev" data-r={String((i % 4) + 1)} key={c.r}>
+                <span className="v" data-hasta={c.v} data-suf={c.suf}>0{c.suf}</span>
+                <p className="r">{c.r}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Proceso */}
+      <section className="fa-sec">
+        <div className="fa-wrap">
+          <h2 className="fa-h2 fa-rev">{t.procesoTitulo}</h2>
+          <div className="fa-linea-t">
+            {t.proceso.map((h, i) => (
+              <div className="fa-hito fa-rev" data-r={String((i % 4) + 1)} key={h.t}>
+                <div className="eje"><span className="bolita" /><span className="tallo" /></div>
+                <div className="cuerpo">
+                  <h3>{h.t}</h3>
+                  <p>{h.d}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Privacidad */}
+      <section className="fa-sec">
+        <div className="fa-wrap">
+          <div className="fa-rev">
+            <h2 className="fa-h2">{t.seguridadTitulo}</h2>
+            <p className="fa-lead" style={{ marginTop: 0 }}>{t.seguridadLead}</p>
+          </div>
+          <div className="fa-areas" style={{ marginTop: 38 }}>
+            {t.seguridad.map((x, i) => (
+              <div className="fa-card fa-area fa-rev" data-r={String((i % 4) + 1)} key={x.t}>
+                <span className="ico"><Shield size={20} strokeWidth={1.8} aria-hidden="true" /></span>
+                <h3>{x.t}</h3>
+                <p>{x.d}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Solicitud */}
+      <section className="fa-sec" id="solicitar">
+        <div className="fa-wrap" style={{ maxWidth: 720 }}>
           {hecho ? (
-            <div className="sw-gracias">
-              <p style={{ margin: 0, fontSize: 15.5, lineHeight: 1.65 }}>{t.gracias}</p>
+            <div className="fa-card">
+              <h2 className="fa-h2" style={{ marginBottom: 14 }}>Recibimos su solicitud</h2>
+              <p className="fa-p" style={{ margin: 0 }}>{t.gracias}</p>
             </div>
           ) : (
             <>
-              <p className="sw-intro">{t.formBajada}</p>
-              <div className="sw-form">
-                <label className="ag-campo">
-                  <span className="ag-label">Institución educativa</span>
-                  <input className="ag-input" value={f.institucion} onChange={set("institucion")} autoComplete="organization" />
-                </label>
-                <label className="ag-campo">
-                  <span className="ag-label">Persona de contacto</span>
-                  <input className="ag-input" value={f.responsable} onChange={set("responsable")} autoComplete="name" />
-                </label>
-                <label className="ag-campo">
-                  <span className="ag-label">Cargo <span className="ag-opt">opcional</span></span>
-                  <input className="ag-input" value={f.cargo} onChange={set("cargo")} placeholder="Dirección, psicología, coordinación…" />
-                </label>
-                <label className="ag-campo">
-                  <span className="ag-label">Nivel</span>
-                  <select className="ag-input ag-select" value={f.nivel} onChange={set("nivel")}>
-                    <option value="secundaria">Secundaria</option>
-                    <option value="primaria">Primaria</option>
-                    <option value="ambos">Primaria y secundaria</option>
-                    <option value="otro">Otro</option>
-                  </select>
-                </label>
-                <label className="ag-campo">
-                  <span className="ag-label">Estudiantes aproximados <span className="ag-opt">opcional</span></span>
-                  <input className="ag-input" value={f.estudiantes} onChange={set("estudiantes")} inputMode="numeric" placeholder="No hace falta el número exacto" />
-                </label>
-                <label className="ag-campo">
-                  <span className="ag-label">¿Qué están buscando?</span>
-                  <select className="ag-input ag-select" value={f.interes} onChange={set("interes")}>
-                    <option value="tamizaje">Tamizaje preventivo de estudiantes</option>
-                    <option value="evaluacion">Evaluación de casos puntuales</option>
-                    <option value="talleres">Talleres y capacitación</option>
-                    <option value="programa">Un programa de bienestar escolar</option>
-                    <option value="no_sabe">Aún no lo tenemos claro</option>
-                  </select>
-                </label>
-                <label className="ag-campo">
-                  <span className="ag-label">WhatsApp</span>
-                  <input className="ag-input" value={f.whatsapp} onChange={set("whatsapp")} inputMode="tel" autoComplete="tel" />
-                </label>
-                <label className="ag-campo">
-                  <span className="ag-label">Correo</span>
-                  <input className="ag-input" value={f.correo} onChange={set("correo")} inputMode="email" autoComplete="email" />
-                </label>
-                <label className="ag-campo">
-                  <span className="ag-label">Cuéntenos brevemente <span className="ag-opt">opcional</span></span>
-                  <textarea className="ag-input ag-textarea" value={f.mensaje} onChange={set("mensaje")} placeholder="Qué los trae, qué han observado, en qué plazo lo están pensando…" />
-                </label>
-
-                {err ? <p className="ag-error" role="alert">{err}</p> : null}
-
-                <button className="sw-btn" onClick={enviar} disabled={enviando} style={{ marginTop: 8 }}>
-                  {enviando ? "Enviando…" : "Enviar solicitud"}
-                  {enviando ? null : <ArrowRight size={16} strokeWidth={2.2} aria-hidden="true" />}
-                </button>
+              <h2 className="fa-h2 fa-rev">{t.formTitulo}</h2>
+              <p className="fa-lead fa-rev" data-r="1" style={{ marginTop: 0, marginBottom: 34 }}>{t.formBajada}</p>
+              <div className="fa-form">
+                {campo("institucion", "Institución educativa", { auto: "organization" })}
+                {campo("responsable", "Persona de contacto", { auto: "name" })}
+                {campo("cargo", "Cargo", { opcional: true, ph: "Dirección, psicología, coordinación…" })}
+                {campo("ciudad", "Ciudad", { ph: "Lima, Piura…" })}
+                {campo("nivel", "Nivel", { opciones: [
+                  ["secundaria", "Secundaria"], ["primaria", "Primaria"],
+                  ["ambos", "Primaria y secundaria"], ["otro", "Otro"]] })}
+                {campo("estudiantes", "Estudiantes aproximados", { opcional: true, modo: "numeric", ph: "No hace falta el número exacto" })}
+                {campo("interes", "¿Qué están buscando?", { opciones: [
+                  ["tamizaje", "Tamizaje preventivo de estudiantes"],
+                  ["evaluacion", "Evaluación de casos puntuales"],
+                  ["talleres", "Talleres y capacitación"],
+                  ["programa", "Un programa de bienestar escolar"],
+                  ["no_sabe", "Aún no lo tenemos claro"]] })}
+                {campo("whatsapp", "WhatsApp", { modo: "tel", auto: "tel" })}
+                {campo("correo", "Correo", { modo: "email", auto: "email" })}
+                {campo("mensaje", "Cuéntenos brevemente", { opcional: true, largo: true, ph: "Qué los trae, qué han observado, en qué plazo lo están pensando…" })}
               </div>
+              {err ? <p className="fa-error" role="alert">{err}</p> : null}
+              <button className="fa-enviar" onClick={enviar} disabled={enviando}>
+                {enviando ? "Enviando…" : "Solicitar propuesta"}
+                {enviando ? null : <ArrowRight size={17} strokeWidth={2.2} aria-hidden="true" />}
+              </button>
             </>
           )}
         </div>
       </section>
-    </>
+    </div>
   );
 }
 
