@@ -146,6 +146,9 @@ def _dato_alerta(a):
         "motivos": a.motivos,
         "aviso": a.aviso,
         "aviso_label": a.get_aviso_display(),
+        # Por qué falló. Sin esto el panel dice "el aviso falló" y deja a quien
+        # lo lee sin nada que hacer al respecto.
+        "aviso_detalle": a.aviso_detalle,
         "avisado_en": a.avisado_en.isoformat() if a.avisado_en else None,
         "atendida": a.atendida,
         "atendida_en": a.atendida_en.isoformat() if a.atendida_en else None,

@@ -12387,45 +12387,56 @@ function Faro({ showToast }) {
           </p>
         </div>
       ) : (
-        <div className="ca-card" style={{ padding: 0, overflowX: "auto" }}>
-          <table className="ca-table">
-            <thead><tr>
-              <th>Estudiante</th><th>Colegio</th><th>Por qué</th><th>Aviso</th><th></th>
-            </tr></thead>
-            <tbody>
-              {lista.map((a) => (
-                <tr key={a.id} style={{ background: a.atendida ? "transparent" : "#FDECEA" }}>
-                  <td>
-                    <b>{a.estudiante}</b>
-                    <div className="ca-muted" style={{ fontSize: 12.5 }}>
-                      {[a.grado, a.seccion].filter(Boolean).join(" · ")}
-                    </div>
-                  </td>
-                  <td style={{ fontSize: 13.5 }}>{a.institucion}<div className="ca-muted" style={{ fontSize: 12.5 }}>{a.ciudad}</div></td>
-                  <td style={{ fontSize: 13, maxWidth: 340 }}>
-                    {a.motivos.map((m, i) => <div key={i}>{m}</div>)}
-                    {!a.completa && <div className="ca-muted">Cuestionario incompleto: revisar a mano.</div>}
-                  </td>
-                  <td style={{ fontSize: 12.5, whiteSpace: "nowrap" }}>
-                    {a.aviso === "enviado"
-                      ? <span style={{ color: "#2E7D5B" }}>Enviado</span>
-                      : <span style={{ color: "#B3261E" }}>{a.aviso_label}</span>}
-                  </td>
-                  <td style={{ whiteSpace: "nowrap" }}>
-                    {a.atendida ? (
-                      <span className="ca-muted" style={{ fontSize: 12.5 }}>
-                        Atendido{a.atendida_por ? ` · ${a.atendida_por}` : ""}
-                      </span>
-                    ) : (
-                      <button className="ca-btn" onClick={() => { setAtendiendo(a); setAcciones(""); }}>
-                        Registrar actuación
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        /* Una ficha por caso, no una tabla. Los motivos son tres o cuatro
+           frases clínicas completas y en una columna de tabla quedan en una
+           tira vertical de dos palabras por línea: justo lo único que hay que
+           leer entero antes de levantar el teléfono. */
+        <div style={{ display: "grid", gap: 12 }}>
+          {lista.map((a) => (
+            <div key={a.id} className="ca-card" style={{
+              borderLeft: `5px solid ${a.atendida ? "#D6D6D6" : "#B3261E"}`,
+              background: a.atendida ? undefined : "#FDECEA" }}>
+              <div style={{ display: "flex", justifyContent: "space-between",
+                alignItems: "baseline", gap: 14, flexWrap: "wrap" }}>
+                <div>
+                  <b style={{ fontSize: 16 }}>{a.estudiante}</b>
+                  <div className="ca-muted" style={{ fontSize: 13 }}>
+                    {[[a.grado, a.seccion].filter(Boolean).join(" "), a.institucion, a.ciudad]
+                      .filter(Boolean).join(" · ")}
+                  </div>
+                </div>
+                <span style={{ fontSize: 12.5, whiteSpace: "nowrap",
+                  color: a.aviso === "enviado" ? "#2E7D5B" : "#B3261E" }}>
+                  {a.aviso === "enviado" ? "Aviso enviado" : a.aviso_label}
+                </span>
+              </div>
+
+              <ul style={{ margin: "12px 0 0", paddingLeft: 18, fontSize: 14, lineHeight: 1.5 }}>
+                {a.motivos.map((m, i) => <li key={i}>{m}</li>)}
+                {!a.completa && <li className="ca-muted">Cuestionario incompleto: revisar a mano.</li>}
+              </ul>
+
+              {/* El motivo del fallo, no solo que falló: sin esto no hay nada
+                  que hacer con la noticia. */}
+              {a.aviso !== "enviado" && a.aviso_detalle && (
+                <p className="ca-muted" style={{ fontSize: 12.5, margin: "10px 0 0" }}>
+                  {a.aviso_detalle}
+                </p>
+              )}
+
+              <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 14 }}>
+                {a.atendida ? (
+                  <span className="ca-muted" style={{ fontSize: 12.5 }}>
+                    Atendido{a.atendida_por ? ` · ${a.atendida_por}` : ""}
+                  </span>
+                ) : (
+                  <button className="ca-btn" onClick={() => { setAtendiendo(a); setAcciones(""); }}>
+                    Registrar actuación
+                  </button>
+                )}
+              </div>
+            </div>
+          ))}
         </div>
       )}
 
