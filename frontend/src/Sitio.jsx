@@ -1268,10 +1268,15 @@ export function TamizajeFaro({ token }) {
   if (paso === -1) return marco(
     <div className="fa-q-wrap">
       <h1 className="fa-h2">Antes de empezar, queremos que sepas de qué se trata</h1>
+      {/* Lo primero que se pregunta un chico de 14 no es qué es esto, sino por qué
+          unos adultos que no conoce le están preguntando. Eso se responde en la
+          primera línea: el colegio nos llamó. El nombre del programa va después,
+          porque a él no le dice nada y presentarlo primero suena a vendedor. */}
       <p className="fa-p">
-        Somos psicólogos de Ítaca Conversemos y venimos con Faro, un programa para saber
-        cómo están los estudiantes de tu colegio. Te vamos a hacer unas preguntas sobre
-        cómo te has sentido últimamente. Léete esto antes de decidir si quieres hacerlo.
+        Somos psicólogos de Ítaca Conversemos y tu colegio nos pidió ayuda para saber
+        cómo están sus estudiantes. A ese programa le pusimos Faro. Te vamos a hacer
+        unas preguntas sobre cómo te has sentido en los últimos meses. Antes de decidir
+        si quieres responderlas, lee esto.
       </p>
       <ul className="fa-limites">
         <li>No hay respuestas correctas ni incorrectas.</li>
