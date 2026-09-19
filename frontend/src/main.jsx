@@ -2,7 +2,7 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
 import App, { ConsentimientoPublico, AgendarPublico, sincronizarReloj } from './App.jsx'
-import { SitioPublico } from './Sitio.jsx'
+import { PanelFaro, SitioPublico } from './Sitio.jsx'
 import { esRutaSitio } from './rutas'
 import { recordarOrigen } from './origen'
 import { PASOS, registrar } from './embudo'
@@ -10,6 +10,7 @@ import { PASOS, registrar } from './embudo'
 // Qué se monta según el path, EN ESTE ORDEN:
 //  /consentimiento/<token>  → firma del consentimiento (público)
 //  /agendar/<token>         → auto-agendamiento de cita (público)
+//  /faro/<token>            → panel del colegio (público, sin cuenta)
 //  /gestion[/...]           → sistema interno de gestión (pide login)
 //  /, /quienes-somos, /psicologos, /terapias-online, /preguntas → sitio público
 //  cualquier otra           → el sistema interno, como siempre
@@ -18,8 +19,9 @@ import { PASOS, registrar } from './embudo'
 const RUTA = window.location.pathname
 const cons = RUTA.match(/^\/consentimiento\/([^/]+)/)
 const agen = RUTA.match(/^\/agendar\/([^/]+)/)
+const faro = RUTA.match(/^\/faro\/([^/]+)/)
 const gestion = /^\/gestion(\/|$)/.test(RUTA)
-const sitio = !cons && !agen && !gestion && esRutaSitio(RUTA)
+const sitio = !cons && !agen && !faro && !gestion && esRutaSitio(RUTA)
 
 // De dónde llegó la visita (campaña, anuncio, sitio que refirió). Se guarda al
 // entrar porque la reserva ocurre después, cuando la URL ya no lleva nada.
@@ -36,9 +38,10 @@ function arrancar() {
     <StrictMode>
       {cons ? <ConsentimientoPublico token={cons[1]} />
         : agen ? <AgendarPublico token={agen[1]} />
-          : gestion ? <App />
-            : sitio ? <SitioPublico />
-              : <App />}
+          : faro ? <PanelFaro token={faro[1]} />
+            : gestion ? <App />
+              : sitio ? <SitioPublico />
+                : <App />}
     </StrictMode>,
   )
 }

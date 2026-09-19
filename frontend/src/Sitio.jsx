@@ -21,7 +21,7 @@ const ICONOS_SERVICIO = {
 };
 
 import {
-  AGENDA_CSS, AGENDA_SEDES, AgendaDuda, AgendaPie, AgendaTop, AgendaWa, agendaFaq,
+  AGENDA_CSS, AGENDA_SEDES, AGENDA_SITIO, AgendaDuda, AgendaPie, AgendaTop, AgendaWa, agendaFaq,
   agendaWhatsapp,
 } from "./App.jsx";
 import datosDePaginas from "./paginas.json";
@@ -342,6 +342,43 @@ const SW_CSS = `
   .fa-rev, .fa-linea > span, .fa-cta, .fa-enviar { transition:none; animation:none;
     opacity:1; transform:none; }
 }
+
+/* ── Panel del colegio ────────────────────────────────────────────────────
+   Herramienta de trabajo, no pieza de venta: quien la abre es un director
+   entre dos cosas. Lo que busca —en qué va el proceso y cuántos faltan— va
+   arriba y grande. Mismo lenguaje visual que la landing para que se sienta de
+   una pieza, pero con densidad: aquí el aire generoso estorba. */
+.fa-panel-top { padding:clamp(40px,6vw,72px) 0 clamp(24px,3vw,34px); }
+.fa-estado {
+  display:inline-flex; align-items:center; gap:8px; padding:7px 15px;
+  border-radius:100px; background:rgba(0,184,216,.12); color:var(--m);
+  font-size:13px; font-weight:600; margin-bottom:20px;
+}
+.fa-inst { font-size:clamp(28px,4.4vw,44px); font-weight:600; letter-spacing:-0.03em;
+  line-height:1.08; margin:0; text-wrap:balance; }
+.fa-sede { font-size:16px; color:var(--t2); margin:10px 0 0; }
+
+.fa-metricas { display:grid; gap:14px; margin-top:34px;
+  grid-template-columns:repeat(auto-fit,minmax(min(200px,100%),1fr)); }
+.fa-metrica .v { font-size:clamp(32px,4.4vw,44px); font-weight:600; letter-spacing:-0.04em;
+  line-height:1; font-variant-numeric:tabular-nums; display:block; }
+.fa-metrica .r { font-size:14px; color:var(--t2); margin:12px 0 0; }
+.fa-metrica .nota { font-size:13px; color:#8A939C; margin:6px 0 0; }
+
+/* El estado vacío enseña: dice qué falta y a quién escribirle, no "sin datos". */
+.fa-vacio { margin-top:30px; }
+.fa-vacio h2 { font-size:22px; font-weight:600; letter-spacing:-0.02em; margin:0 0 12px; }
+.fa-vacio p { font-size:16px; line-height:1.68; color:var(--t2); margin:0 0 14px; max-width:60ch; }
+.fa-vacio ol { margin:18px 0 0; padding-left:20px; }
+.fa-vacio li { font-size:15.5px; line-height:1.66; color:var(--t2); margin-bottom:9px; }
+.fa-vacio li b { color:var(--t); font-weight:600; }
+
+.fa-aviso {
+  margin-top:26px; padding:20px 22px; border-radius:16px;
+  background:rgba(0,120,140,.06); border:1px solid var(--b);
+}
+.fa-aviso p { margin:0; font-size:14.5px; line-height:1.65; color:var(--t2); }
+.fa-aviso b { color:var(--t); }
 
 .sw-video-btn {
   display:inline-flex; align-items:center; justify-content:center; gap:9px; width:100%;
@@ -1087,6 +1124,119 @@ function PaginaFaro() {
         </div>
       </section>
     </div>
+  );
+}
+
+// ── Panel del colegio ────────────────────────────────────────────────────────
+// Entra por enlace permanente con token, sin cuenta. Lo que se muestra es
+// SIEMPRE agregado: ni un estudiante identificado, ni un dato que permita
+// deducir quién es quién. Esa regla está firmada en el consentimiento de los
+// apoderados y en el convenio de la institución.
+export function PanelFaro({ token }) {
+  const [d, setD] = useState(null);
+  const [err, setErr] = useState("");
+
+  useEffect(() => {
+    api.faroPanel(token).then(setD).catch((e) => setErr(e.message));
+    const prev = document.title;
+    document.title = "Faro · Panel de la institución";
+    return () => { document.title = prev; };
+  }, [token]);
+
+  const marco = (hijos) => (
+    <div className="ag sw-sitio sw-tema">
+      <style>{AGENDA_CSS}{SW_CSS}</style>
+      <AgendaTop />
+      <main><div className="fa">{hijos}</div></main>
+      <AgendaPie />
+    </div>
+  );
+
+  if (err) return marco(
+    <section className="fa-sec fa-panel-top"><div className="fa-wrap">
+      <h1 className="fa-inst">Este enlace no está disponible</h1>
+      <p className="fa-sede">{err}</p>
+      <p className="fa-sede">Escríbanos a {AGENDA_SITIO.correo} y le enviamos uno nuevo.</p>
+    </div></section>
+  );
+  if (!d) return marco(
+    <section className="fa-sec fa-panel-top"><div className="fa-wrap">
+      <p className="fa-sede">Cargando…</p>
+    </div></section>
+  );
+
+  return marco(
+    <>
+      <section className="fa-panel-top">
+        <div className="fa-wrap">
+          <span className="fa-estado"><Shield size={15} strokeWidth={2} aria-hidden="true" /> {d.estado_label}</span>
+          <h1 className="fa-inst">{d.institucion}</h1>
+          <p className="fa-sede">
+            {[d.ciudad, d.contacto].filter(Boolean).join(" · ") || "Programa Faro · Ítaca Conversemos"}
+          </p>
+
+          {d.hay_datos ? (
+            <div className="fa-metricas">
+              <div className="fa-card fa-metrica">
+                <span className="v">{d.evaluados}</span>
+                <p className="r">Estudiantes evaluados</p>
+              </div>
+              <div className="fa-card fa-metrica">
+                <span className="v">{d.autorizados}</span>
+                <p className="r">Con autorización firmada</p>
+                {d.matriculados ? <p className="nota">de {d.matriculados} matriculados en secundaria</p> : null}
+              </div>
+              <div className="fa-card fa-metrica">
+                <span className="v">{d.participacion === null ? "—" : `${d.participacion}%`}</span>
+                <p className="r">Participación</p>
+                <p className="nota">Sobre los autorizados, no sobre el total</p>
+              </div>
+            </div>
+          ) : null}
+        </div>
+      </section>
+
+      <section className="fa-sec" style={{ paddingTop: 0 }}>
+        <div className="fa-wrap">
+          {d.hay_datos ? (
+            <div className="fa-card fa-vacio">
+              <h2>Panorama por grado</h2>
+              <p>
+                El detalle por grado y sección se publica aquí junto con el informe institucional.
+                {d.fecha_informe ? ` Entregado el ${d.fecha_informe}.` : " Está en preparación."}
+              </p>
+              <div className="fa-aviso">
+                <p>
+                  <b>Este panel no muestra estudiantes.</b> Los casos que requieren atención se
+                  comunican con la familia y con el psicólogo del colegio, según el protocolo
+                  firmado. La institución recibe el panorama, nunca nombres junto a resultados.
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className="fa-card fa-vacio">
+              <h2>Todavía no hay resultados</h2>
+              <p>
+                El tamizaje aún no se ha aplicado en su institución. Cuando se aplique, este panel
+                mostrará el panorama por grado y sección.
+              </p>
+              <ol>
+                <li><b>Convenio y protocolo firmados.</b> El protocolo define quién responde ante una alerta y en cuánto tiempo. Sin él no se aplica nada.</li>
+                <li><b>Autorizaciones recogidas.</b> Le entregamos los formatos de consentimiento y asentimiento listos para repartir.</li>
+                <li><b>Aplicación por aulas</b>, en horario de tutoría, con el tutor presente.</li>
+                <li><b>Informe y reunión de devolución</b> dentro de los quince días hábiles.</li>
+              </ol>
+              <div className="fa-aviso">
+                <p>
+                  ¿Dudas o quiere mover una fecha? Escríbanos a <b>{AGENDA_SITIO.correo}</b> y
+                  coordinamos.
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+      </section>
+    </>
   );
 }
 

@@ -140,6 +140,8 @@ export const api = {
   // Auto-agendamiento público (landing por token, sin login)
   // Faro: un colegio pide información. No pasa por el embudo de pacientes.
   solicitarFaro: (data) => req("/api/sitio/faro/", { method: "POST", body: JSON.stringify(data) }),
+  // Panel del colegio: entra por enlace permanente, sin cuenta ni contraseña.
+  faroPanel: (token) => req(`/api/faro/${token}/`),
   agendaInfo: (token) => req(`/api/agendamiento/${token}/`),
   agendaSlots: (token, profId, dias = 14) => req(`/api/agendamiento/${token}/slots/?profesional=${profId}&dias=${dias}`),
   agendaReservar: (token, data) => req(`/api/agendamiento/${token}/reservar/`, { method: "POST", body: JSON.stringify(data) }),
