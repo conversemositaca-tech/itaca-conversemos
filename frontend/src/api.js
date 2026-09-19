@@ -142,6 +142,9 @@ export const api = {
   solicitarFaro: (data) => req("/api/sitio/faro/", { method: "POST", body: JSON.stringify(data) }),
   // Panel del colegio: entra por enlace permanente, sin cuenta ni contraseña.
   faroPanel: (token) => req(`/api/faro/${token}/`),
+  // El cuestionario del estudiante. Token DISTINTO del panel del colegio.
+  faroCuestionario: (token) => req(`/api/faro/cuestionario/${token}/`),
+  faroResponder: (token, data) => req(`/api/faro/cuestionario/${token}/`, { method: "POST", body: JSON.stringify(data) }),
   // Panel interno: solo psicólogo y gerencia (core/permisos.ROLES_FARO).
   faroAlertas: (soloPendientes) => req(`/api/faro/panel/alertas/${soloPendientes ? "?pendientes=1" : ""}`),
   faroAtender: (id, acciones) => req(`/api/faro/panel/alertas/${id}/`, { method: "POST", body: JSON.stringify({ acciones }) }),
