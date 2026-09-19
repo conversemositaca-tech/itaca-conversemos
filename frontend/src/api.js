@@ -259,11 +259,35 @@ export const api = {
     return req(`/api/profesionales/${id}/foto/`, { method: "POST", body: fd });
   },
   urlFotoProfesional: (id) => `/api/profesionales/${id}/foto/`,
-  subirVideoProfesional: (id, file) => {
+  // XHR y no fetch: es la única forma de saber cuánto va subido. Con archivos
+  // de 10 o 20 MB y una subida lenta, sin ese aviso la pantalla parece colgada
+  // y quien está subiendo vuelve a darle a Guardar.
+  subirVideoProfesional: (id, file, onProgreso) => new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
     const fd = new FormData();
     fd.append("video", file);
-    return req(`/api/profesionales/${id}/video/`, { method: "POST", body: fd });
-  },
+    xhr.open("POST", `/api/profesionales/${id}/video/`);
+    xhr.withCredentials = true;
+    xhr.setRequestHeader("X-CSRFToken", getCookie("csrftoken"));
+    if (onProgreso) {
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable) onProgreso(Math.round((e.loaded / e.total) * 100));
+      };
+    }
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try { resolve(JSON.parse(xhr.responseText)); } catch { resolve(null); }
+        return;
+      }
+      let detalle = `Error ${xhr.status}`;
+      try { detalle = JSON.parse(xhr.responseText).detail || detalle; } catch { /* sin cuerpo JSON */ }
+      const err = new Error(detalle);
+      err.status = xhr.status;
+      reject(err);
+    };
+    xhr.onerror = () => reject(new Error("Se cortó la conexión mientras subía el video."));
+    xhr.send(fd);
+  }),
   quitarVideoProfesional: (id) => req(`/api/profesionales/${id}/video/`, { method: "DELETE" }),
   // Documentos legales (contratos / adendas)
   documentosLegales: (profId) => req(`/api/documentos-legales/${profId ? `?profesional=${profId}` : ""}`),
