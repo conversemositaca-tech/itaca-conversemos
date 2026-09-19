@@ -18,6 +18,8 @@ class ProfesionalSerializer(serializers.ModelSerializer):
     sede_label = serializers.CharField(source="get_sede_display", read_only=True)
     modalidad_label = serializers.CharField(source="get_modalidad_display", read_only=True)
     foto_url = serializers.SerializerMethodField()
+    video_url = serializers.SerializerMethodField()
+    video_nombre = serializers.SerializerMethodField()
     n_pacientes = serializers.SerializerMethodField()
     pacientes_stats = serializers.SerializerMethodField()
 
@@ -29,7 +31,7 @@ class ProfesionalSerializer(serializers.ModelSerializer):
         fields = [
             "id", "nombre", "titulo", "colegiatura", "enfoque", "poblaciones",
             "problematicas", "formacion", "trayectoria", "sede", "sede_label",
-            "modalidad", "modalidad_label", "frase", "foto_url", "usuario", "activo", "orden",
+            "modalidad", "modalidad_label", "frase", "foto_url", "video_url", "video_nombre", "usuario", "activo", "orden",
             "horas_disponibles", "horario_semanal", "horario_modalidad", "n_pacientes", "pacientes_stats", "porcentaje_liquidacion",
             "dni", "fecha_nacimiento", "fecha_ingreso", "contrato_vencimiento",
             "contrato_ultima_firma", "contrato_estado", "contrato_estado_label", "documentos",
@@ -37,6 +39,13 @@ class ProfesionalSerializer(serializers.ModelSerializer):
 
     def get_foto_url(self, obj):
         return f"/api/profesionales/{obj.id}/foto/" if obj.foto else None
+
+    def get_video_url(self, obj):
+        return f"/api/profesionales/{obj.id}/video/" if obj.video else None
+
+    def get_video_nombre(self, obj):
+        # Para que el panel muestre qué archivo está cargado sin descargarlo.
+        return obj.video.name.rsplit("/", 1)[-1] if obj.video else ""
 
     def get_n_pacientes(self, obj):
         return obj.pacientes.count()

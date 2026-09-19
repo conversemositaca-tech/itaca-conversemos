@@ -94,6 +94,10 @@ def ruta_foto_profesional(instance, filename):
     return f"profesionales/clinica_{instance.clinica_id}/{filename}"
 
 
+def ruta_video_profesional(instance, filename):
+    return f"profesionales/clinica_{instance.clinica_id}/video/{filename}"
+
+
 class Profesional(ModeloTenant):
     """Ficha del directorio de profesionales (psicólogos). La gestiona el gerente.
     Es independiente del login: opcionalmente se enlaza a un Usuario (para agenda)."""
@@ -147,6 +151,15 @@ class Profesional(ModeloTenant):
         help_text="Porcentaje de lo cobrado en sus sesiones que se le paga al psicólogo (ej: 40 = 40%).",
     )
     foto = models.FileField(upload_to=ruta_foto_profesional, null=True, blank=True)
+    # Video de presentación, alojado aquí mismo. Se sirve por un endpoint que
+    # entiende `Range` (core/rangos.py): sin eso Safari en iPhone deja el
+    # recuadro en negro. Tope de 25 MB al subir, en `usuarios/api.py`: son
+    # presentaciones de medio minuto, y el disco y el ancho de banda del
+    # contenedor no son gratis.
+    video = models.FileField(
+        "video de presentación", upload_to=ruta_video_profesional, null=True, blank=True,
+        help_text="Video corto de presentación (máx. 25 MB). Se muestra en su perfil de la web.",
+    )
     usuario = models.OneToOneField(
         "usuarios.Usuario", on_delete=models.SET_NULL, related_name="ficha", null=True, blank=True,
         help_text="Cuenta de login enlazada (si atiende sesiones en la agenda).",

@@ -14,6 +14,8 @@ título, colegiatura, sede, enfoque, frase, foto). Nada de datos de pacientes.
 """
 from django.conf import settings
 from django.http import FileResponse, Http404
+
+from core import rangos
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -43,7 +45,7 @@ def _publicables(clinica):
     """
     fichas = (Profesional.objects.filter(clinica=clinica, activo=True)
               .select_related("usuario").order_by("orden", "nombre"))
-    return [p for p in fichas if (p.foto or p.frase or p.enfoque)]
+    return [p for p in fichas if (p.foto or p.frase or p.enfoque or p.video)]
 
 
 class _SitioBase(APIView):
@@ -89,8 +91,32 @@ class SitioInfoView(_SitioBase):
                 "trayectoria": (p.trayectoria or "")[:800],
                 "agendable": p.id in agendables,
                 "foto": (request.build_absolute_uri(f"/api/sitio/foto/{p.id}/") if p.foto else ""),
+                # El video se sirve por un endpoint propio que entiende Range
+                # (Django no publica /media). Sin Range, iPhone no reproduce.
+                "video": (request.build_absolute_uri(f"/api/sitio/video/{p.id}/") if p.video else ""),
             } for p in equipo],
         })
+
+
+class SitioVideoView(_SitioBase):
+    """GET /api/sitio/video/<pk>/ → video de presentación del psicólogo.
+
+    Responde por tramos (`Range`). Safari en iPhone pide los primeros bytes para
+    leer la cabecera del archivo y abandona si le llega el archivo entero de
+    golpe: sin esto el reproductor se queda en negro en medio iPhone del Perú.
+    """
+
+    def get(self, request, pk):
+        clinica = clinica_del_sitio()
+        if clinica is None:
+            raise Http404
+        prof = Profesional.objects.filter(clinica=clinica, id=pk, activo=True).first()
+        if prof is None or not prof.video:
+            raise Http404
+        try:
+            return rangos.respuesta_de_archivo(request, prof.video)
+        except (FileNotFoundError, ValueError, OSError):
+            raise Http404
 
 
 class SitioFotoView(_SitioBase):

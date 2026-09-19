@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
-import { Activity, AlertTriangle, ArrowDown, ArrowUp, Award, BarChart3, Bell, BookUser, Building2, Cake, Calendar, Check, ChevronDown, ChevronLeft, ChevronRight, ClipboardList, Clock, Compass, Copy, DoorOpen, Download, ExternalLink, FileDown, FileSpreadsheet, FileText, FolderOpen, GraduationCap, Heart, HeartHandshake, HeartPulse, Home, KeyRound, Landmark, Leaf, Lightbulb, LogOut, MapPin, Megaphone, Menu, MessageCircle, Mic, Paperclip, Pencil, Phone, Pill, Plus, Presentation, Receipt, RotateCcw, Search, Send, Shield, Smile, Sparkles, Target, Trash2, TrendingUp, Trophy, Upload, UserCog, UserPlus, UserRound, Users, X } from "lucide-react";
+import { Activity, AlertTriangle, ArrowDown, ArrowUp, Award, BarChart3, Bell, BookUser, Building2, Cake, Calendar, Check, ChevronDown, ChevronLeft, ChevronRight, ClipboardList, Clock, Compass, Copy, DoorOpen, Download, ExternalLink, FileDown, FileSpreadsheet, FileText, FolderOpen, GraduationCap, Heart, HeartHandshake, HeartPulse, Home, KeyRound, Landmark, Leaf, Lightbulb, LogOut, MapPin, Megaphone, Menu, MessageCircle, Mic, Paperclip, Pencil, Phone, Pill, Play, Plus, Presentation, Receipt, RotateCcw, Search, Send, Shield, Smile, Sparkles, Target, Trash2, TrendingUp, Trophy, Upload, UserCog, UserPlus, UserRound, Users, X } from "lucide-react";
 import { api } from "./api";
 import { origenGuardado } from "./origen";
 import { MENU_SITIO, SITE_ROUTES, propsEnlace, normalizarRuta } from "./rutas";
@@ -12283,10 +12283,14 @@ function Profesionales({ showToast, esAdmin }) {
 
   const nActivos = (p) => p.pacientes_stats ? (frec ? (p.pacientes_stats[frec] || 0) : p.pacientes_stats.activos) : 0;
 
-  async function guardar(data, foto) {
+  async function guardar(data, foto, video, quitarVideo) {
     try {
       const prof = data.id ? await api.actualizarProfesional(data.id, data) : await api.crearProfesional(data);
       if (foto) await api.subirFotoProfesional(prof.id, foto);
+      // El video va aparte del resto de la ficha: es un archivo y puede fallar
+      // por tamaño, sin que eso deba tumbar el guardado de lo demás.
+      if (video) await api.subirVideoProfesional(prof.id, video);
+      else if (quitarVideo) await api.quitarVideoProfesional(prof.id);
       await cargar();
       setEditar(null);
       showToast(data.id ? "Ficha actualizada ✓" : "Profesional agregado ✓");
@@ -12478,6 +12482,9 @@ function ProfesionalModal({ prof, onClose, onSave }) {
     horario_modalidad: prof?.horario_modalidad || {},
   });
   const [foto, setFoto] = useState(null);
+  const [video, setVideo] = useState(null);
+  const [quitarVideo, setQuitarVideo] = useState(false);
+  const [avisoVideo, setAvisoVideo] = useState("");
   const set = (k) => (e) => setF((prev) => ({ ...prev, [k]: e.target.value }));
   const canSave = f.nombre.trim().length > 0;
   const ta = { minHeight: 70, resize: "vertical", lineHeight: 1.5 };
@@ -12574,6 +12581,40 @@ function ProfesionalModal({ prof, onClose, onSave }) {
             <Paperclip size={14} strokeWidth={2} /> {foto ? foto.name : "Subir foto"}
             <input type="file" accept="image/*" hidden onChange={(e) => setFoto(e.target.files[0] || null)} />
           </label>
+
+          {/* El tope de 25 MB se avisa ANTES de subir: un video de celular sin
+              comprimir pasa de 60 MB, y el error del servidor llegaría recién
+              después de haber esperado toda la subida. */}
+          <label className="ca-upload" style={{ cursor: "pointer" }}>
+            <Play size={14} strokeWidth={2} />
+            {video ? video.name : (prof?.video_nombre && !quitarVideo ? prof.video_nombre : "Subir video")}
+            <input type="file" accept="video/*" hidden onChange={(e) => {
+              const v = e.target.files[0] || null;
+              if (v && v.size > 25 * 1024 * 1024) {
+                setAvisoVideo(`Ese video pesa ${(v.size / 1048576).toFixed(0)} MB y el límite son 25 MB. Vuelve a compartirlo desde el celular en calidad media, o recórtalo.`);
+                setVideo(null);
+                return;
+              }
+              setAvisoVideo(""); setVideo(v); setQuitarVideo(false);
+            }} />
+          </label>
+          {(prof?.video_nombre || video) && !quitarVideo ? (
+            <button type="button" className="ca-btn-texto"
+              onClick={() => { setVideo(null); setQuitarVideo(true); setAvisoVideo(""); }}>
+              Quitar video
+            </button>
+          ) : null}
+          {quitarVideo ? (
+            <span style={{ fontSize: 13, color: "var(--muted)" }}>
+              Se quitará al guardar.{" "}
+              <button type="button" className="ca-btn-texto" onClick={() => setQuitarVideo(false)}>Deshacer</button>
+            </span>
+          ) : null}
+          {avisoVideo ? (
+            <p style={{ flexBasis: "100%", margin: 0, fontSize: 13, color: "var(--danger, #b3261e)" }}>
+              {avisoVideo}
+            </p>
+          ) : null}
           <label style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 13.5, color: "var(--ink-soft)", cursor: "pointer" }}>
             <input type="checkbox" checked={f.activo} onChange={(e) => setF((prev) => ({ ...prev, activo: e.target.checked }))} /> Activo
           </label>
@@ -12582,7 +12623,7 @@ function ProfesionalModal({ prof, onClose, onSave }) {
         <div style={{ display: "flex", gap: 9, justifyContent: "flex-end" }}>
           <button className="ca-btn ghost" onClick={onClose}>Cancelar</button>
           <button className="ca-btn" style={{ opacity: canSave ? 1 : 0.5, pointerEvents: canSave ? "auto" : "none" }}
-            onClick={() => onSave({ ...(prof?.id ? { id: prof.id } : {}), ...f, nombre: f.nombre.trim(), horas_disponibles: Number(f.horas_disponibles) || 0, porcentaje_liquidacion: Number(f.porcentaje_liquidacion) || 0 }, foto)}>Guardar</button>
+            onClick={() => onSave({ ...(prof?.id ? { id: prof.id } : {}), ...f, nombre: f.nombre.trim(), horas_disponibles: Number(f.horas_disponibles) || 0, porcentaje_liquidacion: Number(f.porcentaje_liquidacion) || 0 }, foto, video, quitarVideo)}>Guardar</button>
         </div>
       </div>
     </div>
@@ -14544,6 +14585,28 @@ export const AGENDA_CSS = `
   }
   .ag-sede:hover, .ag-via:hover, .ag-hora:hover, .ag-cat:hover, .ag-btn:hover { transform:none; }
 }
+
+/* Video de presentación. El archivo NO se pide hasta que alguien le da play:
+   así el perfil no arrastra varios megas que casi nadie abre, ni se gasta el
+   ancho de banda del servidor en quien solo vino a leer. */
+.ag-video-btn {
+  display:inline-flex; align-items:center; justify-content:center; gap:9px; width:100%;
+  padding:13px 18px; margin:0 0 18px; border-radius:12px;
+  border:1px solid var(--linea); background:var(--papel); color:var(--tinta);
+  font-size:14.5px; font-weight:600; cursor:pointer;
+  transition:background .15s, transform .15s var(--curva);
+}
+.ag-video-btn:hover { background:var(--acento-suave); transform:translateY(-1px); }
+.ag-video-btn svg { color:var(--acento); flex-shrink:0; }
+/* Sin proporcion fija: los videos del equipo son verticales (1080x1920, como
+   un Reel), y forzar 16:9 los dejaba diminutos entre dos franjas negras. El
+   navegador los dimensiona solo; el tope de ancho evita que uno vertical ocupe
+   la pantalla entera. */
+.ag-video { max-width:300px; margin:0 auto 18px; }
+.ag-video video {
+  display:block; width:100%; height:auto; border:0;
+  border-radius:12px; background:#000;
+}
 `;
 
 export function AgendarPublico({ token }) {
@@ -14559,6 +14622,7 @@ export function AgendarPublico({ token }) {
   const [tipoSesion, setTipoSesion] = useState(null); // "consulta" | "brujula"
   const [prof, setProf] = useState(null);
   const [perfil, setPerfil] = useState(null);      // psicólogo en el modal "Ver perfil"
+  const [verVideo, setVerVideo] = useState(false); // si ya pidió ver la presentación
   const [slotsData, setSlotsData] = useState(null);
   const [slot, setSlot] = useState(null);          // {inicio, hora, diaLabel}
   const [form, setForm] = useState({ nombre: "", telefono: "", documento: "", email: "", servicio: "", modalidad: "presencial", mensaje: "" });
@@ -14586,6 +14650,9 @@ export function AgendarPublico({ token }) {
     }));
     api.agendaSlots(token, prof.id, 21).then(setSlotsData).catch(() => setSlotsData({ dias: [] }));
   }, [prof]); // eslint-disable-line
+
+  // Abrir otro perfil no debe dejar sonando el video del anterior.
+  useEffect(() => { setVerVideo(false); }, [perfil]);
 
   const diaLabel = (iso) => {
     const s = new Date(iso + "T12:00:00").toLocaleDateString("es-PE", { weekday: "long", day: "numeric", month: "long" });
@@ -15211,6 +15278,25 @@ export function AgendarPublico({ token }) {
               </div>
             </div>
             {perfil.frase ? <blockquote className="ag-frase">{perfil.frase}</blockquote> : null}
+
+            {/* El video vive aquí y no en la tarjeta de la lista: ahí todas las
+                tarjetas se ven iguales a propósito, y un ícono en solo algunas
+                volvería a convertir la lista en una comparación entre colegas
+                mientras no todos tengan grabado el suyo. */}
+            {perfil.video ? (
+              verVideo ? (
+                <div className="ag-video">
+                  {/* playsInline: sin eso, iOS abre el video a pantalla completa
+                      y saca a la persona de la reserva a medio llenar. */}
+                  <video src={perfil.video} controls autoPlay playsInline
+                    aria-label={`Presentación de ${perfil.nombre}`} />
+                </div>
+              ) : (
+                <button className="ag-video-btn" onClick={() => setVerVideo(true)}>
+                  <Play size={17} strokeWidth={2} /> Ver su presentación
+                </button>
+              )
+            ) : null}
             {[
               { l: "Especialidades y enfoque", v: [perfil.enfoque, perfil.problematicas].filter(Boolean).join("\n\n") },
               { l: "Formación y experiencia", v: [perfil.formacion, perfil.trayectoria].filter(Boolean).join("\n\n") },

@@ -24,6 +24,7 @@ from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
 from core.models import Clinica
+from core import rangos
 from finanzas.models import Servicio
 from leads import atribucion
 from leads import captacion
@@ -182,6 +183,11 @@ class AgendamientoInfoView(_PublicBase):
                 # La foto se sirve por un endpoint público propio (Django no publica /media).
                 "foto": (request.build_absolute_uri(f"/api/agendamiento/{token}/foto/{p.id}/")
                          if p.foto else ""),
+                # Igual que la foto: endpoint propio, porque Django no publica
+                # /media. Este además entiende Range, sin lo cual Safari en
+                # iPhone deja el reproductor en negro.
+                "video": (request.build_absolute_uri(f"/api/agendamiento/{token}/video/{p.id}/")
+                          if p.video else ""),
             } for p in profs],
         })
 
@@ -206,6 +212,30 @@ class AgendamientoFotoView(APIView):
             raise Http404
         try:
             return FileResponse(prof.foto.open("rb"))
+        except (FileNotFoundError, ValueError, OSError):
+            raise Http404
+
+
+class AgendamientoVideoView(APIView):
+    """GET /api/agendamiento/<token>/video/<pk>/ → video de presentación.
+
+    Responde por tramos: el navegador pide primero unos bytes para leer la
+    cabecera del archivo, y Safari en iPhone abandona si le llega el archivo
+    entero de golpe. Sin throttle, por la misma razón que la foto: una sola
+    reproducción son muchas peticiones.
+    """
+    authentication_classes = []
+    permission_classes = [AllowAny]
+
+    def get(self, request, token, pk):
+        clinica = _clinica_por_token(token)
+        if clinica is None:
+            raise Http404
+        prof = Profesional.objects.filter(clinica=clinica, id=pk, activo=True).first()
+        if prof is None or not prof.video:
+            raise Http404
+        try:
+            return rangos.respuesta_de_archivo(request, prof.video)
         except (FileNotFoundError, ValueError, OSError):
             raise Http404
 
