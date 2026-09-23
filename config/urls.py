@@ -55,7 +55,7 @@ from mensajes.materiales import MaterialViewSet
 from mensajes.monitor_evolution import EvolutionEstadoView, EvolutionInstanciasView
 from mensajes.webhook_evolution import EvolutionWebhookView
 from pacientes.api import AdjuntoViewSet, AplicacionEscalaViewSet, AtencionViewSet, BloqueoAgendaViewSet, CitaViewSet, ContactoProfesionalViewSet, ObjetivoTerapeuticoViewSet, PacienteViewSet, RespuestaNPSViewSet, TareaViewSet, TranscribirView
-from faro.api import (AlertasView, AplicacionesView, AtenderAlertaView,
+from faro.api import (AlertasView, AplicacionesView, AtenderAlertaView, AutorizacionView,
                       CuestionarioView, PanelFaroView, ResultadosView)
 from core.sitio import SitioFaroView, SitioFotoView, SitioVideoView, SitioInfoView
 from pacientes.api_duplicados import (
@@ -196,6 +196,8 @@ urlpatterns = [
     # El cuestionario va ANTES del comodin del panel: si no, "cuestionario"
     # se leeria como un token.
     path("api/faro/cuestionario/<str:token>/", CuestionarioView.as_view(), name="faro-cuestionario"),
+    # Va antes del catch-all api/faro/<token>/, que si no se la come.
+    path("api/faro/autorizacion/<str:token>/", AutorizacionView.as_view(), name="faro-autorizacion"),
     # Panel interno del psicologo. Van antes del comodin por la misma razon.
     path("api/faro/panel/aplicaciones/", AplicacionesView.as_view(), name="faro-aplicaciones"),
     path("api/faro/panel/alertas/", AlertasView.as_view(), name="faro-alertas"),

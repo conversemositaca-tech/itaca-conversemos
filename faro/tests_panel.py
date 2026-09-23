@@ -1,14 +1,21 @@
-"""El panel del colegio entra por token y nunca muestra un estudiante.
+"""El panel del colegio entra por token, y qué puede y qué no puede mostrar.
 
-Faro aplica un tamizaje de salud mental a menores dentro de un colegio. Lo que la
-institución recibe está limitado por escrito en dos documentos que firma: el
-consentimiento de los apoderados y el convenio. Los dos dicen lo mismo —el
-colegio ve agregados, nunca nombres junto a resultados— y este endpoint es donde
-esa promesa se cumple o se rompe.
+Faro aplica un tamizaje de salud mental a menores dentro de un colegio. Lo que
+la institución recibe está limitado por escrito en el consentimiento que firman
+los apoderados y en el convenio, y este endpoint es donde esa promesa se cumple
+o se rompe.
+
+Ese límite se movió en setiembre de 2026 por decisión de la dirección clínica.
+Antes el colegio veía SOLO agregados y había un test que fallaba si aparecía un
+nombre. Ahora ve la lista nominal con el nivel y los puntajes de cada
+estudiante, y la frontera pasó a estar un paso más allá: las RESPUESTAS una por
+una no salen. El colegio lee "ASQ positivo"; nunca "¿has pensado en suicidarte?
+→ sí".
 
     python manage.py test faro.tests_panel
 """
 import datetime as dt
+import json
 
 from django.test import TestCase
 
@@ -86,16 +93,49 @@ class PanelFaroTests(TestCase):
         self.assertTrue(d["hay_datos"])
         self.assertEqual(d["evaluados"], 1)
 
-    def test_no_se_filtra_ningun_estudiante(self):
-        # La prueba que importa: en TODO el cuerpo no puede aparecer nada que
-        # identifique a un menor. Hoy no existe el modelo de respuestas; este
-        # test queda para que el día que exista, agregarlo aquí rompa a
-        # propósito si alguien expone un nombre.
+    def test_el_colegio_ve_la_lista_nominal(self):
+        # Esto estuvo PROHIBIDO hasta setiembre de 2026 y había un test que lo
+        # impedía. Se abrió por decisión de la dirección clínica: el colegio es
+        # quien acompaña el día a día y no podía actuar sobre un porcentaje.
         d = self.panel().json()
-        prohibidos = {"estudiantes", "alumnos", "respuestas", "casos", "nombres",
-                      "dni", "riesgo", "alertas"}
-        self.assertFalse(prohibidos & set(d.keys()),
-                         f"El panel expone claves que no debería: {prohibidos & set(d.keys())}")
+        self.assertEqual(len(d["estudiantes"]), 23)
+        uno = d["estudiantes"][0]
+        for clave in ("nombre", "grado", "seccion", "nivel",
+                      "phq_total", "gad_total", "asq_positivo", "ebipq_rol"):
+            self.assertIn(clave, uno, f"Al colegio le falta {clave} para poder actuar")
+
+    def test_el_colegio_no_ve_las_respuestas_una_por_una(self):
+        """La frontera que reemplazó a la anterior, y la que hay que defender.
+
+        Se revisa el cuerpo ENTERO y no solo las claves de primer nivel: si algo
+        se filtrara, se filtraría dentro de la lista de estudiantes. Que el
+        colegio sepa que un chico dio positivo en el ASQ le permite convocarlo;
+        que lea sus respuestas literales sobre suicidio no agrega nada que
+        pueda usar, y sí convierte una sala de profesores en el peor lugar
+        donde puede estar esa frase.
+        """
+        cuerpo = json.dumps(self.panel().json(), ensure_ascii=False)
+        for item in ("asq1", "asq3", "asq4", "phq9", "gad7", "ebipq1"):
+            self.assertNotIn(item, cuerpo, f"El panel del colegio expone el ítem {item}")
+        self.assertNotIn("respuestas", cuerpo,
+                         "El panel del colegio expone las respuestas crudas")
+
+    def test_los_agregados_van_por_grado_y_por_seccion(self):
+        # Un director decide por grado y un tutor por sección: las dos miradas
+        # tienen que venir armadas, no sumadas a mano por quien lee.
+        self.ap.respuestas.all().delete()
+        vacias = {i["id"]: 0 for i in ins.ORDEN}
+        for sec, cuantos in (("A", 2), ("B", 3)):
+            for n in range(cuantos):
+                registrar(self.ap, nombre=f"Estudiante {sec}{n}", grado="3.°",
+                          seccion=sec, respuestas=vacias)
+
+        grados = self.panel().json()["grados"]
+        self.assertEqual(len(grados), 1)
+        self.assertEqual(grados[0]["grado"], "3.°")
+        self.assertEqual(grados[0]["evaluados"], 5)
+        self.assertEqual([s["seccion"] for s in grados[0]["secciones"]], ["A", "B"])
+        self.assertEqual([s["evaluados"] for s in grados[0]["secciones"]], [2, 3])
 
     def test_un_token_inventado_no_llega_a_ningun_panel(self):
         self.assertEqual(self.panel("token-inventado").status_code, 404)
