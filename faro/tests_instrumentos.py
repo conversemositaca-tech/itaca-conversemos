@@ -197,3 +197,58 @@ class ClasificarTests(SimpleTestCase):
         d = ins.clasificar({"phq1": "2", "gad1": "3", "asq1": "1", "ebipq1": "2"})
         self.assertEqual(d["phq_a"]["total"], 2)
         self.assertEqual(d["nivel"], ins.ROJO)
+
+
+class CiberacosoPendienteTests(SimpleTestCase):
+    """El bloque de ciberacoso existe pero todavía no tiene ítems.
+
+    Se prueba el estado intermedio a propósito. Un instrumento a medio entrar es
+    justo donde se cuelan los errores silenciosos: un bloque vacío que suma cero
+    y sale verde es indistinguible de un estudiante que contestó bien.
+    """
+
+    def test_no_agrega_preguntas_mientras_no_haya_items(self):
+        self.assertEqual(len(ins.CIBER), 0)
+        self.assertEqual(len(ins.ORDEN), 38)
+
+    def test_no_altera_el_nivel_de_nadie(self):
+        self.assertEqual(ins.clasificar({})["nivel"], ins.VERDE)
+        # Y tampoco rebaja a quien sí tiene señales por otro lado.
+        self.assertEqual(ins.clasificar({"asq1": 1})["nivel"], ins.ROJO)
+
+    def test_el_hueco_queda_marcado_y_no_pasa_por_verde_legitimo(self):
+        ciber = ins.clasificar({})["ciber"]
+        self.assertTrue(ciber["pendiente"],
+                        "Sin ítems, el resultado debe declararse pendiente")
+        self.assertEqual(ciber["nivel"], ins.VERDE)
+
+    def test_no_inventa_motivos_de_un_bloque_que_no_se_aplicó(self):
+        motivos = " ".join(ins.clasificar({"ebipq1": 3})["motivos"])
+        self.assertNotIn("Ciberacoso", motivos)
+
+    def test_el_umbral_es_el_mismo_para_los_dos_instrumentos(self):
+        # Vive en una constante para que ajustar el corte del presencial mueva
+        # también el del ciber. Con dos literales sueltos, el día que se afine
+        # uno el otro se queda atrás y nadie lo nota.
+        self.assertEqual(ins.UMBRAL_ROL, 2)
+        self.assertFalse(ins.puntuar_ebipq({"ebipq1": ins.UMBRAL_ROL - 1})["es_victima"])
+        self.assertTrue(ins.puntuar_ebipq({"ebipq1": ins.UMBRAL_ROL})["es_victima"])
+
+    def test_la_clasificación_no_asume_bloques_simétricos(self):
+        # El EBIPQ es 7 y 7, pero el instrumento que entre puede no serlo. Se
+        # prueba la función interna porque es el criterio que va a recibir los
+        # ítems reales, y tiene que estar bien antes de que lleguen.
+        vic = ins._rol_por_frecuencia({"x2": 3}, "x", 2, 3, ins.ROLES_CIBER)
+        self.assertTrue(vic["es_victima"])
+        self.assertFalse(vic["es_agresor"])
+        self.assertEqual(vic["rol"], "Cibervíctima")
+
+        agr = ins._rol_por_frecuencia({"x4": 4}, "x", 2, 3, ins.ROLES_CIBER)
+        self.assertFalse(agr["es_victima"])
+        self.assertTrue(agr["es_agresor"])
+        self.assertEqual(agr["rol"], "Ciberagresor")
+
+    def test_el_rol_ciber_se_nombra_distinto_del_presencial(self):
+        # En el informe del psicólogo «Víctima» y «Cibervíctima» son casos que
+        # se atienden distinto; que compartan etiqueta los volvería el mismo.
+        self.assertNotEqual(ins.ROLES_CIBER["victima"], ins.ROLES_PRESENCIAL["victima"])
