@@ -1195,7 +1195,7 @@ function PaginaFaro() {
 export function TamizajeFaro({ token }) {
   const [info, setInfo] = useState(null);
   const [err, setErr] = useState("");
-  const [paso, setPaso] = useState(-1);            // -1 presentación · 0..n-1 ítems · n final
+  const [paso, setPaso] = useState(-3);            // -3..-1 presentación · 0..n-1 ítems · n final
   const [datos, setDatos] = useState({ nombre: "", grado: "", seccion: "" });
   const [resp, setResp] = useState({});
   const [enviando, setEnviando] = useState(false);
@@ -1265,35 +1265,116 @@ export function TamizajeFaro({ token }) {
   }
 
   // ── Presentación y datos ──
+  // El texto es el que aprobó el equipo, palabra por palabra. Acá está solo
+  // maquetado: partido en tres pantallas por donde el propio texto se corta, y
+  // con los títulos que ya venían marcados como tales. Es texto de
+  // consentimiento —es lo que se le promete al estudiante—, así que no se
+  // cambia una palabra sin que lo revise el equipo de psicólogos.
+
+  if (paso === -3) return marco(
+    <div className="fa-q-wrap">
+      <h1 className="fa-h2" style={{ marginBottom: 10 }}>Queremos Escucharte</h1>
+      <p className="fa-lead" style={{ marginTop: 0, marginBottom: 34 }}>
+        Un espacio para conocer cómo estás.
+      </p>
+
+      <p className="fa-p">Hola.</p>
+      <p className="fa-p">En el colegio vivimos distintas experiencias.</p>
+      <p className="fa-p">
+        Hay cosas que son fáciles de contar y otras que pueden ser difíciles de
+        expresar. A veces necesitamos ayuda y no sabemos cómo pedirla. Otras veces
+        vemos que alguien está pasando por una situación difícil y no sabemos qué
+        hacer.
+      </p>
+      <p className="fa-p">
+        En Ítaca Conversemos, junto con tu colegio, queremos conocer cómo estás,
+        cómo te sientes en tu entorno y qué podemos hacer para que los estudiantes
+        se sientan más seguros y acompañados.
+      </p>
+      <p className="fa-p">
+        Te haremos algunas preguntas. No hay respuestas correctas o incorrectas, y
+        no tienes que responder lo que crees que los demás esperan de ti. Queremos
+        conocer tu experiencia.
+      </p>
+
+      <p className="fa-p" style={{ color: "var(--t)", fontWeight: 600, margin: "26px 0" }}>
+        Tu bienestar importa. Tu voz también.
+      </p>
+
+      <p className="fa-p">
+        Antes de comenzar, te explicaremos cómo se utilizará la información y qué
+        sucederá si identificamos que tú o alguien más necesita ayuda.
+      </p>
+
+      <button className="fa-enviar" onClick={() => setPaso(-2)}>
+        Continuar <ArrowRight size={17} strokeWidth={2.2} aria-hidden="true" />
+      </button>
+    </div>
+  );
+
+  if (paso === -2) return marco(
+    <div className="fa-q-wrap">
+      <h1 className="fa-h2" style={{ marginBottom: 10 }}>Lo que necesitas saber:</h1>
+      <p className="fa-lead" style={{ marginTop: 0 }}>
+        Queremos que respondas con confianza
+      </p>
+
+      <ul className="fa-limites" style={{ marginTop: 34 }}>
+        <li>
+          <span>
+            <b>No hay respuestas correctas o incorrectas.</b><br />
+            Queremos conocer tu experiencia, no evaluarte ni calificarte.
+          </span>
+        </li>
+        <li>
+          <span>
+            <b>Esto no es un examen.</b><br />
+            Tu participación no tiene nota y no afecta tus calificaciones.
+          </span>
+        </li>
+        <li>
+          <span>
+            <b>Tómate tu tiempo.</b><br />
+            Puedes detenerte si necesitas una pausa, de acuerdo con las condiciones
+            de participación.
+          </span>
+        </li>
+        <li>
+          <span>
+            <b>Tu información será tratada con cuidado.</b><br />
+            Te explicaremos quién puede acceder a tus respuestas y cómo se utilizarán.
+          </span>
+        </li>
+      </ul>
+
+      <div className="fa-q-botones" style={{ marginTop: 34 }}>
+        <button className="fa-q-atras" onClick={() => setPaso(-3)}>Atrás</button>
+        <button className="fa-enviar" style={{ marginTop: 0 }} onClick={() => setPaso(-1)}>
+          Continuar <ArrowRight size={17} strokeWidth={2.2} aria-hidden="true" />
+        </button>
+      </div>
+    </div>
+  );
+
   if (paso === -1) return marco(
     <div className="fa-q-wrap">
-      <h1 className="fa-h2">Antes de empezar, queremos que sepas de qué se trata</h1>
-      {/* Lo primero que se pregunta un chico de 14 no es qué es esto, sino por qué
-          unos adultos que no conoce le están preguntando. Eso se responde en la
-          primera línea: el colegio nos llamó. El nombre del programa va después,
-          porque a él no le dice nada y presentarlo primero suena a vendedor. */}
-      <p className="fa-p">
-        Somos psicólogos de Ítaca Conversemos y tu colegio nos pidió ayuda para saber
-        cómo están sus estudiantes. A ese programa le pusimos Faro. Te vamos a hacer
-        unas preguntas sobre cómo te has sentido en los últimos meses. Antes de decidir
-        si quieres responderlas, lee esto.
-      </p>
-      <ul className="fa-limites">
-        <li>No hay respuestas correctas ni incorrectas.</li>
-        <li>No tiene nota y no afecta tus calificaciones.</li>
-        <li>Tus profesores y tus compañeros no ven tus respuestas.</li>
-        <li>Puedes parar cuando quieras.</li>
-      </ul>
-      <div className="fa-card" style={{ marginTop: 22 }}>
+      <h1 className="fa-h2">Si algo te está haciendo daño, queremos ayudarte:</h1>
+
+      <div className="fa-card">
         <p className="fa-p" style={{ margin: 0 }}>
-          <b>Y algo importante, porque no te vamos a mentir:</b> si nos contestas algo que
-          nos hace pensar que estás en peligro o que alguien te está haciendo daño, vamos a
-          buscar ayudarte. Eso significa que un adulto se va a enterar. Antes de hacer nada,
-          un psicólogo va a conversar contigo en privado.
+          Queremos ser honestos contigo: la información que compartas será tratada
+          con cuidado, pero si identificamos una situación que requiere ayuda o
+          protección, un psicólogo conversará contigo en privado para comprender
+          mejor lo que sucede y ayudarte.
         </p>
       </div>
 
-      <div className="fa-form" style={{ marginTop: 28 }}>
+      <p className="fa-p" style={{ marginTop: 26 }}>
+        No tendrás que afrontar una situación difícil sin apoyo. Estamos aquí para
+        ti, eres importante. Queremos escucharte.
+      </p>
+
+      <div className="fa-form" style={{ marginTop: 34 }}>
         <label className="fa-campo">
           <span>Tu nombre completo</span>
           <input value={datos.nombre} onChange={(e) => setDatos((p) => ({ ...p, nombre: e.target.value }))}
@@ -1310,10 +1391,14 @@ export function TamizajeFaro({ token }) {
             placeholder="B" />
         </label>
       </div>
-      <button className="fa-enviar" onClick={() => setPaso(0)}
-        disabled={datos.nombre.trim().length < 3}>
-        Empezar <ArrowRight size={17} strokeWidth={2.2} aria-hidden="true" />
-      </button>
+
+      <div className="fa-q-botones" style={{ marginTop: 30 }}>
+        <button className="fa-q-atras" onClick={() => setPaso(-2)}>Atrás</button>
+        <button className="fa-enviar" style={{ marginTop: 0 }} onClick={() => setPaso(0)}
+          disabled={datos.nombre.trim().length < 3}>
+          Empezar <ArrowRight size={17} strokeWidth={2.2} aria-hidden="true" />
+        </button>
+      </div>
     </div>
   );
 
