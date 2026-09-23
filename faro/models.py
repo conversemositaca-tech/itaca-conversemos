@@ -9,7 +9,9 @@ ante una auditoría, y bastaría un filtro olvidado para cruzarlos.
 Aquí vive hoy la aplicación por colegio. Cuando entren los instrumentos, las
 respuestas y los puntajes se agregan en esta misma app.
 """
+import re
 import secrets
+import unicodedata
 
 from django.db import models
 
@@ -46,6 +48,11 @@ class Aplicacion(ModeloTenant):
     # uno solo, cualquier alumno que lo copiara entraría al panel del colegio;
     # y el del alumno se reparte en un aula entera, así que se asume público.
     token_estudiante = models.CharField(
+        max_length=64, unique=True, default=_token_nuevo, editable=False)
+    # Y un TERCER enlace, el que se le reparte a las familias para autorizar.
+    # Tres audiencias distintas, tres tokens: si el del aula se filtra, no da
+    # acceso ni al panel de la dirección ni a los datos de los apoderados.
+    token_apoderado = models.CharField(
         max_length=64, unique=True, default=_token_nuevo, editable=False)
 
     estado = models.CharField(max_length=14, choices=Estado.choices, default=Estado.PREPARANDO)
@@ -101,6 +108,19 @@ class Aplicacion(ModeloTenant):
         return self.respuestas.count()
 
     @property
+    def autorizados_efectivos(self):
+        """Autorizados de verdad: los del formulario en línea, o los de papel.
+
+        El campo `autorizados` se llena a mano y sirve para el colegio que
+        recoge firmas en papel. Desde que existe el formulario en línea hay una
+        segunda fuente, y se toma la mayor de las dos: un colegio puede usar
+        las dos vías a la vez, y quedarse con la menor subestimaría la
+        participación de un grupo que sí autorizó.
+        """
+        en_linea = self.autorizaciones.filter(autoriza=True).count()
+        return max(self.autorizados or 0, en_linea)
+
+    @property
     def participacion(self):
         """% de evaluados sobre autorizados, o None si todavía no aplica.
 
@@ -108,9 +128,10 @@ class Aplicacion(ModeloTenant):
         puede hacer nada con quien no fue autorizado, y medir contra el total
         castiga al colegio por una decisión que tomaron las familias.
         """
-        if not self.autorizados:
+        base = self.autorizados_efectivos
+        if not base:
             return None
-        return round(self.evaluados * 100 / self.autorizados)
+        return round(self.evaluados * 100 / base)
 
 
 class Respuesta(ModeloTenant):
@@ -118,12 +139,24 @@ class Respuesta(ModeloTenant):
 
     Guarda el nombre a propósito. El protocolo obliga a poder llegar al
     estudiante el mismo día cuando aparece una señal de riesgo, y un tamizaje
-    anónimo haría imposible cumplir lo que el consentimiento promete. Lo que sí
-    está prohibido es que el COLEGIO vea esto: el panel institucional solo
-    entrega agregados, y hay un test que falla si alguien expone un nombre ahí.
+    anónimo haría imposible cumplir lo que el consentimiento promete.
+
+    Desde setiembre de 2026 el colegio SÍ ve el nombre junto al nivel y a los
+    puntajes; antes no veía más que agregados. Lo que no sale del equipo
+    clínico es el campo `respuestas`: el detalle ítem por ítem. Hay un test que
+    falla si aparece en el panel institucional.
     """
 
     aplicacion = models.ForeignKey(Aplicacion, on_delete=models.CASCADE, related_name="respuestas")
+
+    # Con qué autorización entró. Puede quedar vacío: el emparejamiento se hace
+    # por nombre y un tipeo en el aula no puede impedir que un chico conteste.
+    # Lo que queda sin emparejar aparece en el panel interno para resolverlo a
+    # mano, porque sin apoderado no hay a quién entregarle el resultado.
+    autorizacion = models.ForeignKey(
+        "faro.Autorizacion", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="respuestas")
+
     nombre = models.CharField(max_length=200)
     grado = models.CharField(max_length=30, blank=True, default="")
     seccion = models.CharField(max_length=10, blank=True, default="")
@@ -197,3 +230,93 @@ class Alerta(ModeloTenant):
 
     def __str__(self):
         return f"Alerta · {self.respuesta.nombre}"
+
+
+def clave_estudiante(nombre, grado="", seccion=""):
+    """Clave para emparejar una respuesta con su autorización.
+
+    Sin tildes, sin mayúsculas y sin espacios de más: el apoderado escribe
+    "José Pérez Ramírez" y el estudiante teclea "jose perez ramirez" en un
+    celular prestado. Exigir coincidencia exacta dejaría sin entregar la mitad
+    de los informes.
+    """
+    txt = f"{nombre} {grado} {seccion}".strip().lower()
+    txt = unicodedata.normalize("NFD", txt)
+    txt = "".join(c for c in txt if unicodedata.category(c) != "Mn")
+    return re.sub(r"[^a-z0-9]+", " ", txt).strip()
+
+
+class Autorizacion(ModeloTenant):
+    """Lo que firma un apoderado para que su hijo participe.
+
+    Es la pieza legal del tamizaje, no un formulario de contacto. Por eso
+    guarda la VERSIÓN del consentimiento que se aceptó y no solo un "sí":
+    cuando cambie el texto —y va a cambiar, porque el alcance de quién ve qué
+    se está ampliando— hay que poder demostrar qué se le prometió exactamente
+    a cada familia. Un booleano suelto no sostiene eso ante un reclamo.
+
+    Guarda también los datos del apoderado porque es a él a quien se le entrega
+    el resultado individual, y porque sin correo no hay a dónde mandarlo.
+    """
+
+    class Parentesco(models.TextChoices):
+        MADRE = "madre", "Madre"
+        PADRE = "padre", "Padre"
+        APODERADO = "apoderado", "Apoderado o tutor"
+
+    aplicacion = models.ForeignKey(
+        Aplicacion, on_delete=models.CASCADE, related_name="autorizaciones")
+
+    # El estudiante, tal como lo escribe el apoderado
+    estudiante = models.CharField("nombre del estudiante", max_length=200)
+    grado = models.CharField(max_length=30, blank=True, default="")
+    seccion = models.CharField("sección", max_length=10, blank=True, default="")
+    # Se calcula al guardar y se indexa: es por donde se empareja la respuesta.
+    clave = models.CharField(max_length=240, blank=True, default="", editable=False)
+
+    # Quién autoriza
+    apoderado = models.CharField("nombre del apoderado", max_length=200)
+    documento = models.CharField("documento de identidad", max_length=20, blank=True, default="")
+    parentesco = models.CharField(
+        max_length=12, choices=Parentesco.choices, default=Parentesco.APODERADO)
+    correo = models.EmailField(
+        help_text="A esta dirección se envía el resultado individual del estudiante.")
+    celular = models.CharField(max_length=30, blank=True, default="")
+
+    # La decisión. Se guarda también el NO: un colegio necesita saber cuántas
+    # familias se negaron, y borrar esas filas haría imposible distinguir a
+    # quien no quiso de quien nunca respondió.
+    autoriza = models.BooleanField(default=False)
+
+    # Trazabilidad de la firma
+    version_texto = models.CharField(
+        "versión del consentimiento", max_length=20, blank=True, default="",
+        help_text="Qué versión del texto aceptó. Si el texto cambia, esto dice quién firmó cuál.")
+    firmado_en = models.DateTimeField(auto_now_add=True)
+    ip = models.GenericIPAddressField(null=True, blank=True)
+
+    # Entrega del resultado al apoderado
+    enviado_en = models.DateTimeField(null=True, blank=True)
+    envio_detalle = models.CharField(max_length=300, blank=True, default="")
+
+    class Meta:
+        verbose_name = "Autorización de Faro"
+        verbose_name_plural = "Autorizaciones de Faro"
+        ordering = ["estudiante"]
+        indexes = [
+            models.Index(fields=["aplicacion", "clave"]),
+            models.Index(fields=["aplicacion", "autoriza"]),
+        ]
+        # Una familia que reenvía el formulario no debe generar dos permisos
+        # para el mismo chico: se actualiza el que ya existe.
+        constraints = [
+            models.UniqueConstraint(
+                fields=["aplicacion", "clave"], name="faro_una_autorizacion_por_estudiante"),
+        ]
+
+    def save(self, *args, **kwargs):
+        self.clave = clave_estudiante(self.estudiante, self.grado, self.seccion)
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.estudiante} · {'autoriza' if self.autoriza else 'no autoriza'}"

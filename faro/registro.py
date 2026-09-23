@@ -19,7 +19,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from . import instrumentos as ins
-from .models import Alerta, Respuesta
+from .models import Alerta, Autorizacion, Respuesta, clave_estudiante
 
 log = logging.getLogger(__name__)
 
@@ -66,6 +66,23 @@ def _avisar(alerta):
     alerta.save(update_fields=["aviso", "aviso_detalle", "avisado_en"])
 
 
+def _emparejar(aplicacion, nombre, grado, seccion):
+    """Busca la autorización del estudiante. Devuelve None si no la encuentra.
+
+    Se intenta primero con grado y sección, y si no, solo con el nombre: el
+    apoderado escribe "3.° B" y el chico teclea "3B", y esa diferencia no puede
+    costar la entrega de un informe.
+    """
+    qs = aplicacion.autorizaciones.filter(autoriza=True)
+    exacta = qs.filter(clave=clave_estudiante(nombre, grado, seccion)).first()
+    if exacta is not None:
+        return exacta
+    solo_nombre = clave_estudiante(nombre)
+    # Sin grado ni sección puede haber dos homónimos; con dos no se adivina.
+    iguales = [a for a in qs if clave_estudiante(a.estudiante) == solo_nombre]
+    return iguales[0] if len(iguales) == 1 else None
+
+
 def registrar(aplicacion, *, nombre, respuestas, grado="", seccion="", codigo=""):
     """Puntúa, guarda y devuelve (respuesta, alerta_o_None).
 
@@ -76,9 +93,15 @@ def registrar(aplicacion, *, nombre, respuestas, grado="", seccion="", codigo=""
     d = ins.clasificar(respuestas)
     faltan = [i["id"] for i in ins.ORDEN if respuestas.get(i["id"]) in (None, "")]
 
+    # A quién se le entrega después el resultado. Se busca por nombre normalizado
+    # y puede no encontrarse: un tipeo en el aula NO puede impedir que el chico
+    # conteste, así que se guarda igual y queda sin emparejar para resolverlo a
+    # mano desde el panel interno.
+    aut = _emparejar(aplicacion, nombre, grado, seccion)
+
     with transaction.atomic():
         resp = Respuesta.objects.create(
-            clinica=aplicacion.clinica, aplicacion=aplicacion,
+            clinica=aplicacion.clinica, aplicacion=aplicacion, autorizacion=aut,
             nombre=nombre.strip()[:200], grado=grado.strip()[:30],
             seccion=seccion.strip()[:10], codigo=codigo.strip()[:40],
             respuestas=respuestas, completa=not faltan,

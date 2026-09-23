@@ -1,10 +1,24 @@
-"""Panel del colegio, servido por token.
+"""Panel del colegio y formulario de las familias, servidos por token.
 
-Público y sin sesión: el colegio entra por un enlace permanente, igual que la
-landing de reservas. Lo que sale por aquí es SIEMPRE agregado — nunca un
-estudiante identificado, ni siquiera un identificador que permita seguirlo entre
-llamadas. Esa regla está escrita en el consentimiento que firman los apoderados
-y en el convenio que firma la institución; aquí se cumple.
+Público y sin sesión: se entra por un enlace permanente, igual que la landing
+de reservas. Hay tres enlaces distintos porque hay tres audiencias distintas
+—dirección, aula y familias— y que se filtre uno no puede dar acceso a lo de
+los otros dos.
+
+QUÉ VE EL COLEGIO. Esto cambió en setiembre de 2026 por decisión de la
+dirección clínica. Antes salía SIEMPRE agregado y nunca un estudiante
+identificado. Ahora el colegio ve la lista nominal con el nivel de cada
+estudiante y sus puntajes por instrumento, porque es el colegio quien acompaña
+el día a día y no podía hacer nada con un porcentaje.
+
+Lo que sigue sin salir son las RESPUESTAS una por una. El colegio lee "ASQ
+positivo", no "¿has pensado en suicidarte? → sí". La diferencia no es
+cosmética: con lo primero se convoca al estudiante a tutoría, con lo segundo
+se lee en voz alta en una sala de profesores.
+
+Este alcance tiene que coincidir, palabra por palabra, con lo que firma la
+familia en el formulario de autorización. Si se amplía acá, se amplía allá, y
+hay que volver a pedir firma.
 """
 from django.http import Http404
 from rest_framework import status
@@ -17,7 +31,7 @@ from django.utils import timezone
 
 from core import permisos
 from . import instrumentos, registro
-from .models import Alerta, Aplicacion
+from .models import Alerta, Aplicacion, Autorizacion, clave_estudiante
 
 
 class PanelFaroView(APIView):
@@ -50,11 +64,149 @@ class PanelFaroView(APIView):
             "autorizados": ap.autorizados,
             "evaluados": ap.evaluados,
             "participacion": ap.participacion,
-            # El panorama por grado llega cuando existan los instrumentos. Se
-            # devuelve la lista vacía y no datos de ejemplo: un director que ve
-            # cifras de relleno y las cree reales toma decisiones sobre humo.
-            "grados": [],
+            "grados": _por_grado(ap),
+            "estudiantes": _nominal(ap),
+            "resumen": _conteo(ap.respuestas.all()),
         })
+
+
+# ── Cómo se le arma el panorama al colegio ─────────────────────────────────
+
+def _conteo(resps):
+    """Cuántos en cada nivel. Se cuenta sobre lo que hay, sin proyectar."""
+    c = {"verde": 0, "ambar": 0, "rojo": 0, "evaluados": 0}
+    for r in resps:
+        c["evaluados"] += 1
+        if r.nivel in c:
+            c[r.nivel] += 1
+    return c
+
+
+def _por_grado(ap):
+    """Agregados por grado, y dentro de cada grado por sección.
+
+    Un director decide por grado y un tutor por sección, así que las dos
+    miradas tienen que estar. Obligar a sumar secciones a mano para ver el
+    grado es pedirle al lector que haga el trabajo del sistema.
+    """
+    grados = {}
+    for r in ap.respuestas.all():
+        g = grados.setdefault(r.grado or "Sin grado", {})
+        g.setdefault(r.seccion or "—", []).append(r)
+    salida = []
+    for grado in sorted(grados):
+        secciones = grados[grado]
+        todas = [r for lista in secciones.values() for r in lista]
+        salida.append({
+            "grado": grado,
+            **_conteo(todas),
+            "secciones": [{"seccion": sec, **_conteo(secciones[sec])}
+                          for sec in sorted(secciones)],
+        })
+    return salida
+
+
+def _nominal(ap):
+    """La lista con nombre y resultado de cada estudiante.
+
+    Van el nivel y los puntajes por instrumento. NO van las respuestas una por
+    una: eso se queda en el panel clínico. El motivo está en el docstring del
+    módulo, y no se amplía sin cambiar antes el consentimiento.
+    """
+    return [{
+        "nombre": r.nombre,
+        "grado": r.grado,
+        "seccion": r.seccion,
+        "nivel": r.nivel,
+        "phq_total": r.phq_total,
+        "gad_total": r.gad_total,
+        "asq_positivo": r.asq_positivo,
+        "ebipq_rol": r.ebipq_rol,
+        "completa": r.completa,
+        "fecha": r.creado_en.date().isoformat(),
+    } for r in ap.respuestas.all().order_by("grado", "seccion", "nombre")]
+
+
+class AutorizacionView(APIView):
+    """GET y POST /api/faro/autorizacion/<token>/ — la firma de la familia.
+
+    Reemplaza la hoja de papel. El apoderado lee el consentimiento, deja sus
+    datos y decide. Se guarda también el NO: un colegio necesita saber cuántas
+    familias se negaron, y borrar esas filas confundiría a quien no quiso con
+    quien nunca respondió.
+
+    Sin sesión y por token, como todo lo que es de cara al colegio. Este token
+    es el de apoderados, distinto del de dirección y del de aula.
+    """
+
+    authentication_classes = []
+    permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "captacion"
+
+    # Se guarda con cada firma. Si el texto cambia, esto dice quién firmó cuál;
+    # un consentimiento sin versión no sirve para defender nada después.
+    VERSION = "2026-09-v3"
+
+    def _aplicacion(self, token):
+        ap = Aplicacion.objects.filter(token_apoderado=token).first()
+        if ap is None:
+            raise Http404
+        return ap
+
+    def get(self, request, token):
+        ap = self._aplicacion(token)
+        return Response({
+            "institucion": ap.institucion,
+            "ciudad": ap.ciudad,
+            "abierto": ap.estado != Aplicacion.Estado.CERRADA,
+            "version": self.VERSION,
+        })
+
+    def post(self, request, token):
+        ap = self._aplicacion(token)
+        if ap.estado == Aplicacion.Estado.CERRADA:
+            return Response({"detail": "Este tamizaje ya cerró."},
+                            status=status.HTTP_409_CONFLICT)
+
+        d = request.data if isinstance(request.data, dict) else {}
+        estudiante = str(d.get("estudiante") or "").strip()
+        apoderado = str(d.get("apoderado") or "").strip()
+        correo = str(d.get("correo") or "").strip()
+        autoriza = bool(d.get("autoriza"))
+
+        if len(estudiante) < 3:
+            return Response({"detail": "Escriba el nombre completo del estudiante."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        if len(apoderado) < 3:
+            return Response({"detail": "Escriba su nombre completo."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        # El correo se le exige solo a quien autoriza: a quien dice que no no hay
+        # nada que enviarle, y pedírselo sería un obstáculo para decir que no.
+        if autoriza and "@" not in correo:
+            return Response(
+                {"detail": "Escriba un correo válido: ahí le enviaremos el resultado."},
+                status=status.HTTP_400_BAD_REQUEST)
+
+        grado = str(d.get("grado") or "").strip()[:30]
+        seccion = str(d.get("seccion") or "").strip()[:10]
+
+        # Una familia que reenvía el formulario corrige su respuesta, no crea
+        # una segunda: la clave del estudiante es única por aplicación.
+        Autorizacion.objects.update_or_create(
+            aplicacion=ap, clave=clave_estudiante(estudiante, grado, seccion),
+            defaults={
+                "clinica": ap.clinica,
+                "estudiante": estudiante[:200], "grado": grado, "seccion": seccion,
+                "apoderado": apoderado[:200],
+                "documento": str(d.get("documento") or "").strip()[:20],
+                "parentesco": (str(d.get("parentesco") or "").strip()[:12] or "apoderado"),
+                "correo": correo[:254],
+                "celular": str(d.get("celular") or "").strip()[:30],
+                "autoriza": autoriza, "version_texto": self.VERSION,
+                "ip": (request.META.get("REMOTE_ADDR") or None),
+            })
+        return Response({"ok": True, "autoriza": autoriza}, status=status.HTTP_201_CREATED)
 
 
 class CuestionarioView(APIView):
