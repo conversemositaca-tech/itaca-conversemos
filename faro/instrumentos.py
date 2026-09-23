@@ -67,6 +67,27 @@ EBIPQ = _items("ebipq", MARCO_EBIPQ, ESC_EBIPQ, [
     "He difundido rumores sobre alguien.",
 ])
 
+# ── Ciberacoso · PENDIENTE, sin ítems todavía ──────────────────────────────
+# Faro no mide ciberacoso, y en secundaria ese es el hueco más grande de la
+# batería. El instrumento elegido es la versión breve conjunta de acoso y
+# ciberacoso (EBCIP-QB; Álvarez-Marín, Pérez-Albéniz, Lucas-Molina,
+# Martínez-Valderrey y Fonseca-Pedrero, Psicothema 34(4), 2022, 571-581).
+#
+# Las listas están VACÍAS a propósito. El artículo describe el instrumento pero
+# no reproduce los ítems —ni él ni las otras cuatro fuentes que se revisaron—,
+# así que se pidieron a los autores. Escribirlos de memoria sería exactamente lo
+# que prohíbe la cabecera de este archivo: el cuestionario funcionaría igual, el
+# puntaje saldría igual de creíble, y el error aparecería el día que un
+# estudiante en riesgo quedara clasificado en verde.
+#
+# Mientras estén vacías, el bloque no suma preguntas ni altera el nivel de
+# nadie. Al llegar los ítems basta llenarlas y confirmar el umbral de
+# frecuencia: la puntuación y la clasificación ya están escritas más abajo.
+MARCO_CIBER = "En los últimos dos meses, ¿con qué frecuencia ha pasado esto?"
+CIBER_VICTIMIZACION = []
+CIBER_AGRESION = []
+CIBER = _items("ciber", MARCO_CIBER, ESC_EBIPQ, CIBER_VICTIMIZACION + CIBER_AGRESION)
+
 # ── PHQ-A · estado de ánimo · 9 ítems que puntúan, 0–3 ─────────────────────
 MARCO_PHQ = "En las últimas dos semanas, ¿con qué frecuencia te ha pasado esto?"
 PHQ_A = _items("phq", MARCO_PHQ, ESC_DIAS, [
@@ -139,7 +160,9 @@ CONTEXTUALES = [
 # íntimo; el riesgo va hacia el medio y no al final, cuando ya se responde
 # apurado; y cierra con las contextuales para que nadie salga del cuestionario
 # con la última pregunta sobre suicidio en la cabeza.
-ORDEN = EBIPQ + PHQ_A + GAD_7 + ASQ + CONTEXTUALES
+# El ciberacoso va pegado al acoso presencial: son el mismo tema y comparten
+# escala, así que separarlos obligaría al estudiante a recalibrar dos veces.
+ORDEN = EBIPQ + CIBER + PHQ_A + GAD_7 + ASQ + CONTEXTUALES
 
 VERDE, AMBAR, ROJO = "verde", "ambar", "rojo"
 # El nivel de un estudiante es el más alto de todos sus instrumentos: nada se
@@ -210,34 +233,72 @@ def puntuar_asq(resp):
             "nivel": ROJO if positivos else VERDE}
 
 
-def puntuar_ebipq(resp):
-    """EBIPQ: rol por frecuencia, no por puntaje total.
+# Frecuencia a partir de la cual se considera que hay un rol. Criterio de Del
+# Rey et al. (2015): es víctima quien reporta haber sufrido alguna conducta al
+# menos "una o dos veces al mes" —la opción 2 de la escala— y agresor quien la
+# ha ejercido con esa frecuencia. Vive en una constante porque el instrumento de
+# ciberacoso usa la misma escala, y el día que se ajuste tiene que ajustarse en
+# los dos a la vez.
+UMBRAL_ROL = 2
 
-    Criterio de Del Rey et al. (2015): es víctima quien reporta haber sufrido
-    alguna conducta de victimización al menos "una o dos veces al mes" —la
-    opción 2 de la escala— y agresor quien la ha ejercido con esa frecuencia.
+ROLES_PRESENCIAL = {"victima": "Víctima", "agresor": "Agresor",
+                    "ambos": "Víctima y agresor", "ninguno": "No involucrado"}
+ROLES_CIBER = {"victima": "Cibervíctima", "agresor": "Ciberagresor",
+               "ambos": "Cibervíctima y ciberagresor", "ninguno": "No involucrado"}
 
-    Se clasifica por el MÁXIMO de cada bloque y no por la suma: un estudiante
-    al que amenazan todas las semanas pero al que no le pasa nada más tendría
-    una suma baja, y es exactamente a quien hay que detectar.
+
+def _rol_por_frecuencia(resp, prefijo, n_vic, n_agr, etiquetas):
+    """Rol por frecuencia en un cuestionario de acoso, no por puntaje total.
+
+    Sirve a los dos instrumentos —presencial y ciber—, que comparten escala 0–4
+    y estructura: un bloque de victimización seguido de uno de agresión. Está
+    separado de quien lo llama porque dos copias del mismo criterio se
+    desincronizan en el primer ajuste de corte, y aquí un corte desincronizado
+    significa un estudiante sin detectar.
+
+    Se clasifica por el MÁXIMO de cada bloque y no por la suma: a quien amenazan
+    todas las semanas pero no le pasa nada más le saldría una suma baja, y es
+    exactamente a quien hay que detectar.
     """
-    vic = [int(resp.get(f"ebipq{i + 1}", 0) or 0) for i in range(7)]
-    agr = [int(resp.get(f"ebipq{i + 8}", 0) or 0) for i in range(7)]
-    es_victima = max(vic, default=0) >= 2
-    es_agresor = max(agr, default=0) >= 2
+    vic = [int(resp.get(f"{prefijo}{i + 1}", 0) or 0) for i in range(n_vic)]
+    agr = [int(resp.get(f"{prefijo}{n_vic + i + 1}", 0) or 0) for i in range(n_agr)]
+    es_victima = max(vic, default=0) >= UMBRAL_ROL
+    es_agresor = max(agr, default=0) >= UMBRAL_ROL
 
     if es_victima and es_agresor:
-        rol = "Víctima y agresor"
+        rol = etiquetas["ambos"]
     elif es_victima:
-        rol = "Víctima"
+        rol = etiquetas["victima"]
     elif es_agresor:
-        rol = "Agresor"
+        rol = etiquetas["agresor"]
     else:
-        rol = "No involucrado"
+        rol = etiquetas["ninguno"]
 
     return {"victimizacion": sum(vic), "agresion": sum(agr),
             "es_victima": es_victima, "es_agresor": es_agresor, "rol": rol,
             "nivel": AMBAR if (es_victima or es_agresor) else VERDE}
+
+
+def puntuar_ebipq(resp):
+    """EBIPQ, acoso presencial: 7 ítems de victimización y 7 de agresión."""
+    return _rol_por_frecuencia(resp, "ebipq", 7, 7, ROLES_PRESENCIAL)
+
+
+def puntuar_ciber(resp):
+    """Ciberacoso, con el mismo criterio que el presencial.
+
+    Sin ítems cargados devuelve un resultado neutro y marcado como pendiente:
+    así el bloque no altera el nivel de nadie mientras se espera el instrumento,
+    y `pendiente` deja el hueco visible en vez de hacerlo pasar por un verde
+    legítimo. No se asume que los dos bloques midan lo mismo: cada uno se cuenta
+    por su propia lista.
+    """
+    if not CIBER:
+        return {"victimizacion": 0, "agresion": 0, "es_victima": False,
+                "es_agresor": False, "rol": ROLES_CIBER["ninguno"],
+                "nivel": VERDE, "pendiente": True}
+    return _rol_por_frecuencia(resp, "ciber", len(CIBER_VICTIMIZACION),
+                               len(CIBER_AGRESION), ROLES_CIBER)
 
 
 def clasificar(resp):
@@ -251,7 +312,9 @@ def clasificar(resp):
     gad = puntuar_gad_7(resp)
     asq = puntuar_asq(resp)
     ebipq = puntuar_ebipq(resp)
-    nivel = max((phq["nivel"], gad["nivel"], asq["nivel"], ebipq["nivel"]), key=_PESO.get)
+    ciber = puntuar_ciber(resp)
+    nivel = max((phq["nivel"], gad["nivel"], asq["nivel"], ebipq["nivel"], ciber["nivel"]),
+                key=_PESO.get)
 
     # Por qué quedó en ese nivel, en palabras. Va al informe del psicólogo: un
     # nivel sin motivo obliga a reconstruir el razonamiento a mano.
@@ -270,6 +333,10 @@ def clasificar(resp):
         motivos.append("EBIPQ: reporta victimización al menos una o dos veces al mes.")
     if ebipq["es_agresor"]:
         motivos.append("EBIPQ: reporta ejercer agresión al menos una o dos veces al mes.")
+    if ciber["es_victima"]:
+        motivos.append("Ciberacoso: reporta sufrirlo al menos una o dos veces al mes.")
+    if ciber["es_agresor"]:
+        motivos.append("Ciberacoso: reporta ejercerlo al menos una o dos veces al mes.")
 
     return {"nivel": nivel, "motivos": motivos,
-            "phq_a": phq, "gad_7": gad, "asq": asq, "ebipq": ebipq}
+            "phq_a": phq, "gad_7": gad, "asq": asq, "ebipq": ebipq, "ciber": ciber}
