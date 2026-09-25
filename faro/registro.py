@@ -108,6 +108,7 @@ def registrar(aplicacion, *, nombre, respuestas, grado="", seccion="", codigo=""
             nivel=d["nivel"], motivos=d["motivos"],
             phq_total=d["phq_a"]["total"], gad_total=d["gad_7"]["total"],
             asq_positivo=d["asq"]["positivo"], ebipq_rol=d["ebipq"]["rol"],
+            ciber_rol=d["ciber"]["rol"],
         )
         alerta = None
         if d["nivel"] == ins.ROJO:

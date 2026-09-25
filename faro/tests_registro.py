@@ -119,3 +119,9 @@ class RegistroTests(TestCase):
         r, _ = registrar(self.ap, nombre="Ana Ríos", respuestas=contesta(ebipq4=3))
         self.assertEqual(r.respuestas["ebipq4"], 3)
         self.assertEqual(len(r.respuestas), len(ins.ORDEN))
+
+    def test_el_rol_ciber_se_guarda_como_el_presencial(self):
+        r, _ = registrar(self.ap, nombre="Ana Ríos", respuestas=contesta(ciber3=3))
+        self.assertEqual(r.ciber_rol, "Cibervíctima")
+        self.assertEqual(r.ebipq_rol, "No involucrado")
+        self.assertEqual(r.nivel, ins.AMBAR)

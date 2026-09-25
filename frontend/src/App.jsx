@@ -12628,9 +12628,9 @@ function Faro({ showToast }) {
                 titulo={`Faro · ${resultados.institucion}`}
                 contexto={resultados.ciudad}
                 headers={["Estudiante", "Grado", "Sección", "Código", "Nivel", "PHQ-A", "GAD-7",
-                          "ASQ positivo", "Rol EBIPQ", "Completa", "Por qué", "Fecha"]}
+                          "ASQ positivo", "Rol EBIPQ", "Rol ECIP-Q", "Completa", "Por qué", "Fecha"]}
                 filas={resultados.filas.map((f) => [f.estudiante, f.grado, f.seccion, f.codigo,
-                  f.nivel, f.phq_total, f.gad_total, f.asq_positivo, f.ebipq_rol, f.completa,
+                  f.nivel, f.phq_total, f.gad_total, f.asq_positivo, f.ebipq_rol, f.ciber_rol, f.completa,
                   f.motivos, f.fecha])}
                 showToast={showToast}
               />
