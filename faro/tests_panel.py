@@ -101,7 +101,7 @@ class PanelFaroTests(TestCase):
         self.assertEqual(len(d["estudiantes"]), 23)
         uno = d["estudiantes"][0]
         for clave in ("nombre", "grado", "seccion", "nivel",
-                      "phq_total", "gad_total", "asq_positivo", "ebipq_rol"):
+                      "phq_total", "gad_total", "asq_positivo", "ebipq_rol", "ciber_rol"):
             self.assertIn(clave, uno, f"Al colegio le falta {clave} para poder actuar")
 
     def test_el_colegio_no_ve_las_respuestas_una_por_una(self):

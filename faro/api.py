@@ -122,6 +122,7 @@ def _nominal(ap):
         "gad_total": r.gad_total,
         "asq_positivo": r.asq_positivo,
         "ebipq_rol": r.ebipq_rol,
+        "ciber_rol": r.ciber_rol,
         "completa": r.completa,
         "fecha": r.creado_en.date().isoformat(),
     } for r in ap.respuestas.all().order_by("grado", "seccion", "nombre")]
@@ -311,6 +312,7 @@ def _dato_alerta(a):
         "gad_total": r.gad_total,
         "asq_positivo": r.asq_positivo,
         "ebipq_rol": r.ebipq_rol,
+        "ciber_rol": r.ciber_rol,
         "completa": r.completa,
     }
 
@@ -385,6 +387,7 @@ class ResultadosView(_PanelBase):
                 "phq_total": r.phq_total, "gad_total": r.gad_total,
                 "asq_positivo": "Sí" if r.asq_positivo else "No",
                 "ebipq_rol": r.ebipq_rol,
+                "ciber_rol": r.ciber_rol,
                 "completa": "Sí" if r.completa else "No",
                 "motivos": " · ".join(r.motivos),
                 "fecha": r.creado_en.date().isoformat(),

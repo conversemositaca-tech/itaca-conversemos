@@ -25,15 +25,16 @@ def resp(**kw):
 
 
 class CatalogoTests(SimpleTestCase):
-    def test_estan_los_treinta_y_ocho_items(self):
+    def test_estan_los_sesenta_items(self):
         self.assertEqual(len(ins.EBIPQ), 14)
+        self.assertEqual(len(ins.CIBER), 22)
         self.assertEqual(len(ins.PHQ_A), 9)
         self.assertEqual(len(ins.GAD_7), 7)
         self.assertEqual(len(ins.ASQ), 4)
         self.assertEqual(len(ins.CONTEXTUALES), 4)
-        # 38 y no 42: los cuatro ítems extra del PHQ-A quedan fuera a
+        # 60 y no 64: los cuatro ítems extra del PHQ-A quedan fuera a
         # propósito (dos duplican el ASQ). Ver instrumentos.py.
-        self.assertEqual(len(ins.ORDEN), 38)
+        self.assertEqual(len(ins.ORDEN), 60)
 
     def test_ningun_identificador_se_repite(self):
         ids = [i["id"] for i in ins.ORDEN]
@@ -199,32 +200,33 @@ class ClasificarTests(SimpleTestCase):
         self.assertEqual(d["nivel"], ins.ROJO)
 
 
-class CiberacosoPendienteTests(SimpleTestCase):
-    """El bloque de ciberacoso existe pero todavía no tiene ítems.
+class CiberacosoTests(SimpleTestCase):
+    """ECIP-Q: 11 de victimización y 11 de agresión, pegados al presencial."""
 
-    Se prueba el estado intermedio a propósito. Un instrumento a medio entrar es
-    justo donde se cuelan los errores silenciosos: un bloque vacío que suma cero
-    y sale verde es indistinguible de un estudiante que contestó bien.
-    """
+    def test_van_los_veintidos_items_justo_despues_del_presencial(self):
+        ids = [i["id"] for i in ins.ORDEN]
+        self.assertEqual(len(ins.CIBER_VICTIMIZACION), 11)
+        self.assertEqual(len(ins.CIBER_AGRESION), 11)
+        self.assertEqual(ids[14:36], [f"ciber{n}" for n in range(1, 23)])
 
-    def test_no_agrega_preguntas_mientras_no_haya_items(self):
-        self.assertEqual(len(ins.CIBER), 0)
-        self.assertEqual(len(ins.ORDEN), 38)
+    def test_sufrirlo_una_o_dos_veces_al_mes_ya_es_ambar(self):
+        d = ins.clasificar({"ciber3": ins.UMBRAL_ROL})
+        self.assertEqual(d["nivel"], ins.AMBAR)
+        self.assertEqual(d["ciber"]["rol"], "Cibervíctima")
+        self.assertIn("Ciberacoso: reporta sufrirlo", " ".join(d["motivos"]))
 
-    def test_no_altera_el_nivel_de_nadie(self):
-        self.assertEqual(ins.clasificar({})["nivel"], ins.VERDE)
-        # Y tampoco rebaja a quien sí tiene señales por otro lado.
-        self.assertEqual(ins.clasificar({"asq1": 1})["nivel"], ins.ROJO)
+    def test_ejercerlo_marca_agresor_sin_tocar_el_presencial(self):
+        d = ins.clasificar({"ciber15": 4})
+        self.assertEqual(d["ciber"]["rol"], "Ciberagresor")
+        self.assertEqual(d["ebipq"]["rol"], "No involucrado")
+        self.assertIn("Ciberacoso: reporta ejercerlo", " ".join(d["motivos"]))
 
-    def test_el_hueco_queda_marcado_y_no_pasa_por_verde_legitimo(self):
-        ciber = ins.clasificar({})["ciber"]
-        self.assertTrue(ciber["pendiente"],
-                        "Sin ítems, el resultado debe declararse pendiente")
-        self.assertEqual(ciber["nivel"], ins.VERDE)
-
-    def test_no_inventa_motivos_de_un_bloque_que_no_se_aplicó(self):
-        motivos = " ".join(ins.clasificar({"ebipq1": 3})["motivos"])
-        self.assertNotIn("Ciberacoso", motivos)
+    def test_una_o_dos_veces_en_dos_meses_no_basta(self):
+        # Mismo corte que el presencial: por debajo de UMBRAL_ROL no hay rol.
+        d = ins.clasificar({"ciber1": 1, "ciber12": 1})
+        self.assertEqual(d["ciber"]["rol"], "No involucrado")
+        self.assertEqual(d["nivel"], ins.VERDE)
+        self.assertNotIn("Ciberacoso", " ".join(d["motivos"]))
 
     def test_el_umbral_es_el_mismo_para_los_dos_instrumentos(self):
         # Vive en una constante para que ajustar el corte del presencial mueva

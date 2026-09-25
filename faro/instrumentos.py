@@ -23,6 +23,10 @@ FUENTES
   recuperada del estudio ecuatoriano (2025). Se usa "ofensivas" donde el
   original dice "malsonantes": es la adaptación documentada en la validación
   peruana de Lima.
+· ECIP-Q — misma validación al castellano (Ortega-Ruiz, Del Rey y Casas, 2016),
+  Tabla 3 del artículo; el PDF está en Downloads/Tamizaje Escolar/Instrumentos.
+  Se aplica la misma sustitución de "malsonantes" por "ofensivas" que en el
+  EBIPQ, y se pone la tilde de "mí" que al original le falta en el ítem 5.
 """
 
 # ── Escalas de respuesta ────────────────────────────────────────────────────
@@ -67,25 +71,42 @@ EBIPQ = _items("ebipq", MARCO_EBIPQ, ESC_EBIPQ, [
     "He difundido rumores sobre alguien.",
 ])
 
-# ── Ciberacoso · PENDIENTE, sin ítems todavía ──────────────────────────────
-# Faro no mide ciberacoso, y en secundaria ese es el hueco más grande de la
-# batería. El instrumento elegido es la versión breve conjunta de acoso y
-# ciberacoso (EBCIP-QB; Álvarez-Marín, Pérez-Albéniz, Lucas-Molina,
-# Martínez-Valderrey y Fonseca-Pedrero, Psicothema 34(4), 2022, 571-581).
-#
-# Las listas están VACÍAS a propósito. El artículo describe el instrumento pero
-# no reproduce los ítems —ni él ni las otras cuatro fuentes que se revisaron—,
-# así que se pidieron a los autores. Escribirlos de memoria sería exactamente lo
-# que prohíbe la cabecera de este archivo: el cuestionario funcionaría igual, el
-# puntaje saldría igual de creíble, y el error aparecería el día que un
-# estudiante en riesgo quedara clasificado en verde.
-#
-# Mientras estén vacías, el bloque no suma preguntas ni altera el nivel de
-# nadie. Al llegar los ítems basta llenarlas y confirmar el umbral de
-# frecuencia: la puntuación y la clasificación ya están escritas más abajo.
+# ── ECIP-Q · ciberacoso · 22 ítems, 0–4, ventana de dos meses ──────────────
+# Faro no medía ciberacoso, y en secundaria ese era el hueco más grande de la
+# batería. Se había elegido la versión breve conjunta (EBCIP-QB; Álvarez-Marín
+# et al., Psicothema 34(4), 2022), pero ninguna fuente reproduce sus ítems y los
+# autores no respondieron. El 25 set 2026 Gaby decidió aplicar los dos
+# instrumentos completos, el presencial (EBIPQ) y el ciber (ECIP-Q): salen de la
+# misma validación española y comparten escala, ventana y criterio de rol. Los
+# textos son la Tabla 3 de Ortega-Ruiz, Del Rey y Casas (2016), con las dos
+# adaptaciones declaradas en la cabecera.
 MARCO_CIBER = "En los últimos dos meses, ¿con qué frecuencia ha pasado esto?"
-CIBER_VICTIMIZACION = []
-CIBER_AGRESION = []
+CIBER_VICTIMIZACION = [
+    "Alguien me ha dicho palabras ofensivas o me ha insultado usando el email o SMS.",
+    "Alguien ha dicho a otros palabras ofensivas sobre mí usando internet o SMS.",
+    "Alguien me ha amenazado a través de mensajes en internet o SMS.",
+    "Alguien ha pirateado mi cuenta de correo y ha sacado mi información personal.",
+    "Alguien ha pirateado mi cuenta y se ha hecho pasar por mí.",
+    "Alguien ha creado una cuenta falsa para hacerse pasar por mí.",
+    "Alguien ha colgado información personal sobre mí en internet.",
+    "Alguien ha colgado videos o fotos comprometidas mías en internet.",
+    "Alguien ha retocado fotos mías que yo había colgado en internet.",
+    "He sido excluido o ignorado de una red social o de chat.",
+    "Alguien ha difundido rumores sobre mí por internet.",
+]
+CIBER_AGRESION = [
+    "He dicho palabras ofensivas a alguien o le he insultado usando SMS o mensajes en internet.",
+    "He dicho palabras ofensivas sobre alguien a otras personas en mensajes por internet o por SMS.",
+    "He amenazado a alguien a través de SMS o mensajes en internet.",
+    "He pirateado la cuenta de correo de alguien y he robado su información personal.",
+    "He pirateado la cuenta de alguien y me he hecho pasar por él/ella.",
+    "He creado una cuenta falsa para hacerme pasar por otra persona.",
+    "He colgado información personal de alguien en internet.",
+    "He colgado videos o fotos comprometidas de alguien en internet.",
+    "He retocado fotos o videos de alguien que estaban colgados en internet.",
+    "He excluido o ignorado a alguien en una red social o chat.",
+    "He difundido rumores sobre alguien en internet.",
+]
 CIBER = _items("ciber", MARCO_CIBER, ESC_EBIPQ, CIBER_VICTIMIZACION + CIBER_AGRESION)
 
 # ── PHQ-A · estado de ánimo · 9 ítems que puntúan, 0–3 ─────────────────────
@@ -114,7 +135,7 @@ PHQ_A = _items("phq", MARCO_PHQ, ESC_DIAS, [
 #   · El de deterioro funcional sirve para diagnosticar depresión mayor, y este
 #     tamizaje no diagnostica.
 #   · El de distimia mira el último año, que no es la ventana del tamizaje.
-# Por eso el cuestionario tiene 38 ítems y no 42.
+# Por eso el PHQ-A aporta 9 ítems y no 13, y la batería suma 60 y no 64.
 
 # ── GAD-7 · ansiedad · 7 ítems, 0–3 ────────────────────────────────────────
 MARCO_GAD = "En los últimos 15 días, ¿con qué frecuencia has tenido este problema?"
@@ -285,18 +306,11 @@ def puntuar_ebipq(resp):
 
 
 def puntuar_ciber(resp):
-    """Ciberacoso, con el mismo criterio que el presencial.
+    """ECIP-Q, ciberacoso: 11 ítems de victimización y 11 de agresión.
 
-    Sin ítems cargados devuelve un resultado neutro y marcado como pendiente:
-    así el bloque no altera el nivel de nadie mientras se espera el instrumento,
-    y `pendiente` deja el hueco visible en vez de hacerlo pasar por un verde
-    legítimo. No se asume que los dos bloques midan lo mismo: cada uno se cuenta
-    por su propia lista.
+    Mismo criterio que el presencial. Cada bloque se cuenta por su propia lista:
+    no se asume que los dos instrumentos midan lo mismo ni que sean simétricos.
     """
-    if not CIBER:
-        return {"victimizacion": 0, "agresion": 0, "es_victima": False,
-                "es_agresor": False, "rol": ROLES_CIBER["ninguno"],
-                "nivel": VERDE, "pendiente": True}
     return _rol_por_frecuencia(resp, "ciber", len(CIBER_VICTIMIZACION),
                                len(CIBER_AGRESION), ROLES_CIBER)
 

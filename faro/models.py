@@ -177,6 +177,7 @@ class Respuesta(ModeloTenant):
     gad_total = models.PositiveSmallIntegerField(default=0)
     asq_positivo = models.BooleanField(default=False)
     ebipq_rol = models.CharField(max_length=24, blank=True, default="")
+    ciber_rol = models.CharField(max_length=30, blank=True, default="")
 
     class Meta:
         verbose_name = "Respuesta de tamizaje"
