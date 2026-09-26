@@ -1248,7 +1248,7 @@ export function TamizajeFaro({ token }) {
     } finally { setEnviando(false); }
   }
 
-  // Elegir una opción pasa sola a la siguiente: son 38 preguntas y obligar a un
+  // Elegir una opción pasa sola a la siguiente: son 60 preguntas y obligar a un
   // segundo toque en cada una es medio centenar de toques de más en un celular.
   //
   // Dos excepciones deliberadas:
@@ -1853,6 +1853,201 @@ export function SitioPublico() {
       <main>{pagina}</main>
       <AgendaPie />
       <AgendaWa />
+    </div>
+  );
+}
+
+// ── Autorización de la familia · /faro/a/<token> ─────────────────────────────
+// Reemplaza la hoja de papel del consentimiento. El apoderado lee lo mismo que
+// dice el documento (la API devuelve qué versión es), deja sus datos y decide.
+// El "no" también se envía: el colegio necesita saber cuántas familias se
+// negaron, y una que no responde no es una que dijo que no.
+export function AutorizacionFaro({ token }) {
+  const [info, setInfo] = useState(null);
+  const [err, setErr] = useState("");
+  const [d, setD] = useState({ estudiante: "", grado: "", seccion: "", apoderado: "",
+    documento: "", parentesco: "madre", correo: "", celular: "" });
+  const [enviando, setEnviando] = useState(false);
+  const [hecho, setHecho] = useState(null);
+
+  useEffect(() => {
+    api.faroAutorizacion(token).then(setInfo).catch((e) => setErr(e.message));
+    const prev = document.title;
+    document.title = "Faro · Autorización";
+    return () => { document.title = prev; };
+  }, [token]);
+
+  const marco = (hijos) => (
+    <div className="ag sw-sitio sw-tema">
+      <style>{AGENDA_CSS}{SW_CSS}</style>
+      <div className="fa">{hijos}</div>
+    </div>
+  );
+  const campo = (k, etiqueta, extra = {}) => (
+    <label className="fa-campo">
+      <span>{etiqueta}</span>
+      <input value={d[k]} onChange={(e) => setD((p) => ({ ...p, [k]: e.target.value }))} {...extra} />
+    </label>
+  );
+
+  async function decidir(autoriza) {
+    setEnviando(true); setErr("");
+    try {
+      await api.faroAutorizar(token, { ...d, autoriza });
+      setHecho({ autoriza });
+      window.scrollTo(0, 0);
+    } catch (e) {
+      setErr(e.message || "No pudimos registrar su respuesta. Inténtelo de nuevo.");
+    } finally { setEnviando(false); }
+  }
+
+  if (err && !info) return marco(
+    <div className="fa-q-wrap">
+      <h1 className="fa-h2">Este enlace no está disponible</h1>
+      <p className="fa-p">Pídale al colegio que le reenvíe el enlace correcto.</p>
+    </div>
+  );
+  if (!info) return marco(<div className="fa-q-wrap"><p className="fa-p">Cargando…</p></div>);
+  if (!info.abierto) return marco(
+    <div className="fa-q-wrap">
+      <h1 className="fa-h2">Este tamizaje ya cerró</h1>
+      <p className="fa-p">Si necesita una copia de lo que autorizó, escríbanos a {AGENDA_SITIO.correo}.</p>
+    </div>
+  );
+  if (hecho) return marco(
+    <div className="fa-q-wrap">
+      <h1 className="fa-h2">{hecho.autoriza ? "Gracias, quedó registrada su autorización" : "Quedó registrada su decisión"}</h1>
+      {hecho.autoriza ? (
+        <>
+          <p className="fa-p">
+            El resultado de {d.estudiante} le llegará a <b>{d.correo}</b> en un informe que explica
+            qué significa cada indicador. Si apareciera una señal que requiere acompañamiento, el
+            psicólogo responsable lo llama antes de que le llegue ese correo.
+          </p>
+          <p className="fa-p">
+            Guardamos la fecha y la versión exacta del texto que leyó ({info.version}). Puede pedirnos
+            una copia cuando quiera, y también retirar su autorización, escribiendo a {AGENDA_SITIO.correo}.
+          </p>
+        </>
+      ) : (
+        <p className="fa-p">
+          {d.estudiante} no participará en el tamizaje. No hay ninguna consecuencia: no afecta sus
+          notas, su matrícula ni su relación con el colegio. Si cambia de opinión, puede volver a
+          abrir este enlace.
+        </p>
+      )}
+    </div>
+  );
+
+  const listo = d.estudiante.trim().length >= 3 && d.apoderado.trim().length >= 3;
+  return marco(
+    <div className="fa-q-wrap">
+      <p className="fa-q-marco">Ítaca Conversemos · Programa Faro</p>
+      <h1 className="fa-h2" style={{ marginBottom: 6 }}>Autorización para el tamizaje de bienestar emocional</h1>
+      <p className="fa-lead" style={{ marginTop: 0 }}>{[info.institucion, info.ciudad].filter(Boolean).join(" · ")}</p>
+
+      <p className="fa-p">
+        El colegio de su hijo o hija nos invitó a realizar Faro, nuestro programa de tamizaje
+        preventivo de bienestar emocional, con los estudiantes de secundaria. Antes de aplicarlo
+        necesitamos su autorización, y queremos que la dé sabiendo exactamente en qué consiste.
+      </p>
+
+      <h2 className="fa-h2" style={{ fontSize: 20, marginTop: 30 }}>Qué es un tamizaje, y qué no es</h2>
+      <p className="fa-p">
+        Un tamizaje es una primera mirada: un cuestionario breve que ayuda a identificar si un
+        estudiante podría estar pasando por una dificultad emocional que merezca atención.
+      </p>
+      <p className="fa-p">
+        <b>No es un diagnóstico.</b> No dice que su hijo o hija tenga un trastorno ni reemplaza una
+        evaluación individual. <b>Tampoco es un examen:</b> no tiene nota, no influye en las
+        calificaciones y no queda en el registro académico.
+      </p>
+
+      <h2 className="fa-h2" style={{ fontSize: 20, marginTop: 30 }}>Qué se le va a preguntar</h2>
+      <ul className="fa-limites">
+        <li><b>Convivencia escolar:</b> si ha vivido o presenciado situaciones de maltrato entre compañeros, en persona o por internet, redes sociales y mensajes.</li>
+        <li><b>Estado de ánimo:</b> cómo se ha sentido en las últimas dos semanas.</li>
+        <li><b>Ansiedad:</b> preocupación, nerviosismo, dificultad para relajarse.</li>
+        <li><b>Señales de riesgo:</b> algunas preguntas directas sobre pensamientos de hacerse daño.</li>
+        <li><b>Cómo se siente en el colegio:</b> si tiene a quién acudir, cómo percibe el ambiente de su salón y si se siente seguro.</li>
+      </ul>
+      <p className="fa-p">
+        Se lo decimos con claridad porque preferimos que lo sepa antes y no después: sí, se le
+        pregunta de forma directa. Preguntar no induce esos pensamientos; le da a quien los tiene
+        una ocasión de decirlo.
+      </p>
+      <p className="fa-p">
+        Se aplican cinco cuestionarios breves de uso profesional, validados para adolescentes:
+        EBIPQ y ECIP-Q (convivencia, en persona y por internet), PHQ-A (estado de ánimo), GAD-7
+        (ansiedad) y ASQ (riesgo). En total son 60 preguntas y toma alrededor de veinte minutos,
+        en horario de tutoría, con el tutor presente y acompañado por personal de Ítaca Conversemos.
+      </p>
+
+      <h2 className="fa-h2" style={{ fontSize: 20, marginTop: 30 }}>Quién ve los resultados</h2>
+      <ul className="fa-limites">
+        <li><b>El colegio:</b> el resultado de su hijo o hija con su nombre, el nivel de atención que le corresponde y los puntajes de cada cuestionario, más el panorama por sección y grado. No recibe las respuestas una por una, y se compromete por convenio a usar esto solo para acompañar.</li>
+        <li><b>Usted:</b> el resultado individual, por correo electrónico y en un informe que explica qué significa cada indicador. Si aparece una señal que requiere acompañamiento, el psicólogo responsable lo llama antes de que le llegue ese informe.</li>
+        <li><b>El equipo de Ítaca Conversemos:</b> el único con acceso al detalle de las respuestas.</li>
+        <li><b>Profesores y tutores:</b> solo el panorama de su sección, sin nombres, salvo el tutor que la dirección designe por escrito.</li>
+        <li><b>Otros estudiantes:</b> nada, en ningún caso.</li>
+      </ul>
+
+      <h2 className="fa-h2" style={{ fontSize: 20, marginTop: 30 }}>Si aparece una señal de riesgo</h2>
+      <p className="fa-p">
+        Actuamos el mismo día: el psicólogo responsable conversa con el estudiante de manera privada
+        y luego se comunica con usted para orientarle sobre los pasos a seguir. Hay una excepción:
+        si las respuestas sugieren que el riesgo proviene del propio entorno familiar, la normativa
+        peruana de protección de la niñez nos obliga a comunicar el caso a las autoridades
+        competentes antes que a la familia.
+      </p>
+
+      <h2 className="fa-h2" style={{ fontSize: 20, marginTop: 30 }}>Qué pasa con los datos</h2>
+      <p className="fa-p">
+        Son datos sensibles, tratados conforme a la Ley N.° 29733. Se usan únicamente para este
+        tamizaje y el acompañamiento que derive de él; no se venden ni se comparten. Se conservan
+        en un sistema de acceso restringido por un máximo de dos años, y luego se eliminan los que
+        identifican al estudiante. Sus propios datos (nombre, documento, correo y celular) sirven
+        solo para entregarle el informe y comunicarnos con usted.
+      </p>
+      <p className="fa-p">
+        <b>La participación es voluntaria.</b> Puede no autorizar sin dar explicaciones y sin
+        consecuencias, retirar su autorización en cualquier momento, y su hijo o hija también
+        decide: se le pide su propio asentimiento y puede dejar de responder cuando quiera.
+      </p>
+
+      <div className="fa-form" style={{ marginTop: 30 }}>
+        {campo("estudiante", "Nombre completo del estudiante", { autoComplete: "off" })}
+        {campo("grado", "Grado", { placeholder: "3.° secundaria" })}
+        {campo("seccion", "Sección", { placeholder: "B" })}
+        {campo("apoderado", "Su nombre completo", { autoComplete: "name" })}
+        <label className="fa-campo">
+          <span>Usted es</span>
+          <select value={d.parentesco} onChange={(e) => setD((p) => ({ ...p, parentesco: e.target.value }))}>
+            <option value="madre">Madre</option>
+            <option value="padre">Padre</option>
+            <option value="apoderado">Apoderado/a</option>
+          </select>
+        </label>
+        {campo("documento", "Su documento de identidad", { inputMode: "numeric" })}
+        {campo("correo", "Su correo (ahí le llega el informe)", { type: "email", autoComplete: "email" })}
+        {campo("celular", "Su celular", { inputMode: "tel", autoComplete: "tel" })}
+      </div>
+
+      <p className="fa-p" style={{ marginTop: 22 }}>
+        Al elegir una opción declara que leyó este texto (versión {info.version}), que entendió en
+        qué consiste el tamizaje, quién verá los resultados y qué ocurre si aparece una señal de
+        riesgo. Queda registrada la fecha y la versión exacta que leyó.
+      </p>
+      {err ? <p className="fa-error" role="alert">{err}</p> : null}
+      <div className="fa-q-botones" style={{ marginTop: 18 }}>
+        <button className="fa-q-atras" disabled={!listo || enviando} onClick={() => decidir(false)}>
+          No autorizo
+        </button>
+        <button className="fa-enviar" style={{ marginTop: 0 }} disabled={!listo || enviando}
+          onClick={() => decidir(true)}>
+          {enviando ? "Registrando…" : "Sí autorizo"}
+        </button>
+      </div>
     </div>
   );
 }
