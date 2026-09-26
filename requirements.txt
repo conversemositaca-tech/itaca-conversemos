@@ -20,5 +20,7 @@ google-api-python-client==2.197.0
 google-auth==2.55.0
 google-auth-httplib2==0.4.0
 httplib2==0.31.2
+# --- Informes PDF de Faro para las familias ---
+reportlab==5.0.1
 # --- Transcripción de notas con Whisper (local) ---
 faster-whisper==1.2.1

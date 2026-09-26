@@ -241,6 +241,20 @@ SITIO_CLINICA_TOKEN = os.getenv("SITIO_CLINICA_TOKEN", "")
 # la reputacion entre las dos.
 SITIO_URL_PUBLICA = os.getenv("SITIO_URL_PUBLICA", "")
 
+# --- Correo saliente (informes de Faro a las familias) ---
+# Sin EMAIL_HOST el correo se imprime en la consola: en desarrollo se ve lo que
+# se mandaría. En producción, la vista de envío se niega a trabajar con ese
+# backend para no marcar como enviado un informe que nadie recibió.
+EMAIL_HOST = os.getenv("EMAIL_HOST", "")
+EMAIL_BACKEND = ("django.core.mail.backends.smtp.EmailBackend" if EMAIL_HOST
+                 else "django.core.mail.backends.console.EmailBackend")
+EMAIL_PORT = int(os.getenv("EMAIL_PORT", "587"))
+EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", "")
+EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD", "")
+EMAIL_USE_TLS = os.getenv("EMAIL_USE_TLS", "1") == "1"
+EMAIL_TIMEOUT = 20
+DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "Ítaca Conversemos <conversemos.itaca@gmail.com>")
+
 # --- WhatsApp vía Evolution API ---
 # URL y API key del servidor Evolution (en EasyPanel). La "instancia" es la conexión
 # de WhatsApp; puede definirse global aquí o por clínica (Clinica.whatsapp_instance).

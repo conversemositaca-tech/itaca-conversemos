@@ -27,10 +27,11 @@ from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
+from django.conf import settings
 from django.utils import timezone
 
 from core import permisos
-from . import instrumentos, registro
+from . import informes, instrumentos, registro
 from .models import Alerta, Aplicacion, Autorizacion, clave_estudiante
 
 
@@ -147,7 +148,7 @@ class AutorizacionView(APIView):
 
     # Se guarda con cada firma. Si el texto cambia, esto dice quién firmó cuál;
     # un consentimiento sin versión no sirve para defender nada después.
-    VERSION = "2026-09-v3"
+    VERSION = "2026-09-v4"
 
     def _aplicacion(self, token):
         ap = Aplicacion.objects.filter(token_apoderado=token).first()
@@ -393,6 +394,7 @@ class ResultadosView(_PanelBase):
                 "fecha": r.creado_en.date().isoformat(),
             })
         return Response({
+            "id": ap.id,
             "institucion": ap.institucion, "ciudad": ap.ciudad,
             "estado": ap.get_estado_display(), "filas": filas,
             "totales": {
@@ -417,11 +419,36 @@ def _dato_aplicacion(ap, base, rs=None):
         "avisar_whatsapp": ap.avisar_whatsapp,
         "enlace_estudiante": f"{base}/faro/t/{ap.token_estudiante}",
         "enlace_colegio": f"{base}/faro/{ap.token}",
+        "enlace_apoderado": f"{base}/faro/a/{ap.token_apoderado}",
         "autorizados": ap.autorizados,
         "evaluados": rs.count(),
         "rojos": rs.filter(nivel="rojo").count(),
         "ambares": rs.filter(nivel="ambar").count(),
     }
+
+
+class EnviarInformesView(_PanelBase):
+    """POST /api/faro/panel/enviar/<pk>/ → los informes que faltan, a las familias.
+
+    Lo aprieta el equipo clínico cuando ya revisó la hoja de resultados. Los
+    frenos (rojo sin atender, ya enviado, sin correo) viven en `informes`, y la
+    respuesta dice qué pasó con cada uno para que el botón no sea una caja
+    negra.
+    """
+
+    def post(self, request, pk):
+        ap = Aplicacion.objects.del_tenant_actual().filter(pk=pk).first()
+        if ap is None:
+            raise Http404
+        # Con el backend de consola el correo "sale" a los logs y nadie lo
+        # recibe, pero la autorización quedaría marcada como enviada. Mejor
+        # negarse y decir qué falta.
+        if settings.EMAIL_BACKEND.endswith("console.EmailBackend") and not settings.DEBUG:
+            return Response(
+                {"detail": "Falta configurar el correo saliente (EMAIL_HOST y sus credenciales) "
+                           "antes de enviar informes."},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        return Response(informes.enviar_pendientes(ap))
 
 
 class AplicacionesView(_PanelBase):

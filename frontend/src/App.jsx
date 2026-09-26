@@ -12333,6 +12333,25 @@ function Faro({ showToast }) {
     finally { setCreando(false); }
   }
 
+  const [enviandoInformes, setEnviandoInformes] = useState(false);
+  async function enviarInformes() {
+    if (!resultados) return;
+    setEnviandoInformes(true);
+    try {
+      const r = await api.faroEnviarInformes(resultados.id);
+      const o = r.omitidos || {};
+      const partes = [`${r.enviados} enviados`];
+      if (r.errores) partes.push(`${r.errores} con error`);
+      if (o.rojo_pendiente) partes.push(`${o.rojo_pendiente} rojos esperan su alerta`);
+      if (o.sin_autorizacion) partes.push(`${o.sin_autorizacion} sin autorización emparejada`);
+      if (o.sin_correo) partes.push(`${o.sin_correo} sin correo`);
+      if (o.ya_enviado) partes.push(`${o.ya_enviado} ya enviados`);
+      showToast(partes.join(" · "));
+    } catch (e) {
+      showToast(e.message || "No se pudieron enviar los informes");
+    } finally { setEnviandoInformes(false); }
+  }
+
   async function verResultados(ap) {
     try { setResultados({ ...(await api.faroResultados(ap.id)), id: ap.id }); }
     catch (e) { showToast("Error: " + e.message); }
@@ -12473,6 +12492,8 @@ function Faro({ showToast }) {
                     <button className="ca-link" onClick={() => copiar(ap.enlace_estudiante)}>Para el aula</button>
                     {" · "}
                     <button className="ca-link" onClick={() => copiar(ap.enlace_colegio)}>Para la dirección</button>
+                    {" · "}
+                    <button className="ca-link" onClick={() => copiar(ap.enlace_apoderado)}>Para las familias</button>
                   </td>
                   <td><button className="ca-btn ghost" onClick={() => verResultados(ap)}>Resultados</button></td>
                 </tr>
@@ -12557,14 +12578,16 @@ function Faro({ showToast }) {
           <div className="ca-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 620 }}>
             <h2 className="ca-secth">{recien.institucion}</h2>
             <p className="ca-muted" style={{ marginTop: -6, fontSize: 13.5 }}>
-              Son dos enlaces distintos a propósito. No se cambian ni vencen, así que el del aula
-              se puede dejar impreso o en la pizarra.
+              Son tres enlaces distintos a propósito. No se cambian ni vencen: el del aula se puede
+              dejar impreso o en la pizarra, y el de las familias se manda por el canal del colegio.
             </p>
 
             {[["Para el aula", recien.enlace_estudiante,
                "Lo abre cada estudiante y responde el tamizaje. No muestra resultados de nadie."],
               ["Para la dirección", recien.enlace_colegio,
-               "Panel del colegio. Solo cifras del conjunto: nunca un nombre."]].map(
+               "Panel del colegio: la lista por grado y sección con el nivel de cada estudiante. Nunca las respuestas."],
+              ["Para las familias", recien.enlace_apoderado,
+               "Lo abre el apoderado, lee el consentimiento y autoriza o no. Ahí deja el correo al que le llega el informe."]].map(
               ([titulo, enlace, nota]) => (
                 <div key={titulo} style={{ marginTop: 14, padding: "12px 14px",
                   background: "var(--bg)", borderRadius: 8 }}>
@@ -12636,12 +12659,20 @@ function Faro({ showToast }) {
               />
             </div>
             <p className="ca-muted" style={{ fontSize: 12.5 }}>
-              Esta hoja lleva nombres y es para el equipo clínico. <b>El colegio no la recibe</b>:
-              a la institución se le entrega el informe agregado por grado y sección, según el
-              convenio firmado.
+              Esta hoja es para el equipo clínico: lleva los motivos de cada nivel. <b>El colegio
+              no la recibe</b>: en su panel ve el nivel y los puntajes de cada estudiante, nunca
+              los motivos ni las respuestas.
             </p>
-            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 14 }}>
+            <p className="ca-muted" style={{ fontSize: 12.5 }}>
+              <b>Informes a las familias.</b> Se envían por correo, con PDF, a los apoderados que
+              autorizaron y dejaron correo. Un rojo no sale hasta que su alerta esté atendida, y
+              cada familia lo recibe una sola vez.
+            </p>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 9, marginTop: 14 }}>
               <button className="ca-btn ghost" onClick={() => setResultados(null)}>Cerrar</button>
+              <button className="ca-btn" onClick={enviarInformes} disabled={enviandoInformes}>
+                {enviandoInformes ? "Enviando…" : "Enviar informes a las familias"}
+              </button>
             </div>
           </div>
         </div>

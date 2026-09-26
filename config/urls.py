@@ -55,7 +55,7 @@ from mensajes.materiales import MaterialViewSet
 from mensajes.monitor_evolution import EvolutionEstadoView, EvolutionInstanciasView
 from mensajes.webhook_evolution import EvolutionWebhookView
 from pacientes.api import AdjuntoViewSet, AplicacionEscalaViewSet, AtencionViewSet, BloqueoAgendaViewSet, CitaViewSet, ContactoProfesionalViewSet, ObjetivoTerapeuticoViewSet, PacienteViewSet, RespuestaNPSViewSet, TareaViewSet, TranscribirView
-from faro.api import (AlertasView, AplicacionesView, AtenderAlertaView, AutorizacionView,
+from faro.api import (AlertasView, AplicacionesView, AtenderAlertaView, AutorizacionView, EnviarInformesView,
                       CuestionarioView, PanelFaroView, ResultadosView)
 from core.sitio import SitioFaroView, SitioFotoView, SitioVideoView, SitioInfoView
 from pacientes.api_duplicados import (
@@ -203,6 +203,7 @@ urlpatterns = [
     path("api/faro/panel/alertas/", AlertasView.as_view(), name="faro-alertas"),
     path("api/faro/panel/alertas/<int:pk>/", AtenderAlertaView.as_view(), name="faro-atender"),
     path("api/faro/panel/resultados/<int:pk>/", ResultadosView.as_view(), name="faro-resultados"),
+    path("api/faro/panel/enviar/<int:pk>/", EnviarInformesView.as_view(), name="faro-enviar"),
     path("api/faro/<str:token>/", PanelFaroView.as_view(), name="faro-panel"),
     path("api/sitio/faro/", SitioFaroView.as_view(), name="sitio-faro"),
     path("api/sitio/foto/<int:pk>/", SitioFotoView.as_view(), name="sitio-foto"),
