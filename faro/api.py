@@ -62,7 +62,7 @@ class PanelFaroView(APIView):
             "fecha_informe": ap.fecha_informe.isoformat() if ap.fecha_informe else None,
             "hay_datos": hay_datos,
             "matriculados": ap.matriculados,
-            "autorizados": ap.autorizados,
+            "autorizados": ap.autorizados_efectivos,
             "evaluados": ap.evaluados,
             "participacion": ap.participacion,
             "grados": _por_grado(ap),

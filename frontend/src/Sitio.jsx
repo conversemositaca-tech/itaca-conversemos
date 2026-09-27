@@ -438,6 +438,22 @@ const SW_CSS = `
   background:rgba(0,120,140,.06); border:1px solid var(--b);
 }
 .fa-aviso p { margin:0; font-size:14.5px; line-height:1.65; color:var(--t2); }
+.fa-grados { display:grid; gap:12px; margin-top:18px; }
+.fa-grado { border:1px solid #E3E8EC; border-radius:14px; padding:14px 16px; }
+.fa-grado-cab { display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; font-size:15px; }
+.fa-grado-cab b { font-weight:600; color:var(--t); }
+.fa-grado-cab span, .fa-seccion span { font-size:14px; color:var(--t2); }
+.fa-seccion { display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; padding:8px 0 0; border-top:1px dashed #E3E8EC; margin-top:8px; }
+.fa-pt { display:inline-block; width:9px; height:9px; border-radius:50%; margin:0 4px 0 2px; vertical-align:middle; }
+.fa-pt.v { background:#2E8B57; } .fa-pt.a { background:#D89B1B; } .fa-pt.r { background:#B3261E; }
+.fa-tabla-wrap { overflow-x:auto; margin-top:16px; }
+.fa-tabla { width:100%; border-collapse:collapse; font-size:14px; }
+.fa-tabla th, .fa-tabla td { text-align:left; padding:9px 10px; border-bottom:1px solid #E3E8EC; white-space:nowrap; }
+.fa-tabla th { font-size:12.5px; font-weight:600; color:var(--t2); text-transform:uppercase; letter-spacing:0.04em; }
+.fa-nivel { display:inline-block; padding:3px 10px; border-radius:999px; font-size:12.5px; font-weight:600; }
+.fa-nivel.verde { background:#E4F3EA; color:#1F5F43; }
+.fa-nivel.ambar { background:#FBF0D6; color:#7A5A0D; }
+.fa-nivel.rojo { background:#F9E1DE; color:#8C1D15; }
 .fa-aviso b { color:var(--t); }
 
 .sw-video-btn {
@@ -1475,6 +1491,8 @@ export function TamizajeFaro({ token }) {
 // SIEMPRE agregado: ni un estudiante identificado, ni un dato que permita
 // deducir quién es quién. Esa regla está firmada en el consentimiento de los
 // apoderados y en el convenio de la institución.
+const NIVEL_LABEL = { verde: "Verde", ambar: "Ámbar", rojo: "Rojo" };
+
 export function PanelFaro({ token }) {
   const [d, setD] = useState(null);
   const [err, setErr] = useState("");
@@ -1542,20 +1560,71 @@ export function PanelFaro({ token }) {
       <section className="fa-sec" style={{ paddingTop: 0 }}>
         <div className="fa-wrap">
           {d.hay_datos ? (
-            <div className="fa-card fa-vacio">
-              <h2>Panorama por grado</h2>
-              <p>
-                El detalle por grado y sección se publica aquí junto con el informe institucional.
-                {d.fecha_informe ? ` Entregado el ${d.fecha_informe}.` : " Está en preparación."}
-              </p>
-              <div className="fa-aviso">
+            <>
+              <div className="fa-card fa-vacio">
+                <h2>Panorama por grado</h2>
                 <p>
-                  <b>Este panel no muestra estudiantes.</b> Los casos que requieren atención se
-                  comunican con la familia y con el psicólogo del colegio, según el protocolo
-                  firmado. La institución recibe el panorama, nunca nombres junto a resultados.
+                  Cuántos estudiantes quedaron en cada nivel de atención, por grado y por sección.
+                  {d.fecha_informe ? ` Informe institucional entregado el ${d.fecha_informe}.` : ""}
                 </p>
+                <div className="fa-grados">
+                  {(d.grados || []).map((g) => (
+                    <div key={g.grado} className="fa-grado">
+                      <div className="fa-grado-cab">
+                        <b>{g.grado}</b>
+                        <span>
+                          {g.evaluados} evaluados · <i className="fa-pt v" />{g.verde} verde
+                          · <i className="fa-pt a" />{g.ambar} ámbar · <i className="fa-pt r" />{g.rojo} rojo
+                        </span>
+                      </div>
+                      {(g.secciones || []).map((sec) => (
+                        <div key={sec.seccion} className="fa-seccion">
+                          <span>Sección {sec.seccion}</span>
+                          <span>{sec.evaluados} evaluados · {sec.verde} verde · {sec.ambar} ámbar · {sec.rojo} rojo</span>
+                        </div>
+                      ))}
+                    </div>
+                  ))}
+                </div>
               </div>
-            </div>
+
+              <div className="fa-card fa-vacio">
+                <h2>Resultado por estudiante</h2>
+                <p>
+                  El nivel de atención y los puntajes de cada cuestionario. No aparecen las respuestas
+                  una por una: eso queda en el equipo clínico de Ítaca Conversemos.
+                </p>
+                <div className="fa-tabla-wrap">
+                  <table className="fa-tabla">
+                    <thead><tr>
+                      <th>Estudiante</th><th>Grado</th><th>Sección</th><th>Nivel</th>
+                      <th>Ánimo</th><th>Ansiedad</th><th>Riesgo</th><th>Acoso</th><th>Ciberacoso</th><th>Completo</th>
+                    </tr></thead>
+                    <tbody>
+                      {(d.estudiantes || []).map((e, i) => (
+                        <tr key={i}>
+                          <td>{e.nombre}</td><td>{e.grado}</td><td>{e.seccion}</td>
+                          <td><span className={`fa-nivel ${e.nivel}`}>{NIVEL_LABEL[e.nivel] || e.nivel}</span></td>
+                          <td>{e.phq_total}/27</td><td>{e.gad_total}/21</td>
+                          <td>{e.asq_positivo ? "Con señales" : "Sin señales"}</td>
+                          <td>{e.ebipq_rol || "—"}</td><td>{e.ciber_rol || "—"}</td>
+                          <td>{e.completa ? "Sí" : "No"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="fa-aviso">
+                  <p>
+                    <b>Cómo leerlo.</b> Verde: sin indicadores relevantes. Ámbar: conviene seguimiento,
+                    y el caso llega al psicólogo del colegio. Rojo: se atendió el mismo día según el
+                    protocolo y la familia ya fue contactada. Esta información es para acompañar: el
+                    convenio no permite archivarla en el registro académico ni usarla para decisiones
+                    de matrícula o sanción.
+                  </p>
+                </div>
+              </div>
+            </>
           ) : (
             <div className="fa-card fa-vacio">
               <h2>Todavía no hay resultados</h2>
@@ -1565,7 +1634,7 @@ export function PanelFaro({ token }) {
               </p>
               <ol>
                 <li><b>Convenio y protocolo firmados.</b> El protocolo define quién responde ante una alerta y en cuánto tiempo. Sin él no se aplica nada.</li>
-                <li><b>Autorizaciones recogidas.</b> Le entregamos los formatos de consentimiento y asentimiento listos para repartir.</li>
+                <li><b>Autorizaciones recogidas.</b> Las familias autorizan desde el enlace en línea que le entregamos, o en papel con los formatos de consentimiento y asentimiento.</li>
                 <li><b>Aplicación por aulas</b>, en horario de tutoría, con el tutor presente.</li>
                 <li><b>Informe y reunión de devolución</b> dentro de los quince días hábiles.</li>
               </ol>
