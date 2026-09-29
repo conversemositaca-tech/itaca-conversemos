@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import InputClave from "./InputClave";
 
 const C = {
   bg: "#F4FBFD", surface: "#FFFFFF", ink: "#343434", inkSoft: "#555555",
@@ -67,7 +68,7 @@ export default function Login({ onLogin }) {
         </div>
         <div style={{ marginBottom: 14 }}>
           <div style={label}>Contraseña</div>
-          <input style={input} type="password" name="password" value={password} autoFocus={!!guardado} autoComplete="current-password"
+          <InputClave style={input} name="password" value={password} autoFocus={!!guardado} autoComplete="current-password"
             onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" />
         </div>
 
