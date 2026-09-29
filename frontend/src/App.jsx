@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { Activity, AlertTriangle, ArrowDown, ArrowUp, Award, BarChart3, Bell, BookUser, Building2, Cake, Calendar, Check, ChevronDown, ChevronLeft, ChevronRight, ClipboardList, Clock, Compass, Copy, DoorOpen, Download, ExternalLink, FileDown, FileSpreadsheet, FileText, FolderOpen, GraduationCap, Heart, HeartHandshake, HeartPulse, Home, KeyRound, Landmark, Leaf, Lightbulb, LogOut, MapPin, Megaphone, Menu, MessageCircle, Mic, Paperclip, Pencil, Phone, Pill, Play, Plus, Presentation, Receipt, RotateCcw, Search, Send, Shield, Smile, Sparkles, Target, Trash2, TrendingUp, Trophy, Upload, UserCog, UserPlus, UserRound, Users, X } from "lucide-react";
+import InputClave from "./InputClave";
 import { api } from "./api";
 import { origenGuardado } from "./origen";
 import { MENU_SITIO, SITE_ROUTES, propsEnlace, normalizarRuta } from "./rutas";
@@ -9681,7 +9682,7 @@ function NumeroWaCard({ numero, esNuevo, onSaved, onCancel, showToast }) {
 
       <div style={{ marginBottom: 16 }}>
         <div className="ca-label">Access Token <span style={{ color: "#B4564E" }}>*</span></div>
-        <input className="ca-input" type="password" value={token} onChange={(e) => setToken(e.target.value)}
+        <InputClave className="ca-input" value={token} onChange={(e) => setToken(e.target.value)}
           placeholder={numero?.token_set ? "•••••••• (guardado · escribe uno nuevo para cambiarlo)" : "Pega el token permanente de este número"} />
       </div>
 
@@ -13710,15 +13711,15 @@ function CambiarPasswordModal({ onClose, onSave }) {
         </div>
         <div style={{ marginBottom: 12 }}>
           <div className="ca-label">Contraseña actual</div>
-          <input className="ca-input" type="password" value={actual} onChange={(e) => setActual(e.target.value)} autoFocus />
+          <InputClave className="ca-input" value={actual} onChange={(e) => setActual(e.target.value)} autoFocus />
         </div>
         <div style={{ marginBottom: 12 }}>
           <div className="ca-label">Nueva contraseña</div>
-          <input className="ca-input" type="password" value={nueva} onChange={(e) => setNueva(e.target.value)} placeholder="mínimo 6 caracteres" />
+          <InputClave className="ca-input" value={nueva} onChange={(e) => setNueva(e.target.value)} placeholder="mínimo 6 caracteres" />
         </div>
         <div style={{ marginBottom: 14 }}>
           <div className="ca-label">Repetir nueva contraseña</div>
-          <input className="ca-input" type="password" value={rep} onChange={(e) => setRep(e.target.value)} />
+          <InputClave className="ca-input" value={rep} onChange={(e) => setRep(e.target.value)} />
         </div>
         {error && <div style={{ fontSize: 13, color: "#B4564E", marginBottom: 12 }}>{error}</div>}
         <div style={{ display: "flex", gap: 9, justifyContent: "flex-end" }}>
