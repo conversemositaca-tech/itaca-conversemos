@@ -200,6 +200,9 @@ REST_FRAMEWORK = {
         # de IP, pero no el correo de la persona a la que quiere entrar.
         "login_ip": "30/min",
         "login_cuenta": "8/min",
+        # Integraciones servidor a servidor (Eli, crones): holgado para el uso
+        # real, pero corta a quien pruebe tokens o vacíe datos en bucle.
+        "integracion": "120/min",
     },
     # Detrás del proxy de Railway, DRF vería SIEMPRE la IP del proxy y contaría a
     # todo el mundo en el mismo cubo: un atacante dejaría fuera a las coordinadoras.
@@ -225,6 +228,11 @@ CSRF_TRUSTED_ORIGINS.append("https://*.up.railway.app")
 # X-Integracion-Token para guardar atenciones desde WhatsApp. Si queda vacío,
 # la integración está apagada (los endpoints /api/integraciones/* rechazan todo).
 ITACA_INTEGRACION_TOKEN = os.getenv("ITACA_INTEGRACION_TOKEN", "")
+# Tokens por alcance (core/integraciones.py). Vacío = ese alcance sigue
+# aceptando el compartido; con valor, el compartido deja de abrirlo.
+ITACA_TOKEN_ELI = os.getenv("ITACA_TOKEN_ELI", "")
+ITACA_TOKEN_TAREAS = os.getenv("ITACA_TOKEN_TAREAS", "")
+ITACA_TOKEN_RESPALDO = os.getenv("ITACA_TOKEN_RESPALDO", "")
 
 
 # --- Integración con el tablero financiero de Soto (Google Apps Script) ---
@@ -258,6 +266,7 @@ import sys as _sys
 EJECUTANDO_TESTS = len(_sys.argv) > 1 and _sys.argv[1] == "test"
 if EJECUTANDO_TESTS:
     REST_FRAMEWORK["DEFAULT_THROTTLE_RATES"]["captacion"] = "100000/min"
+    REST_FRAMEWORK["DEFAULT_THROTTLE_RATES"]["integracion"] = "100000/min"
     # El hasher de producción (PBKDF2, ~1 M iteraciones) tarda casi 1 s por
     # contraseña: con cientos de usuarios de prueba la suite pasaba de 55 min.
     # MD5 SOLO aquí: este bloque exige el comando `manage.py test`, que nunca

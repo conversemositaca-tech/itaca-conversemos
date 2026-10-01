@@ -17,6 +17,7 @@ from .services import programacion
 class ProcesarPendientesView(APIView):
     authentication_classes = []
     permission_classes = [TokenIntegracion]
+    alcance_integracion = "tareas"
 
     def post(self, request):
         d = request.data if isinstance(request.data, dict) else {}

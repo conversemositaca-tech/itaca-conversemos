@@ -11,6 +11,7 @@ sale la clínica, y TODO se filtra/crea con esa clínica explícitamente (aislam
 multitenant · Ley 29733). No dependemos del middleware de tenant porque estas
 rutas no tienen usuario logueado.
 """
+import hmac
 import re
 from datetime import date, timedelta
 
@@ -19,6 +20,7 @@ from django.db.models import Q
 from rest_framework import status
 from rest_framework.permissions import BasePermission
 from rest_framework.response import Response
+from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
 from django.utils import timezone
@@ -33,22 +35,43 @@ def _solo_digitos(s):
     return "".join(ch for ch in (s or "") if ch.isdigit())
 
 
-def _token_esperado():
-    return (getattr(settings, "ITACA_INTEGRACION_TOKEN", "") or "").strip()
+# Cada consumidor tiene su propio alcance y, opcionalmente, su propio token.
+# Mientras un alcance no tenga token propio, acepta el token compartido
+# (ITACA_INTEGRACION_TOKEN) para no cortar a Eli ni a los crones al desplegar.
+# En cuanto se configura el token propio, el compartido deja de abrir ese
+# alcance: así el volcado de la base deja de depender del token que usa Eli.
+TOKEN_POR_ALCANCE = {
+    "eli": "ITACA_TOKEN_ELI",
+    "tareas": "ITACA_TOKEN_TAREAS",
+    "respaldo": "ITACA_TOKEN_RESPALDO",
+}
+
+
+def _leer(nombre):
+    return (getattr(settings, nombre, "") or "").strip()
+
+
+def tokens_validos(alcance):
+    propio = _leer(TOKEN_POR_ALCANCE[alcance])
+    if propio:
+        return [propio]
+    compartido = _leer("ITACA_INTEGRACION_TOKEN")
+    return [compartido] if compartido else []
 
 
 class TokenIntegracion(BasePermission):
-    """Permite el acceso solo si la cabecera trae el token compartido correcto.
-    Si no hay token configurado en el servidor, la integración queda apagada."""
+    """Permite el acceso solo si la cabecera trae un token válido para el
+    alcance de la vista (`alcance_integracion`). Sin token configurado, la
+    integración queda apagada. La comparación es en tiempo constante."""
 
     message = "Token de integración inválido."
 
     def has_permission(self, request, view):
-        esperado = _token_esperado()
-        if not esperado:
+        alcance = getattr(view, "alcance_integracion", "eli")
+        enviado = (request.headers.get("X-Integracion-Token") or "").strip().encode()
+        if not enviado:
             return False
-        enviado = (request.headers.get("X-Integracion-Token") or "").strip()
-        return bool(enviado) and enviado == esperado
+        return any(hmac.compare_digest(enviado, t.encode()) for t in tokens_validos(alcance))
 
 
 def _psicologo_por_telefono(telefono):
@@ -75,6 +98,9 @@ def _paciente_payload(p):
 class _Base(APIView):
     authentication_classes = []          # servidor-a-servidor: sin sesión ni CSRF
     permission_classes = [TokenIntegracion]
+    alcance_integracion = "eli"
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "integracion"
 
 
 class PsicologoView(_Base):
@@ -355,6 +381,8 @@ class ResumenDiarioView(_Base):
 
 
 class RecordatoriosView(_Base):
+    alcance_integracion = "tareas"
+
     """Dispara el envío de los recordatorios de las citas del día.
 
     Existe para que un cron en la nube (kira-bot) los mande cada mañana, en vez
@@ -381,6 +409,8 @@ class RecordatoriosView(_Base):
 
 
 class RespaldoView(_Base):
+    alcance_integracion = "respaldo"
+
     """Entrega un volcado completo de los datos, comprimido, para que un cron de
     afuera lo guarde. Así Itaca no necesita credenciales de almacenamiento.
 

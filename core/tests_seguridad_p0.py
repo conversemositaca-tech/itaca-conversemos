@@ -151,3 +151,47 @@ class TokensDeConsentimientoTests(_Clinica):
         self.assertIn(self.doc_ajeno.token, json.dumps(filas))
 
 
+class TokenDeIntegracionTests(_Clinica):
+    """P0-S3: cada consumidor con su alcance; el token de Eli no vacía la base."""
+
+    RESPALDO = "/api/integraciones/respaldo/?resumen=1"
+    ELI = "/api/integraciones/psicologo/?telefono=51987000111"
+
+    def _get(self, url, token):
+        return self.client.get(url, HTTP_X_INTEGRACION_TOKEN=token).status_code
+
+    def test_sin_tokens_todo_cerrado(self):
+        with self.settings(ITACA_INTEGRACION_TOKEN="", ITACA_TOKEN_ELI="", ITACA_TOKEN_RESPALDO=""):
+            self.assertEqual(self._get(self.RESPALDO, ""), 403)
+            self.assertEqual(self._get(self.ELI, "algo"), 403)
+
+    def test_compatibilidad_el_compartido_sigue_abriendo_mientras_no_haya_propio(self):
+        with self.settings(ITACA_INTEGRACION_TOKEN="comp", ITACA_TOKEN_ELI="", ITACA_TOKEN_RESPALDO=""):
+            self.assertEqual(self._get(self.ELI, "comp"), 200)
+            self.assertEqual(self._get(self.RESPALDO, "comp"), 200)
+
+    def test_con_token_propio_el_compartido_ya_no_abre_el_respaldo(self):
+        with self.settings(ITACA_INTEGRACION_TOKEN="comp", ITACA_TOKEN_RESPALDO="resp", ITACA_TOKEN_ELI=""):
+            self.assertEqual(self._get(self.RESPALDO, "comp"), 403)
+            self.assertEqual(self._get(self.RESPALDO, "resp"), 200)
+            self.assertEqual(self._get(self.ELI, "comp"), 200)
+            self.assertEqual(self._get(self.ELI, "resp"), 403)
+
+    def test_el_token_de_eli_no_abre_tareas_ni_respaldo(self):
+        with self.settings(ITACA_INTEGRACION_TOKEN="", ITACA_TOKEN_ELI="eli",
+                           ITACA_TOKEN_TAREAS="tar", ITACA_TOKEN_RESPALDO="resp"):
+            self.assertEqual(self._get(self.RESPALDO, "eli"), 403)
+            r = self.client.post("/api/integraciones/recordatorios/", {"dry": True},
+                                 content_type="application/json", HTTP_X_INTEGRACION_TOKEN="eli")
+            self.assertEqual(r.status_code, 403)
+            r = self.client.post("/api/correo/tareas/procesar-pendientes/", {},
+                                 content_type="application/json", HTTP_X_INTEGRACION_TOKEN="eli")
+            self.assertEqual(r.status_code, 403)
+
+    def test_la_comparacion_es_en_tiempo_constante(self):
+        with mock.patch("core.integraciones.hmac.compare_digest", return_value=False) as cmp_, \
+                self.settings(ITACA_INTEGRACION_TOKEN="comp"):
+            self.assertEqual(self._get(self.ELI, "comp"), 403)
+        self.assertTrue(cmp_.called)
+
+
