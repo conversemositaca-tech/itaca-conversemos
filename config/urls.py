@@ -210,6 +210,8 @@ urlpatterns = [
     path("api/sitio/video/<int:pk>/", SitioVideoView.as_view(), name="sitio-video"),
     path("api/sitio/", SitioInfoView.as_view(), name="sitio-info"),
 
+    # Email 1.0: panel, preferencias, baja, webhook del proveedor y tarea programada.
+    path("api/correo/", include("correo.urls")),
     path("api/", include(router.urls)),
     # Lo que leen los buscadores. Van ANTES del comodín: hasta ahora
     # /robots.txt y /sitemap.xml caían en él y devolvían la app de React, así
