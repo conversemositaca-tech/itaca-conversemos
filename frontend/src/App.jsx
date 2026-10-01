@@ -6810,7 +6810,7 @@ function CalendarioAsistencia({ citas }) {
 // explícita de cómo dio su OK. Nada masivo.
 const ESTADO_CONSENT_COLOR = { OTORGADO: "#2F6B4F", REVOCADO: "#9C4646", NO_OTORGADO: "var(--muted)" };
 
-function CorreoPersona({ titulo, persona, pacienteId, paraTutor, bloqueadoMenor, confirmaciones, onCambio, showToast }) {
+function CorreoPersona({ titulo, persona, guardar: guardarEnApi, grupo: grupoRadio, bloqueadoMenor, confirmaciones, onCambio, showToast }) {
   const [accion, setAccion] = useState(null); // "otorgar" | "revocar"
   const [origen, setOrigen] = useState("");
   const [confirmo, setConfirmo] = useState(false);
@@ -6818,13 +6818,13 @@ function CorreoPersona({ titulo, persona, pacienteId, paraTutor, bloqueadoMenor,
   const m = persona.marketing || {};
   const b = persona.bloqueos || {};
   const fecha = m.fecha ? new Date(m.fecha).toLocaleString("es-PE", { dateStyle: "short", timeStyle: "short" }) : "";
-  const grupo = `correo-origen-${paraTutor ? "tutor" : "paciente"}`;
+  const grupo = `correo-origen-${grupoRadio}`;
 
   function abrir(a) { setAccion(a); setOrigen(""); setConfirmo(false); }
   async function guardar() {
     setGuardando(true);
     try {
-      await api.correoConsentimiento(pacienteId, { accion, origen, confirmo: confirmo === true, para_tutor: paraTutor === true });
+      await guardarEnApi({ accion, origen, confirmo: confirmo === true });
       showToast?.(accion === "otorgar" ? "Consentimiento registrado" : "Consentimiento revocado");
       setAccion(null);
       onCambio();
@@ -6891,27 +6891,15 @@ function CorreoPersona({ titulo, persona, pacienteId, paraTutor, bloqueadoMenor,
   );
 }
 
-function CorreoFicha({ pacienteId, showToast }) {
-  const [d, setD] = useState(null);
+function BitacoraCorreo({ filas }) {
   const [abierto, setAbierto] = useState(false);
-  const cargar = useCallback(() => {
-    api.correoPaciente(pacienteId).then(setD).catch(() => setD(false));
-  }, [pacienteId]);
-  useEffect(() => { cargar(); }, [cargar]);
-  if (!d) return null;
-  const comun = { pacienteId, confirmaciones: d.confirmaciones, onCambio: cargar, showToast };
   const celda = { padding: "6px 8px" };
   return (
-    <section style={{ marginBottom: 22 }}>
-      <div className="ca-label" style={{ marginBottom: 8 }}>Correo</div>
-      <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-        <CorreoPersona titulo="Paciente" persona={d.paciente} paraTutor={false} bloqueadoMenor={d.es_menor} {...comun} />
-        {d.tutor && <CorreoPersona titulo="Tutor" persona={d.tutor} paraTutor={true} bloqueadoMenor={false} {...comun} />}
-      </div>
+    <>
       <button className="ca-btn ghost" style={{ marginTop: 10 }} onClick={() => setAbierto((x) => !x)}>
-        {abierto ? "Ocultar bitácora de correos" : `Ver bitácora de correos (${d.bitacora.length})`}
+        {abierto ? "Ocultar bitácora de correos" : `Ver bitácora de correos (${filas.length})`}
       </button>
-      {abierto && (d.bitacora.length === 0 ? (
+      {abierto && (filas.length === 0 ? (
         <div style={{ fontSize: 13, color: "var(--muted)", marginTop: 8 }}>Todavía no se le ha enviado ningún correo.</div>
       ) : (
         <div style={{ overflowX: "auto", marginTop: 8 }}>
@@ -6923,7 +6911,7 @@ function CorreoFicha({ pacienteId, showToast }) {
               </tr>
             </thead>
             <tbody>
-              {d.bitacora.map((c) => (
+              {filas.map((c) => (
                 <tr key={c.id} style={{ borderTop: "1px solid var(--line)" }}>
                   <td style={{ ...celda, whiteSpace: "nowrap" }}>{new Date(c.fecha).toLocaleString("es-PE", { dateStyle: "short", timeStyle: "short" })}</td>
                   <td style={celda}>{c.plantilla}{c.para_tutor ? " · tutor" : ""}</td>
@@ -6937,6 +6925,53 @@ function CorreoFicha({ pacienteId, showToast }) {
           </table>
         </div>
       ))}
+    </>
+  );
+}
+
+function CorreoFicha({ pacienteId, showToast }) {
+  const [d, setD] = useState(null);
+  const cargar = useCallback(() => {
+    api.correoPaciente(pacienteId).then(setD).catch(() => setD(false));
+  }, [pacienteId]);
+  useEffect(() => { cargar(); }, [cargar]);
+  if (!d) return null;
+  const comun = { confirmaciones: d.confirmaciones, onCambio: cargar, showToast };
+  return (
+    <section style={{ marginBottom: 22 }}>
+      <div className="ca-label" style={{ marginBottom: 8 }}>Correo</div>
+      <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+        <CorreoPersona titulo="Paciente" persona={d.paciente} grupo="paciente" bloqueadoMenor={d.es_menor}
+          guardar={(x) => api.correoConsentimiento(pacienteId, { ...x, para_tutor: false })} {...comun} />
+        {d.tutor && <CorreoPersona titulo="Tutor" persona={d.tutor} grupo="tutor" bloqueadoMenor={false}
+          guardar={(x) => api.correoConsentimiento(pacienteId, { ...x, para_tutor: true })} {...comun} />}
+      </div>
+      <BitacoraCorreo filas={d.bitacora} />
+    </section>
+  );
+}
+
+// Correo de un prospecto, dentro del modal del lead. Solo gerencia y
+// coordinación: para los demás la API responde 403 y la sección no aparece.
+function CorreoLead({ leadId, showToast }) {
+  const [d, setD] = useState(null);
+  const cargar = useCallback(() => {
+    api.correoLead(leadId).then(setD).catch(() => setD(false));
+  }, [leadId]);
+  useEffect(() => { cargar(); }, [cargar]);
+  if (!d) return null;
+  return (
+    <section style={{ marginTop: 14 }}>
+      <div className="ca-label" style={{ marginBottom: 8 }}>Correo</div>
+      <CorreoPersona titulo="Prospecto" persona={d.lead} grupo={`lead-${leadId}`} bloqueadoMenor={d.es_menor}
+        guardar={(x) => api.correoLeadConsentimiento(leadId, x)}
+        confirmaciones={d.confirmaciones} onCambio={cargar} showToast={showToast} />
+      {d.paciente_id ? (
+        <div style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 6 }}>
+          Ya es paciente: el permiso y la baja valen para su ficha también.
+        </div>
+      ) : null}
+      <BitacoraCorreo filas={d.bitacora} />
     </section>
   );
 }
@@ -9559,6 +9594,7 @@ function CrearLeadModal({ lead, medicos, anuncios, sedePropia, onClose, onSave }
             </div>
           )}
           <div><div className="ca-label">Correo <span style={{ color: "var(--muted)", fontWeight: 400 }}>(opcional)</span></div><input className="ca-input" value={f.email} onChange={set("email")} placeholder="correo@ejemplo.com" inputMode="email" /></div>
+          {lead?.id ? <CorreoLead leadId={lead.id} /> : null}
         </div>
 
         {/* ── De dónde vino ────────────────────────────────────────── */}
@@ -12425,6 +12461,71 @@ const MODALIDADES = [
 // quién le falta llamar hoy. Por eso lo pendiente va arriba y grande, el resto
 // queda debajo, y el único acento fuerte de la pantalla es el rojo de los casos
 // sin atender. Si todo estuviera resaltado, nada lo estaría.
+// Email 1.0 · permiso de comunicaciones de los apoderados de una aplicación.
+// Solo gerencia (la API responde 403 a los demás y la sección no aparece).
+// Solo se revoca: el permiso lo da la familia en su formulario.
+function CorreoApoderadosFaro({ aplicacionId, showToast }) {
+  const [d, setD] = useState(null);
+  const [revocando, setRevocando] = useState(null); // id de la autorización
+  const [origen, setOrigen] = useState("");
+  const cargar = useCallback(() => {
+    api.correoFaroAplicacion(aplicacionId).then(setD).catch(() => setD(false));
+  }, [aplicacionId]);
+  useEffect(() => { cargar(); }, [cargar]);
+  if (!d) return null;
+  const conPermiso = d.apoderados.filter((a) => a.marketing?.estado === "OTORGADO").length;
+  async function revocar(id) {
+    try {
+      await api.correoFaroRevocar(id, { origen });
+      showToast?.("Permiso revocado");
+      setRevocando(null); setOrigen(""); cargar();
+    } catch (e) { showToast?.(e.message || "No se pudo revocar"); }
+  }
+  const celda = { padding: "6px 8px" };
+  return (
+    <details style={{ marginTop: 12 }}>
+      <summary style={{ cursor: "pointer", fontSize: 13.5 }}>
+        Comunicaciones por correo: {conPermiso} de {d.apoderados.length} apoderados dieron permiso
+      </summary>
+      <div style={{ overflowX: "auto", marginTop: 8 }}>
+        <table style={{ width: "100%", fontSize: 13, borderCollapse: "collapse" }}>
+          <thead>
+            <tr style={{ textAlign: "left", color: "var(--muted)" }}>
+              <th style={celda}>Estudiante</th><th style={celda}>Apoderado</th><th style={celda}>Correo</th>
+              <th style={celda}>Permiso</th><th style={celda}></th>
+            </tr>
+          </thead>
+          <tbody>
+            {d.apoderados.map((a) => (
+              <tr key={a.id} style={{ borderTop: "1px solid var(--line)" }}>
+                <td style={celda}>{a.estudiante}</td>
+                <td style={celda}>{a.apoderado}</td>
+                <td style={celda}>{a.correo || "—"}</td>
+                <td style={celda}>{a.marketing?.estado_label || "No otorgado"}</td>
+                <td style={celda}>
+                  {a.marketing?.estado === "OTORGADO" && (revocando === a.id ? (
+                    <span style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
+                      <select className="ca-input" style={{ padding: "4px 6px", width: "auto" }} value={origen} onChange={(e) => setOrigen(e.target.value)}>
+                        <option value="">¿Cómo lo pidió?</option>
+                        <option value="PANEL_WHATSAPP">Por WhatsApp</option>
+                        <option value="PANEL_PRESENCIAL">Presencial</option>
+                      </select>
+                      <button className="ca-btn" disabled={!origen} onClick={() => revocar(a.id)}>Revocar</button>
+                      <button className="ca-btn ghost" onClick={() => setRevocando(null)}>Cancelar</button>
+                    </span>
+                  ) : (
+                    <button className="ca-btn ghost" onClick={() => { setRevocando(a.id); setOrigen(""); }}>Revocar</button>
+                  ))}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </details>
+  );
+}
+
 function Faro({ showToast }) {
   const [alertas, setAlertas] = useState(null);
   const [aplicaciones, setAplicaciones] = useState([]);
@@ -12810,6 +12911,7 @@ function Faro({ showToast }) {
               autorizaron y dejaron correo. Un rojo no sale hasta que su alerta esté atendida, y
               cada familia lo recibe una sola vez.
             </p>
+            <CorreoApoderadosFaro aplicacionId={resultados.id} showToast={showToast} />
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 9, marginTop: 14 }}>
               <button className="ca-btn ghost" onClick={() => setResultados(null)}>Cerrar</button>
               <button className="ca-btn" onClick={enviarInformes} disabled={enviandoInformes}>
