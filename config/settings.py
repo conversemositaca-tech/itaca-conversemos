@@ -68,6 +68,8 @@ MIDDLEWARE = [
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     # Fija la clínica activa del usuario logueado en cada request (aislamiento multitenant).
     "core.middleware.TenantActualMiddleware",
+    # Sitio público y sistema en dominios separados (inactivo sin las variables).
+    "core.dominios.DominiosSeparadosMiddleware",
 ]
 
 ROOT_URLCONF = "config.urls"
@@ -241,6 +243,15 @@ SITIO_CLINICA_TOKEN = os.getenv("SITIO_CLINICA_TOKEN", "")
 # si no, una misma pagina se anuncia con dos direcciones y el buscador reparte
 # la reputacion entre las dos.
 SITIO_URL_PUBLICA = os.getenv("SITIO_URL_PUBLICA", "")
+
+# Dominios separados: la landing en uno, el panel en otro (core/dominios.py).
+# Vacíos = todo sigue en el dominio por el que entre la visita, como siempre.
+SITIO_DOMINIO = os.getenv("SITIO_DOMINIO", "")
+SISTEMA_DOMINIO = os.getenv("SISTEMA_DOMINIO", "")
+for _d in (SITIO_DOMINIO, SISTEMA_DOMINIO):
+    if _d.strip():
+        ALLOWED_HOSTS.append(_d.strip())
+        CSRF_TRUSTED_ORIGINS.append(f"https://{_d.strip()}")
 
 # --- Correo saliente (informes de Faro a las familias) ---
 # Sin EMAIL_HOST el correo se imprime en la consola: en desarrollo se ve lo que
