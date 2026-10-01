@@ -30,7 +30,9 @@ try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch { }
 $raiz = Split-Path -Parent $PSScriptRoot
 Set-Location $raiz
 
-$trabajo = Join-Path $env:TEMP "itaca-verificar"
+# Una carpeta por worktree: dos sesiones en paralelo no comparten la base de prueba.
+$huellaRaiz = [BitConverter]::ToString([Security.Cryptography.MD5]::Create().ComputeHash([Text.Encoding]::UTF8.GetBytes($raiz.ToLower()))).Replace("-", "").Substring(0, 10)
+$trabajo = Join-Path $env:TEMP "itaca-verificar\$huellaRaiz"
 New-Item -ItemType Directory -Force -Path $trabajo | Out-Null
 $sello = Get-Date -Format "yyyyMMdd-HHmmss"
 $logs = Join-Path $trabajo "logs-$sello"
@@ -91,12 +93,9 @@ $hayModulos = Test-Path (Join-Path $raiz "frontend\node_modules")
 $env:DATABASE_URL = "sqlite:///" + (Join-Path $trabajo "verificar.sqlite3").Replace("\", "/")
 $env:DJANGO_DB_SSL = "False"
 $env:PYTHONIOENCODING = "utf-8"
-$env:ITACA_TEST_DB = Join-Path $trabajo "test-keepdb.sqlite3"
-$keepdb = "--keepdb"
-if ($Modo -eq "FULL") {
-    Remove-Item -Force -ErrorAction SilentlyContinue $env:ITACA_TEST_DB
-    $keepdb = ""
-}
+# La base de prueba va EN MEMORIA (lo que hace Django por defecto con SQLite).
+# Probado: con --keepdb en archivo la suite pasó de ~100 s a ~50 min en
+# Windows (cada test escribe a disco). Crearla cuesta ~35 s y vale la pena.
 
 # --- Qué cambió ------------------------------------------------------------------
 # FAST mira lo que aún no está en un commit (el ciclo de edición). STANDARD y
@@ -142,7 +141,7 @@ if ($Modo -eq "FAST") {
 $nombre = "tests"
 $descripcion = "suite completa"
 if ($Modo -eq "FAST") { $descripcion = "apps: " + (($etiquetas | ForEach-Object { ($_ -split "\.")[0] } | Sort-Object -Unique) -join ", ") }
-$rc = Correr $nombre "`"$py`" manage.py test $($etiquetas -join ' ') --noinput $keepdb"
+$rc = Correr $nombre "`"$py`" manage.py test $($etiquetas -join ' ') --noinput"
 $seg = ((Get-Date) - $t).TotalSeconds
 $resumenTests = (Select-String -Path (Join-Path $logs "$nombre.log") -Pattern "^Ran \d+ tests?" -ErrorAction SilentlyContinue | Select-Object -Last 1).Line
 if ($rc -eq 0) { Registrar "tests backend" "OK" $seg "$resumenTests · $descripcion" }
@@ -165,7 +164,7 @@ if (-not ($hayNode -and $hayModulos)) {
         Registrar "eslint (sin deuda nueva)" "OMITIDO" 0 "no cambió JS/JSX"
     } else {
         $json = Join-Path $logs "eslint.json"
-        [void](Correr "eslint" "npx eslint $objetivo -f json -o `"$json`"" (Join-Path $raiz "frontend"))
+        [void](Correr "eslint" "npx eslint $objetivo --cache --cache-location `"$trabajo\.eslintcache`" -f json -o `"$json`"" (Join-Path $raiz "frontend"))
         if (-not (Test-Path $json)) {
             Registrar "eslint (sin deuda nueva)" "FALLA" ((Get-Date) - $t).TotalSeconds (Ultimas "eslint" 10)
         } else {
@@ -209,7 +208,7 @@ if ($Modo -eq "FULL") {
     $env:DJANGO_SECRET_KEY = "verificar-" + [guid]::NewGuid().ToString("N") + [guid]::NewGuid().ToString("N")
     $rc = Correr "check-deploy" "`"$py`" manage.py check --deploy --fail-level ERROR"
     $env:DJANGO_DEBUG = $prevDebug; $env:DJANGO_SECRET_KEY = $prevKey
-    $avisos = (Select-String -Path (Join-Path $logs "check-deploy.log") -Pattern "\(security\.W\d+\)" -ErrorAction SilentlyContinue | ForEach-Object { ($_.Line -split ":")[0] }) -join ", "
+    $avisos = ([regex]::Matches((Get-Content (Join-Path $logs "check-deploy.log") -Raw), "security\.W\d+") | ForEach-Object { $_.Value } | Sort-Object -Unique) -join ", "
     if ($rc -ne 0) { Registrar "check --deploy" "FALLA" ((Get-Date) - $t).TotalSeconds (Ultimas "check-deploy" 10) }
     elseif ($avisos) { Registrar "check --deploy" "AVISO" ((Get-Date) - $t).TotalSeconds $avisos }
     else { Registrar "check --deploy" "OK" ((Get-Date) - $t).TotalSeconds "" }
