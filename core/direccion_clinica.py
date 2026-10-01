@@ -23,10 +23,16 @@ Definiciones (las mismas que muestra la pantalla):
   "en pausa". Tampoco es abandono: alguien registró qué pasó.
 - Reinicio: un proceso anterior que se cortó porque la numeración volvió a
   empezar poco después (menos de `dias_abandono` días). La persona no se fue.
+
+Todo porcentaje sale como KPI completo (`kpi()`): numerador, denominador
+(los EVALUABLES), N (el universo del que salen) y, cuando aplica, los no
+evaluables ("aún en curso"). Un proceso activo que todavía no llegó al hito
+no es una fuga y no entra en el denominador. Ver docs/direccion-clinica.md.
 """
 from datetime import date, datetime, time, timedelta
 from statistics import mean, median
 
+from django.db.models import BooleanField, Case, Value, When
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.response import Response
@@ -64,6 +70,34 @@ PERIODOS = {
 }
 PERIODO_POR_DEFECTO = "365d"
 
+# Modalidad del PROCESO, a partir de las modalidades de sus sesiones: si todas
+# dicen lo mismo, esa; si hay de las dos, "mixta"; si ninguna lo dice, "sin
+# información". OJO: `Cita.modalidad` tiene "presencial" por defecto, así que
+# una cita que nadie marcó también dice presencial (ver la calidad del dato).
+MODALIDAD_MIXTA = "mixta"
+SIN_MODALIDAD = "sin_informacion"
+MODALIDADES = (
+    ("presencial", "Presencial"),
+    ("virtual", "Virtual"),
+    (MODALIDAD_MIXTA, "Mixta (presencial y virtual)"),
+    (SIN_MODALIDAD, "Sin información"),
+)
+MODALIDADES_FILTRO = tuple(k for k, _ in MODALIDADES)
+
+# Regla técnica (no clínica): un porcentaje calculado sobre menos de 10
+# evaluables lleva el rótulo neutral "muestra pequeña". No colorea ni juzga:
+# solo avisa que un caso más o menos mueve mucho la cifra.
+MUESTRA_PEQUENA = 10
+
+# Tramos de las distribuciones. Son cortes de conteo, sin lectura clínica.
+TRAMOS_SESIONES = ((1, 1, "1"), (2, 3, "2–3"), (4, 6, "4–6"), (7, 12, "7–12"), (13, None, "13+"))
+TRAMOS_DIAS = ((0, 7, "0–7 días"), (8, 14, "8–14 días"), (15, 30, "15–30 días"),
+               (31, 60, "31–60 días"), (61, None, "61+ días"))
+
+
+class RangoInvalido(ValueError):
+    """Fechas desde/hasta que no se pueden usar (formato o orden)."""
+
 
 # ---------------------------------------------------------------------------
 # Construcción de procesos (una sola pasada sobre las citas)
@@ -85,6 +119,51 @@ def _mediana(valores):
     return round(median(valores), 1) if valores else None
 
 
+def kpi(numerador, denominador, *, n=None, no_evaluables=None):
+    """Un porcentaje que nunca viaja solo.
+
+    `denominador`: los evaluables (sobre los que se calcula el %).
+    `n`: el universo del que salen (por defecto, el mismo denominador).
+    `no_evaluables`: los que todavía no pueden contarse ni como logro ni como
+    caída ("aún en curso"). Denominador cero → pct None, nunca una división."""
+    out = {
+        "numerador": numerador,
+        "denominador": denominador,
+        "pct": _pct(numerador, denominador),
+        "n": denominador if n is None else n,
+        "muestra_pequena": 0 < denominador < MUESTRA_PEQUENA,
+    }
+    if no_evaluables is not None:
+        out["no_evaluables"] = no_evaluables
+    return out
+
+
+def estadistica(valores):
+    """Media, mediana y N. La mediana es la referencia: un solo proceso de 60
+    sesiones mueve la media, no la mediana."""
+    valores = list(valores)
+    return {"media": _prom(valores), "mediana": _mediana(valores), "n": len(valores)}
+
+
+def _distribucion(valores, tramos):
+    cuenta = [0] * len(tramos)
+    for v in valores:
+        for i, (lo, hi, _) in enumerate(tramos):
+            if v >= lo and (hi is None or v <= hi):
+                cuenta[i] += 1
+                break
+    return [{"label": t[2], "n": c} for t, c in zip(tramos, cuenta)]
+
+
+def _modalidad_proceso(sesiones):
+    vistas = {s.get("modalidad") for s in sesiones if s.get("modalidad")}
+    if not vistas:
+        return SIN_MODALIDAD
+    if len(vistas) > 1:
+        return MODALIDAD_MIXTA
+    return vistas.pop()
+
+
 def construir_procesos(pacientes, dias_abandono=DIAS_ABANDONO, hoy=None):
     """Todos los procesos terapéuticos de esos pacientes, ya clasificados.
 
@@ -103,9 +182,15 @@ def construir_procesos(pacientes, dias_abandono=DIAS_ABANDONO, hoy=None):
         return []
 
     citas_por_pac = {}
+    # `importada`: la cita la creó el volcado de AgendaPro (el importador deja
+    # esa marca al inicio de las notas). Se calcula en la base para no traer
+    # el texto de las notas.
+    importada = Case(When(notas__startswith=continuidad_mod.MARCADOR_IMPORTADO_AGENDAPRO, then=Value(True)),
+                     default=Value(False), output_field=BooleanField())
     for c in (Cita.objects.filter(paciente_id__in=pacs, estado__in=continuidad_mod._ESTADOS_ASISTIDOS)
+              .annotate(importada=importada)
               .values("id", "paciente_id", "n_sesion", "inicio", "estado", "decision",
-                      "especialidad", "categoria", "medico_id", "sede")):
+                      "especialidad", "categoria", "medico_id", "sede", "modalidad", "importada")):
         citas_por_pac.setdefault(c["paciente_id"], []).append(c)
 
     ahora = timezone.now()
@@ -185,6 +270,11 @@ def construir_procesos(pacientes, dias_abandono=DIAS_ABANDONO, hoy=None):
                 "actual": es_actual,
                 "sede": pac["sede"] or s1.get("sede") or "",
                 "categoria": s1.get("categoria") or SIN_CATEGORIA,
+                "modalidad": _modalidad_proceso(sesiones),
+                # Bajadas de numeración sin respaldo que `segmentar_procesos`
+                # ignoró dentro de este tramo: el orden escrito no es confiable.
+                "inconsistencias": t.get("inconsistencias", 0),
+                "importado": bool(s1.get("importada")),
                 "psicologo": clave,
                 "psicologo_nombre": nombre,
                 "psicologo_origen": origen,
@@ -227,6 +317,8 @@ def _paso(procesos, desde, hasta):
         "pct_paso": _pct(len(pasaron), base),
         "pct_caida": _pct(len(cayeron), base),
         "pct_otros_cierres": _pct(len(terminados) - len(cayeron), base),
+        "kpi": kpi(len(pasaron), base, n=len(llegaron), no_evaluables=len(en_curso)),
+        "kpi_caida": kpi(len(cayeron), base, n=len(llegaron), no_evaluables=len(en_curso)),
     }
 
 
@@ -241,35 +333,79 @@ def embudo(procesos):
     return etapas
 
 
+def _kpi_abandono(procesos):
+    """Abandono inferido sobre los procesos YA TERMINADOS (abandono, alta,
+    cierre o reinicio). Un proceso activo todavía no tiene desenlace: va en
+    no evaluables, no en el denominador."""
+    terminados = [p for p in procesos if p["estado"] != ESTADO_ACTIVO]
+    abandono = sum(1 for p in terminados if p["estado"] == ESTADO_ABANDONO)
+    return kpi(abandono, len(terminados), n=len(procesos), no_evaluables=len(procesos) - len(terminados))
+
+
 def resumen_grupo(procesos):
-    """Los mismos indicadores para cualquier corte (psicólogo, sede, categoría)."""
+    """Los mismos indicadores para cualquier corte (psicólogo, sede, categoría,
+    modalidad)."""
     n = len(procesos)
     abandono = sum(1 for p in procesos if p["estado"] == ESTADO_ABANDONO)
     terminados = [p for p in procesos if p["estado"] != ESTADO_ACTIVO]
     s12, s13 = _paso(procesos, 1, 2), _paso(procesos, 1, 3)
+    k_abandono = _kpi_abandono(procesos)
+    altas = sum(1 for p in procesos if p["estado"] == ESTADO_ALTA)
+    cierres = sum(1 for p in procesos if p["estado"] == ESTADO_CIERRE)
+    sesiones = estadistica(p["n"] for p in procesos)
+    sesiones_term = estadistica(p["n"] for p in terminados)
     return {
         "procesos": n,
-        "activos": sum(1 for p in procesos if p["estado"] == ESTADO_ACTIVO),
+        "activos": n - len(terminados),
+        "terminados": len(terminados),
         "abandono_inferido": abandono,
-        "tasa_abandono_inferido": _pct(abandono, n),
-        "altas": sum(1 for p in procesos if p["estado"] == ESTADO_ALTA),
-        "cierres_registrados": sum(1 for p in procesos if p["estado"] == ESTADO_CIERRE),
+        # Sobre los terminados (antes: sobre todos los iniciados). Ver docs.
+        "tasa_abandono_inferido": k_abandono["pct"],
+        "altas": altas,
+        "cierres_registrados": cierres,
+        "altas_o_cierres": altas + cierres,
         "reinicios": sum(1 for p in procesos if p["estado"] == ESTADO_REINICIO),
-        "promedio_sesiones": _prom([p["n"] for p in procesos]),
-        "promedio_sesiones_terminados": _prom([p["n"] for p in terminados]),
+        "promedio_sesiones": sesiones["media"],
+        "mediana_sesiones": sesiones["mediana"],
+        "promedio_sesiones_terminados": sesiones_term["media"],
+        "mediana_sesiones_terminados": sesiones_term["mediana"],
         "s1_s2": s12["pct_paso"], "s1_s2_base": s12["evaluables"],
         "s1_s3": s13["pct_paso"], "s1_s3_base": s13["evaluables"],
+        "kpis": {
+            "s1_s2": s12["kpi"],
+            "s1_s3": s13["kpi"],
+            "abandono_inferido": k_abandono,
+        },
+        "sesiones": sesiones,
+        "sesiones_terminados": sesiones_term,
     }
 
 
+def _fecha(txt, campo):
+    txt = (txt or "").strip()
+    if not txt:
+        return None
+    try:
+        return date.fromisoformat(txt)
+    except ValueError:
+        raise RangoInvalido(f"Fecha inválida en «{campo}»: usa el formato AAAA-MM-DD.") from None
+
+
+def validar_rango(desde_txt, hasta_txt):
+    """(desde, hasta) como fechas, o RangoInvalido si no se pueden usar."""
+    d, h = _fecha(desde_txt, "desde"), _fecha(hasta_txt, "hasta")
+    if d and h and d > h:
+        raise RangoInvalido("La fecha «desde» es posterior a «hasta».")
+    return d, h
+
+
 def _rango(periodo, desde_txt, hasta_txt, hoy):
-    """(desde, hasta, clave, etiqueta). Fechas a mano ganan sobre el período."""
-    def fecha(txt):
-        try:
-            return date.fromisoformat((txt or "").strip())
-        except ValueError:
-            return None
-    d, h = fecha(desde_txt), fecha(hasta_txt)
+    """(desde, hasta, clave, etiqueta). Fechas a mano ganan sobre el período.
+    Aquí un texto ilegible se ignora (la vista ya respondió 400 antes)."""
+    try:
+        d, h = validar_rango(desde_txt, hasta_txt)
+    except RangoInvalido:
+        d = h = None
     if d or h:
         d, h = d or date(2000, 1, 1), h or hoy
         return d, h, "rango", f"{d:%d/%m/%Y} – {h:%d/%m/%Y}"
@@ -280,7 +416,7 @@ def _rango(periodo, desde_txt, hasta_txt, hoy):
 
 
 def calcular(pacientes, *, periodo=PERIODO_POR_DEFECTO, desde=None, hasta=None, sede="",
-             psicologo="", categoria="", etapa="", dias_abandono=DIAS_ABANDONO, hoy=None):
+             psicologo="", categoria="", etapa="", modalidad="", dias_abandono=DIAS_ABANDONO, hoy=None):
     """Todo lo que muestra la pantalla de Dirección Clínica, ya filtrado.
 
     Dos universos, y la pantalla dice cuál es cuál:
@@ -288,6 +424,8 @@ def calcular(pacientes, *, periodo=PERIODO_POR_DEFECTO, desde=None, hasta=None, 
       - lo VIGENTE HOY: procesos activos ahora, empezaran cuando empezaran
         (procesos activos y carga por psicólogo), porque la carga de hoy no
         depende de cuándo llegó cada paciente.
+    Los filtros (sede, psicólogo, categoría, modalidad, etapa) se combinan con
+    AND y se aplican ANTES de calcular cualquier denominador.
     """
     from pacientes.models import Atencion, Cita
 
@@ -309,32 +447,66 @@ def calcular(pacientes, *, periodo=PERIODO_POR_DEFECTO, desde=None, hasta=None, 
     def pasa(p):
         return ((not psicologo or p["psicologo"] == psicologo)
                 and (not categoria or p["categoria"] == categoria)
+                and (not modalidad or p["modalidad"] == modalidad)
                 and (not etapa or _etapa(p["n"]) == etapa))
 
+    def en_periodo(fecha):
+        return (d is None or fecha >= d) and fecha <= h
+
     filtrados = [p for p in todos if pasa(p)]
-    cohorte = [p for p in filtrados if (d is None or p["s1"] >= d) and p["s1"] <= h]
+    cohorte = [p for p in filtrados if en_periodo(p["s1"])]
     vigentes = [p for p in filtrados if p["estado"] == ESTADO_ACTIVO]
+    terminados = [p for p in cohorte if p["estado"] != ESTADO_ACTIVO]
 
     # --- Resumen ---
     abandonos = [p for p in cohorte if p["estado"] == ESTADO_ABANDONO]
     gaps = [g for p in cohorte for g in p["gaps"]]
+    k_abandono = _kpi_abandono(cohorte)
+    est_sesiones = estadistica(p["n"] for p in cohorte)
+    est_sesiones_term = estadistica(p["n"] for p in terminados)
+    est_gaps = estadistica(gaps)
+    est_abandono = estadistica(p["dias_s1_a_ultima"] for p in abandonos)
     resumen = {
         "pacientes_nuevos": len({p["paciente_id"] for p in cohorte if p["numero"] == 1}),
         "procesos_iniciados": len(cohorte),
         "reingresos": sum(1 for p in cohorte if p["numero"] > 1),
         "procesos_activos_hoy": len(vigentes),
-        "activos_de_la_cohorte": sum(1 for p in cohorte if p["estado"] == ESTADO_ACTIVO),
+        "activos_de_la_cohorte": len(cohorte) - len(terminados),
+        "terminados_de_la_cohorte": len(terminados),
         "abandono_inferido": len(abandonos),
-        "tasa_abandono_inferido": _pct(len(abandonos), len(cohorte)),
+        "tasa_abandono_inferido": k_abandono["pct"],
         "altas_registradas": sum(1 for p in cohorte if p["estado"] == ESTADO_ALTA),
         "cierres_registrados": sum(1 for p in cohorte if p["estado"] == ESTADO_CIERRE),
         "reinicios": sum(1 for p in cohorte if p["estado"] == ESTADO_REINICIO),
-        "promedio_sesiones": _prom([p["n"] for p in cohorte]),
-        "promedio_sesiones_terminados": _prom([p["n"] for p in cohorte if p["estado"] != ESTADO_ACTIVO]),
-        "promedio_dias_entre_sesiones": _prom(gaps),
-        "mediana_dias_entre_sesiones": _mediana(gaps),
-        "promedio_dias_s1_a_abandono": _prom([p["dias_s1_a_ultima"] for p in abandonos]),
-        "mediana_dias_s1_a_abandono": _mediana([p["dias_s1_a_ultima"] for p in abandonos]),
+        "promedio_sesiones": est_sesiones["media"],
+        "promedio_sesiones_terminados": est_sesiones_term["media"],
+        "promedio_dias_entre_sesiones": est_gaps["media"],
+        "mediana_dias_entre_sesiones": est_gaps["mediana"],
+        "promedio_dias_s1_a_abandono": est_abandono["media"],
+        "mediana_dias_s1_a_abandono": est_abandono["mediana"],
+        "kpis": {
+            "s1_s2": _paso(cohorte, 1, 2)["kpi"],
+            "s1_s3": _paso(cohorte, 1, 3)["kpi"],
+            "s1_s6": _paso(cohorte, 1, ETAPAS_EMBUDO)["kpi"],
+            "abandono_inferido": k_abandono,
+        },
+        "estadisticas": {
+            "sesiones_por_proceso": est_sesiones,
+            "sesiones_por_proceso_terminados": est_sesiones_term,
+            "dias_entre_sesiones": est_gaps,
+            "dias_s1_a_abandono": est_abandono,
+        },
+    }
+
+    # --- Distribuciones (conteos por tramo, sin interpretación) ---
+    por_tramo_term = _distribucion([p["n"] for p in terminados], TRAMOS_SESIONES)
+    por_tramo_act = _distribucion([p["n"] for p in cohorte if p["estado"] == ESTADO_ACTIVO], TRAMOS_SESIONES)
+    distribuciones = {
+        "sesiones_por_proceso": [
+            {"label": t["label"], "terminados": t["n"], "activos": a["n"], "total": t["n"] + a["n"]}
+            for t, a in zip(por_tramo_term, por_tramo_act)
+        ],
+        "dias_entre_sesiones": _distribucion(gaps, TRAMOS_DIAS),
     }
 
     # --- Por psicólogo (orden alfabético; "Sin asignar" al final) ---
@@ -342,10 +514,10 @@ def calcular(pacientes, *, periodo=PERIODO_POR_DEFECTO, desde=None, hasta=None, 
     sesiones_periodo = {}
     sin_psicologo_periodo = 0
     for p in todos:
-        if categoria and p["categoria"] != categoria:
+        if (categoria and p["categoria"] != categoria) or (modalidad and p["modalidad"] != modalidad):
             continue
         for s in p["sesiones"]:
-            if (d and s["fecha"] < d) or s["fecha"] > h:
+            if not en_periodo(s["fecha"]):
                 continue
             if psicologo and s["psicologo"] != psicologo:
                 continue
@@ -353,24 +525,31 @@ def calcular(pacientes, *, periodo=PERIODO_POR_DEFECTO, desde=None, hasta=None, 
                 sin_psicologo_periodo += 1
             sesiones_periodo[s["psicologo"]] = sesiones_periodo.get(s["psicologo"], 0) + 1
 
+    # Agrupados una sola vez (no se recorre la cohorte por cada psicólogo).
+    cohorte_por_psi, carga_por_psi = {}, {}
+    for p in cohorte:
+        cohorte_por_psi.setdefault(p["psicologo"], []).append(p)
+    for p in vigentes:
+        carga_por_psi[p["psicologo"]] = carga_por_psi.get(p["psicologo"], 0) + 1
+
     por_psicologo = []
-    claves = set(p["psicologo"] for p in cohorte) | set(p["psicologo"] for p in vigentes)
-    claves |= set(sesiones_periodo)
-    for k in claves:
-        suyos = [p for p in cohorte if p["psicologo"] == k]
+    for k in set(cohorte_por_psi) | set(carga_por_psi) | set(sesiones_periodo):
+        suyos = cohorte_por_psi.get(k, [])
         fila = resumen_grupo(suyos)
         fila.update({
             "clave": k,
             "psicologo": psicologos.get(k, "Sin asignar"),
             "nuevos": len(suyos),
             "sesiones_realizadas": sesiones_periodo.get(k, 0),
-            "carga_activos_hoy": sum(1 for p in vigentes if p["psicologo"] == k),
+            "carga_activos_hoy": carga_por_psi.get(k, 0),
             "por_ficha_asignada": sum(1 for p in suyos if p["psicologo_origen"] == "asignado"),
         })
         por_psicologo.append(fila)
     por_psicologo.sort(key=lambda f: (f["clave"] == SIN_ASIGNAR, f["psicologo"].lower()))
 
-    # --- Por sede y por categoría ---
+    # --- Por sede, categoría y modalidad ---
+    # Orden FIJO (no por volumen ni por resultado): ninguna fila queda "arriba"
+    # por ser mejor. Lo que no tiene dato va siempre al final y nunca se oculta.
     cat_label = dict(Cita.Categoria.choices)
     cat_label[SIN_CATEGORIA] = "Sin categoría"
 
@@ -378,22 +557,34 @@ def calcular(pacientes, *, periodo=PERIODO_POR_DEFECTO, desde=None, hasta=None, 
         grupos = {}
         for p in cohorte:
             grupos.setdefault(p[campo] or "", []).append(p)
+        orden = list(etiquetas)
         filas = [{"clave": k, "label": etiquetas.get(k, k or "Sin dato"), **resumen_grupo(v)}
                  for k, v in grupos.items()]
-        return sorted(filas, key=lambda f: -f["procesos"])
+        return sorted(filas, key=lambda f: (orden.index(f["clave"]) if f["clave"] in orden else len(orden),
+                                            f["label"].lower()))
 
     por_sede = por("sede", {"lima": "Lima", "piura": "Piura", "": "Sin sede"})
     por_categoria = por("categoria", cat_label)
+    por_modalidad = por("modalidad", dict(MODALIDADES))
 
     # --- Calidad del dato ---
-    sesiones_en_periodo = [s for p in todos for s in p["sesiones"]
-                           if (d is None or s["fecha"] >= d) and s["fecha"] <= h]
+    # Sobre lo que dejan los filtros (no sobre toda la clínica): si se mira a
+    # una psicóloga o una categoría, la calidad es la de ESE recorte.
+    sesiones_en_periodo = [s for p in filtrados for s in p["sesiones"] if en_periodo(s["fecha"])]
+    ns = len(sesiones_en_periodo)
     con_medico = sum(1 for s in sesiones_en_periodo if s.get("medico_id"))
     con_numero = sum(1 for s in sesiones_en_periodo if s.get("n_sesion"))
+    sin_modalidad = sum(1 for s in sesiones_en_periodo if not s.get("modalidad"))
+    importadas = sum(1 for s in sesiones_en_periodo if s.get("importada"))
     cierres = [p["sesiones"][i - 1] for p in cohorte
                for i in range(ETAPAS_EMBUDO, p["n"] + 1, ETAPAS_EMBUDO)]
     cierres_con_dp = sum(1 for s in cierres if s.get("decision"))
-    terminados = [p for p in cohorte if p["estado"] != ESTADO_ACTIVO]
+    solo_inferidos = sum(1 for p in terminados if p["estado"] == ESTADO_ABANDONO)
+    nc = len(cohorte)
+    sin_psi_proc = sum(1 for p in cohorte if p["psicologo"] == SIN_ASIGNAR)
+    sin_cat_proc = sum(1 for p in cohorte if p["categoria"] == SIN_CATEGORIA)
+    sin_mod_proc = sum(1 for p in cohorte if p["modalidad"] == SIN_MODALIDAD)
+    numeracion_mala = sum(1 for p in cohorte if p["inconsistencias"])
 
     citas_scope = Cita.objects.filter(paciente__in=pacientes.filter(provisional=False),
                                       estado__in=continuidad_mod._ESTADOS_ASISTIDOS)
@@ -404,21 +595,42 @@ def calcular(pacientes, *, periodo=PERIODO_POR_DEFECTO, desde=None, hasta=None, 
                       .filter(medico__isnull=True).count())
 
     calidad = {
-        "sesiones_periodo": len(sesiones_en_periodo),
-        "pct_con_psicologo": _pct(con_medico, len(sesiones_en_periodo)),
-        "sesiones_sin_psicologo": len(sesiones_en_periodo) - con_medico,
-        "pct_con_numero": _pct(con_numero, len(sesiones_en_periodo)),
+        "sesiones_periodo": ns,
+        "pct_con_psicologo": _pct(con_medico, ns),
+        "sesiones_sin_psicologo": ns - con_medico,
+        "pct_con_numero": _pct(con_numero, ns),
+        "sesiones_sin_numero": ns - con_numero,
+        "sesiones_sin_modalidad": sin_modalidad,
+        "sesiones_importadas_agendapro": importadas,
+        "sesiones_sistema_propio": ns - importadas,
         "cierres_bloque": len(cierres),
         "cierres_con_dp": cierres_con_dp,
+        "cierres_sin_dp": len(cierres) - cierres_con_dp,
         "pct_cierres_con_dp": _pct(cierres_con_dp, len(cierres)),
         "procesos_terminados": len(terminados),
-        "terminados_solo_inferidos": sum(1 for p in terminados if p["estado"] == ESTADO_ABANDONO),
+        "terminados_solo_inferidos": solo_inferidos,
         "terminados_con_registro": sum(1 for p in terminados if p["estado"] in (ESTADO_ALTA, ESTADO_CIERRE)),
         "terminados_por_reinicio": sum(1 for p in terminados if p["estado"] == ESTADO_REINICIO),
         "historicas_sesiones": historicas_n,
         "historicas_sin_psicologo": historicas_sin,
-        "procesos_sin_psicologo": sum(1 for p in cohorte if p["psicologo"] == SIN_ASIGNAR),
+        "procesos_sin_psicologo": sin_psi_proc,
         "procesos_psicologo_por_ficha": sum(1 for p in cohorte if p["psicologo_origen"] == "asignado"),
+        "procesos_sin_categoria": sin_cat_proc,
+        "procesos_sin_modalidad": sin_mod_proc,
+        "procesos_numeracion_inconsistente": numeracion_mala,
+        "kpis": {
+            # Sesiones del período (sobre los filtros aplicados).
+            "sesiones_con_psicologo": kpi(con_medico, ns),
+            "sesiones_con_numero": kpi(con_numero, ns),
+            "sesiones_con_modalidad": kpi(ns - sin_modalidad, ns),
+            # Procesos de la cohorte.
+            "cierres_con_dp": kpi(cierres_con_dp, len(cierres)),
+            "terminados_solo_inferidos": kpi(solo_inferidos, len(terminados), n=nc,
+                                             no_evaluables=nc - len(terminados)),
+            "procesos_con_psicologo": kpi(nc - sin_psi_proc, nc),
+            "procesos_con_categoria": kpi(nc - sin_cat_proc, nc),
+            "procesos_numeracion_consistente": kpi(nc - numeracion_mala, nc),
+        },
     }
 
     # --- Universo y fuente ---
@@ -429,34 +641,42 @@ def calcular(pacientes, *, periodo=PERIODO_POR_DEFECTO, desde=None, hasta=None, 
         "fuente": "Citas en estado Asistió o Atendida, sin contar la consulta inicial.",
         "desde": primera.isoformat() if primera else None,
         "procesos_totales": len(todos),
+        "procesos_filtrados": len(filtrados),
         "cohorte_agendapro": sum(1 for p in cohorte if p["s1"] < INICIO_SISTEMA_PROPIO),
         "cohorte_sistema_propio": sum(1 for p in cohorte if p["s1"] >= INICIO_SISTEMA_PROPIO),
+        # Por la marca del importador (no por la fecha): S1 creada por el volcado.
+        "cohorte_s1_importada": sum(1 for p in cohorte if p["importado"]),
         "inicio_sistema_propio": INICIO_SISTEMA_PROPIO.isoformat(),
         "fichas_sin_cita": fichas_sin_cita,
     }
 
     return {
+        "vacio": not cohorte,
         "periodo": {"clave": clave_periodo, "label": etiqueta,
                     "desde": d.isoformat() if d else None, "hasta": h.isoformat()},
         "filtros": {
             "sede": sede, "psicologo": psicologo, "categoria": categoria, "etapa": etapa,
-            "dias_abandono": dias_abandono,
+            "modalidad": modalidad, "dias_abandono": dias_abandono,
+            "muestra_pequena": MUESTRA_PEQUENA,
             "opciones": {
                 "psicologos": sorted(
                     [{"clave": k, "label": v} for k, v in psicologos.items()],
                     key=lambda x: (x["clave"] == SIN_ASIGNAR, x["label"].lower())),
                 "categorias": [{"clave": k, "label": v} for k, v in cat_label.items()],
+                "modalidades": [{"clave": k, "label": v} for k, v in MODALIDADES],
                 "etapas": [{"clave": e, "label": f"S{e}"} for e in ETAPAS_FILTRO],
                 "periodos": [{"clave": k, "label": v[0]} for k, v in PERIODOS.items()],
             },
         },
         "universo": universo,
         "resumen": resumen,
+        "distribuciones": distribuciones,
         "embudo": embudo(cohorte),
         "por_psicologo": por_psicologo,
         "sesiones_sin_psicologo_periodo": sin_psicologo_periodo,
         "por_sede": por_sede,
         "por_categoria": por_categoria,
+        "por_modalidad": por_modalidad,
         "calidad": calidad,
     }
 
@@ -467,7 +687,9 @@ class DireccionClinicaView(APIView):
     Solo gerencia (admin) y Dirección Clínica (analista). Solo lectura.
     Parámetros (todos opcionales): periodo=30d|90d|180d|365d|todo ·
     desde/hasta=AAAA-MM-DD · sede=lima|piura · psicologo=<clave> ·
-    categoria=<clave> · etapa=1..5|6+ · dias_abandono=<15..365, 45 por defecto>.
+    categoria=<clave> · etapa=1..5|6+ · modalidad=presencial|virtual|mixta|
+    sin_informacion · dias_abandono=<15..365, 45 por defecto>.
+    Un rango ilegible o con «desde» posterior a «hasta» responde 400.
     """
 
     def get(self, request):
@@ -488,6 +710,11 @@ class DireccionClinicaView(APIView):
         dias = max(DIAS_ABANDONO_MIN, min(DIAS_ABANDONO_MAX, dias))
         sede = (q.get("sede") or "").strip().lower()
         etapa = (q.get("etapa") or "").strip()
+        modalidad = (q.get("modalidad") or "").strip().lower()
+        try:
+            validar_rango(q.get("desde"), q.get("hasta"))
+        except RangoInvalido as e:
+            return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
         pacientes = continuidad_mod.pacientes_del_rol(Paciente.objects.del_tenant_actual(), request.user)
         return Response(calcular(
@@ -498,5 +725,6 @@ class DireccionClinicaView(APIView):
             psicologo=(q.get("psicologo") or "").strip(),
             categoria=(q.get("categoria") or "").strip(),
             etapa=etapa if etapa in ETAPAS_FILTRO else "",
+            modalidad=modalidad if modalidad in MODALIDADES_FILTRO else "",
             dias_abandono=dias,
         ))
