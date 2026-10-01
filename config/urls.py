@@ -20,6 +20,7 @@ from core.integraciones import (
     RespaldoView,
     RecordatoriosView, ResumenDiarioView,
 )
+from core.direccion_clinica import DireccionClinicaView
 from core.metricas import MetricaMensualViewSet
 from core.ocupacion import OcupacionView
 from core.reloj import HoraServidorView
@@ -146,6 +147,7 @@ urlpatterns = [
     path("api/duplicados/descartar/", DuplicadoDescartarView.as_view(), name="duplicados-descartar"),
     path("api/clinica/", ClinicaConfigView.as_view(), name="clinica-config"),
     path("api/gerencia/resumen/", GerenciaResumenView.as_view(), name="gerencia-resumen"),
+    path("api/direccion-clinica/", DireccionClinicaView.as_view(), name="direccion-clinica"),
     path("api/finanzas/caja/", CajaView.as_view(), name="finanzas-caja"),
     path("api/finanzas/liquidacion/", LiquidacionView.as_view(), name="finanzas-liquidacion"),
     # WhatsApp Cloud API (Meta): configuración (admin) + webhook público de Meta.

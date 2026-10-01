@@ -1072,3 +1072,48 @@ los feriados de Perú. Zona horaria por defecto: `America/Lima` (GMT-5).
      cita correcta cuando el proceso se reinició, que queda firmado, que el
      psicólogo no puede y que se puede corregir un código equivocado. Build de
      Vite y ESLint idéntico a `main` (106 avisos en ambos).
+
+46. ⏳ Dirección Clínica · fase 1: continuidad y abandono inferido (rama
+   `feat/direccion-clinica`, 2026-09-30, SIN desplegar). Pedido de Mirai tras
+   la auditoría de datos del mismo día: explotar lo que ya existe, **sin
+   migraciones ni campos nuevos**, todo de solo lectura.
+   - **`core/direccion_clinica.py`** + `GET /api/direccion-clinica/` (admin y
+     analista; 403 al resto). NO reconstruye procesos por su cuenta: usa
+     `segmentar_procesos`, `senales_por_paciente`, `es_consulta` y
+     `cuantas_sesiones` de `core/continuidad.py`. Sesión = cita asistida/atendida
+     que no es consulta; S1, S2… = **orden** dentro del proceso (no `n_sesion`).
+   - **Abandono inferido** (nunca "abandono" a secas): última sesión hace más de
+     `dias_abandono` días (45 por defecto, 15–365), sin próxima cita y sin alta ni
+     cierre registrado (DP-10 / otros DP de cierre / ficha "alta" o "en pausa").
+     Un proceso anterior cortado por un reinicio rápido es `reinicio`, no abandono.
+   - **Embudo S1→S6 sin castigar a los recientes**: cada paso se calcula sobre los
+     procesos con el paso ya resuelto (llegaron a la siguiente o ya terminaron);
+     los activos que aún no llegan van aparte como "aún en curso".
+   - Filtros: período (30d/90d/180d/365d/todo o desde/hasta), sede, psicólogo,
+     categoría, etapa. Por psicólogo (S1; si falta, el asignado en la ficha; si
+     no, "Sin asignar" visible), **en orden alfabético y sin ranking**. Por sede y
+     por categoría. Bloque **Calidad del dato** arriba de todo y bloque de universo
+     y fuente (cuántas fichas sin cita quedan fuera).
+   - **Gerencia corregida**: retención y curva de continuidad salen de citas
+     asistidas sin consulta (antes de `Atencion`, que la mayoría de sesiones no
+     tiene); la curva es por **proceso** y su "% que no pasa de S2" solo sobre
+     procesos terminados. `% asistencia` = (asistió + atendida) / (realizadas + no
+     asistió + canceladas), con `inasistencia_pct` nuevo. El Excel exportado usa
+     la misma fórmula. **Cambia el universo**: las sesiones del Excel 2024 – feb
+     2026 solo existen como ficha sin cita y ya no entran en la curva (se dice en
+     pantalla cuántas son).
+   - Frontend: `frontend/src/DireccionClinica.jsx` (ítem de menú "Dirección
+     Clínica", admin y analista) + `api.direccionClinica`. Botón **Imprimir /
+     PDF** (`window.print()`): estilos `@media print` acotados con
+     `body:has(.dc-pagina)` —no tocan la impresión de otras pantallas— que sacan
+     el menú y el scroll interno, ponen arriba los filtros aplicados y la fecha,
+     y no parten filas. Sede y categoría van una debajo de la otra (lado a lado
+     la de categoría se cortaba).
+   - Verificado: 16 tests nuevos (`core/tests_direccion_clinica.py`), suites de
+     core/pacientes/finanzas/leads/usuarios/mensajes, build de Vite, ESLint igual
+     a `main` (111 en ambos) y 16/16 en navegador real con datos sintéticos
+     (base aislada en el scratchpad, no `db.sqlite3`).
+   - **Fase 2 (no hecha a propósito)**: historial de estados de cita, motivo de
+     cancelación/inasistencia, estado formal del proceso, motivo de consulta
+     codificado, `Cita.profesional` para el histórico, NPS por sesión, encuestas
+     de utilidad y progreso.

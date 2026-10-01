@@ -247,6 +247,11 @@ export const api = {
   retirarMaterial: (id) => req(`/api/materiales/${id}/`, { method: "DELETE" }),
   marcarEliminacionRevisada: (id) => req(`/api/eliminaciones/${id}/revisar/`, { method: "POST" }),
   marcarTodasEliminacionesRevisadas: () => req("/api/eliminaciones/revisar-todas/", { method: "POST" }),
+  // Dirección Clínica: continuidad y abandono inferido (solo lectura).
+  direccionClinica: (filtros = {}) => {
+    const qs = new URLSearchParams(Object.entries(filtros).filter(([, v]) => v !== "" && v != null)).toString();
+    return req(`/api/direccion-clinica/${qs ? `?${qs}` : ""}`);
+  },
   gerenciaResumen: (periodo, sede) => req(`/api/gerencia/resumen/?periodo=${periodo || "mes"}${sede ? `&sede=${sede}` : ""}`),
 
   // Datos de la clínica (editar solo admin)
