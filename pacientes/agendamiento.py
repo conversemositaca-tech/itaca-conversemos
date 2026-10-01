@@ -24,6 +24,9 @@ from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
 from core.models import Clinica
+from correo.models import ConsentimientoComunicacion
+from correo.services import captura as captura_correo
+from correo.services.destinatario import Destinatario
 from core import rangos
 from finanzas.models import Servicio
 from leads import atribucion
@@ -355,8 +358,14 @@ class AgendamientoReservarView(_PublicBase):
             # MUEVE esta reserva en vez de crear una segunda cita.
             cita.notas = f"{cita.notas} Lead #{lead.id}."
             cita.save(update_fields=["notas"])
+            # Casilla opcional de comunicaciones: se registra en el lead (quien
+            # reservó). Nunca bloquea la reserva.
+            banderas = captura_correo.registrar(
+                Destinatario.de_lead(lead), ConsentimientoComunicacion.Origen.RESERVA_WEB,
+                request, captura_correo.marco_casilla(d))
             return Response({
                 "ok": True,
+                **banderas,
                 "tipo": "existente" if conocido else "nuevo",
                 "estado": "agendada" if conocido else "pendiente",
                 "profesional": prof.nombre,
@@ -451,12 +460,19 @@ class AgendamientoSolicitarView(_PublicBase):
         # Quien ya escribió hace poco no se duplica: se le suma la nota a su lead
         # abierto. Si no, la misma persona aparece dos veces en la bandeja y dos
         # coordinadoras terminan llamándola.
+        acepta = captura_correo.marco_casilla(d)
         existente = captacion._lead_existente(clinica, telefono)
         if existente:
             captacion._agregar_nota(existente, f"Volvió a solicitar por la web. {preferencias}.")
-            return Response({"ok": True, "duplicado": True, "tipo": tipo_key})
+            if email and not existente.email:
+                existente.email = email
+                existente.save(update_fields=["email"])
+            banderas = captura_correo.registrar(
+                Destinatario.de_lead(existente), ConsentimientoComunicacion.Origen.AYUDA_ELEGIR,
+                request, acepta)
+            return Response({"ok": True, "duplicado": True, "tipo": tipo_key, **banderas})
 
-        Lead.objects.create(
+        lead = Lead.objects.create(
             clinica=clinica, nombre=nombre, telefono=telefono, email=email, sede=sede,
             fuente=Lead.Fuente.WEB,
             # No agendó nada: vino precisamente a que le ayudemos a elegir.
@@ -468,5 +484,8 @@ class AgendamientoSolicitarView(_PublicBase):
             motivo_consulta=mensaje,
             notas=f"Solicitud web — pidió ayuda para elegir psicólogo/a. {preferencias}.",
             **origen)
-        return Response({"ok": True, "duplicado": False, "tipo": tipo_key},
+        banderas = captura_correo.registrar(
+            Destinatario.de_lead(lead), ConsentimientoComunicacion.Origen.AYUDA_ELEGIR,
+            request, acepta)
+        return Response({"ok": True, "duplicado": False, "tipo": tipo_key, **banderas},
                         status=status.HTTP_201_CREATED)

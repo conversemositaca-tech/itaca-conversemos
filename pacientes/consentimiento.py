@@ -202,5 +202,16 @@ class AceptarConsentimientoView(APIView):
         c.ip = _ip(request)
         c.save(update_fields=["aceptado", "aceptado_en", "aceptado_via", "firmante_nombre",
                               "firmante_documento", "ip"])
-        return Response({"ok": True,
+        # Casilla aparte y opcional de comunicaciones. Si el paciente es menor
+        # de 14, quien firma es su tutor: el permiso queda a nombre del tutor.
+        from correo.models import ConsentimientoComunicacion
+        from correo.services import captura as captura_correo
+        from correo.services.destinatario import Destinatario
+        dest = Destinatario.de_paciente(c.paciente)
+        if dest.es_menor():
+            dest = Destinatario.tutor_de(c.paciente)
+        banderas = captura_correo.registrar(
+            dest, ConsentimientoComunicacion.Origen.CONSENTIMIENTO_INFORMADO,
+            request, captura_correo.marco_casilla(request.data))
+        return Response({"ok": True, **banderas,
                          "aceptado_en": timezone.localtime(c.aceptado_en).strftime("%d/%m/%Y %H:%M")})
