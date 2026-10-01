@@ -25,7 +25,9 @@ param(
     [switch]$Silencioso
 )
 
-$ErrorActionPreference = "Stop"
+# "Continue" a propósito: en PowerShell 5.1 cualquier línea de git en stderr
+# (p. ej. el aviso de finales de línea) con "Stop" aborta el script.
+$ErrorActionPreference = "Continue"
 try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch { }
 $raiz = Split-Path -Parent $PSScriptRoot
 Set-Location $raiz
@@ -168,22 +170,16 @@ if (-not ($hayNode -and $hayModulos)) {
         if (-not (Test-Path $json)) {
             Registrar "eslint (sin deuda nueva)" "FALLA" ((Get-Date) - $t).TotalSeconds (Ultimas "eslint" 10)
         } else {
-            $linea = Get-Content (Join-Path $raiz "scripts\eslint-baseline.json") -Raw -Encoding UTF8 | ConvertFrom-Json
-            $nuevos = @(); $avisosNuevos = @(); $totE = 0; $totA = 0
-            foreach ($f in (Get-Content $json -Raw -Encoding UTF8 | ConvertFrom-Json)) {
-                $p = $f.filePath.Replace("\", "/")
-                $rel = $p.Substring($p.IndexOf("/frontend/") + 1)
-                $totE += $f.errorCount; $totA += $f.warningCount
-                $prev = $linea.archivos.$rel
-                $bE = 0; $bA = 0
-                if ($prev) { $bE = $prev.errores; $bA = $prev.avisos }
-                if ($f.errorCount -gt $bE) { $nuevos += "$rel ($($f.errorCount) errores; línea base $bE)" }
-                if ($f.warningCount -gt $bA) { $avisosNuevos += "$rel ($($f.warningCount) avisos; línea base $bA)" }
-            }
+            # La regla vive en scripts/eslint-sin-deuda.mjs: la misma que usa el CI.
+            $rc = Correr "eslint-sin-deuda" "node scripts\eslint-sin-deuda.mjs `"$json`""
             $seg = ((Get-Date) - $t).TotalSeconds
-            if ($nuevos.Count) { Registrar "eslint (sin deuda nueva)" "FALLA" $seg ("errores nuevos: " + ($nuevos -join "; ")) }
-            elseif ($avisosNuevos.Count) { Registrar "eslint (sin deuda nueva)" "AVISO" $seg ("avisos nuevos: " + ($avisosNuevos -join "; ")) }
-            else { Registrar "eslint (sin deuda nueva)" "OK" $seg "$totE errores / $totA avisos (línea base $($linea.total.errores) / $($linea.total.avisos))" }
+            $texto = Get-Content (Join-Path $logs "eslint-sin-deuda.log") -Encoding UTF8
+            $resumen = ($texto | Select-Object -First 1) -replace "^ESLint: ", ""
+            $fallas = ($texto | Where-Object { $_ -like "FALLA*" }) -join "; "
+            $avisosE = ($texto | Where-Object { $_ -like "AVISO*" }) -join "; "
+            if ($rc -ne 0) { Registrar "eslint (sin deuda nueva)" "FALLA" $seg ("errores nuevos: " + $fallas) }
+            elseif ($avisosE) { Registrar "eslint (sin deuda nueva)" "AVISO" $seg ("avisos nuevos: " + $avisosE) }
+            else { Registrar "eslint (sin deuda nueva)" "OK" $seg $resumen }
         }
     }
 }

@@ -11,7 +11,9 @@
 
   FULL nunca corre aquí: es manual, antes de integrar o publicar.
 #>
-$ErrorActionPreference = "Stop"
+# "Continue" a propósito: en PowerShell 5.1 cualquier línea de git en stderr
+# (p. ej. el aviso de finales de línea) con "Stop" aborta el script.
+$ErrorActionPreference = "Continue"
 try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch { }
 
 $raiz = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
@@ -50,7 +52,6 @@ if (-not $codigo) {
     exit 0
 }
 
-$ErrorActionPreference = "Continue"
 $salida = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $raiz "scripts\verificar.ps1") -Modo STANDARD -Silencioso 2>&1
 $rc = $LASTEXITCODE
 
