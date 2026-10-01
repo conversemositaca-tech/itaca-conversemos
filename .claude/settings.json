@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File .claude/hooks/stop-verificar.ps1",
+            "timeout": 600,
+            "statusMessage": "Verificando antes de terminar (verificar.ps1 STANDARD)"
+          }
+        ]
+      }
+    ]
+  }
+}
