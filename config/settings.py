@@ -244,6 +244,14 @@ SITIO_CLINICA_TOKEN = os.getenv("SITIO_CLINICA_TOKEN", "")
 # la reputacion entre las dos.
 SITIO_URL_PUBLICA = os.getenv("SITIO_URL_PUBLICA", "")
 
+# En las pruebas, el contador de "captacion" se arrastra de un test a otro (la
+# caché es una sola para toda la corrida). Si la suite corre rápido —como en
+# GitHub— pasa de 60 por minuto y tests que no tienen nada que ver reciben 429.
+# Ningún test prueba ese límite; los del login no se tocan.
+import sys as _sys
+if len(_sys.argv) > 1 and _sys.argv[1] == "test":
+    REST_FRAMEWORK["DEFAULT_THROTTLE_RATES"]["captacion"] = "100000/min"
+
 # Dominios separados: la landing en uno, el panel en otro (core/dominios.py).
 # Vacíos = todo sigue en el dominio por el que entre la visita, como siempre.
 SITIO_DOMINIO = os.getenv("SITIO_DOMINIO", "")
