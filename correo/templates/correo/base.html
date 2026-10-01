@@ -24,7 +24,9 @@
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#FFFFFF;">
   <tr>
     <td align="center" style="padding:24px 12px;">
-      <table role="presentation" class="contenedor" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px; max-width:600px; background:#FFFFFF; border:1px solid #D7F4FA; border-radius:12px;">
+      <!--[if mso]><table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0"><tr><td><![endif]-->
+      {# Fluido: 100 % del ancho hasta 600 px. No depende de media queries (Gmail en móvil las ignora a veces). #}
+      <table role="presentation" class="contenedor" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%; max-width:600px; background:#FFFFFF; border:1px solid #D7F4FA; border-radius:12px;">
         {# Logo oficial (versión horizontal) a 200 px: el manual pide mínimo 170 px y área de respeto libre. #}
         <tr>
           <td class="relleno" align="left" style="padding:32px 40px 8px 40px;">
@@ -78,6 +80,7 @@
           </td>
         </tr>
       </table>
+      <!--[if mso]></td></tr></table><![endif]-->
     </td>
   </tr>
 </table>
