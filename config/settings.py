@@ -255,8 +255,14 @@ SITIO_URL_PUBLICA = os.getenv("SITIO_URL_PUBLICA", "")
 # GitHub— pasa de 60 por minuto y tests que no tienen nada que ver reciben 429.
 # Ningún test prueba ese límite; los del login no se tocan.
 import sys as _sys
-if len(_sys.argv) > 1 and _sys.argv[1] == "test":
+EJECUTANDO_TESTS = len(_sys.argv) > 1 and _sys.argv[1] == "test"
+if EJECUTANDO_TESTS:
     REST_FRAMEWORK["DEFAULT_THROTTLE_RATES"]["captacion"] = "100000/min"
+    # El hasher de producción (PBKDF2, ~1 M iteraciones) tarda casi 1 s por
+    # contraseña: con cientos de usuarios de prueba la suite pasaba de 55 min.
+    # MD5 SOLO aquí: este bloque exige el comando `manage.py test`, que nunca
+    # corre en el servidor (gunicorn). core.tests_hasher lo comprueba.
+    PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]
 
 # Dominios separados: la landing en uno, el panel en otro (core/dominios.py).
 # Vacíos = todo sigue en el dominio por el que entre la visita, como siempre.
