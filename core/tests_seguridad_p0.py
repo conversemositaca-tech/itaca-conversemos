@@ -104,3 +104,50 @@ class AdjuntosClinicosTests(_Clinica):
             self.assertEqual(self._ids(u), {self.adj_mio.id, self.adj_ajeno.id})
 
 
+class TokensDeConsentimientoTests(_Clinica):
+    """P0-S2: el token de firma solo llega a quien envía el enlace."""
+
+    def setUp(self):
+        super().setUp()
+        self.doc_ajeno = Consentimiento.objects.create(
+            clinica=self.clinica, paciente=self.ajeno, texto="t", token=Consentimiento.nuevo_token())
+
+    def test_crear_como_psicologo_no_devuelve_el_token(self):
+        r = self.como(self.psico).post("/api/consentimientos/", {"paciente": self.mio.id},
+                                       content_type="application/json")
+        self.assertIn(r.status_code, (200, 201))
+        self.assertEqual(r.json()["token"], "")
+        self.assertEqual(r.json()["url"], "")
+
+    def test_psicologo_no_genera_ni_lista_los_de_pacientes_ajenos(self):
+        r = self.como(self.psico).post("/api/consentimientos/", {"paciente": self.ajeno.id},
+                                       content_type="application/json")
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(self.client.get(f"/api/consentimientos/?paciente={self.ajeno.id}").json(), [])
+
+    def test_comercial_no_recibe_ninguno(self):
+        self.assertEqual(self.como(self.comercial).get("/api/consentimientos/").json(), [])
+
+    def test_coordinacion_si_recibe_el_enlace_para_enviarlo(self):
+        r = self.como(self.asistente).post("/api/consentimientos/", {"paciente": self.mio.id},
+                                           content_type="application/json")
+        self.assertTrue(r.json()["token"])
+        self.assertTrue(r.json()["url"].startswith("/consentimiento/"))
+
+    def test_la_bitacora_de_mensajes_no_filtra_el_enlace(self):
+        texto = f"Léelo aquí: https://x.pe/consentimiento/{self.doc_ajeno.token}"
+        Mensaje.objects.create(clinica=self.clinica, paciente=self.mio, telefono="51987222333", texto=texto)
+        Mensaje.objects.create(clinica=self.clinica, paciente=self.ajeno, telefono="51987444555", texto=texto)
+
+        filas = self.como(self.psico).get("/api/mensajes/").json()
+        self.assertEqual([f["paciente"] for f in filas], [self.mio.id])
+        self.assertNotIn(self.doc_ajeno.token, json.dumps(filas))
+        self.assertEqual(filas[0]["telefono"], "")
+
+        filas = self.como(self.comercial).get("/api/mensajes/").json()
+        self.assertNotIn(self.doc_ajeno.token, json.dumps(filas))
+
+        filas = self.como(self.asistente).get("/api/mensajes/").json()
+        self.assertIn(self.doc_ajeno.token, json.dumps(filas))
+
+

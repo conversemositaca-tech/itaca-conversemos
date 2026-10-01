@@ -91,10 +91,26 @@ class ConsentimientoViewSet(viewsets.ModelViewSet):
         # nombre. No se le entrega ninguno.
         if es_solo_lectura(self.request.user):
             return Consentimiento.objects.none()
-        qs = Consentimiento.objects.del_tenant_actual().select_related("paciente").order_by("-creado_en")
+        qs = (Consentimiento.objects.del_tenant_actual()
+              .filter(paciente__in=self._pacientes_alcanzables())
+              .select_related("paciente").order_by("-creado_en"))
         pid = self.request.query_params.get("paciente")
         if pid:
             qs = qs.filter(paciente_id=pid)
+        return qs
+
+    def _pacientes_alcanzables(self):
+        """Comercial no ve fichas clínicas; el psicólogo solo las de SUS pacientes
+        (mismo alcance que PacienteViewSet)."""
+        from usuarios.models import Profesional, Usuario
+
+        qs = Paciente.objects.del_tenant_actual()
+        rol = getattr(self.request.user, "rol", None)
+        if rol == Usuario.Rol.COMERCIAL:
+            return qs.none()
+        if rol == Usuario.Rol.MEDICO:
+            ficha = Profesional.objects.filter(usuario=self.request.user).first()
+            return qs.filter(profesional=ficha) if ficha else qs.none()
         return qs
 
     def create(self, request, *args, **kwargs):
@@ -105,7 +121,7 @@ class ConsentimientoViewSet(viewsets.ModelViewSet):
         "pendiente de firma" que tapaba la aceptación ya registrada.
         """
         clinica = get_clinica_actual()
-        paciente = Paciente.objects.del_tenant_actual().filter(pk=request.data.get("paciente")).first()
+        paciente = self._pacientes_alcanzables().filter(pk=request.data.get("paciente")).first()
         if paciente is None:
             return Response({"detail": "Paciente no encontrado."}, status=status.HTTP_400_BAD_REQUEST)
         tipo = (request.data.get("tipo") if request.data.get("tipo") in dict(Consentimiento.Tipo.choices)
@@ -122,12 +138,12 @@ class ConsentimientoViewSet(viewsets.ModelViewSet):
                 if not c.aceptado and c.texto != texto:
                     c.texto = texto
                     c.save(update_fields=["texto"])
-                return Response(ConsentimientoSerializer(c).data)
+                return Response(ConsentimientoSerializer(c, context=self.get_serializer_context()).data)
 
         c = Consentimiento.objects.create(
             clinica=clinica, paciente=paciente, tipo=tipo, texto=texto, token=Consentimiento.nuevo_token(),
         )
-        return Response(ConsentimientoSerializer(c).data, status=status.HTTP_201_CREATED)
+        return Response(ConsentimientoSerializer(c, context=self.get_serializer_context()).data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=["post"], url_path="marcar-aceptado")
     def marcar_aceptado(self, request, pk=None):
@@ -139,7 +155,7 @@ class ConsentimientoViewSet(viewsets.ModelViewSet):
         """
         c = self.get_object()
         if c.aceptado:
-            return Response({"ya": True, **ConsentimientoSerializer(c).data})
+            return Response({"ya": True, **ConsentimientoSerializer(c, context=self.get_serializer_context()).data})
         via = (request.data.get("via") or "").strip()
         if via not in dict(Consentimiento.Via.choices) or via == Consentimiento.Via.ENLACE:
             via = Consentimiento.Via.WHATSAPP
@@ -152,7 +168,7 @@ class ConsentimientoViewSet(viewsets.ModelViewSet):
         c.registrado_por = request.user if request.user.is_authenticated else None
         c.save(update_fields=["aceptado", "aceptado_en", "aceptado_via", "firmante_nombre",
                               "firmante_documento", "registrado_por"])
-        return Response(ConsentimientoSerializer(c).data)
+        return Response(ConsentimientoSerializer(c, context=self.get_serializer_context()).data)
 
 
 class ConsentimientoPublicoView(APIView):
