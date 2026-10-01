@@ -10,6 +10,7 @@ from django.db import transaction
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 
+from leads.models import Lead
 from pacientes.models import Cita
 
 from . import flujos
@@ -32,3 +33,13 @@ def _cita_guardada(sender, instance, raw=False, **kwargs):
         return
     if flujos.reserva.corresponde(instance):
         _despues_del_commit(flujos.reserva.programar_confirmacion, instance.id)
+    # DP-02: programar o cancelar. Cancelar corre aunque el flujo esté apagado,
+    # para que lo ya programado nunca salga si la persona decidió.
+    _despues_del_commit(flujos.dp02.al_guardar_cita, instance.id)
+
+
+@receiver(post_save, sender=Lead, dispatch_uid="correo_lead_guardado")
+def _lead_guardado(sender, instance, raw=False, **kwargs):
+    if raw or not instance.paciente_id or instance.estado != Lead.Estado.GANADO:
+        return
+    _despues_del_commit(flujos.dp02.al_ganar_lead, instance.paciente_id)
