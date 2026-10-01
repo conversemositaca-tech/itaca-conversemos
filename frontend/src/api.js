@@ -130,6 +130,10 @@ export const api = {
   crearConsentimiento: (paciente, tipo) => req("/api/consentimientos/", { method: "POST", body: JSON.stringify({ paciente, tipo }) }),
   consentimientoPublico: (token) => req(`/api/consentimiento/${token}/`),
   // Email 1.0 · panel de correo del paciente (solo gerencia y coordinación).
+  // Email 1.0 · páginas públicas por token (sin login).
+  correoPreferencias: (token) => req(`/api/correo/preferencias/${token}/`),
+  correoGuardarPreferencias: (token, data) => req(`/api/correo/preferencias/${token}/`, { method: "POST", body: JSON.stringify(data) }),
+  correoBaja: (token) => req(`/api/correo/baja/${token}/`, { method: "POST", body: "{}" }),
   correoPaciente: (id) => req(`/api/correo/pacientes/${id}/`),
   correoConsentimiento: (id, data) => req(`/api/correo/pacientes/${id}/consentimiento/`, { method: "POST", body: JSON.stringify(data) }),
   aceptarConsentimiento: (token, data) => req(`/api/consentimiento/${token}/aceptar/`, { method: "POST", body: JSON.stringify(data) }),

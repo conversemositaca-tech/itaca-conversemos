@@ -52,7 +52,12 @@ def armar(plantilla, contexto, *, token_preferencias=None, request=None):
     cuerpo_texto = _render(plantilla.cuerpo_texto, contexto, autoescape=False).strip()
 
     pref_url = urls_publicas.preferencias(token_preferencias, request) if token_preferencias else ""
-    baja_url = urls_publicas.baja(token_preferencias, request) if token_preferencias else ""
+    # El enlace del pie lleva a la página (que da de baja al abrirse con
+    # JavaScript: los antivirus que "visitan" enlaces no la disparan). La
+    # cabecera List-Unsubscribe apunta directo al endpoint POST (RFC 8058).
+    baja_url = (urls_publicas.preferencias(token_preferencias, request) + "?baja=1"
+                if token_preferencias else "")
+    baja_post_url = urls_publicas.baja(token_preferencias, request) if token_preferencias else ""
     legal = textos.datos_legales()
 
     html = render_to_string("correo/base.html", {
@@ -90,9 +95,9 @@ def armar(plantilla, contexto, *, token_preferencias=None, request=None):
     texto = "\n\n".join(p for p in partes if p)
 
     cabeceras = {}
-    if es_marketing and plantilla.requiere_baja_un_clic and baja_url:
+    if es_marketing and plantilla.requiere_baja_un_clic and baja_post_url:
         # RFC 8058: baja de un clic desde el propio cliente de correo.
-        cabeceras["List-Unsubscribe"] = f"<{baja_url}>"
+        cabeceras["List-Unsubscribe"] = f"<{baja_post_url}>"
         cabeceras["List-Unsubscribe-Post"] = "List-Unsubscribe=One-Click"
     return asunto, html, texto, cabeceras
 
