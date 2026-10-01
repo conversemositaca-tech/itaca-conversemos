@@ -91,7 +91,7 @@ def evaluar_elegibilidad_correo(dest, categoria, plantilla=None):
     except ValidationError:
         return Resultado(False, Codigo.DESTINATARIO_INVALIDO, final)
 
-    bloqueos = preferencias.bloqueos(final)
+    bloqueos = preferencias.bloqueos(final, correo=correo)
     if bloqueos["rebote_duro"]:
         return Resultado(False, Codigo.REBOTE_DURO, final)
     if bloqueos["spam"]:

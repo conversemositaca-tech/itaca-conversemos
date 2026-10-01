@@ -24,6 +24,9 @@ log = logging.getLogger(__name__)
 MAX_INTENTOS = 3
 LOTE_MAXIMO = 100
 ESPERA_REINTENTO = timedelta(minutes=15)
+# Un envío que sigue "procesando" o "enviando" pasado este tiempo quedó
+# colgado (el proceso se reinició a mitad de camino).
+ATASCADO_DESPUES_DE = timedelta(minutes=30)
 
 _CONSTRUCTORES = {}
 
@@ -78,6 +81,48 @@ def _tomar(qs, ahora):
     return ids
 
 
+def recuperar_atascados(ahora=None):
+    """Resuelve lo que quedó colgado por un reinicio. Devuelve {'recuperados', 'inciertos'}.
+
+    - Si el correo nunca llegó a Brevo, el envío vuelve a la cola (o pasa a
+      ERROR si ya gastó sus intentos).
+    - Si quedó "enviando", no se sabe si salió: ERROR con ESTADO_INCIERTO y NO
+      se reenvía (podría duplicarse). Si después llega un aviso de Brevo, el
+      webhook corrige el estado del correo.
+    - Si el correo ya salió, el envío se marca enviado.
+    """
+    ahora = ahora or timezone.now()
+    limite = ahora - ATASCADO_DESPUES_DE
+    resumen = {"recuperados": 0, "inciertos": 0}
+    with transaction.atomic():
+        colgados = (EPC.objects.select_for_update(skip_locked=True)
+                    .filter(estado=EPC.Estado.PROCESANDO, ultimo_intento_en__lt=limite))
+        for e in colgados:
+            fila = CorreoEnviado.objects.filter(clave_idempotencia=e.clave_idempotencia).first()
+            if fila is not None and fila.estado in (
+                    CorreoEnviado.Estado.ENVIADO, CorreoEnviado.Estado.ENTREGADO):
+                e.estado, e.correo_enviado = EPC.Estado.ENVIADO, fila
+            elif fila is not None and fila.estado == CorreoEnviado.Estado.ENVIANDO:
+                e.estado, e.correo_enviado, e.error_detalle = EPC.Estado.ERROR, fila, "ESTADO_INCIERTO"
+                fila.estado, fila.error_codigo = CorreoEnviado.Estado.ERROR, "ESTADO_INCIERTO"
+                fila.save(update_fields=["estado", "error_codigo"])
+                resumen["inciertos"] += 1
+            elif e.intentos >= MAX_INTENTOS:
+                e.estado, e.error_detalle = EPC.Estado.ERROR, "ATASCADO"
+            else:
+                e.estado = EPC.Estado.PENDIENTE
+                resumen["recuperados"] += 1
+            e.save(update_fields=["estado", "correo_enviado", "error_detalle", "actualizado_en"])
+        # Correos sueltos (sin envío programado) que quedaron "enviando".
+        sueltos = (CorreoEnviado.objects.select_for_update(skip_locked=True)
+                   .filter(estado=CorreoEnviado.Estado.ENVIANDO, envio_iniciado_en__lt=limite))
+        for fila in sueltos:
+            fila.estado, fila.error_codigo = CorreoEnviado.Estado.ERROR, "ESTADO_INCIERTO"
+            fila.save(update_fields=["estado", "error_codigo"])
+            resumen["inciertos"] += 1
+    return resumen
+
+
 def procesar_pendientes(limite=LOTE_MAXIMO, ahora=None):
     """Despacha los envíos vencidos. Devuelve un resumen por estado final."""
     resumen = {"tomados": 0, "enviados": 0, "cancelados": 0, "reintento": 0, "error": 0}
@@ -85,6 +130,7 @@ def procesar_pendientes(limite=LOTE_MAXIMO, ahora=None):
         resumen["apagado"] = True
         return resumen
     ahora = ahora or timezone.now()
+    resumen.update(recuperar_atascados(ahora))
     vencidos = (EPC.objects.filter(estado=EPC.Estado.PENDIENTE, ejecutar_en__lte=ahora)
                 .order_by("ejecutar_en", "id")[: max(1, min(int(limite), LOTE_MAXIMO))])
     # El slice no admite FOR UPDATE en todos los motores: se fija por id.
@@ -93,14 +139,6 @@ def procesar_pendientes(limite=LOTE_MAXIMO, ahora=None):
     for envio_id in ids:
         resumen[_ejecutar(envio_id)] += 1
     return resumen
-
-
-def procesar_ahora(envio):
-    """Intenta despachar YA un envío recién programado (p. ej. la confirmación de reserva)."""
-    if not envio_mod.habilitado():
-        return None
-    ids = _tomar(EPC.objects.filter(id=envio.id, estado=EPC.Estado.PENDIENTE), timezone.now())
-    return _ejecutar(ids[0]) if ids else None
 
 
 def _ejecutar(envio_id):

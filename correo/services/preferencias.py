@@ -24,12 +24,25 @@ def relacionadas(dest):
     return PreferenciaCorreo.objects.filter(dest.filtro(), clinica=dest.clinica)
 
 
-def bloqueos(dest):
-    """{'marketing': bool, 'rebote_duro': bool, 'spam': bool} sumando todas las filas."""
-    filas = list(relacionadas(dest).values("marketing_bloqueado", "rebote_duro", "marcado_spam"))
+def _misma_direccion(a, b):
+    return (a or "").strip().lower() == (b or "").strip().lower()
+
+
+def bloqueos(dest, correo=None):
+    """{'marketing', 'rebote_duro', 'spam'} sumando todas las filas de la persona.
+
+    El rebote duro se mide contra `correo` (por defecto, la dirección actual
+    del destinatario): una dirección corregida ya no está bloqueada.
+    """
+    actual = dest.correo() if correo is None else correo
+    filas = list(relacionadas(dest).values(
+        "marketing_bloqueado", "rebote_duro", "rebote_duro_correo", "marcado_spam"))
     return {
         "marketing": any(f["marketing_bloqueado"] for f in filas),
-        "rebote_duro": any(f["rebote_duro"] for f in filas),
+        "rebote_duro": any(
+            f["rebote_duro"] and (not f["rebote_duro_correo"]
+                                  or _misma_direccion(f["rebote_duro_correo"], actual))
+            for f in filas),
         "spam": any(f["marcado_spam"] for f in filas),
     }
 
@@ -49,11 +62,15 @@ def desbloquear_marketing(dest):
         marketing_bloqueado=False, marketing_bloqueado_en=None, actualizado_en=timezone.now())
 
 
-def marcar_rebote_duro(dest):
+def marcar_rebote_duro(dest, correo=None):
+    """Bloquea la dirección que rebotó (por defecto, la actual de la persona)."""
+    correo = (dest.correo() if correo is None else correo or "").strip()
     fila = de_persona(dest)
-    if not fila.rebote_duro:
+    if not fila.rebote_duro or not _misma_direccion(fila.rebote_duro_correo, correo):
         fila.rebote_duro, fila.rebote_duro_en = True, timezone.now()
-        fila.save(update_fields=["rebote_duro", "rebote_duro_en", "actualizado_en"])
+        fila.rebote_duro_correo = correo[:254]
+        fila.save(update_fields=["rebote_duro", "rebote_duro_en", "rebote_duro_correo",
+                                 "actualizado_en"])
     return fila
 
 

@@ -154,7 +154,7 @@ def procesar_evento(ev):
 
         dest = Destinatario.de_fila(fila)
         if tipo == ECP.Tipo.REBOTE_DURO:
-            preferencias.marcar_rebote_duro(dest)
+            preferencias.marcar_rebote_duro(dest, correo=fila.destinatario_correo)
         elif tipo == ECP.Tipo.BAJA:
             consentimiento.revocar(dest, CC.Origen.WEBHOOK_PROVEEDOR)
         elif tipo == ECP.Tipo.SPAM:

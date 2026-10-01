@@ -159,6 +159,10 @@ class PreferenciaCorreo(ConIdentidad):
     marketing_bloqueado_en = models.DateTimeField(null=True, blank=True)
     rebote_duro = models.BooleanField(default=False)
     rebote_duro_en = models.DateTimeField(null=True, blank=True)
+    # La dirección que rebotó. El bloqueo vale solo para ESA dirección: si la
+    # persona corrige su correo en la ficha, se le puede volver a escribir.
+    # Vacío (filas anteriores a este campo) = bloquea cualquier dirección.
+    rebote_duro_correo = models.EmailField(blank=True, default="")
     marcado_spam = models.BooleanField(default=False)
     marcado_spam_en = models.DateTimeField(null=True, blank=True)
     actualizado_en = models.DateTimeField(auto_now=True)
