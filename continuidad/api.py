@@ -151,6 +151,7 @@ class ProcesosPacienteView(APIView):
         return Response({
             "paciente": paciente.pk,
             "puede_registrar": puede,
+            "profesional_actual": paciente.profesional_id,
             "procesos": procesos_de_paciente(paciente, puede),
         })
 
@@ -209,6 +210,7 @@ class TransicionView(APIView):
             return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(
             {"repetido": res.repetido, "evento": str(res.evento.uuid), "estado": res.proceso.estado,
+             "profesional_actual": res.proceso.paciente.profesional_id,
              "procesos": procesos_de_paciente(paciente, True)},
             status=status.HTTP_200_OK if res.repetido else status.HTTP_201_CREATED)
 

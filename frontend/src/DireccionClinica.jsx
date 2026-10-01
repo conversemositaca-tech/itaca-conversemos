@@ -82,6 +82,7 @@ const ESTILOS = `
   border-radius:5px; padding:0 5px; margin-left:4px; white-space:nowrap; font-weight:500; }
 .dc-celda-sub { display:block; font-size:11px; color:var(--muted); white-space:nowrap; }
 .dc-dist { display:grid; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); gap:14px; }
+.dc-motivos .dc-barra-fila { grid-template-columns:minmax(120px, 160px) 1fr 76px; }
 .dc-barra-fila { display:grid; grid-template-columns:84px 1fr 64px; gap:8px; align-items:center; font-size:12.5px; margin-top:6px; }
 .dc-barra { height:10px; background:var(--hover); border-radius:5px; overflow:hidden; display:flex; }
 .dc-barra span { display:block; height:100%; }
@@ -277,7 +278,7 @@ function BloqueFormal({ f, sede, showToast }) {
       <div className="ca-stats" style={{ marginTop: 12 }}>
         <StatKpi label="Activos hoy sin próxima cita" k={k.activos_sin_proxima_cita} />
         <StatKpi label="Dentro de su frecuencia esperada" k={k.frecuencia_cumplida} enCurso="sin frecuencia definida" />
-        <StatKpi label="Salidas con motivo conocido" k={k.motivos_conocidos} />
+        <StatKpi label="Registros con motivo conocido" k={k.motivos_conocidos} />
         <StatKpi label="Sin continuidad registrada" k={k.sin_continuidad_registrada} enCurso="aún activos" />
       </div>
       <Nota>
@@ -290,15 +291,15 @@ function BloqueFormal({ f, sede, showToast }) {
       </Nota>
 
       <div className="dc-dist" style={{ marginTop: 16 }}>
-        <div className="ca-card">
+        <div className="ca-card dc-motivos">
           <div style={{ fontWeight: 600, fontSize: 14 }}>
-            Motivos de salida <span style={{ color: "var(--muted)", fontWeight: 400 }}>· N {mot.total}</span>
+            Motivos registrados <span style={{ color: "var(--muted)", fontWeight: 400 }}>· N {mot.total}</span>
           </div>
-          {!mot.total ? <Nota>Sin salidas registradas en el período.</Nota> : (
+          {!mot.total ? <Nota>Sin registros con motivo en el período.</Nota> : (
             <>
               {mot.por_categoria.filter((c) => c.n).map((c) => (
                 <div key={c.categoria} className="dc-barra-fila">
-                  <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} title={c.label}>{c.label}</span>
+                  <span title={c.label}>{c.label}</span>
                   <div className="dc-barra" aria-hidden="true"><span style={{ width: `${(c.n / Math.max(1, mot.conocidos)) * 100}%`, background: VERDE }} /></div>
                   <span className="num" style={{ textAlign: "right" }}>{c.n} · {pct(c.pct_sobre_conocidos)}</span>
                 </div>

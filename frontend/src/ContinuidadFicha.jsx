@@ -76,14 +76,14 @@ function Historial({ eventos }) {
             {e.fecha_revision && <>Revisar el {fecha(e.fecha_revision)}. </>}
             {e.detalle_operativo && <span style={{ fontStyle: "italic" }}>«{e.detalle_operativo}» </span>}
           </div>
-          <div style={{ color: "var(--muted)", fontSize: 11.5, marginTop: 2 }}>{e.registrado_por} · {e.origen}</div>
+          <div style={{ color: "var(--muted)", fontSize: 11.5, marginTop: 2 }}>{e.registrado_por}{e.origen !== e.registrado_por ? ` · ${e.origen}` : ""}</div>
         </li>
       ))}
     </ol>
   );
 }
 
-function ModalAccion({ accion, proceso, catalogo, onClose, onGuardar }) {
+function ModalAccion({ accion, proceso, catalogo, profesionalActual, onClose, onGuardar }) {
   const tipo = accion.tipo;
   const [motivo, setMotivo] = useState("");
   const [fechaEf, setFechaEf] = useState(hoyISO());
@@ -169,7 +169,8 @@ function ModalAccion({ accion, proceso, catalogo, onClose, onGuardar }) {
             <div className="ca-label">Profesional nuevo</div>
             <select className="ca-input" value={prof} onChange={(e) => setProf(e.target.value)}>
               <option value="">Elige…</option>
-              {(catalogo?.profesionales || []).map((x) => <option key={x.id} value={x.id}>{x.nombre}</option>)}
+              {(catalogo?.profesionales || []).filter((x) => x.id !== profesionalActual)
+                .map((x) => <option key={x.id} value={x.id}>{x.nombre}</option>)}
             </select>
           </label>
         )}
@@ -311,7 +312,7 @@ export default function ContinuidadFicha({ pacienteId, showToast }) {
 
   const guardar = async (payload) => {
     const r = await api.continuidadTransicion(pacienteId, payload);
-    setCargado((c) => ({ ...c, data: { ...c.data, procesos: r.procesos } }));
+    setCargado((c) => ({ ...c, data: { ...c.data, procesos: r.procesos, profesional_actual: r.profesional_actual } }));
     setModal(null);
     showToast?.(r.repetido ? "Ese registro ya estaba guardado." : "Registro guardado en la historia del proceso.");
   };
@@ -347,6 +348,7 @@ export default function ContinuidadFicha({ pacienteId, showToast }) {
               )}
       </div>
       {modal && <ModalAccion accion={modal.accion} proceso={modal.proceso} catalogo={catalogo}
+        profesionalActual={data?.profesional_actual}
         onClose={() => setModal(null)} onGuardar={guardar} />}
     </>
   );
