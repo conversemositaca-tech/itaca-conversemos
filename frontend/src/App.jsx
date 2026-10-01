@@ -592,8 +592,12 @@ function coincideBusqueda(texto, busqueda) {
   });
 }
 
+// Dirección Clínica guarda sus filtros en la URL (?vista=direccion&sede=…):
+// al recargar o abrir un enlace compartido se vuelve a esa pantalla.
+const vistaDeUrl = () => (new URLSearchParams(window.location.search).get("vista") === "direccion" ? "direccion" : null);
+
 export default function ClinicaApp() {
-  const [view, setView] = useState("hoy");
+  const [view, setView] = useState(() => vistaDeUrl() || "hoy");
   const [pacientes, setPacientes] = useState([]);
   const [citas, setCitas] = useState([]);
   const [bloqueos, setBloqueos] = useState([]);
@@ -846,7 +850,17 @@ export default function ClinicaApp() {
   const atendidas = citasHoy.filter((c) => c.estado === "atendida").length;
 
   function showToast(msg) { setToast(msg); setTimeout(() => setToast(""), 2800); }
-  function go(v) { setView(v); setSelectedId(null); }
+  function go(v) {
+    // Al salir de Dirección Clínica, la URL deja de llevar sus filtros.
+    if (v !== "direccion" && vistaDeUrl()) window.history.pushState(null, "", window.location.pathname);
+    setView(v); setSelectedId(null);
+  }
+  // «Atrás» hacia un enlace de Dirección Clínica vuelve a abrir esa pantalla.
+  useEffect(() => {
+    const alVolver = () => { if (vistaDeUrl()) { setView("direccion"); setSelectedId(null); } };
+    window.addEventListener("popstate", alVolver);
+    return () => window.removeEventListener("popstate", alVolver);
+  }, []);
   function openFicha(id) { if (!id) return; setView("pacientes"); setSelectedId(id); setDetalle(null); cargarDetalle(id); }
 
   // `HOY_ISO` se fija al cargar la página (con el reloj del SERVIDOR). Si dejan la
@@ -1834,7 +1848,10 @@ export default function ClinicaApp() {
 
         {view === "gerencia" && <Gerencia showToast={showToast} clinica={usuario?.clinica?.nombre} />}
 
-        {view === "direccion" && <DireccionClinica showToast={showToast} />}
+        {view === "direccion" && (usuario?.rol === "admin" || esAnalista) && <DireccionClinica showToast={showToast} />}
+        {view === "direccion" && usuario && usuario.rol !== "admin" && !esAnalista && (
+          <div className="ca-empty">Esta sección es solo para gerencia y Dirección Clínica.</div>
+        )}
 
         {view === "historico" && <Historico showToast={showToast} esAdmin={usuario?.rol === "admin"} />}
 
