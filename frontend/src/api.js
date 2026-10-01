@@ -114,6 +114,11 @@ export const api = {
   eliminarAdjunto: (id) => req(`/api/adjuntos/${id}/`, { method: "DELETE" }),
   urlAdjunto: (id) => `/api/adjuntos/${id}/descargar/`,
 
+  // Riesgo propuesto por la IA, pendiente de revisión clínica
+  sugerenciasRiesgo: (pacienteId) => req(`/api/sugerencias-riesgo/?paciente=${pacienteId}&estado=pendiente`),
+  resolverSugerenciaRiesgo: (id, decision, valor) =>
+    req(`/api/sugerencias-riesgo/${id}/resolver/`, { method: "POST", body: JSON.stringify({ decision, valor }) }),
+
   // Mensajes (WhatsApp)
   mensajes: () => req("/api/mensajes/"),
   enviarMensajePaciente: (id, texto, tipo, plantillaId, citaId) =>

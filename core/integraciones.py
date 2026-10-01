@@ -174,9 +174,12 @@ def _contexto_paciente(paciente):
     return "\n".join(partes).strip()
 
 
-def _autoalimentar_perfil(paciente, est):
-    """Historia clínica → alimenta las tarjetas del perfil (resumen, objetivo, riesgo)
-    y crea los objetivos terapéuticos. Es el 'documento madre' (pedido de Emma)."""
+def _autoalimentar_perfil(paciente, est, atencion=None, fuente="eli_ia"):
+    """Historia clínica → alimenta las tarjetas del perfil (resumen, objetivo) y
+    crea los objetivos terapéuticos. Es el 'documento madre' (pedido de Emma).
+
+    El riesgo NO se escribe: la IA solo deja una SugerenciaRiesgo pendiente que
+    un psicólogo del paciente o un admin confirma, modifica o rechaza."""
     cambios = []
     if est.get("resumen_clinico"):
         paciente.resumen_clinico = est["resumen_clinico"][:4000]
@@ -187,8 +190,7 @@ def _autoalimentar_perfil(paciente, est):
         cambios.append("objetivo_principal")
     riesgo = _norm_riesgo(est.get("riesgo"))
     if riesgo:
-        paciente.riesgo = riesgo
-        cambios.append("riesgo")
+        sugerir_riesgo(paciente, riesgo, atencion=atencion, fuente=fuente)
     if cambios:
         paciente.save(update_fields=cambios)
     if lineas:
@@ -197,6 +199,20 @@ def _autoalimentar_perfil(paciente, est):
             if l.strip().lower() not in existentes:
                 ObjetivoTerapeutico.objects.create(clinica=paciente.clinica, paciente=paciente, texto=l[:200])
                 existentes.add(l.strip().lower())
+
+
+def sugerir_riesgo(paciente, valor, atencion=None, fuente="eli_nota_voz"):
+    """Deja el riesgo propuesto por la IA pendiente de revisión humana. Una
+    sugerencia pendiente anterior queda como reemplazada (no se borra)."""
+    from pacientes.models import SugerenciaRiesgo
+
+    SugerenciaRiesgo.objects.filter(
+        paciente=paciente, estado=SugerenciaRiesgo.Estado.PENDIENTE,
+    ).update(estado=SugerenciaRiesgo.Estado.REEMPLAZADA)
+    return SugerenciaRiesgo.objects.create(
+        clinica=paciente.clinica, paciente=paciente, valor_sugerido=valor,
+        fuente=fuente, atencion=atencion,
+    )
 
 
 class ContextoView(_Base):
@@ -468,6 +484,7 @@ class NotaVozView(_Base):
         campos_guiados = d.get("campos") if isinstance(d.get("campos"), dict) else None
         est = None
         extracto = {}
+        fuente_riesgo = "eli_ia"
 
         if campos_guiados:
             # Registro GUIADO desde Eli: cada campo va a su lugar (sin IA).
@@ -481,6 +498,7 @@ class NotaVozView(_Base):
                 campos["indicaciones"] = cg("recomendaciones")
                 # Alimenta el perfil (resumen, objetivo, riesgo) como el documento madre.
                 est = {"resumen_clinico": cg("resumen"), "objetivos": cg("objetivos"), "riesgo": cg("riesgo")}
+                fuente_riesgo = "eli_guiado"
                 extracto = {"resumen": cg("resumen"), "riesgo": _norm_riesgo(cg("riesgo"))}
             else:
                 partes = []
@@ -543,11 +561,12 @@ class NotaVozView(_Base):
 
         atencion = Atencion.objects.create(**campos)
         if tipo == Atencion.Tipo.HISTORIA and est:
-            _autoalimentar_perfil(paciente, est)
+            _autoalimentar_perfil(paciente, est, atencion=atencion, fuente=fuente_riesgo)
 
         return Response(
             {"ok": True, "atencion_id": atencion.id, "paciente": paciente.nombre,
              "tipo": atencion.get_tipo_display(), "extracto": extracto,
-             "perfil_actualizado": bool(tipo == Atencion.Tipo.HISTORIA and est)},
+             "perfil_actualizado": bool(tipo == Atencion.Tipo.HISTORIA and est),
+             "riesgo_pendiente_de_revision": bool(extracto.get("riesgo"))},
             status=status.HTTP_201_CREATED,
         )

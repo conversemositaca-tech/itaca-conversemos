@@ -17,7 +17,7 @@ from django.test import SimpleTestCase, TestCase, override_settings
 
 from core.models import Clinica
 from mensajes.models import Mensaje
-from pacientes.models import Adjunto, Consentimiento, Paciente
+from pacientes.models import Adjunto, Consentimiento, Paciente, SugerenciaRiesgo
 from usuarios.models import Profesional, Usuario
 
 
@@ -193,5 +193,91 @@ class TokenDeIntegracionTests(_Clinica):
                 self.settings(ITACA_INTEGRACION_TOKEN="comp"):
             self.assertEqual(self._get(self.ELI, "comp"), 403)
         self.assertTrue(cmp_.called)
+
+
+class RiesgoClinicoDeEliTests(_Clinica):
+    """P0-S4: la IA sugiere; el riesgo oficial lo decide una persona."""
+
+    URL = "/api/integraciones/nota-voz/"
+
+    def _nota_guiada(self, riesgo="Alto"):
+        with self.settings(ITACA_INTEGRACION_TOKEN="comp", ITACA_TOKEN_ELI=""):
+            return self.client.post(self.URL, {
+                "telefono": "51987000111", "paciente_id": self.mio.id, "tipo": "historia",
+                "campos": {"resumen": "Consulta por ansiedad", "objetivos": "Dormir mejor", "riesgo": riesgo},
+            }, content_type="application/json", HTTP_X_INTEGRACION_TOKEN="comp")
+
+    def test_eli_no_cambia_el_riesgo_oficial(self):
+        self.mio.riesgo = Paciente.Riesgo.BAJO
+        self.mio.save(update_fields=["riesgo"])
+        r = self._nota_guiada("Alto")
+        self.assertEqual(r.status_code, 201)
+        self.assertTrue(r.json()["riesgo_pendiente_de_revision"])
+        self.mio.refresh_from_db()
+        self.assertEqual(self.mio.riesgo, Paciente.Riesgo.BAJO)
+        s = SugerenciaRiesgo.objects.get(paciente=self.mio)
+        self.assertEqual((s.valor_sugerido, s.estado, s.fuente), ("alto", "pendiente", "eli_guiado"))
+        self.assertIsNotNone(s.atencion_id)
+
+    def test_estructurar_con_ia_tambien_queda_como_sugerencia(self):
+        est = {"resumen_clinico": "r", "objetivos": "o", "riesgo": "moderado", "motivo": "m"}
+        with mock.patch("core.estructurar_nota.estructurar", return_value=est), \
+                self.settings(ITACA_INTEGRACION_TOKEN="comp", ITACA_TOKEN_ELI=""):
+            r = self.client.post(self.URL, {
+                "telefono": "51987000111", "paciente_id": self.mio.id, "tipo": "historia", "contenido": "dictado",
+            }, content_type="application/json", HTTP_X_INTEGRACION_TOKEN="comp")
+        self.assertEqual(r.status_code, 201)
+        self.mio.refresh_from_db()
+        self.assertEqual(self.mio.riesgo, "")
+        self.assertEqual(SugerenciaRiesgo.objects.get(paciente=self.mio).fuente, "eli_ia")
+
+    def test_una_sugerencia_nueva_reemplaza_a_la_pendiente(self):
+        self._nota_guiada("Alto")
+        self._nota_guiada("Bajo")
+        estados = dict(SugerenciaRiesgo.objects.values_list("valor_sugerido", "estado"))
+        self.assertEqual(estados, {"alto": "reemplazada", "bajo": "pendiente"})
+
+    def _resolver(self, usuario, s, **cuerpo):
+        return self.como(usuario).post(f"/api/sugerencias-riesgo/{s.id}/resolver/", cuerpo,
+                                       content_type="application/json")
+
+    def test_solo_el_psicologo_del_paciente_o_admin_resuelven(self):
+        self._nota_guiada("Alto")
+        s = SugerenciaRiesgo.objects.get()
+        self.assertEqual(self._resolver(self.asistente, s, decision="confirmar").status_code, 403)
+        self.assertEqual(self._resolver(self.analista, s, decision="confirmar").status_code, 403)
+        self.assertEqual(self._resolver(self.comercial, s, decision="confirmar").status_code, 403)
+        self.assertEqual(self._resolver(self.otro_psico, s, decision="confirmar").status_code, 404)
+        self.mio.refresh_from_db()
+        self.assertEqual(self.mio.riesgo, "")
+
+    def test_confirmar_modificar_y_rechazar(self):
+        self._nota_guiada("Alto")
+        s = SugerenciaRiesgo.objects.get()
+        r = self._resolver(self.psico, s, decision="modificar", valor="moderado")
+        self.assertEqual(r.status_code, 200)
+        self.mio.refresh_from_db()
+        self.assertEqual(self.mio.riesgo, "moderado")
+        s.refresh_from_db()
+        self.assertEqual((s.estado, s.valor_final, s.revisado_por_id), ("modificada", "moderado", self.psico.id))
+        self.assertEqual(self._resolver(self.psico, s, decision="confirmar").status_code, 409)
+
+        self._nota_guiada("Bajo")
+        s2 = SugerenciaRiesgo.objects.get(estado="pendiente")
+        self.assertEqual(self._resolver(self.admin, s2, decision="rechazar").status_code, 200)
+        self.mio.refresh_from_db()
+        self.assertEqual(self.mio.riesgo, "moderado")
+
+        self._nota_guiada("Alto")
+        s3 = SugerenciaRiesgo.objects.get(estado="pendiente")
+        self.assertEqual(self._resolver(self.psico, s3, decision="confirmar").status_code, 200)
+        self.mio.refresh_from_db()
+        self.assertEqual(self.mio.riesgo, "alto")
+
+    def test_comercial_no_ve_sugerencias(self):
+        self._nota_guiada("Alto")
+        self.assertEqual(self.como(self.comercial).get("/api/sugerencias-riesgo/").json(), [])
+        self.assertEqual(self.como(self.otro_psico).get("/api/sugerencias-riesgo/").json(), [])
+        self.assertEqual(len(self.como(self.psico).get("/api/sugerencias-riesgo/").json()), 1)
 
 

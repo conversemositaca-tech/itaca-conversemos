@@ -8,6 +8,7 @@ import { MENU_SITIO, SITE_ROUTES, propsEnlace, normalizarRuta } from "./rutas";
 import { modeloReporte, modeloTabla, exportarExcel, exportarWord, exportarPowerPoint, exportarPDF, exportarCSV } from "./exportGerencia";
 import Login from "./Login";
 import Duplicados, { AvisoDuplicado } from "./Duplicados";
+import SugerenciaRiesgo from "./SugerenciaRiesgo";
 
 const TIPOS_DOC = [
   { v: "dni", l: "DNI" }, { v: "ce", l: "Carné de extranjería" },
@@ -7035,6 +7036,7 @@ function Ficha({ p, onBack, onEdit, onWhatsApp, onSubirAdjunto, onEliminarAdjunt
             return r ? <span style={{ background: r[0], color: r[1], fontSize: 14, fontWeight: 600, padding: "5px 14px", borderRadius: 20 }}>{r[2]}</span>
               : <span style={{ color: "var(--muted)", fontSize: 13.5 }}>Sin evaluar</span>;
           })()}
+          <SugerenciaRiesgo pacienteId={p.id} puedeResolver={puedeEliminar && !soloLectura} showToast={showToast} onResuelta={onRefrescar} />
         </FichaCard>
         {/* El psicólogo VE el NPS (satisfacción de sus pacientes) pero no lo registra ni lo pide. */}
         <NpsPaciente pacienteId={p.id} puede={!esMedico && (puedeRegistrar || puedeCobrar)} showToast={showToast} />
