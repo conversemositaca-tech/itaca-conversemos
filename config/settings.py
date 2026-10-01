@@ -53,6 +53,7 @@ INSTALLED_APPS = [
     "finanzas",
     "espacios",
     "faro",
+    "correo",
 ]
 
 MIDDLEWARE = [
