@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useRef } from "react";
+import React, { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { Activity, AlertTriangle, ArrowDown, ArrowUp, Award, BarChart3, Bell, BookUser, Building2, Cake, Calendar, Check, ChevronDown, ChevronLeft, ChevronRight, ClipboardList, Clock, Compass, Copy, DoorOpen, Download, ExternalLink, FileDown, FileSpreadsheet, FileText, FolderOpen, GraduationCap, Heart, HeartHandshake, HeartPulse, Home, KeyRound, Landmark, Leaf, Lightbulb, LogOut, MapPin, Megaphone, Menu, MessageCircle, Mic, Paperclip, Pencil, Phone, Pill, Play, Plus, Presentation, Receipt, RotateCcw, Search, Send, Shield, Smile, Sparkles, Target, Trash2, TrendingUp, Trophy, Upload, UserCog, UserPlus, UserRound, Users, X } from "lucide-react";
 import InputClave from "./InputClave";
@@ -967,6 +967,7 @@ export default function ClinicaApp() {
       ...(data.tutor_parentesco !== undefined ? { tutor_parentesco: data.tutor_parentesco } : {}),
       ...(data.tutor_telefono !== undefined ? { tutor_telefono: data.tutor_telefono } : {}),
       ...(data.tutor_documento !== undefined ? { tutor_documento: data.tutor_documento } : {}),
+      ...(data.tutor_correo !== undefined ? { tutor_correo: data.tutor_correo } : {}),
       ...(data.n_sesion !== undefined ? { n_sesion: data.n_sesion } : {}),
       ...(data.proceso !== undefined ? { proceso: data.proceso } : {}),
     };
@@ -6802,6 +6803,144 @@ function CalendarioAsistencia({ citas }) {
   );
 }
 
+// ── Email 1.0 · correo del paciente en su ficha ─────────────────────────
+// Solo gerencia y coordinación (el psicólogo y Dirección Clínica no ven el
+// contacto). Muestra el estado del consentimiento comercial, los bloqueos y la
+// bitácora, y deja registrar o revocar UNA persona a la vez, con confirmación
+// explícita de cómo dio su OK. Nada masivo.
+const ESTADO_CONSENT_COLOR = { OTORGADO: "#2F6B4F", REVOCADO: "#9C4646", NO_OTORGADO: "var(--muted)" };
+
+function CorreoPersona({ titulo, persona, pacienteId, paraTutor, bloqueadoMenor, confirmaciones, onCambio, showToast }) {
+  const [accion, setAccion] = useState(null); // "otorgar" | "revocar"
+  const [origen, setOrigen] = useState("");
+  const [confirmo, setConfirmo] = useState(false);
+  const [guardando, setGuardando] = useState(false);
+  const m = persona.marketing || {};
+  const b = persona.bloqueos || {};
+  const fecha = m.fecha ? new Date(m.fecha).toLocaleString("es-PE", { dateStyle: "short", timeStyle: "short" }) : "";
+  const grupo = `correo-origen-${paraTutor ? "tutor" : "paciente"}`;
+
+  function abrir(a) { setAccion(a); setOrigen(""); setConfirmo(false); }
+  async function guardar() {
+    setGuardando(true);
+    try {
+      await api.correoConsentimiento(pacienteId, { accion, origen, confirmo: confirmo === true, para_tutor: paraTutor === true });
+      showToast?.(accion === "otorgar" ? "Consentimiento registrado" : "Consentimiento revocado");
+      setAccion(null);
+      onCambio();
+    } catch (e) {
+      showToast?.(e.message || "No se pudo guardar");
+    } finally { setGuardando(false); }
+  }
+
+  return (
+    <div style={{ flex: "1 1 280px", border: "1px solid var(--line)", borderRadius: 10, padding: 14 }}>
+      <div className="ca-label" style={{ marginBottom: 6 }}>{titulo}</div>
+      <div style={{ fontSize: 14, marginBottom: 8, wordBreak: "break-all" }}>
+        {persona.correo || <span style={{ color: "var(--muted)" }}>Sin correo en la ficha</span>}
+      </div>
+      <div style={{ fontSize: 13.5, lineHeight: 1.6 }}>
+        <div>Consentimiento comercial: <strong style={{ color: ESTADO_CONSENT_COLOR[m.estado] }}>{m.estado_label || "No otorgado"}</strong></div>
+        {fecha && <div style={{ color: "var(--ink-soft)" }}>Último cambio: {fecha}{m.origen_label ? ` · ${m.origen_label}` : ""}</div>}
+        {(b.rebote_duro || b.spam || b.marketing) && (
+          <div style={{ color: "#9C4646", marginTop: 4 }}>
+            {[b.rebote_duro && "Rebote duro", b.spam && "Marcó spam", b.marketing && "Comerciales bloqueados"].filter(Boolean).join(" · ")}
+          </div>
+        )}
+      </div>
+      {!accion && (
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
+          {!bloqueadoMenor && m.estado !== "OTORGADO" && persona.correo && (
+            <button className="ca-btn ghost" onClick={() => abrir("otorgar")}>Registrar consentimiento</button>
+          )}
+          {m.estado === "OTORGADO" && <button className="ca-btn ghost" onClick={() => abrir("revocar")}>Revocar</button>}
+          {persona.preferencias_url && (
+            <a className="ca-btn ghost" href={persona.preferencias_url} target="_blank" rel="noreferrer" style={{ textDecoration: "none" }}>
+              Abrir preferencias
+            </a>
+          )}
+        </div>
+      )}
+      {bloqueadoMenor && <div style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 8 }}>Es menor de 14: el consentimiento lo da su tutor.</div>}
+      {accion && (
+        <div style={{ marginTop: 10, background: "var(--hover, #F3F1EC)", borderRadius: 8, padding: 12, fontSize: 13.5 }}>
+          <div style={{ marginBottom: 8 }}>{accion === "otorgar" ? "¿Cómo dio su aceptación?" : "¿Cómo pidió retirarlo?"}</div>
+          <label style={{ display: "block", marginBottom: 4 }}>
+            <input type="radio" name={grupo} checked={origen === "PANEL_WHATSAPP"}
+              onChange={() => { setOrigen("PANEL_WHATSAPP"); setConfirmo(false); }} /> Por WhatsApp
+          </label>
+          <label style={{ display: "block", marginBottom: 8 }}>
+            <input type="radio" name={grupo} checked={origen === "PANEL_PRESENCIAL"}
+              onChange={() => { setOrigen("PANEL_PRESENCIAL"); setConfirmo(false); }} /> De forma presencial
+          </label>
+          {accion === "otorgar" && origen && (
+            <label style={{ display: "flex", gap: 8, alignItems: "flex-start", marginBottom: 8 }}>
+              <input type="checkbox" checked={confirmo} onChange={(e) => setConfirmo(e.target.checked)} style={{ marginTop: 3 }} />
+              <span>{confirmaciones?.[origen]}</span>
+            </label>
+          )}
+          <div style={{ display: "flex", gap: 8 }}>
+            <button className="ca-btn" disabled={guardando || !origen || (accion === "otorgar" && !confirmo)} onClick={guardar}>
+              {guardando ? "Guardando…" : "Guardar"}
+            </button>
+            <button className="ca-btn ghost" onClick={() => setAccion(null)}>Cancelar</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CorreoFicha({ pacienteId, showToast }) {
+  const [d, setD] = useState(null);
+  const [abierto, setAbierto] = useState(false);
+  const cargar = useCallback(() => {
+    api.correoPaciente(pacienteId).then(setD).catch(() => setD(false));
+  }, [pacienteId]);
+  useEffect(() => { cargar(); }, [cargar]);
+  if (!d) return null;
+  const comun = { pacienteId, confirmaciones: d.confirmaciones, onCambio: cargar, showToast };
+  const celda = { padding: "6px 8px" };
+  return (
+    <section style={{ marginBottom: 22 }}>
+      <div className="ca-label" style={{ marginBottom: 8 }}>Correo</div>
+      <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+        <CorreoPersona titulo="Paciente" persona={d.paciente} paraTutor={false} bloqueadoMenor={d.es_menor} {...comun} />
+        {d.tutor && <CorreoPersona titulo="Tutor" persona={d.tutor} paraTutor={true} bloqueadoMenor={false} {...comun} />}
+      </div>
+      <button className="ca-btn ghost" style={{ marginTop: 10 }} onClick={() => setAbierto((x) => !x)}>
+        {abierto ? "Ocultar bitácora de correos" : `Ver bitácora de correos (${d.bitacora.length})`}
+      </button>
+      {abierto && (d.bitacora.length === 0 ? (
+        <div style={{ fontSize: 13, color: "var(--muted)", marginTop: 8 }}>Todavía no se le ha enviado ningún correo.</div>
+      ) : (
+        <div style={{ overflowX: "auto", marginTop: 8 }}>
+          <table style={{ width: "100%", fontSize: 13, borderCollapse: "collapse" }}>
+            <thead>
+              <tr style={{ textAlign: "left", color: "var(--muted)" }}>
+                <th style={celda}>Fecha</th><th style={celda}>Plantilla</th><th style={celda}>Categoría</th>
+                <th style={celda}>Asunto</th><th style={celda}>Estado</th><th style={celda}>Último evento</th>
+              </tr>
+            </thead>
+            <tbody>
+              {d.bitacora.map((c) => (
+                <tr key={c.id} style={{ borderTop: "1px solid var(--line)" }}>
+                  <td style={{ ...celda, whiteSpace: "nowrap" }}>{new Date(c.fecha).toLocaleString("es-PE", { dateStyle: "short", timeStyle: "short" })}</td>
+                  <td style={celda}>{c.plantilla}{c.para_tutor ? " · tutor" : ""}</td>
+                  <td style={celda}>{c.categoria_label}</td>
+                  <td style={celda}>{c.asunto}</td>
+                  <td style={celda}>{c.estado_label}</td>
+                  <td style={celda}>{c.ultimo_evento || "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ))}
+    </section>
+  );
+}
+
 function Ficha({ p, onBack, onEdit, onWhatsApp, onSubirAdjunto, onEliminarAdjunto, puedeEliminar, clinica, onAgendar, onRegistrarSesion, puedeRegistrar, onVenderPaquete, puedeVenderPaquete, onRegistrarPago, puedeCobrar, esMedico, soloLectura = false, ocultaContacto = false, showToast, onRefrescar }) {
   const alertas = (p.alertas || "").split(",").map((s) => s.trim()).filter(Boolean);
   const ultimaEvo = (p.historial || [])[0];
@@ -6902,6 +7041,8 @@ function Ficha({ p, onBack, onEdit, onWhatsApp, onSubirAdjunto, onEliminarAdjunt
           {p.tutor_nombre && <div className="ca-field"><Users size={15} strokeWidth={1.9} style={{ color: "var(--muted)" }} /> Tutor: {p.tutor_nombre}{p.tutor_parentesco ? ` (${p.tutor_parentesco})` : ""}{p.tutor_telefono ? ` · ${p.tutor_telefono}` : ""}</div>}
         </div>
       )}
+
+      {!ocultaContacto && !soloLectura && <CorreoFicha pacienteId={p.id} showToast={showToast} />}
 
       <BrujulaClinica p={p} puede={puedeRegistrar} onRefrescar={onRefrescar} showToast={showToast} />
 
@@ -13935,6 +14076,7 @@ function PacienteModal({ paciente, onClose, onSave, esMedico }) {
   const [tutorParentesco, setTutorParentesco] = useState(paciente?.tutor_parentesco || "");
   const [tutorTel, setTutorTel] = useState(paciente?.tutor_telefono || "");
   const [tutorDoc, setTutorDoc] = useState(paciente?.tutor_documento || "");
+  const [tutorCorreo, setTutorCorreo] = useState(paciente?.tutor_correo || "");
   const [sede, setSede] = useState(paciente?.sede || "");
   const [profId, setProfId] = useState(paciente?.profesional || "");
   const [frecuencia, setFrecuencia] = useState(paciente?.frecuencia || "");
@@ -14127,6 +14269,12 @@ function PacienteModal({ paciente, onClose, onSave, esMedico }) {
           </div>
         </div>
         )}
+        {!esMedico && (
+          <div style={{ marginBottom: 14 }}>
+            <div className="ca-label">Correo del tutor <span style={{ color: "var(--muted)", fontWeight: 400 }}>(a él van los correos de un menor de 14)</span></div>
+            <input className="ca-input" value={tutorCorreo} onChange={(e) => setTutorCorreo(e.target.value)} placeholder="correo@ejemplo.com" inputMode="email" />
+          </div>
+        )}
 
         <div className="ca-secth" style={{ margin: "4px 0 12px" }}>Antecedentes relevantes</div>
         <div style={{ marginBottom: 13 }}>
@@ -14172,11 +14320,37 @@ function PacienteModal({ paciente, onClose, onSave, esMedico }) {
         <div style={{ display: "flex", gap: 9, justifyContent: "flex-end" }}>
           <button className="ca-btn ghost" onClick={onClose}>Cancelar</button>
           <button className="ca-btn" style={{ opacity: canSave ? 1 : 0.5, pointerEvents: canSave ? "auto" : "none" }}
-            onClick={() => onSave({ ...(paciente?.id ? { id: paciente.id } : {}), nombre: nombre.trim(), fecha_nacimiento: fechaNac || null, especialidad: esp, sede, profesional: profId ? Number(profId) : null, frecuencia, modalidad: modalidadP, n_sesion: Number(nSesion) || 0, proceso, alergias: alergias.trim(), antecedentes: antecedentes.trim(), medicacion_habitual: medicacion.trim(), sesiones_proceso: Number(sesionesProceso) || 0, resumen_clinico: resumenClinico.trim(), objetivo_principal: objetivoPrincipal.trim(), riesgo, alertas: alertas.trim(), notas_internas: notasInternas.trim(), antecedentes_medicos: antMedicos.trim(), antecedentes_familiares: antFamiliares.trim(), antecedentes_otros: antOtros.trim(), ...(!esMedico ? { tel: tel.trim(), email: email.trim(), tipo_documento: tipoDoc, numero_documento: numDoc.trim(), direccion: direccion.trim(), genero, tutor_nombre: tutorNombre.trim(), tutor_parentesco: tutorParentesco.trim(), tutor_telefono: tutorTel.trim(), tutor_documento: tutorDoc.trim() } : {}) })}>
+            onClick={() => onSave({ ...(paciente?.id ? { id: paciente.id } : {}), nombre: nombre.trim(), fecha_nacimiento: fechaNac || null, especialidad: esp, sede, profesional: profId ? Number(profId) : null, frecuencia, modalidad: modalidadP, n_sesion: Number(nSesion) || 0, proceso, alergias: alergias.trim(), antecedentes: antecedentes.trim(), medicacion_habitual: medicacion.trim(), sesiones_proceso: Number(sesionesProceso) || 0, resumen_clinico: resumenClinico.trim(), objetivo_principal: objetivoPrincipal.trim(), riesgo, alertas: alertas.trim(), notas_internas: notasInternas.trim(), antecedentes_medicos: antMedicos.trim(), antecedentes_familiares: antFamiliares.trim(), antecedentes_otros: antOtros.trim(), ...(!esMedico ? { tel: tel.trim(), email: email.trim(), tipo_documento: tipoDoc, numero_documento: numDoc.trim(), direccion: direccion.trim(), genero, tutor_nombre: tutorNombre.trim(), tutor_parentesco: tutorParentesco.trim(), tutor_telefono: tutorTel.trim(), tutor_documento: tutorDoc.trim(), tutor_correo: tutorCorreo.trim() } : {}) })}>
             {esNuevo ? "Guardar" : "Guardar cambios"}
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// Casilla OPCIONAL de comunicaciones por correo (Email 1.0). Siempre empieza
+// desmarcada, va separada de cualquier otra aceptación y nunca bloquea lo que
+// la persona vino a hacer. El texto es el de la versión EMAIL-MKT-2026-01: si
+// cambia aquí, cambia también en correo/textos.py (y sube la versión).
+export const TEXTO_CONSENTIMIENTO_CORREO = "Quiero recibir por correo contenidos, novedades, talleres y comunicaciones de Ítaca Conversemos. Puedo retirar mi consentimiento en cualquier momento.";
+
+export function CasillaComunicaciones({ form, setForm, campo = "acepta_comunicaciones", correo = "email" }) {
+  const marcada = form[campo] === true;
+  // correo=null: el formulario no pide correo (se usa el de la ficha).
+  const sinCorreo = correo !== null && marcada && !String(form[correo] || "").trim();
+  return (
+    <div style={{ margin: "4px 0 14px" }}>
+      <label style={{ display: "flex", gap: 10, alignItems: "flex-start", cursor: "pointer", fontSize: 14, lineHeight: 1.45 }}>
+        <input type="checkbox" checked={marcada} style={{ marginTop: 3, flexShrink: 0 }}
+          onChange={(e) => setForm((p) => ({ ...p, [campo]: e.target.checked }))} />
+        <span>{TEXTO_CONSENTIMIENTO_CORREO} <span style={{ color: "var(--muted, #6E6E6E)" }}>(opcional)</span></span>
+      </label>
+      {sinCorreo ? (
+        <p style={{ margin: "6px 0 0 26px", fontSize: 13, color: "var(--muted, #6E6E6E)" }}>
+          Para recibir comunicaciones necesitamos un correo. Puedes seguir sin él.
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -14226,13 +14400,14 @@ export function ConsentimientoPublico({ token }) {
   const [documento, setDocumento] = useState("");
   const [enviando, setEnviando] = useState(false);
   const [hecho, setHecho] = useState(null);
+  const [comunic, setComunic] = useState({ acepta_comunicaciones: false });
 
   useEffect(() => { api.consentimientoPublico(token).then(setDoc).catch((e) => setErr(e.message)); }, [token]);
 
   async function aceptar() {
     if (nombre.trim().length < 3) return;
     setEnviando(true); setErr("");
-    try { setHecho(await api.aceptarConsentimiento(token, { nombre: nombre.trim(), documento: documento.trim() })); }
+    try { setHecho(await api.aceptarConsentimiento(token, { nombre: nombre.trim(), documento: documento.trim(), acepta_comunicaciones: comunic.acepta_comunicaciones === true })); }
     catch (e) { setErr(e.message); } finally { setEnviando(false); }
   }
 
@@ -14263,6 +14438,11 @@ export function ConsentimientoPublico({ token }) {
             style={{ marginTop: 12, padding: "11px 18px", borderRadius: 10, border: "1px solid #3E7A65", background: "#fff", color: "#2F6B4F", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>
             ⬇︎ Descargar mi copia
           </button>
+          {hecho?.consentimiento_sin_correo ? (
+            <div style={{ fontSize: 12.5, marginTop: 10, color: "#6B675F" }}>
+              Para recibir comunicaciones por correo necesitamos tu correo: compártelo con coordinación cuando quieras.
+            </div>
+          ) : null}
           <div style={{ fontSize: 12.5, marginTop: 10, color: "#6B675F" }}>
             Guarda o imprime tu copia. Ya puedes cerrar esta página. ¡Gracias! 🌿
           </div>
@@ -14272,6 +14452,9 @@ export function ConsentimientoPublico({ token }) {
           <div style={{ fontSize: 13, marginBottom: 6 }}>Para aceptar, escribe tu <strong>nombre completo</strong>:</div>
           <input style={inp} value={nombre} onChange={(e) => setNombre(e.target.value)} placeholder="Nombre y apellidos" />
           <input style={inp} value={documento} onChange={(e) => setDocumento(e.target.value)} placeholder="DNI (opcional)" />
+          {doc.tipo === "consentimiento" ? (
+            <CasillaComunicaciones form={comunic} setForm={setComunic} correo={null} />
+          ) : null}
           {err ? <div style={{ color: "#9C4646", fontSize: 13, marginBottom: 10 }}>{err}</div> : null}
           <button onClick={aceptar} disabled={enviando || nombre.trim().length < 3}
             style={{ width: "100%", padding: "13px", borderRadius: 10, border: "none", background: "#3E7A65", color: "#fff", fontSize: 15, fontWeight: 600, cursor: "pointer", opacity: (enviando || nombre.trim().length < 3) ? 0.5 : 1 }}>
@@ -15123,7 +15306,7 @@ export function AgendarPublico({ token }) {
   const [verVideo, setVerVideo] = useState(false); // si ya pidió ver la presentación
   const [slotsData, setSlotsData] = useState(null);
   const [slot, setSlot] = useState(null);          // {inicio, hora, diaLabel}
-  const [form, setForm] = useState({ nombre: "", telefono: "", documento: "", email: "", servicio: "", modalidad: "presencial", mensaje: "" });
+  const [form, setForm] = useState({ nombre: "", telefono: "", documento: "", email: "", servicio: "", modalidad: "presencial", mensaje: "", acepta_comunicaciones: false });
   const [enviando, setEnviando] = useState(false);
   const [hecho, setHecho] = useState(null);
   const setF = (k) => (e) => setForm((p) => ({ ...p, [k]: e.target.value }));
@@ -15171,6 +15354,7 @@ export function AgendarPublico({ token }) {
         profesional_id: prof.id, inicio: slot.inicio,
         nombre: form.nombre.trim(), telefono: form.telefono.trim(),
         documento: form.documento.trim(), email: form.email.trim(),
+        acepta_comunicaciones: form.acepta_comunicaciones === true,
         servicio: form.servicio, modalidad: form.modalidad, mensaje: form.mensaje.trim(),
         categoria: via === "ayuda" ? categoria : "", ayuda: via === "ayuda",
         // De dónde vino esta consulta: se guardó al entrar al sitio.
@@ -15230,9 +15414,11 @@ export function AgendarPublico({ token }) {
         sede, categoria, turno, modalidad: modoPref, tipo: tipoSesion,
         nombre: form.nombre.trim(), telefono: form.telefono.trim(),
         email: form.email.trim(), mensaje: form.mensaje.trim(),
+        acepta_comunicaciones: form.acepta_comunicaciones === true,
         atribucion: origenGuardado(),
       });
-      setHecho({ solicitud: true, tipo: r.tipo || tipoSesion, sede, nombre: form.nombre.trim() });
+      setHecho({ solicitud: true, tipo: r.tipo || tipoSesion, sede, nombre: form.nombre.trim(),
+                 consentimiento_sin_correo: !!r.consentimiento_sin_correo });
     } catch (e) {
       setErr(e.message);
     } finally { setEnviando(false); }
@@ -15249,6 +15435,12 @@ export function AgendarPublico({ token }) {
             <h1 className="ag-h1 ag-h1-sm">
               {hecho.solicitud ? "Recibimos tu solicitud" : "Tu hora quedó apartada"}
             </h1>
+            {hecho.consentimiento_sin_correo ? (
+              <p className="ag-nota-suave" role="status">
+                Marcaste que quieres recibir comunicaciones por correo, pero no dejaste uno.
+                Si quieres recibirlas, compártenos tu correo cuando hablemos.
+              </p>
+            ) : null}
             <p className="ag-lead">
               {hecho.solicitud
                 ? (hecho.tipo === "brujula"
@@ -15636,6 +15828,7 @@ export function AgendarPublico({ token }) {
               <input className="ag-input" value={form.email} onChange={setF("email")}
                 inputMode="email" autoComplete="email" />
             </label>
+            <CasillaComunicaciones form={form} setForm={setForm} />
 
             <label className="ag-campo">
               <span className="ag-label">¿Qué te gustaría trabajar? <span className="ag-opt">opcional</span></span>
@@ -15778,6 +15971,7 @@ export function AgendarPublico({ token }) {
                 <input className="ag-input" value={form.email} onChange={setF("email")} inputMode="email" autoComplete="email" />
               </label>
             </div>
+            <CasillaComunicaciones form={form} setForm={setForm} />
 
             {/* Ya se eligió en su propio paso: aquí solo se recuerda, con salida
                 para cambiarlo sin perder lo que ya escribió. */}

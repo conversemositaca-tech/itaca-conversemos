@@ -256,6 +256,30 @@ EMAIL_USE_TLS = os.getenv("EMAIL_USE_TLS", "1") == "1"
 EMAIL_TIMEOUT = 20
 DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "Ítaca Conversemos <conversemos.itaca@gmail.com>")
 
+# --- Email 1.0 (Brevo por API) ---
+# Envío individual por la API transaccional de Brevo: no se sincronizan
+# contactos ni listas. Sin BREVO_API_KEY el código existe pero no envía.
+# Las tres banderas vienen APAGADAS: desplegar no manda ningún correo. Se
+# encienden a mano en Railway cuando el dominio y la cuenta estén listos
+# (ver docs/email-1.0-operacion.md).
+BREVO_API_KEY = os.getenv("BREVO_API_KEY", "")
+BREVO_API_BASE_URL = os.getenv("BREVO_API_BASE_URL", "https://api.brevo.com/v3").rstrip("/")
+BREVO_REMITENTE_NOMBRE = os.getenv("BREVO_REMITENTE_NOMBRE", "Equipo Conversemos")
+BREVO_REMITENTE_EMAIL = os.getenv("BREVO_REMITENTE_EMAIL", "hola@conversemos.itaca.com.pe")
+BREVO_REPLY_TO = os.getenv("BREVO_REPLY_TO", "conversemos.itaca@gmail.com")
+BREVO_WEBHOOK_TOKEN = os.getenv("BREVO_WEBHOOK_TOKEN", "")
+BREVO_TIMEOUT = float(os.getenv("BREVO_TIMEOUT", "10"))
+CORREO_BASE_URL_PUBLICA = os.getenv("CORREO_BASE_URL_PUBLICA", "")
+CORREO_HABILITADO = env_bool("CORREO_HABILITADO", False)
+CORREO_RESERVA_HABILITADO = env_bool("CORREO_RESERVA_HABILITADO", False)
+CORREO_DP02_HABILITADO = env_bool("CORREO_DP02_HABILITADO", False)
+# Datos del responsable del tratamiento para el pie de los correos comerciales.
+# Pendientes de Mirai: mientras estén vacíos, el pie muestra el marcador.
+CORREO_RAZON_SOCIAL = os.getenv("CORREO_RAZON_SOCIAL", "")
+CORREO_DOMICILIO_LEGAL = os.getenv("CORREO_DOMICILIO_LEGAL", "")
+CORREO_CANAL_ARCO = os.getenv("CORREO_CANAL_ARCO", "")
+CORREO_URL_PRIVACIDAD = os.getenv("CORREO_URL_PRIVACIDAD", "")
+
 # --- WhatsApp vía Evolution API ---
 # URL y API key del servidor Evolution (en EasyPanel). La "instancia" es la conexión
 # de WhatsApp; puede definirse global aquí o por clínica (Clinica.whatsapp_instance).

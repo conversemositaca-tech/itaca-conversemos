@@ -22,7 +22,7 @@ const ICONOS_SERVICIO = {
 
 import {
   AGENDA_CSS, AGENDA_SEDES, AGENDA_SITIO, AgendaDuda, AgendaPie, AgendaTop, AgendaWa, agendaFaq,
-  agendaWhatsapp,
+  agendaWhatsapp, CasillaComunicaciones,
 } from "./App.jsx";
 import datosDePaginas from "./paginas.json";
 import { PASOS as PASOS_EMBUDO, registrar } from "./embudo";
@@ -1935,7 +1935,7 @@ export function AutorizacionFaro({ token }) {
   const [info, setInfo] = useState(null);
   const [err, setErr] = useState("");
   const [d, setD] = useState({ estudiante: "", grado: "", seccion: "", apoderado: "",
-    documento: "", parentesco: "madre", correo: "", celular: "" });
+    documento: "", parentesco: "madre", correo: "", celular: "", acepta_comunicaciones: false });
   const [enviando, setEnviando] = useState(false);
   const [hecho, setHecho] = useState(null);
 
@@ -1962,7 +1962,7 @@ export function AutorizacionFaro({ token }) {
   async function decidir(autoriza) {
     setEnviando(true); setErr("");
     try {
-      await api.faroAutorizar(token, { ...d, autoriza });
+      await api.faroAutorizar(token, { ...d, autoriza, acepta_comunicaciones: d.acepta_comunicaciones === true });
       setHecho({ autoriza });
       window.scrollTo(0, 0);
     } catch (e) {
@@ -2100,6 +2100,10 @@ export function AutorizacionFaro({ token }) {
         {campo("documento", "Su documento de identidad", { inputMode: "numeric" })}
         {campo("correo", "Su correo (ahí le llega el informe)", { type: "email", autoComplete: "email" })}
         {campo("celular", "Su celular", { inputMode: "tel", autoComplete: "tel" })}
+      </div>
+      {/* Aparte y opcional: no tiene que ver con autorizar el tamizaje ni con el informe. */}
+      <div style={{ marginTop: 18 }}>
+        <CasillaComunicaciones form={d} setForm={setD} correo="correo" />
       </div>
 
       <p className="fa-p" style={{ marginTop: 22 }}>

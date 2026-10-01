@@ -116,7 +116,7 @@ class PacienteSerializer(serializers.ModelSerializer):
             "id", "nombre", "fecha_nacimiento", "edad", "tel", "email",
             "tipo_documento", "tipo_documento_label", "numero_documento", "direccion",
             "genero", "genero_label",
-            "tutor_nombre", "tutor_parentesco", "tutor_telefono", "tutor_documento",
+            "tutor_nombre", "tutor_parentesco", "tutor_telefono", "tutor_documento", "tutor_correo",
             "sede", "sede_label", "profesional", "profesional_nombre", "profesional_medico_id", "codigo",
             "n_sesion", "sesiones_proceso", "proceso", "proceso_label", "seguimiento",
             "provisional",
@@ -142,7 +142,7 @@ class PacienteSerializer(serializers.ModelSerializer):
         req = self.context.get("request")
         if req is not None and oculta_contacto(req.user):
             for k in ("tel", "email", "direccion", "numero_documento",
-                      "tutor_telefono", "tutor_documento"):
+                      "tutor_telefono", "tutor_documento", "tutor_correo"):
                 if k in data:
                     data[k] = ""
         return data
@@ -326,7 +326,7 @@ SOLO_EN_LA_FICHA = (
     "brujula_motivo", "brujula_hipotesis", "brujula_objetivos", "brujula_fortalezas",
     "brujula_factores_protectores", "brujula_factores_riesgo", "brujula_barreras",
     "brujula_plan",
-    "tutor_nombre", "tutor_parentesco", "tutor_telefono", "tutor_documento",
+    "tutor_nombre", "tutor_parentesco", "tutor_telefono", "tutor_documento", "tutor_correo",
 )
 # `direccion` se queda: la exportación de pacientes la lleva como columna.
 
