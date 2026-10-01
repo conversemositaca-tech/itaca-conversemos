@@ -1117,3 +1117,40 @@ los feriados de Perú. Zona horaria por defecto: `America/Lima` (GMT-5).
      cancelación/inasistencia, estado formal del proceso, motivo de consulta
      codificado, `Cita.profesional` para el histórico, NPS por sesión, encuestas
      de utilidad y progreso.
+47. ⏳ Dirección Clínica · fase 1.5: cifras con su base (rama `feat/continuidad-1-5`,
+   2026-10-01, SIN desplegar; PR contra `feat/direccion-clinica`, no contra main).
+   Extiende el ítem 46 **sin modelos ni migraciones**: los procesos siguen saliendo
+   de `segmentar_procesos`. Definiciones completas en **`docs/direccion-clinica.md`**.
+   - **KPI = numerador + denominador + N** (`kpi()` en `core/direccion_clinica.py`):
+     cada tasa trae numerador, denominador (los **evaluables**), N, no evaluables
+     («aún en curso») y `muestra_pequena` (regla técnica: <10 evaluables, rótulo gris
+     neutro, sin colorear). Viene en el embudo (`kpi`, `kpi_caida`), en
+     `resumen.kpis` (S1→S2, S1→S3, S1→S6, abandono inferido), en cada fila de tabla
+     y en `calidad.kpis`.
+   - **Cambio de denominador**: la tasa de abandono inferido pasó a calcularse sobre
+     los procesos **ya terminados** (antes, sobre todos los iniciados, activos
+     incluidos). En la base demo: 74,4 % → 85,9 % a 12 meses y 20 % → 75 % a 3 meses.
+   - **Medianas**: `estadistica()` = media, mediana y N para sesiones por proceso
+     (todos y terminados), días entre sesiones y días de S1 a abandono inferido; la
+     pantalla destaca la mediana. Distribuciones por tramo (1 · 2–3 · 4–6 · 7–12 ·
+     13+; 0–7 … 61+ días), solo conteos.
+   - **Modalidad** (`Cita.modalidad`, sin campo nuevo): presencial / virtual /
+     mixta / sin información, filtro + tabla. OJO: «presencial» es el default del
+     campo, así que el faltante real está subestimado (se dice en pantalla).
+   - **Rango personalizado** validado (formato o `desde > hasta` → 400) y **filtros
+     en la URL** (`/gestion?vista=direccion&…`): `App.jsx` abre la vista desde
+     `?vista=direccion`, limpia la URL al salir y reacciona a «atrás»; la pantalla
+     sigue siendo solo admin/analista. «Limpiar filtros» y estado vacío explícito.
+   - **Calidad del dato** sobre el recorte filtrado: sin modalidad, sin categoría,
+     numeración inconsistente (de `segmentar_procesos`), cierres sin DP, sesiones
+     importadas de AgendaPro (por la marca `MARCADOR_IMPORTADO_AGENDAPRO`, anotada
+     en la consulta, sin traer notas). Sede/categoría/modalidad en **orden fijo**.
+   - Verificado: 23 tests nuevos (`core/tests_direccion_clinica_1_5.py`, incluido
+     que las consultas no crecen con pacientes ni psicólogos) + los 16 del ítem 46;
+     ESLint de `App.jsx` idéntico a la base (109) y `DireccionClinica.jsx` limpio;
+     40/40 en navegador real (8032, base demo `dc-continuidad-1-5.sqlite3`): períodos,
+     rango, combinaciones, URL + recarga + atrás, reset, vacío, PDF, móvil 390 px sin
+     scroll horizontal, admin/analista ven y coordinación recibe 403.
+   - **Fase 2 / dependencia de modelo** (no hecho): modalidad sin default, estado
+     formal del proceso, motivos de cancelación/inasistencia/cierre, `Cita.profesional`
+     para el histórico, cambio de psicólogo y reactivación como eventos.
