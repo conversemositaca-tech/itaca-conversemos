@@ -39,11 +39,23 @@ TOLERANCIA_DIAS = 14
 R = ProcesoContinuidad.Revision
 
 
-def registro_formal_desde():
+def registro_formal_desde(clinica_id):
     """Desde qué fecha de S1 un proceso nuevo nace ACTIVO (con evento de
-    inicio). Lo anterior nace "sin estado formal": no se le inventa uno."""
-    valor = getattr(settings, "CONTINUIDAD_REGISTRO_FORMAL_DESDE", "2026-10-01")
-    return valor if isinstance(valor, date) else date.fromisoformat(str(valor))
+    inicio). Lo anterior nace "sin estado formal": no se le inventa uno.
+
+    Sale de `ConfiguracionContinuidad` (la fija sola la migración el día del
+    despliegue; una clínica nueva, el día en que se usa por primera vez). El
+    setting CONTINUIDAD_REGISTRO_FORMAL_DESDE, si está, la sobrescribe."""
+    from django.utils import timezone
+
+    from .models import ConfiguracionContinuidad
+
+    valor = getattr(settings, "CONTINUIDAD_REGISTRO_FORMAL_DESDE", None)
+    if valor:
+        return valor if isinstance(valor, date) else date.fromisoformat(str(valor))
+    conf, _ = ConfiguracionContinuidad.objects.get_or_create(
+        clinica_id=clinica_id, defaults={"registro_formal_desde": timezone.localdate()})
+    return conf.registro_formal_desde
 
 
 def emparejar(tramos, persistidos, tolerancia=TOLERANCIA_DIAS):
@@ -168,7 +180,7 @@ def reconciliar_paciente(paciente_id, hoy=None):
     filas = list(ProcesoContinuidad.objects.select_for_update().filter(paciente_id=paciente_id))
     asignados, nuevos, marcas, division = emparejar([_como_tramo(p) for p in detectados], filas)
 
-    desde = registro_formal_desde()
+    desde = registro_formal_desde(paciente.clinica_id)
     pares = []
     for i, fila in asignados.items():
         p = detectados[i]
