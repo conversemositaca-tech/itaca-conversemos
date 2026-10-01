@@ -186,16 +186,17 @@ filtra por sede) y siempre con su N:
 
 ## 11. Limitaciones conocidas (fase 2 / dependencia de modelo)
 
-No se implementan aquí porque requieren modelo o migración:
+**Resuelto en la fase 2** (ver §13): estado formal del proceso con su
+historia, motivos estructurados de pausa / alta / abandono / cierre, frecuencia
+esperada, cambio de psicólogo y reactivación como eventos propios.
 
-- estado formal del proceso (pausa, alta, abandono confirmado) e historial de
-  estados de la cita;
-- motivo de cancelación / inasistencia / cierre;
+**Sigue pendiente** (requiere otro modelo o una decisión de producto):
+
+- historial de estados de la **cita** y motivo de cancelación / inasistencia;
 - modalidad sin valor por defecto (distinguir «presencial» de «no registrado»);
 - `Cita.profesional` para atribuir el histórico de AgendaPro;
-- motivo de consulta codificado, frecuencia esperada, NPS por sesión, encuestas
-  de utilidad y progreso;
-- cambio de psicólogo y reactivación como eventos propios.
+- motivo de consulta codificado, NPS por sesión, encuestas de utilidad y
+  progreso.
 
 ## 12. Rendimiento
 
@@ -204,3 +205,26 @@ asistidas, próximas citas, señales de reinicio, profesionales y usuarios) y
 calcula en memoria. Un test (`PermisosYConsultasTests.test_sin_n_mas_uno`)
 verifica que el número de consultas no crece con los pacientes ni con los
 psicólogos.
+
+## 13. Fase 2: estado registrado
+
+Desde la fase 2 (app `continuidad`) el desenlace de un proceso puede estar
+**registrado** (pausa, alta, abandono confirmado, cierre por otra decisión,
+reactivación, cambio de profesional, frecuencia esperada). Lo que cambia aquí:
+
+- **Precedencia**: estado formal → evidencia anterior (DP / ficha) →
+  inferencia. Pausa, alta, cierre y abandono confirmado registrados no se
+  infieren.
+- **Abandono confirmado e inferido van siempre por separado** (resumen,
+  embudo, tablas). El combinado solo aparece como «sin continuidad
+  registrada», rotulado.
+- La ficha «en pausa» pasa de «cierre registrado» a **pausa** (misma base,
+  otra etiqueta).
+- Nuevo bloque «Estado registrado de los procesos», «Calidad del registro
+  formal» y «Para revisión de continuidad».
+- Las tablas suman pausas, abandono confirmado, cambios de profesional y
+  reactivados.
+
+Definiciones completas: [continuidad.md](continuidad.md),
+[continuidad-estados.md](continuidad-estados.md) y
+[continuidad-metricas.md](continuidad-metricas.md).
