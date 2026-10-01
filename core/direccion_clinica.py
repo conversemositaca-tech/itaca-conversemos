@@ -24,6 +24,12 @@ Definiciones (las mismas que muestra la pantalla):
 - Reinicio: un proceso anterior que se cortó porque la numeración volvió a
   empezar poco después (menos de `dias_abandono` días). La persona no se fue.
 
+Fase 2: si el proceso tiene estado FORMAL (app `continuidad`), ese manda:
+pausa, alta, cierre o abandono CONFIRMADO no se infieren. La evidencia legacy
+(DP, ficha) solo se usa en procesos sin registro formal, y el abandono
+inferido nunca se convierte en confirmado. Ver `clasificar` y
+docs/continuidad-metricas.md.
+
 Todo porcentaje sale como KPI completo (`kpi()`): numerador, denominador
 (los EVALUABLES), N (el universo del que salen) y, cuando aplica, los no
 evaluables ("aún en curso"). Un proceso activo que todavía no llegó al hito
@@ -55,7 +61,12 @@ ESTADO_ABANDONO = "abandono_inferido"
 ESTADO_ALTA = "alta"
 ESTADO_CIERRE = "cierre_registrado"
 ESTADO_REINICIO = "reinicio"
-ESTADOS_PROCESO = (ESTADO_ACTIVO, ESTADO_ABANDONO, ESTADO_ALTA, ESTADO_CIERRE, ESTADO_REINICIO)
+ESTADO_PAUSA = "pausa"
+ESTADO_ABANDONO_CONFIRMADO = "abandono_confirmado"
+ESTADOS_PROCESO = (ESTADO_ACTIVO, ESTADO_ABANDONO, ESTADO_ALTA, ESTADO_CIERRE, ESTADO_REINICIO,
+                   ESTADO_PAUSA, ESTADO_ABANDONO_CONFIRMADO)
+# De dónde sale la clasificación de un proceso.
+FUENTE_FORMAL, FUENTE_LEGACY, FUENTE_INFERIDA = "formal", "legacy", "inferida"
 
 SIN_ASIGNAR = "sin_asignar"
 SIN_CATEGORIA = "sin_categoria"
@@ -164,13 +175,17 @@ def _modalidad_proceso(sesiones):
     return vistas.pop()
 
 
-def construir_procesos(pacientes, dias_abandono=DIAS_ABANDONO, hoy=None):
+def construir_procesos(pacientes, dias_abandono=DIAS_ABANDONO, hoy=None, formal=True):
     """Todos los procesos terapéuticos de esos pacientes, ya clasificados.
 
     `pacientes`: queryset de Paciente (ya acotado por clínica y rol). Hace
     cinco consultas en total, no una por paciente. Devuelve una lista de dicts,
     uno por proceso (tramo de `segmentar_procesos` con al menos una sesión que
     no sea consulta).
+
+    `formal=True` (por defecto) suma el estado formal de cada proceso desde
+    la app `continuidad` (dos consultas más, de solo lectura). La
+    reconciliación lo pide en False para no leerse a sí misma.
     """
     from pacientes.models import Cita
     from usuarios.models import Profesional, Usuario
@@ -194,11 +209,12 @@ def construir_procesos(pacientes, dias_abandono=DIAS_ABANDONO, hoy=None):
         citas_por_pac.setdefault(c["paciente_id"], []).append(c)
 
     ahora = timezone.now()
-    con_proxima = set(
-        Cita.objects.filter(paciente_id__in=pacs, inicio__gte=ahora)
-        .exclude(estado__in=(Cita.Estado.CANCELADA, Cita.Estado.NO_ASISTIO))
-        .values_list("paciente_id", flat=True)
-    )
+    proxima = {}
+    for pid, inicio in (Cita.objects.filter(paciente_id__in=pacs, inicio__gte=ahora)
+                        .exclude(estado__in=(Cita.Estado.CANCELADA, Cita.Estado.NO_ASISTIO))
+                        .values_list("paciente_id", "inicio")):
+        if pid not in proxima or inicio < proxima[pid]:
+            proxima[pid] = inicio
     senales = continuidad_mod.senales_por_paciente(list(citas_por_pac))
 
     # Quién es cada psicólogo. La cita apunta al Usuario (login); el paciente,
@@ -242,21 +258,6 @@ def construir_procesos(pacientes, dias_abandono=DIAS_ABANDONO, hoy=None):
             else:
                 hasta_sig = (tramos[i + 1]["citas"][0]["fecha"] - ultima["fecha"]).days
 
-            if ultima_decision == DP_ALTA or (es_actual and pac["frecuencia"] == "alta"):
-                estado = ESTADO_ALTA
-            elif ultima_decision in continuidad_mod.DP_CIERRE or (es_actual and pac["frecuencia"] == "en_pausa"):
-                estado = ESTADO_CIERRE
-            elif es_actual:
-                if pid in con_proxima or dias_sin_sesion <= dias_abandono:
-                    estado = ESTADO_ACTIVO
-                else:
-                    estado = ESTADO_ABANDONO
-            else:
-                # Un proceso anterior sin cierre registrado: el paciente volvió
-                # después, pero ESTE proceso se cortó. Abandono inferido si el
-                # hueco hasta el siguiente supera la ventana; si no, la
-                # numeración volvió a empezar sin que la persona se fuera.
-                estado = ESTADO_ABANDONO if hasta_sig > dias_abandono else ESTADO_REINICIO
 
             clave, nombre, origen = psicologo(s1.get("medico_id"), pac["profesional_id"])
             # Cada sesión se atribuye a quien la ATENDIÓ (no al de la S1): es lo
@@ -282,11 +283,60 @@ def construir_procesos(pacientes, dias_abandono=DIAS_ABANDONO, hoy=None):
                 "ultima": ultima["fecha"],
                 "n": len(sesiones),
                 "gaps": [(b - a).days for a, b in zip(fechas, fechas[1:])],
-                "estado": estado,
                 "dias_s1_a_ultima": (ultima["fecha"] - s1["fecha"]).days,
                 "sesiones": sesiones,
+                # Insumos de la clasificación (ver `clasificar`).
+                "ultima_decision": ultima_decision,
+                "frecuencia_ficha": pac["frecuencia"] or "",
+                "profesional_id": pac["profesional_id"],
+                "tiene_proxima": es_actual and pid in proxima,
+                "proxima": proxima.get(pid) if es_actual else None,
+                "dias_sin_sesion": dias_sin_sesion,
+                "hasta_siguiente": hasta_sig,
             })
+    if formal:
+        from continuidad.reconciliacion import anotar_formales
+        anotar_formales(procesos)
+    for p in procesos:
+        p["estado"], p["fuente_estado"] = clasificar(p, dias_abandono)
     return procesos
+
+
+def clasificar(p, dias_abandono=DIAS_ABANDONO):
+    """(estado, fuente) de un proceso. Precedencia:
+
+    1. Estado FORMAL registrado (alta, cierre, pausa, abandono confirmado).
+    2. Evidencia LEGACY, solo si no hay registro formal: DP-10 o ficha en
+       "alta" → alta; ficha "en pausa" → pausa; otro DP de cierre → cierre.
+    3. Inferencia: activo, abandono INFERIDO o reinicio. Un proceso con estado
+       formal ACTIVO puede quedar aquí como abandono inferido: lo inferido no
+       cambia lo registrado, se muestra al lado.
+    """
+    from continuidad.models import Estado
+
+    formal = p.get("estado_formal") or Estado.SIN_REGISTRO
+    por_formal = {Estado.ALTA: ESTADO_ALTA, Estado.CERRADO: ESTADO_CIERRE,
+                  Estado.PAUSA: ESTADO_PAUSA, Estado.ABANDONO: ESTADO_ABANDONO_CONFIRMADO}
+    if formal in por_formal:
+        return por_formal[formal], FUENTE_FORMAL
+    actual, dec, frec = p["actual"], p.get("ultima_decision"), p.get("frecuencia_ficha")
+    if formal != Estado.ACTIVO:
+        if dec == DP_ALTA or (actual and frec == "alta"):
+            return ESTADO_ALTA, FUENTE_LEGACY
+        if actual and frec == "en_pausa":
+            return ESTADO_PAUSA, FUENTE_LEGACY
+        if dec in continuidad_mod.DP_CIERRE:
+            return ESTADO_CIERRE, FUENTE_LEGACY
+    if actual:
+        if p.get("tiene_proxima") or p["dias_sin_sesion"] <= dias_abandono:
+            return ESTADO_ACTIVO, FUENTE_INFERIDA
+        return ESTADO_ABANDONO, FUENTE_INFERIDA
+    # Un proceso anterior sin cierre registrado: el paciente volvió después,
+    # pero ESTE proceso se cortó. Abandono inferido si el hueco hasta el
+    # siguiente supera la ventana; si no, la numeración volvió a empezar.
+    if p["hasta_siguiente"] > dias_abandono:
+        return ESTADO_ABANDONO, FUENTE_INFERIDA
+    return ESTADO_REINICIO, FUENTE_INFERIDA
 
 
 # ---------------------------------------------------------------------------
@@ -305,20 +355,26 @@ def _paso(procesos, desde, hasta):
     en_curso = [p for p in llegaron if p["n"] < hasta and p["estado"] == ESTADO_ACTIVO]
     terminados = [p for p in llegaron if p["n"] < hasta and p["estado"] != ESTADO_ACTIVO]
     cayeron = [p for p in terminados if p["estado"] == ESTADO_ABANDONO]
+    confirmados = [p for p in terminados if p["estado"] == ESTADO_ABANDONO_CONFIRMADO]
+    otros = len(terminados) - len(cayeron) - len(confirmados)
     base = len(pasaron) + len(terminados)
     return {
         "llegaron": len(llegaron),
         "evaluables": base,
         "en_curso": len(en_curso),
         "pasaron": len(pasaron),
+        # Abandono INFERIDO (regla de días). El confirmado va aparte: nunca se suman.
         "cayeron": len(cayeron),
-        # Alta, cierre registrado o reinicio: terminaron ahí, pero no se infiere abandono.
-        "otros_cierres": len(terminados) - len(cayeron),
+        "cayeron_confirmado": len(confirmados),
+        # Alta, pausa, cierre registrado o reinicio: terminaron ahí, sin abandono.
+        "otros_cierres": otros,
         "pct_paso": _pct(len(pasaron), base),
         "pct_caida": _pct(len(cayeron), base),
-        "pct_otros_cierres": _pct(len(terminados) - len(cayeron), base),
+        "pct_caida_confirmado": _pct(len(confirmados), base),
+        "pct_otros_cierres": _pct(otros, base),
         "kpi": kpi(len(pasaron), base, n=len(llegaron), no_evaluables=len(en_curso)),
         "kpi_caida": kpi(len(cayeron), base, n=len(llegaron), no_evaluables=len(en_curso)),
+        "kpi_caida_confirmado": kpi(len(confirmados), base, n=len(llegaron), no_evaluables=len(en_curso)),
     }
 
 
@@ -352,6 +408,8 @@ def resumen_grupo(procesos):
     k_abandono = _kpi_abandono(procesos)
     altas = sum(1 for p in procesos if p["estado"] == ESTADO_ALTA)
     cierres = sum(1 for p in procesos if p["estado"] == ESTADO_CIERRE)
+    pausas = sum(1 for p in procesos if p["estado"] == ESTADO_PAUSA)
+    confirmados = sum(1 for p in procesos if p["estado"] == ESTADO_ABANDONO_CONFIRMADO)
     sesiones = estadistica(p["n"] for p in procesos)
     sesiones_term = estadistica(p["n"] for p in terminados)
     return {
@@ -364,6 +422,10 @@ def resumen_grupo(procesos):
         "altas": altas,
         "cierres_registrados": cierres,
         "altas_o_cierres": altas + cierres,
+        "pausas": pausas,
+        "abandono_confirmado": confirmados,
+        "cambios_profesional": sum(1 for p in procesos if p.get("cambios")),
+        "reactivados": sum(1 for p in procesos if p.get("reactivaciones")),
         "reinicios": sum(1 for p in procesos if p["estado"] == ESTADO_REINICIO),
         "promedio_sesiones": sesiones["media"],
         "mediana_sesiones": sesiones["mediana"],
@@ -375,6 +437,7 @@ def resumen_grupo(procesos):
             "s1_s2": s12["kpi"],
             "s1_s3": s13["kpi"],
             "abandono_inferido": k_abandono,
+            "abandono_confirmado": kpi(confirmados, len(terminados), n=n, no_evaluables=n - len(terminados)),
         },
         "sesiones": sesiones,
         "sesiones_terminados": sesiones_term,
@@ -454,6 +517,9 @@ def calcular(pacientes, *, periodo=PERIODO_POR_DEFECTO, desde=None, hasta=None, 
         return (d is None or fecha >= d) and fecha <= h
 
     filtrados = [p for p in todos if pasa(p)]
+    # Fase 2: eventos formales de los procesos filtrados (una consulta).
+    from continuidad import metricas as formal_mod
+    formal_mod.anotar_eventos(filtrados)
     cohorte = [p for p in filtrados if en_periodo(p["s1"])]
     vigentes = [p for p in filtrados if p["estado"] == ESTADO_ACTIVO]
     terminados = [p for p in cohorte if p["estado"] != ESTADO_ACTIVO]
@@ -477,6 +543,8 @@ def calcular(pacientes, *, periodo=PERIODO_POR_DEFECTO, desde=None, hasta=None, 
         "tasa_abandono_inferido": k_abandono["pct"],
         "altas_registradas": sum(1 for p in cohorte if p["estado"] == ESTADO_ALTA),
         "cierres_registrados": sum(1 for p in cohorte if p["estado"] == ESTADO_CIERRE),
+        "pausas": sum(1 for p in cohorte if p["estado"] == ESTADO_PAUSA),
+        "abandono_confirmado": sum(1 for p in cohorte if p["estado"] == ESTADO_ABANDONO_CONFIRMADO),
         "reinicios": sum(1 for p in cohorte if p["estado"] == ESTADO_REINICIO),
         "promedio_sesiones": est_sesiones["media"],
         "promedio_sesiones_terminados": est_sesiones_term["media"],
@@ -489,6 +557,8 @@ def calcular(pacientes, *, periodo=PERIODO_POR_DEFECTO, desde=None, hasta=None, 
             "s1_s3": _paso(cohorte, 1, 3)["kpi"],
             "s1_s6": _paso(cohorte, 1, ETAPAS_EMBUDO)["kpi"],
             "abandono_inferido": k_abandono,
+            "abandono_confirmado": kpi(len([p for p in terminados if p["estado"] == ESTADO_ABANDONO_CONFIRMADO]),
+                                       len(terminados), n=len(cohorte), no_evaluables=len(cohorte) - len(terminados)),
         },
         "estadisticas": {
             "sesiones_por_proceso": est_sesiones,
@@ -609,7 +679,8 @@ def calcular(pacientes, *, periodo=PERIODO_POR_DEFECTO, desde=None, hasta=None, 
         "pct_cierres_con_dp": _pct(cierres_con_dp, len(cierres)),
         "procesos_terminados": len(terminados),
         "terminados_solo_inferidos": solo_inferidos,
-        "terminados_con_registro": sum(1 for p in terminados if p["estado"] in (ESTADO_ALTA, ESTADO_CIERRE)),
+        "terminados_con_registro": sum(1 for p in terminados if p["estado"] in (
+            ESTADO_ALTA, ESTADO_CIERRE, ESTADO_PAUSA, ESTADO_ABANDONO_CONFIRMADO)),
         "terminados_por_reinicio": sum(1 for p in terminados if p["estado"] == ESTADO_REINICIO),
         "historicas_sesiones": historicas_n,
         "historicas_sin_psicologo": historicas_sin,
@@ -678,6 +749,8 @@ def calcular(pacientes, *, periodo=PERIODO_POR_DEFECTO, desde=None, hasta=None, 
         "por_categoria": por_categoria,
         "por_modalidad": por_modalidad,
         "calidad": calidad,
+        "formal": formal_mod.bloque_formal(cohorte, vigentes, filtrados, d, h, hoy=hoy,
+                                           dias_abandono=dias_abandono),
     }
 
 

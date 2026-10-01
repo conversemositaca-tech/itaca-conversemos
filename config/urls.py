@@ -21,6 +21,7 @@ from core.integraciones import (
     RecordatoriosView, ResumenDiarioView,
 )
 from core.direccion_clinica import DireccionClinicaView
+from continuidad.api import MotivosView, ProcesosPacienteView, RevisionView, TransicionView
 from core.metricas import MetricaMensualViewSet
 from core.ocupacion import OcupacionView
 from core.reloj import HoraServidorView
@@ -132,6 +133,10 @@ urlpatterns = [
     path("api/transcribir/", TranscribirView.as_view(), name="transcribir"),
     path("api/hoy/", HoyResumenView.as_view(), name="hoy-resumen"),
     path("api/continuidad/pendientes/", ContinuidadPendientesView.as_view(), name="continuidad-pendientes"),
+    path("api/continuidad/paciente/<int:pk>/procesos/", ProcesosPacienteView.as_view(), name="continuidad-procesos"),
+    path("api/continuidad/paciente/<int:pk>/transicion/", TransicionView.as_view(), name="continuidad-transicion"),
+    path("api/continuidad/motivos/", MotivosView.as_view(), name="continuidad-motivos"),
+    path("api/continuidad/revision/", RevisionView.as_view(), name="continuidad-revision"),
     path("api/continuidad/caso/<int:pk>/", ContinuidadCasoView.as_view(), name="continuidad-caso"),
     path("api/continuidad/caso/<int:pk>/gestion/", ContinuidadGestionView.as_view(), name="continuidad-gestion"),
     # Contacto por WhatsApp del caso. La ruta específica va ANTES de la general.

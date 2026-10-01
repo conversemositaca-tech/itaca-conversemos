@@ -1154,3 +1154,45 @@ los feriados de Perú. Zona horaria por defecto: `America/Lima` (GMT-5).
    - **Fase 2 / dependencia de modelo** (no hecho): modalidad sin default, estado
      formal del proceso, motivos de cancelación/inasistencia/cierre, `Cita.profesional`
      para el histórico, cambio de psicólogo y reactivación como eventos.
+48. ⏳ Continuidad · fase 2: estado formal del proceso (rama `feat/continuidad-2-modelo`,
+   worktree `C:\projects\itaca-continuidad-2`, 2026-10-01, SIN desplegar; PR contra
+   `feat/direccion-clinica`). Nueva app **`continuidad`** (sin migraciones en
+   `pacientes`, para no chocar con Email). Docs: `docs/continuidad.md`,
+   `docs/continuidad-estados.md`, `docs/continuidad-metricas.md`.
+   - **Modelos**: `ProcesoContinuidad` (UUID estable + `cita_inicio` como ancla, estado
+     formal sin_registro/activo/pausa/alta/abandono/cerrado, frecuencia esperada,
+     marca de revisión), `EventoContinuidad` (append-only: save/delete bloqueados,
+     admin de solo lectura, motivo PROTECT, clave de idempotencia única por clínica) y
+     `MotivoContinuidad` (catálogo operativo por clínica, 7 categorías / 30 motivos,
+     se desactiva, no se borra). Sin restricciones únicas sobre `paciente`: la fusión de
+     duplicados los mueve sola.
+   - **Fuente de verdad**: el estado vive en `continuidad`. `Paciente.frecuencia` =
+     alta / en_pausa es **evidencia legacy** (carga histórica y respaldo para procesos
+     sin registro); no se escribe ni se limpia. El psicólogo asignado sigue en
+     `Paciente.profesional`: el cambio formal lo actualiza y el evento guarda antes/después.
+   - **Frontera**: `GestionContinuidad` sigue siendo gestión operativa de un caso; no se
+     duplica ni cambia el estado formal.
+   - **Reconciliación** (`continuidad/reconciliacion.py`): tramo de `segmentar_procesos`
+     ↔ proceso por ancla; respaldo por fecha ±14 días; fusión/división/ambigüedad/sin
+     tramo quedan marcadas para revisión, nunca se fusiona ni borra. Corre al guardar o
+     borrar citas (`on_commit`, si falla solo loguea), antes de cada registro y en la carga
+     histórica. Un proceso nace ACTIVO (evento de inicio) si su S1 ≥
+     `CONTINUIDAD_REGISTRO_FORMAL_DESDE` (**fijar al día del despliegue**); antes, sin estado.
+   - **Transiciones** (`continuidad/servicios.py`): una sola vía, atómica, con
+     `select_for_update`, estado esperado (409) e idempotencia (doble clic = mismo evento).
+     Reactivación y cambio de profesional son eventos (el proceso queda ACTIVO); pausa→alta
+     no sin reactivar; corrección de motivo = evento nuevo.
+   - **Abandono**: confirmado (registrado) e inferido (`continuidad/inferencia.py`, cálculo)
+     nunca se suman; el combinado solo como «sin continuidad registrada».
+   - **Permisos**: registran admin y coordinación (quienes registran el DP); analista y
+     psicólogo solo leen (alcance `pacientes_del_rol`); lista de revisión sin psicólogo.
+   - **Pantallas**: sección «Continuidad» en la ficha (`ContinuidadFicha.jsx`) y bloque
+     «Estado registrado» + calidad + lista para revisión en Dirección Clínica.
+   - **Carga histórica**: `manage.py migrar_continuidad_historica` (audita; `--aplicar`
+     registra). Solo DP-10, DP-12 y ficha alta/pausa sin contradicciones; DP-09, DP-11 y
+     días sin venir NO. En la base demo: 7 registrables, 4 DP-09 omitidos, 79 sin evidencia.
+     **En producción: correr primero sin `--aplicar`.**
+   - Verificado: 65 tests nuevos (`continuidad/tests/`), suite completa, `makemigrations
+     --check`, ESLint (App.jsx igual a la base) y QA en navegador 36/36 (fase 2) + 40/40
+     (regresión fase 1.5) sobre `dc-continuidad-2.sqlite3` (datos ficticios,
+     `itaca-demo-data/seed_continuidad_2.py`).

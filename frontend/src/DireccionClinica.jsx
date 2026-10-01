@@ -82,6 +82,7 @@ const ESTILOS = `
   border-radius:5px; padding:0 5px; margin-left:4px; white-space:nowrap; font-weight:500; }
 .dc-celda-sub { display:block; font-size:11px; color:var(--muted); white-space:nowrap; }
 .dc-dist { display:grid; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); gap:14px; }
+.dc-motivos .dc-barra-fila { grid-template-columns:minmax(120px, 160px) 1fr 76px; }
 .dc-barra-fila { display:grid; grid-template-columns:84px 1fr 64px; gap:8px; align-items:center; font-size:12.5px; margin-top:6px; }
 .dc-barra { height:10px; background:var(--hover); border-radius:5px; overflow:hidden; display:flex; }
 .dc-barra span { display:block; height:100%; }
@@ -188,6 +189,10 @@ function TablaGrupo({ filas, primera, extra = [] }) {
             <th className="num" title="Mediana de sesiones de los procesos iniciados (media entre paréntesis)">Mediana sesiones</th>
             <th className="num" title="Sobre los procesos ya terminados">Abandono inferido</th>
             <th className="num">Altas / cierres reg.</th>
+            <th className="num" title="Pausa registrada (formal o ficha anterior)">Pausas</th>
+            <th className="num" title="Registrado por una persona. No incluye el inferido.">Abandono confirmado</th>
+            <th className="num" title="Procesos con al menos un cambio de profesional. No es abandono.">Cambios de prof.</th>
+            <th className="num">Reactivados</th>
           </tr>
         </thead>
         <tbody>
@@ -205,6 +210,10 @@ function TablaGrupo({ filas, primera, extra = [] }) {
               </td>
               <KpiCelda k={f.kpis?.abandono_inferido} />
               <td className="num">{f.altas_o_cierres ?? f.altas + f.cierres_registrados}</td>
+              <td className="num">{num(f.pausas)}</td>
+              <td className="num">{num(f.abandono_confirmado)}</td>
+              <td className="num">{num(f.cambios_profesional)}</td>
+              <td className="num">{num(f.reactivados)}</td>
             </tr>
           ))}
         </tbody>
@@ -237,6 +246,174 @@ function Distribucion({ titulo, filas, series, nota }) {
       )}
       {nota && <Nota>{nota}</Nota>}
     </div>
+  );
+}
+
+// Fase 2: lo REGISTRADO por el equipo (app `continuidad`), separado de lo que
+// se infiere de la agenda. Confirmado e inferido nunca se suman como
+// "abandono"; "Sin información" se muestra siempre.
+function BloqueFormal({ f, sede, showToast }) {
+  const k = f.kpis, cal = f.calidad, mot = f.motivos;
+  const centro = f.continuidad_centro_post_cambio;
+  const rd = f.reactivaciones_desde;
+  const maxFrec = Math.max(1, ...f.por_frecuencia.map((y) => y.n));
+  const pctDesconocidos = mot.total ? Math.round((mot.desconocidos / mot.total) * 1000) / 10 : null;
+  return (
+    <>
+      <h2 className="ca-secth" style={{ marginTop: 28 }}>Estado registrado de los procesos</h2>
+      <div className="ca-stats">
+        <StatKpi label="Con estado registrado" k={k.con_estado_formal} />
+        <StatKpi label="En pausa" k={k.pausa} enCurso="sin estado registrado" />
+        <StatKpi label="Alta" k={k.alta} enCurso="sin estado registrado" />
+        <StatKpi label="Abandono confirmado" k={k.abandono_confirmado} enCurso="sin estado registrado" />
+        <StatKpi label="Cerrado por otra decisión" k={k.cerrado} enCurso="sin estado registrado" />
+      </div>
+      <div className="ca-stats" style={{ marginTop: 12 }}>
+        <StatKpi label="Reactivados tras una salida" k={k.reactivacion} />
+        <Stat label="Reactivaciones por origen" valor={rd.pausa + rd.abandono + rd.alta_o_cierre}
+          sub={`${rd.pausa} desde pausa · ${rd.abandono} desde abandono · ${rd.alta_o_cierre} desde alta o cierre`} />
+        <StatKpi label="Con cambio de profesional" k={k.cambio_profesional} />
+        <StatKpi label="Siguen en el centro tras el cambio" k={centro.kpi} enCurso="aún sin sesión" />
+      </div>
+      <div className="ca-stats" style={{ marginTop: 12 }}>
+        <StatKpi label="Activos hoy sin próxima cita" k={k.activos_sin_proxima_cita} />
+        <StatKpi label="Dentro de su frecuencia esperada" k={k.frecuencia_cumplida} enCurso="sin frecuencia definida" />
+        <StatKpi label="Registros con motivo conocido" k={k.motivos_conocidos} />
+        <StatKpi label="Sin continuidad registrada" k={k.sin_continuidad_registrada} enCurso="aún activos" />
+      </div>
+      <Nota>
+        Los porcentajes de estado son sobre los procesos del período <strong>que tienen un estado registrado</strong>;
+        los demás («sin estado registrado») son anteriores al registro formal o nadie registró su estado, y van
+        aparte, no como abandono. «Sin continuidad registrada» junta el abandono confirmado y el inferido solo para
+        dimensionar lo que no tiene un desenlace registrado: <strong>no es una tasa de abandono</strong>. Un cambio de
+        profesional no es abandono del primero: se mide si la persona siguió en el centro
+        ({centro.con_profesional_nuevo} con el profesional nuevo).
+      </Nota>
+
+      <div className="dc-dist" style={{ marginTop: 16 }}>
+        <div className="ca-card dc-motivos">
+          <div style={{ fontWeight: 600, fontSize: 14 }}>
+            Motivos registrados <span style={{ color: "var(--muted)", fontWeight: 400 }}>· N {mot.total}</span>
+          </div>
+          {!mot.total ? <Nota>Sin registros con motivo en el período.</Nota> : (
+            <>
+              {mot.por_categoria.filter((c) => c.n).map((c) => (
+                <div key={c.categoria} className="dc-barra-fila">
+                  <span title={c.label}>{c.label}</span>
+                  <div className="dc-barra" aria-hidden="true"><span style={{ width: `${(c.n / Math.max(1, mot.conocidos)) * 100}%`, background: VERDE }} /></div>
+                  <span className="num" style={{ textAlign: "right" }}>{c.n} · {pct(c.pct_sobre_conocidos)}</span>
+                </div>
+              ))}
+              <div className="dc-barra-fila">
+                <span>Sin información</span>
+                <div className="dc-barra" aria-hidden="true"><span style={{ width: `${(mot.desconocidos / Math.max(1, mot.total)) * 100}%`, background: "#C9C3B8" }} /></div>
+                <span className="num" style={{ textAlign: "right" }}>{mot.desconocidos} · {pct(pctDesconocidos)}</span>
+              </div>
+              <Nota>Porcentajes por categoría sobre los {mot.conocidos} motivos conocidos; «Sin información» sobre el total.</Nota>
+              {mot.por_motivo.length > 0 && (
+                <details style={{ marginTop: 6 }}>
+                  <summary style={{ cursor: "pointer", fontSize: 12.5, color: "var(--ink-soft)" }}>Ver por motivo</summary>
+                  <table className="ca-table" style={{ marginTop: 6 }}>
+                    <tbody>
+                      {mot.por_motivo.map((m) => (
+                        <tr key={m.codigo}><td>{m.nombre}</td><td className="num">{m.n}</td><td className="num">{pct(m.pct_sobre_conocidos)}</td></tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </details>
+              )}
+            </>
+          )}
+        </div>
+        <div className="ca-card">
+          <div style={{ fontWeight: 600, fontSize: 14 }}>Frecuencia esperada · activos hoy</div>
+          {f.por_frecuencia.map((x) => (
+            <div key={x.clave} className="dc-barra-fila">
+              <span>{x.label}</span>
+              <div className="dc-barra" aria-hidden="true"><span style={{ width: `${(x.n / maxFrec) * 100}%`, background: VERDE }} /></div>
+              <span className="num" style={{ textAlign: "right" }}>{x.n}</span>
+            </div>
+          ))}
+          <Nota>
+            Ninguna frecuencia es mejor que otra. {f.por_frecuencia.reduce((a, x) => a + x.desde_ficha, 0)} vienen de la
+            frecuencia anotada en la ficha (dato anterior), a falta de una registrada en el proceso.
+          </Nota>
+        </div>
+      </div>
+
+      <div className="ca-card" style={{ marginTop: 14, borderLeft: `4px solid ${AMBAR}` }}>
+        <div style={{ fontWeight: 600 }}>Calidad del registro formal</div>
+        <div className="ca-stats" style={{ marginTop: 10 }}>
+          <StatKpi label="Procesos sin estado registrado" k={cal.procesos_sin_estado_formal} />
+          <Stat label="Solo con inferencia" valor={cal.procesos_solo_inferencia} sub="sin estado y con abandono inferido" />
+          <Stat label="Con estado de evidencia anterior" valor={cal.procesos_estado_legacy} sub="DP o ficha, sin registro formal" />
+          <Stat label="Estados de la carga histórica" valor={cal.procesos_estado_importado} sub="registrados por la importación" />
+        </div>
+        <div className="ca-stats" style={{ marginTop: 10 }}>
+          <StatKpi label="Activos sin frecuencia esperada" k={cal.vigentes_sin_frecuencia} />
+          <Stat label="Motivos «Sin información»" valor={cal.motivos_desconocidos} sub="en el período" />
+          <Stat label="Cambios de profesional sin sesión posterior" valor={cal.cambios_sin_sesion_posterior} sub="más de 14 días" />
+          <Stat label="Procesos para revisar su identidad" valor={cal.requieren_revision} sub="la reconciliación no los pudo ubicar" />
+        </div>
+      </div>
+
+      <ListaRevision resumen={f.revision} sede={sede} showToast={showToast} />
+    </>
+  );
+}
+
+// Lista "para revisión de continuidad": solo información, no contacta a nadie.
+function ListaRevision({ resumen, sede, showToast }) {
+  const [lista, setLista] = useState(null);
+  const [cargando, setCargando] = useState(false);
+  const ver = () => {
+    setCargando(true);
+    api.continuidadRevision(sede)
+      .then(setLista)
+      .catch((e) => showToast?.("Error: " + e.message))
+      .finally(() => setCargando(false));
+  };
+  return (
+    <>
+      <h2 className="ca-secth" style={{ marginTop: 28 }}>Para revisión de continuidad</h2>
+      <div className="ca-card">
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+          {resumen.por_razon.map((r) => (
+            <span key={r.clave} style={{ fontSize: 12.5, background: "var(--hover)", borderRadius: 7, padding: "3px 9px" }}>
+              {r.label}: <strong>{r.n}</strong>
+            </span>
+          ))}
+        </div>
+        <Nota>
+          {resumen.total} procesos con al menos una razón para revisarlos (con los filtros de la pantalla). Es
+          información para coordinación: no envía mensajes ni cambia estados. El abandono inferido sin registro solo
+          entra si su última sesión es de los últimos 180 días.
+        </Nota>
+        {!lista ? (
+          <button className="ca-btn ghost dc-noprint" style={{ marginTop: 10 }} onClick={ver} disabled={cargando}>
+            {cargando ? "Cargando…" : "Ver la lista"}
+          </button>
+        ) : (
+          <div style={{ overflowX: "auto", marginTop: 10 }}>
+            <table className="ca-table">
+              <thead><tr><th>Paciente</th><th>Psicólogo (S1)</th><th>Estado registrado</th><th className="num">Días sin sesión</th><th>Razones</th></tr></thead>
+              <tbody>
+                {lista.items.map((i) => (
+                  <tr key={`${i.paciente_id}-${i.proceso || ""}-${i.dias_sin_sesion}`}>
+                    <td>{i.paciente}</td>
+                    <td>{i.psicologo}</td>
+                    <td>{i.estado_formal}</td>
+                    <td className="num">{i.dias_sin_sesion}</td>
+                    <td style={{ fontSize: 12.5 }}>{i.razones.map((r) => r.label).join(" · ")}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {lista.mostrados < lista.resumen.total && <Nota>Se muestran {lista.mostrados} de {lista.resumen.total}.</Nota>}
+          </div>
+        )}
+      </div>
+    </>
   );
 }
 
@@ -502,13 +679,14 @@ export default function DireccionClinica({ showToast }) {
                   sub={`${r.terminados_de_la_cohorte} ya terminaron`} />
                 <Stat label="Procesos activos hoy" valor={r.procesos_activos_hoy} sub="empezaran cuando empezaran" />
                 <Stat label="Altas registradas" valor={r.altas_registradas}
-                  sub={`${r.cierres_registrados} otros cierres · ${r.reinicios} reinicios`} />
+                  sub={`${r.pausas ?? 0} pausas · ${r.cierres_registrados} otros cierres · ${r.reinicios} reinicios`} />
               </div>
               <div className="ca-stats" style={{ marginTop: 12 }}>
                 <StatKpi label="Pasan de S1 a S2" k={kp.s1_s2} />
                 <StatKpi label="Pasan de S1 a S3" k={kp.s1_s3} />
                 <StatKpi label="Llegan a S6" k={kp.s1_s6} />
                 <StatKpi label="Abandono inferido" k={kp.abandono_inferido} enCurso="aún activos" />
+                {kp.abandono_confirmado && <StatKpi label="Abandono confirmado" k={kp.abandono_confirmado} enCurso="aún activos" />}
               </div>
               <div className="ca-stats" style={{ marginTop: 12 }}>
                 <StatMediana label="Sesiones por proceso terminado" e={est.sesiones_por_proceso_terminados} />
@@ -546,7 +724,8 @@ export default function DireccionClinica({ showToast }) {
                       <th className="num">Evaluables</th>
                       <th className="num">Pasaron</th>
                       <th className="num">Abandono inferido</th>
-                      <th className="num">Alta / cierre / reinicio</th>
+                      <th className="num">Abandono confirmado</th>
+                      <th className="num">Alta / pausa / cierre / reinicio</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -560,9 +739,10 @@ export default function DireccionClinica({ showToast }) {
                             <td className="num">{e.evaluables}<Muestra k={e.kpi} /></td>
                             <td className="num">{e.pasaron} <span style={{ color: "var(--muted)" }}>({pct(e.pct_paso)})</span></td>
                             <td className="num">{e.cayeron} <span style={{ color: "var(--muted)" }}>({pct(e.pct_caida)})</span></td>
+                            <td className="num">{e.cayeron_confirmado ?? 0} <span style={{ color: "var(--muted)" }}>({pct(e.pct_caida_confirmado)})</span></td>
                             <td className="num">{e.otros_cierres} <span style={{ color: "var(--muted)" }}>({pct(e.pct_otros_cierres)})</span></td>
                           </>
-                        ) : <td colSpan={5} />}
+                        ) : <td colSpan={6} />}
                       </tr>
                     ))}
                   </tbody>
@@ -573,6 +753,9 @@ export default function DireccionClinica({ showToast }) {
                 la consulta inicial no cuenta. Los porcentajes de cada fila son sobre sus <strong>evaluables</strong>
                 (pasaron + terminaron en esa etapa); «aún en curso» queda fuera del denominador.
               </Nota>
+
+              {/* --- Fase 2: lo REGISTRADO (estado formal), separado de lo inferido --- */}
+              {data.formal && <BloqueFormal f={data.formal} sede={data.filtros.sede} showToast={showToast} />}
 
               {/* --- Por psicólogo --- */}
               <h2 className="ca-secth" style={{ marginTop: 28 }}>Por psicólogo</h2>
