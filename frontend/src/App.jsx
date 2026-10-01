@@ -9,6 +9,7 @@ import { modeloReporte, modeloTabla, exportarExcel, exportarWord, exportarPowerP
 import Login from "./Login";
 import Duplicados, { AvisoDuplicado } from "./Duplicados";
 import DireccionClinica from "./DireccionClinica";
+import ContinuidadFicha from "./ContinuidadFicha";
 
 const TIPOS_DOC = [
   { v: "dni", l: "DNI" }, { v: "ce", l: "Carné de extranjería" },
@@ -7091,6 +7092,8 @@ function Ficha({ p, onBack, onEdit, onWhatsApp, onSubirAdjunto, onEliminarAdjunt
           </div>
         </>
       )}
+
+      <ContinuidadFicha pacienteId={p.id} showToast={showToast} />
 
       <h2 className="ca-secth" id="hc-historia">Historia clínica</h2>
       <div className="ca-card">

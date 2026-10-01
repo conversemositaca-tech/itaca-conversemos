@@ -11,6 +11,7 @@ lo ve en su ficha), fechas, estados, motivos operativos.
 from datetime import date
 
 from django.db import transaction
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -108,7 +109,7 @@ def _proceso(p, puede_registrar, dias_abandono=dc.DIAS_ABANDONO):
         "ultima_sesion": p["ultima"].isoformat(),
         "sesiones": p["n"],
         "dias_sin_sesion": p["dias_sin_sesion"],
-        "proxima_cita": p["proxima"].isoformat() if p.get("proxima") else None,
+        "proxima_cita": timezone.localtime(p["proxima"]).date().isoformat() if p.get("proxima") else None,
         "psicologo_s1": p["psicologo_nombre"],
         "frecuencia": {
             "efectiva": p["frecuencia"], "label": FRECUENCIA_LABEL[p["frecuencia"]],
