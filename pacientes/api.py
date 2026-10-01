@@ -925,21 +925,45 @@ class AtencionViewSet(viewsets.ModelViewSet):
 class AdjuntoViewSet(viewsets.ModelViewSet):
     """Archivos clínicos (laboratorios, ecografías, PDFs, imágenes).
 
-    Subir y listar es para cualquier usuario de la clínica; eliminar queda para
+    Mismo alcance que la historia clínica (AtencionViewSet): comercial no ve
+    ninguno y el psicólogo solo los de SUS pacientes; eliminar queda para
     médico/admin. La descarga pasa por la acción `descargar`, siempre autenticada
-    y con scope de clínica: nunca se expone una URL pública (Ley 29733).
+    y con este mismo alcance: nunca se expone una URL pública (Ley 29733).
     """
 
     serializer_class = AdjuntoSerializer
 
     def get_queryset(self):
-        return (
+        qs = (
             Adjunto.objects.del_tenant_actual()
             .select_related("paciente", "subido_por")
             .order_by("-creado_en")
         )
+        if _es_comercial(self.request.user):
+            return qs.none()
+        if _es_medico(self.request.user):
+            ficha = _ficha_de(self.request.user)
+            qs = qs.filter(paciente__profesional=ficha) if ficha else qs.none()
+        pid = self.request.query_params.get("paciente")
+        if pid:
+            qs = qs.filter(paciente_id=pid)
+        return qs
+
+    def _pacientes_alcanzables(self):
+        qs = Paciente.objects.del_tenant_actual()
+        if _es_comercial(self.request.user):
+            return qs.none()
+        if _es_medico(self.request.user):
+            ficha = _ficha_de(self.request.user)
+            return qs.filter(profesional=ficha) if ficha else qs.none()
+        return qs
 
     def create(self, request, *args, **kwargs):
+        if _es_comercial(request.user):
+            return Response(
+                {"detail": "Los archivos clínicos no están disponibles para este rol."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
         clinica = get_clinica_actual()
         archivo = request.FILES.get("archivo")
         if archivo is None:
@@ -956,14 +980,14 @@ class AdjuntoViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        paciente = Paciente.objects.del_tenant_actual().filter(pk=request.data.get("paciente")).first()
+        paciente = self._pacientes_alcanzables().filter(pk=request.data.get("paciente")).first()
         if paciente is None:
             return Response({"detail": "Paciente no encontrado."}, status=status.HTTP_400_BAD_REQUEST)
 
         atencion = None
         atencion_id = request.data.get("atencion")
         if atencion_id:
-            atencion = Atencion.objects.del_tenant_actual().filter(pk=atencion_id).first()
+            atencion = Atencion.objects.del_tenant_actual().filter(pk=atencion_id, paciente=paciente).first()
 
         nombre = (request.data.get("nombre") or archivo.name).strip()[:255]
         adjunto = Adjunto.objects.create(
@@ -993,7 +1017,7 @@ class AdjuntoViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["get"])
     def descargar(self, request, pk=None):
-        adjunto = self.get_object()  # get_queryset ya filtra por clínica
+        adjunto = self.get_object()  # get_queryset ya filtra por clínica y por rol
         return FileResponse(
             adjunto.archivo.open("rb"),
             as_attachment=True,
