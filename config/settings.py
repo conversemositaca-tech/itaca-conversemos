@@ -277,6 +277,10 @@ if EJECUTANDO_TESTS:
     # MD5 SOLO aquí: este bloque exige el comando `manage.py test`, que nunca
     # corre en el servidor (gunicorn). core.tests_hasher lo comprueba.
     PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]
+    # scripts/verificar.ps1 guarda la base de prueba en un archivo para poder
+    # reusarla con --keepdb (crearla y migrarla cuesta ~45 s por corrida).
+    if os.getenv("ITACA_TEST_DB"):
+        DATABASES["default"]["TEST"] = {"NAME": os.environ["ITACA_TEST_DB"]}
 
 # Dominios separados: la landing en uno, el panel en otro (core/dominios.py).
 # Vacíos = todo sigue en el dominio por el que entre la visita, como siempre.
