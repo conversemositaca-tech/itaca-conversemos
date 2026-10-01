@@ -134,7 +134,11 @@ def _ejecutar(envio_id):
         return _reintentar_o_error(e, fila.error_codigo)
     if fila.estado == CorreoEnviado.Estado.ERROR:
         return _fin(e, EPC.Estado.ERROR, error=fila.error_codigo)
-    return _fin(e, EPC.Estado.ENVIADO)  # ya enviado en un intento anterior
+    if fila.estado in (CorreoEnviado.Estado.PENDIENTE, CorreoEnviado.Estado.ENVIANDO):
+        # Un intento anterior quedó a medias: no se sabe si salió. No se
+        # reenvía a ciegas (podría duplicarse); queda en ERROR para revisar.
+        return _fin(e, EPC.Estado.ERROR, error="ESTADO_INCIERTO")
+    return _fin(e, EPC.Estado.ENVIADO)  # ya salió (o ya hay avisos del proveedor)
 
 
 def _reintentar_o_error(e, codigo):
