@@ -109,6 +109,13 @@ def enviar_correo(*, plantilla_clave, destinatario, contexto, origen, forzar_cat
         _cerrar(fila, CorreoEnviado.Estado.ERROR, codigo=e.codigo, detalle=e.detalle)
         fila.reintentable = e.reintentable
         return fila
+    except Exception:
+        # Algo inesperado (no de red): no se sabe si salió, así que no se
+        # reintenta solo. Queda en ERROR para que alguien lo mire.
+        log.exception("correo: %s falló de forma inesperada", fila.uuid)
+        _cerrar(fila, CorreoEnviado.Estado.ERROR, codigo="INESPERADO")
+        fila.reintentable = False
+        return fila
 
     fila.brevo_message_id = mid[:200]
     fila.enviado_en = timezone.now()
