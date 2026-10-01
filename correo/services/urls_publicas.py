@@ -28,5 +28,10 @@ def baja(token, request=None):
 
 
 def logo(request=None):
-    """Logo horizontal oficial (frontend/public/itaca-logo-h.png, 620×224)."""
-    return absoluta("itaca-logo-h.png", request)
+    """Logo horizontal oficial (frontend/public/itaca-logo-h.png, 620×224).
+
+    Vite compila con base '/static/', así que lo que está en frontend/public se
+    sirve bajo /static/. En /itaca-logo-h.png responde la app de React (HTML):
+    un correo que apunte ahí muestra la imagen rota.
+    """
+    return absoluta("static/itaca-logo-h.png", request)

@@ -6962,7 +6962,7 @@ function CorreoLead({ leadId, showToast }) {
   if (!d) return null;
   return (
     <section style={{ marginTop: 14 }}>
-      <div className="ca-label" style={{ marginBottom: 8 }}>Correo</div>
+      <div className="ca-label" style={{ marginBottom: 8 }}>Comunicaciones por correo</div>
       <CorreoPersona titulo="Prospecto" persona={d.lead} grupo={`lead-${leadId}`} bloqueadoMenor={d.es_menor}
         guardar={(x) => api.correoLeadConsentimiento(leadId, x)}
         confirmaciones={d.confirmaciones} onCambio={cargar} showToast={showToast} />

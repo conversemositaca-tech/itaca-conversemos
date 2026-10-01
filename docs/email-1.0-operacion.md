@@ -28,7 +28,8 @@ marcadores.**
 
 ## Tarea programada
 
-Cada 15 minutos, desde el mismo cron externo que dispara los recordatorios de
+Cada 5 minutos (recomendado; con 15 también funciona), desde el mismo cron
+externo que dispara los recordatorios de
 WhatsApp:
 
 ```bash
@@ -38,7 +39,14 @@ curl -X POST https://<dominio>/api/correo/tareas/procesar-pendientes/ \
 
 Responde un resumen: `tomados`, `enviados`, `cancelados`, `reintento`, `error`.
 Con `CORREO_HABILITADO` apagado responde `{"apagado": true}` sin tocar nada.
-Lote máximo de 100. Dos ejecuciones paralelas nunca toman el mismo envío.
+Lote máximo de 100. Dos ejecuciones paralelas nunca toman el mismo envío
+(verificado contra PostgreSQL). La confirmación de reserva sale en el siguiente
+ciclo: con el cron cada 5 minutos, llega a lo sumo 5 minutos después.
+
+Cada ciclo empieza recuperando lo atascado (más de 30 minutos en
+"procesando" o "enviando"): lo que nunca llegó a Brevo vuelve a la cola; lo que
+quedó "enviando" pasa a `ERROR` con `ESTADO_INCIERTO` y **no se reenvía**. El
+resumen trae `recuperados` e `inciertos`.
 
 ## Webhook de Brevo
 
@@ -50,6 +58,9 @@ En Brevo → Transactional → Settings → Webhooks:
   unsubscribed, spam, error.
 
 ## Orden de encendido
+
+La checklist detallada, con cómo comprobar cada paso, está en
+[email-1.0-activacion.md](email-1.0-activacion.md).
 
 1. Mergear los PR en orden (1 → 7). Las migraciones son aditivas.
 2. Configurar DNS ([email-1.0-dns.md](email-1.0-dns.md)) y verificar el
@@ -83,7 +94,9 @@ En Brevo → Transactional → Settings → Webhooks:
 | `SIN_CONFIGURAR` | Falta `BREVO_API_KEY`. |
 | `HTTP_401` | Clave de Brevo inválida. |
 | El webhook responde 401 | `BREVO_WEBHOOK_TOKEN` no coincide con el de Brevo. |
-| El logo no aparece | `CORREO_BASE_URL_PUBLICA` vacía o mal escrita. |
+| El logo no aparece | `CORREO_BASE_URL_PUBLICA` mal escrita, o el dominio todavía no apunta a Railway. |
+| `SIN_URL_PUBLICA` | Falta `CORREO_BASE_URL_PUBLICA` (y `SITIO_URL_PUBLICA`): el sistema no envía para no mandar logo ni baja rotos. |
+| `ATASCADO` / `ESTADO_INCIERTO` | Un ciclo se cortó a mitad de camino. Revisar en Brevo (Logs) antes de hacer nada. |
 
 ## Apagar y volver atrás
 

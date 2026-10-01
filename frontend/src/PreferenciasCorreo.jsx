@@ -52,7 +52,7 @@ export default function PreferenciasCorreo({ token }) {
     <div style={{ minHeight: "100vh", background: C.blanco, fontFamily: FUENTE, color: C.negro, padding: "40px 16px" }}>
       <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;600&display=swap" rel="stylesheet" />
       <main style={{ maxWidth: 520, margin: "0 auto", border: `1px solid ${C.celesteClaro}`, borderRadius: 12, padding: "32px 28px" }}>
-        <img src="/itaca-logo-h.png" alt="Ítaca Conversemos" width="200" style={{ display: "block", width: 200, height: "auto", marginBottom: 20 }} />
+        <img src={`${import.meta.env.BASE_URL}itaca-logo-h.png`} alt="Ítaca Conversemos" width="200" style={{ display: "block", width: 200, height: "auto", marginBottom: 20 }} />
         <div style={{ height: 3, width: 48, background: C.celeste, marginBottom: 24 }} />
         <h1 style={{ fontSize: 22, fontWeight: 600, margin: "0 0 18px" }}>Preferencias de correo</h1>
 

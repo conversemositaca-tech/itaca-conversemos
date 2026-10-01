@@ -126,3 +126,71 @@ class EnviosAtascadosTests(BaseCorreo):
             r = programacion.procesar_pendientes()
         self.assertEqual(r["recuperados"], 1)
         self.assertEqual(r["tomados"], 1)
+
+
+@override_settings(CORREO_BASE_URL_PUBLICA="https://www.conversemos.itaca.com.pe")
+class HtmlCompatibleTests(BaseCorreo):
+    """Límites conocidos de Gmail y Outlook, verificados sobre el HTML real.
+
+    No reemplaza abrir el correo en esos clientes (ver
+    docs/email-1.0-activacion.md), pero evita las roturas típicas.
+    """
+
+    def armar_todos(self):
+        import re as _re
+        from correo.services import render
+        ctx = {"nombre": "Rosa", "fecha": "lunes 6 de octubre", "hora": "10:00",
+               "modalidad": "Presencial", "es_virtual": False, "direccion_sede": "Av. Bolognesi 582"}
+        for pl in PlantillaCorreo.objects.filter(activa=True):
+            asunto, html, texto, _ = render.armar(pl, ctx, token_preferencias="tok")
+            yield pl.clave, asunto, html, texto, _re
+
+    def test_gmail_no_lo_recorta(self):
+        """Gmail corta los mensajes de más de 102 KB y esconde el pie (y la baja)."""
+        for clave, _, html, _, _ in self.armar_todos():
+            self.assertLess(len(html.encode("utf-8")), 100_000, clave)
+
+    def test_sin_javascript_ni_formularios_ni_css_que_outlook_rompe(self):
+        for clave, _, html, _, re in self.armar_todos():
+            bajo = html.lower()
+            for prohibido in ("<script", "<form", "<iframe", "<video"):
+                self.assertNotIn(prohibido, bajo, (clave, prohibido))
+            estilos_en_linea = " ".join(re.findall(r'style="([^"]*)"', bajo))
+            for css in ("display:flex", "display: flex", "display:grid", "display: grid",
+                        "position:absolute", "position: absolute", "position:fixed"):
+                self.assertNotIn(css, estilos_en_linea, (clave, css))
+
+    def test_imagenes_con_alt_ancho_y_url_absoluta(self):
+        for clave, _, html, _, re in self.armar_todos():
+            imgs = re.findall(r"<img[^>]*>", html)
+            self.assertTrue(imgs, clave)
+            for img in imgs:
+                self.assertRegex(img, r'alt="[^"]+"', clave)
+                self.assertRegex(img, r'width="\d+"', clave)
+                self.assertRegex(img, r'src="https?://', clave)
+
+    def test_estructura_en_tablas_con_ancho_maximo_y_version_texto(self):
+        for clave, asunto, html, texto, _ in self.armar_todos():
+            self.assertIn('role="presentation"', html, clave)
+            self.assertIn("max-width:600px", html, clave)
+            self.assertIn("<!--[if mso]>", html, clave)  # tabla fija para Outlook
+            self.assertIn('lang="es"', html, clave)
+            self.assertGreater(len(texto), 80, clave)  # versión de texto plano real
+            self.assertLessEqual(len(asunto), 60, clave)  # no se corta en el móvil
+
+    def test_tipografia_con_respaldo(self):
+        for clave, _, html, _, _ in self.armar_todos():
+            self.assertIn("font-family:Montserrat, Arial, Helvetica, sans-serif", html, clave)
+
+
+@override_settings(**dict(ENCENDIDO, CORREO_BASE_URL_PUBLICA="", SITIO_URL_PUBLICA=""))
+class SinDireccionPublicaTests(BaseCorreo):
+    def test_sin_direccion_publica_no_sale_nada(self):
+        """Sin CORREO_BASE_URL_PUBLICA el logo y la baja quedarían relativos."""
+        from correo.services.envio import enviar_correo
+        with mock.patch("correo.services.brevo.requests.post") as post:
+            fila = enviar_correo(plantilla_clave="reserva_confirmada",
+                                 destinatario=Destinatario.de_paciente(self.paciente()),
+                                 contexto={"fecha": "x", "hora": "y", "modalidad": "z"}, origen="prueba")
+        post.assert_not_called()
+        self.assertEqual((fila.estado, fila.error_codigo), ("ERROR", "SIN_URL_PUBLICA"))

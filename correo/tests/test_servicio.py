@@ -209,7 +209,8 @@ class ArmadoTests(BaseCorreo):
         self.assertIn("https://conversemos.test/preferencias/correo/tok/", html)
         self.assertEqual(cab["List-Unsubscribe"], "<https://conversemos.test/api/correo/baja/tok/>")
         self.assertEqual(cab["List-Unsubscribe-Post"], "List-Unsubscribe=One-Click")
-        self.assertIn("https://conversemos.test/itaca-logo-h.png", html)
+        # En producción /itaca-logo-h.png responde la app (HTML): el logo vive en /static/.
+        self.assertIn("https://conversemos.test/static/itaca-logo-h.png", html)
         self.assertIn("#00B8D8", html)
 
     def test_service_no_lleva_baja(self):
