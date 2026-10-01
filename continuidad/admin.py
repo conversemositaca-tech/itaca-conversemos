@@ -1,7 +1,7 @@
 """Admin de continuidad: catálogo editable, procesos e historia de solo lectura."""
 from django.contrib import admin
 
-from .models import EventoContinuidad, MotivoContinuidad, ProcesoContinuidad
+from .models import ConfiguracionContinuidad, EventoContinuidad, MotivoContinuidad, ProcesoContinuidad
 
 
 @admin.register(MotivoContinuidad)
@@ -37,3 +37,14 @@ class ProcesoContinuidadAdmin(SoloLectura):
 class EventoContinuidadAdmin(SoloLectura):
     list_display = ("tipo", "fecha_efectiva", "estado_anterior", "estado_nuevo", "motivo", "origen", "registrado_por")
     list_filter = ("tipo", "origen")
+
+
+@admin.register(ConfiguracionContinuidad)
+class ConfiguracionContinuidadAdmin(admin.ModelAdmin):
+    list_display = ("clinica", "registro_formal_desde")
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False

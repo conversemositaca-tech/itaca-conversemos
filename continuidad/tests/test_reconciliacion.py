@@ -101,3 +101,37 @@ class ReconciliarTests(Base):
                 self.captureOnCommitCallbacks(execute=True):
             self.cita(p, 3)
         self.assertEqual(Cita.objects.filter(paciente=p).count(), 1)
+
+
+class FechaDeCorteTests(Base):
+    """La fecha de corte se fija sola: nadie configura una variable."""
+
+    def test_clinica_sin_configuracion_toma_el_primer_dia_de_uso(self):
+        from django.utils import timezone
+
+        from continuidad.models import ConfiguracionContinuidad
+        viejo, nuevo = self.paciente("Viejo"), self.paciente("Nuevo")
+        self.sesiones(viejo, [3])
+        reconciliar_paciente(viejo.pk)
+        conf = ConfiguracionContinuidad.objects.get(clinica=self.clinica)
+        self.assertEqual(conf.registro_formal_desde, timezone.localdate())
+        self.assertEqual(ProcesoContinuidad.objects.get(paciente=viejo).estado, Estado.SIN_REGISTRO)
+        self.cita(nuevo, 0)  # S1 hoy: ya es registro formal
+        reconciliar_paciente(nuevo.pk)
+        self.assertEqual(ProcesoContinuidad.objects.get(paciente=nuevo).estado, Estado.ACTIVO)
+
+    def test_la_fecha_no_se_mueve_despues(self):
+        from continuidad.models import ConfiguracionContinuidad
+        ConfiguracionContinuidad.objects.create(clinica=self.clinica, registro_formal_desde=date(2026, 1, 1))
+        p = self.paciente()
+        self.sesiones(p, [3])
+        reconciliar_paciente(p.pk)
+        self.assertEqual(ConfiguracionContinuidad.objects.get(clinica=self.clinica).registro_formal_desde,
+                         date(2026, 1, 1))
+        self.assertEqual(ProcesoContinuidad.objects.get(paciente=p).estado, Estado.ACTIVO)
+
+    @REGISTRO_DESDE_SIEMPRE
+    def test_el_setting_sobrescribe(self):
+        p = self.paciente()
+        self.sesiones(p, [300])
+        self.assertEqual(self.proceso(p).estado, Estado.ACTIVO)

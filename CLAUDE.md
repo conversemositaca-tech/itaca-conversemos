@@ -1177,7 +1177,8 @@ los feriados de Perú. Zona horaria por defecto: `America/Lima` (GMT-5).
      tramo quedan marcadas para revisión, nunca se fusiona ni borra. Corre al guardar o
      borrar citas (`on_commit`, si falla solo loguea), antes de cada registro y en la carga
      histórica. Un proceso nace ACTIVO (evento de inicio) si su S1 ≥
-     `CONTINUIDAD_REGISTRO_FORMAL_DESDE` (**fijar al día del despliegue**); antes, sin estado.
+     la fecha de corte de la clínica (`ConfiguracionContinuidad`, la fija sola la migración
+     `continuidad.0003` el día del despliegue; sin variable que configurar); antes, sin estado.
    - **Transiciones** (`continuidad/servicios.py`): una sola vía, atómica, con
      `select_for_update`, estado esperado (409) e idempotencia (doble clic = mismo evento).
      Reactivación y cambio de profesional son eventos (el proceso queda ACTIVO); pausa→alta

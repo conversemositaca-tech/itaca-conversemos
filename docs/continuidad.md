@@ -95,8 +95,12 @@ Clínica usa el mismo emparejamiento **sin escribir**.
 
 Un proceso nuevo nace:
 - **ACTIVO** con evento `inicio_proceso` (origen Sistema) si su S1 es igual o
-  posterior a `CONTINUIDAD_REGISTRO_FORMAL_DESDE` (settings, por defecto
-  `2026-10-01`; **fijarla al día del despliegue**);
+  posterior a la **fecha de corte** de la clínica
+  (`ConfiguracionContinuidad.registro_formal_desde`). La fija sola la migración
+  `continuidad.0003` con la fecha en que se aplica, es decir, el día del
+  despliegue; una clínica nueva recibe la fecha en que se usa por primera vez.
+  No hay que configurar nada. El setting `CONTINUIDAD_REGISTRO_FORMAL_DESDE`,
+  si existe, la sobrescribe (pruebas o una corrección puntual);
 - **Sin estado formal** si es anterior: no se le inventa un estado.
 
 La consolidación de duplicados (`pacientes/fusion.py`) mueve los procesos al

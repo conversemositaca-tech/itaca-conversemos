@@ -259,3 +259,26 @@ class EventoContinuidad(ModeloTenant):
 
     def delete(self, *args, **kwargs):
         raise ValidationError("El historial de continuidad no se borra.")
+
+
+class ConfiguracionContinuidad(ModeloTenant):
+    """Desde qué fecha empieza el registro formal en esta clínica.
+
+    Un proceso cuya S1 es de esa fecha o posterior nace ACTIVO (con su evento
+    de inicio); uno anterior nace "sin estado formal". La fecha la fija sola
+    la migración 0003 el día en que se aplica (= el despliegue), y una clínica
+    nueva recibe la fecha en que se usa por primera vez. Nadie tiene que
+    configurarla. `CONTINUIDAD_REGISTRO_FORMAL_DESDE` en settings, si existe,
+    la sobrescribe (pruebas, o una corrección puntual).
+    """
+    registro_formal_desde = models.DateField()
+
+    class Meta:
+        verbose_name = "Configuración de continuidad"
+        verbose_name_plural = "Configuración de continuidad"
+        constraints = [
+            models.UniqueConstraint(fields=["clinica"], name="uniq_configuracion_continuidad_clinica"),
+        ]
+
+    def __str__(self):
+        return f"Registro formal desde {self.registro_formal_desde:%d/%m/%Y}"
