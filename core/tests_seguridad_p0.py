@@ -281,3 +281,46 @@ class RiesgoClinicoDeEliTests(_Clinica):
         self.assertEqual(len(self.como(self.psico).get("/api/sugerencias-riesgo/").json()), 1)
 
 
+_SCRIPT_HOSTS = (
+    "import json, sys; sys.argv = ['gunicorn']; "
+    "import config.settings as s; "
+    "print(json.dumps([s.ALLOWED_HOSTS, s.CSRF_TRUSTED_ORIGINS]))"
+)
+
+
+def _hosts(**entorno):
+    """Carga config.settings en un proceso aparte con este entorno."""
+    import os
+    limpio = {k: v for k, v in os.environ.items()
+              if k not in ("RAILWAY_PUBLIC_DOMAIN", "SITIO_DOMINIO", "SISTEMA_DOMINIO", "DJANGO_ALLOWED_HOSTS",
+                           "DJANGO_CSRF_ORIGINS", "RAILWAY_DOMINIO_SERVICIO")}
+    salida = subprocess.run([sys.executable, "-c", _SCRIPT_HOSTS], cwd=settings.BASE_DIR,
+                            env={**limpio, **entorno}, capture_output=True, text=True, timeout=60, check=True)
+    return json.loads(salida.stdout.strip().splitlines()[-1])
+
+
+class HostsDeRailwayTests(SimpleTestCase):
+    """P0-S5: la dirección de Railway se acepta siempre, sin abrir *.up.railway.app."""
+
+    RAILWAY = "itaca-conversemos-production.up.railway.app"
+
+    def test_railway_aunque_la_variable_sea_un_dominio_propio(self):
+        from django.http.request import validate_host
+        hosts, origenes = _hosts(RAILWAY_PUBLIC_DOMAIN="www.conversemos.itaca.com.pe")
+        self.assertTrue(validate_host(self.RAILWAY, hosts))
+        self.assertIn(f"https://{self.RAILWAY}", origenes)
+
+    def test_sin_comodines_del_dominio_compartido(self):
+        from django.http.request import validate_host
+        hosts, origenes = _hosts()
+        self.assertFalse(validate_host("atacante.up.railway.app", hosts))
+        self.assertFalse(any("*.up.railway.app" in o for o in origenes))
+
+    def test_dominios_del_sitio_y_del_sistema(self):
+        from django.http.request import validate_host
+        hosts, origenes = _hosts(SITIO_DOMINIO="www.conversemos.itaca.com.pe",
+                                 SISTEMA_DOMINIO="sistema.conversemos.itaca.com.pe")
+        for d in ("www.conversemos.itaca.com.pe", "sistema.conversemos.itaca.com.pe"):
+            self.assertTrue(validate_host(d, hosts), d)
+            self.assertIn(f"https://{d}", origenes)
+        self.assertFalse(validate_host("evil.example.com", hosts))
