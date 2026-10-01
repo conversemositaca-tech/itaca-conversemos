@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="es" xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="x-apple-disable-message-reformatting">
+<meta name="color-scheme" content="light">
+<meta name="supported-color-schemes" content="light">
+<title>{{ asunto }}</title>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;600&display=swap" rel="stylesheet">
+<style>
+  body { margin:0; padding:0; background:#FFFFFF; }
+  a { color:#00B8D8; }
+  @media only screen and (max-width:620px) {
+    .contenedor { width:100% !important; }
+    .relleno { padding-left:20px !important; padding-right:20px !important; }
+  }
+</style>
+<!--[if mso]><style>table,td,p,a { font-family: Arial, Helvetica, sans-serif !important; }</style><![endif]-->
+</head>
+<body style="margin:0; padding:0; background:#FFFFFF;">
+{# Preencabezado: lo que la bandeja muestra después del asunto. Oculto en el cuerpo. #}
+<div style="display:none; max-height:0; overflow:hidden; mso-hide:all; font-size:1px; line-height:1px; color:#FFFFFF; opacity:0;">{{ preencabezado }}&#8203;&nbsp;&#8203;&nbsp;&#8203;&nbsp;&#8203;&nbsp;&#8203;&nbsp;&#8203;&nbsp;&#8203;&nbsp;&#8203;&nbsp;</div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#FFFFFF;">
+  <tr>
+    <td align="center" style="padding:24px 12px;">
+      <table role="presentation" class="contenedor" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px; max-width:600px; background:#FFFFFF; border:1px solid #D7F4FA; border-radius:12px;">
+        {# Logo oficial (versión horizontal) a 200 px: el manual pide mínimo 170 px y área de respeto libre. #}
+        <tr>
+          <td class="relleno" align="left" style="padding:32px 40px 8px 40px;">
+            <img src="{{ logo_url }}" width="200" alt="Ítaca Conversemos" style="display:block; width:200px; max-width:200px; height:auto; border:0; outline:none; text-decoration:none;">
+          </td>
+        </tr>
+        <tr>
+          <td class="relleno" style="padding:8px 40px 0 40px;">
+            <div style="height:3px; width:48px; background:#00B8D8; line-height:3px; font-size:3px;">&nbsp;</div>
+          </td>
+        </tr>
+        <tr>
+          <td class="relleno" style="padding:24px 40px 8px 40px; font-family:Montserrat, Arial, Helvetica, sans-serif; font-size:15px; line-height:1.65; color:#343434; font-weight:400;">
+            {{ cuerpo }}
+          </td>
+        </tr>
+        {% if cta_url and cta_texto %}
+        <tr>
+          <td class="relleno" align="left" style="padding:8px 40px 24px 40px;">
+            <!--[if mso]><v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" href="{{ cta_url }}" style="height:44px;v-text-anchor:middle;width:260px;" arcsize="20%" stroke="f" fillcolor="#00B8D8"><center style="color:#FFFFFF;font-family:Arial,sans-serif;font-size:15px;">{{ cta_texto }}</center></v:roundrect><![endif]-->
+            <!--[if !mso]><!-- -->
+            <a href="{{ cta_url }}" style="display:inline-block; background:#00B8D8; color:#FFFFFF; font-family:Montserrat, Arial, Helvetica, sans-serif; font-size:15px; font-weight:600; text-decoration:none; padding:12px 24px; border-radius:8px;">{{ cta_texto }}</a>
+            <!--<![endif]-->
+          </td>
+        </tr>
+        {% endif %}
+        {% if firma %}
+        <tr>
+          <td class="relleno" style="padding:16px 40px 28px 40px; font-family:Montserrat, Arial, Helvetica, sans-serif; font-size:15px; line-height:1.6; color:#343434;">
+            {{ firma }}
+          </td>
+        </tr>
+        {% else %}
+        <tr><td style="height:16px; line-height:16px; font-size:16px;">&nbsp;</td></tr>
+        {% endif %}
+        <tr>
+          <td class="relleno" style="padding:20px 40px 28px 40px; border-top:1px solid #D7F4FA; font-family:Montserrat, Arial, Helvetica, sans-serif; font-size:12px; line-height:1.6; color:#6E6E6E; font-weight:300;">
+            {% if es_marketing %}
+            <p style="margin:0 0 10px 0;">Ítaca Conversemos</p>
+            <p style="margin:0 0 10px 0;">Recibes este correo porque aceptaste recibir comunicaciones de Ítaca Conversemos.</p>
+            <p style="margin:0 0 10px 0;">Responsable del tratamiento de datos personales: {{ legal.razon_social }}<br>Domicilio: {{ legal.domicilio }}</p>
+            <p style="margin:0 0 10px 0;">Puedes ejercer tus derechos de acceso, rectificación, cancelación y oposición (ARCO) a través de: {{ legal.canal_arco }}</p>
+            <p style="margin:0;">
+              {% if legal.url_privacidad %}<a href="{{ legal.url_privacidad }}" style="color:#6E6E6E;">Política de Privacidad</a> &nbsp;·&nbsp; {% else %}Política de Privacidad &nbsp;·&nbsp; {% endif %}
+              <a href="{{ preferencias_url }}" style="color:#6E6E6E;">Administrar preferencias</a> &nbsp;·&nbsp;
+              <a href="{{ baja_url }}" style="color:#6E6E6E;">Cancelar suscripción</a>
+            </p>
+            {% else %}
+            <p style="margin:0;">Ítaca Conversemos · Lima: Av. Arequipa 4130, Of. 205, Miraflores · Piura: Av. Bolognesi 582, Of. 201</p>
+            {% endif %}
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+</table>
+</body>
+</html>
