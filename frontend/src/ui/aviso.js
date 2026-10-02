@@ -4,9 +4,9 @@
 
 export const TIPOS_AVISO = ["success", "info", "warning", "error"];
 
-const PATRON_ERROR = /^(error\b|no se pudo|no se puede|no puedes|no tienes|no hay conexi[oó]n|fall[oó]|falta[n]?\b|ya tiene|ya est[aá]|ya existe|sin permiso|denegad)/i;
+const PATRON_ERROR = /^(error\b|no se pudo|no se puede|no pude|no se encontr|no se guard|no puedes|no tienes|no hay conexi[oó]n|fall[oó]|falta[n]?\b|ya tiene|ya existe|sin permiso|denegad)/i;
 const PATRON_AVISO = /^(atenci[oó]n|ojo\b|cuidado|revisa|pendiente)/i;
-const PATRON_INFO = /^(sin cambios|nada que|no hubo cambios)/i;
+const PATRON_INFO = /^(sin cambios|nada que|no hubo cambios|ya est[aá]n? todo)/i;
 
 export function tipoDeAviso(mensaje, explicito) {
   if (explicito && TIPOS_AVISO.includes(explicito)) return explicito;

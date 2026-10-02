@@ -11,6 +11,9 @@ test("los mensajes de fallo son error aunque no empiecen con 'Error'", () => {
     "No tienes permiso para eliminar pagos.",
     "Ya tiene un cobro registrado",
     "Falta el teléfono del paciente",
+    "No pude traer las citas. Reintenta.",
+    "No se encontró el paciente",
+    "No se guardó: sin conexión",
   ]) {
     assert.equal(tipoDeAviso(m), "error", m);
   }
@@ -25,6 +28,7 @@ test("los éxitos siguen siendo éxito", () => {
 test("advertencias e información", () => {
   assert.equal(tipoDeAviso("Atención: la línea de Lima está caída"), "warning");
   assert.equal(tipoDeAviso("Sin cambios"), "info");
+  assert.equal(tipoDeAviso("Ya están todos los servicios sugeridos."), "info");
 });
 
 test("el tipo explícito manda", () => {

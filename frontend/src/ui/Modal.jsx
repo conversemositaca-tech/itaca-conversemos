@@ -15,14 +15,18 @@ export default function Modal({
   const idTitulo = useId();
   const caja = useRef(null);
 
+  const confirmando = useRef(false);
+
   async function intentarCerrar() {
-    if (ocupado) return;
+    // Con la confirmación ya abierta, Escape la cierra a ella; no abre otra.
+    if (ocupado || confirmando.current) return;
     if (tipo === "formulario" && sucio) {
+      confirmando.current = true;
       const descartar = await confirmar({
         titulo: "¿Descartar lo que escribiste?",
         mensaje: "Tienes cambios sin guardar. Si cierras ahora, se pierden.",
         confirmarTexto: "Descartar", cancelarTexto: "Seguir editando", peligro: true,
-      });
+      }).finally(() => { confirmando.current = false; });
       if (!descartar) return;
     }
     onCerrar?.();
