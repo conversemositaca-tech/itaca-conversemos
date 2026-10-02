@@ -8,6 +8,8 @@ import { MENU_SITIO, SITE_ROUTES, propsEnlace, normalizarRuta } from "./rutas";
 import { modeloReporte, modeloTabla, exportarExcel, exportarWord, exportarPowerPoint, exportarPDF, exportarCSV } from "./exportGerencia";
 import Login from "./Login";
 import Duplicados, { AvisoDuplicado } from "./Duplicados";
+import DireccionClinica from "./DireccionClinica";
+import ContinuidadFicha from "./ContinuidadFicha";
 import SugerenciaRiesgo from "./SugerenciaRiesgo";
 import Modal, { BotonGuardar } from "./ui/Modal";
 import { confirmar } from "./ui/confirmar";
@@ -595,8 +597,12 @@ function coincideBusqueda(texto, busqueda) {
   });
 }
 
+// Dirección Clínica guarda sus filtros en la URL (?vista=direccion&sede=…):
+// al recargar o abrir un enlace compartido se vuelve a esa pantalla.
+const vistaDeUrl = () => (new URLSearchParams(window.location.search).get("vista") === "direccion" ? "direccion" : null);
+
 export default function ClinicaApp() {
-  const [view, setView] = useState("hoy");
+  const [view, setView] = useState(() => vistaDeUrl() || "hoy");
   const [pacientes, setPacientes] = useState([]);
   const [citas, setCitas] = useState([]);
   const [bloqueos, setBloqueos] = useState([]);
@@ -797,6 +803,8 @@ export default function ClinicaApp() {
     { id: "mentalidad", label: "Mentalidad Ítaca", icon: Compass },
     // Indicadores (Gerencia, Histórico, Reporte, Ocupación): gerencia y la analista (lectura).
     ...((usuario?.rol === "admin" || esAnalista) ? [{ id: "gerencia", label: "Gerencia", icon: BarChart3 }] : []),
+    // Dirección Clínica: continuidad y abandono inferido. Mismo alcance que Gerencia.
+    ...((usuario?.rol === "admin" || esAnalista) ? [{ id: "direccion", label: "Dirección Clínica", icon: HeartPulse }] : []),
     ...((usuario?.rol === "admin" || esAnalista) ? [{ id: "historico", label: "Histórico", icon: Activity }] : []),
     ...((usuario?.rol === "admin" || esAnalista) ? [{ id: "reporte", label: "Reporte", icon: FileText }] : []),
     ...((usuario?.rol === "admin" || esAnalista) ? [{ id: "ocupacion", label: "Ocupación", icon: Clock }] : []),
@@ -853,7 +861,17 @@ export default function ClinicaApp() {
     setToast(aviso);
     setTimeout(() => setToast((t) => (t && t.id === aviso.id ? null : t)), duracionDeAviso(aviso.tipo));
   }
-  function go(v) { setView(v); setSelectedId(null); }
+  function go(v) {
+    // Al salir de Dirección Clínica, la URL deja de llevar sus filtros.
+    if (v !== "direccion" && vistaDeUrl()) window.history.pushState(null, "", window.location.pathname);
+    setView(v); setSelectedId(null);
+  }
+  // «Atrás» hacia un enlace de Dirección Clínica vuelve a abrir esa pantalla.
+  useEffect(() => {
+    const alVolver = () => { if (vistaDeUrl()) { setView("direccion"); setSelectedId(null); } };
+    window.addEventListener("popstate", alVolver);
+    return () => window.removeEventListener("popstate", alVolver);
+  }, []);
   function openFicha(id) { if (!id) return; setView("pacientes"); setSelectedId(id); setDetalle(null); cargarDetalle(id); }
 
   // `HOY_ISO` se fija al cargar la página (con el reloj del SERVIDOR). Si dejan la
@@ -1858,6 +1876,11 @@ export default function ClinicaApp() {
 
         {view === "gerencia" && <Gerencia showToast={showToast} clinica={usuario?.clinica?.nombre} />}
 
+        {view === "direccion" && (usuario?.rol === "admin" || esAnalista) && <DireccionClinica showToast={showToast} />}
+        {view === "direccion" && usuario && usuario.rol !== "admin" && !esAnalista && (
+          <div className="ca-empty">Esta sección es solo para gerencia y Dirección Clínica.</div>
+        )}
+
         {view === "historico" && <Historico showToast={showToast} esAdmin={usuario?.rol === "admin"} />}
 
         {view === "reporte" && <ReporteSemanal showToast={showToast} esAdmin={usuario?.rol === "admin"} />}
@@ -2455,8 +2478,8 @@ function Gerencia({ showToast, clinica }) {
           <h2 className="ca-secth" style={{ marginTop: 26 }}>Operación</h2>
           <div className="ca-stats">
             <StatCard label="Sesiones en el período" valor={op.citas} sub={data.anterior ? deltaTxt(op.citas, data.anterior.citas) : undefined} />
-            <StatCard label="Atendidas" valor={op.atendidas} color="#4F8A77" />
-            <StatCard label="% Asistencia" valor={`${op.asistencia_pct}%`} sub={`${op.cancelacion_pct}% canceladas`} color={op.asistencia_pct >= 80 ? "#4F8A77" : "#B4564E"} />
+            <StatCard label="Realizadas" valor={op.atendidas} sub="asistió + atendida" color="#4F8A77" />
+            <StatCard label="% Asistencia" valor={`${op.asistencia_pct}%`} sub={`${op.inasistencia_pct ?? 0}% no asistió · ${op.cancelacion_pct}% canceladas`} color={op.asistencia_pct >= 80 ? "#4F8A77" : "#B4564E"} />
             <StatCard label="Recordatorios enviados" valor={op.recordatorios} />
             {op.recordatorios_sin_confirmar > 0 && (
               <StatCard label="Pendientes de confirmación" valor={op.recordatorios_sin_confirmar}
@@ -2576,7 +2599,7 @@ function Gerencia({ showToast, clinica }) {
                 <StatCard label="% en abandono" valor={`${data.retencion.rojo_pct}%`} color={data.retencion.rojo_pct >= 50 ? "#B4564E" : "#C9923A"} />
               </div>
               <div style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 6 }}>
-                Sobre {data.retencion.con_sesiones} pacientes con al menos una sesión registrada. Regla de la clínica: verde &lt;8 días · amarillo 8–15 · rojo &gt;15.
+                Sobre {data.retencion.con_sesiones} pacientes con al menos una sesión realizada (cita asistida, sin contar la consulta inicial). Regla de la clínica: verde &lt;8 días · amarillo 8–15 · rojo &gt;15.
               </div>
             </>
           )}
@@ -2627,13 +2650,18 @@ function Gerencia({ showToast, clinica }) {
 
               <div className="ca-demo" style={{ marginTop: 20 }}>
                 <div>
-                  <div className="ca-label" style={{ marginBottom: 8 }}>Continuidad · sesiones por paciente</div>
+                  <div className="ca-label" style={{ marginBottom: 8 }}>Continuidad · sesiones por proceso</div>
                   <div className="ca-card"><BarrasH data={data.diagnostico.continuidad.por_sesiones} color="#6E86A8" /></div>
                   <div style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 6 }}>
-                    Sobre {data.diagnostico.continuidad.con_historia} pacientes con historia clínica.{" "}
+                    Sobre {data.diagnostico.continuidad.procesos} procesos con citas asistidas desde el{" "}
+                    {(data.diagnostico.continuidad.desde || "").split("-").reverse().join("/")}, sin contar la consulta inicial.{" "}
+                    De los {data.diagnostico.continuidad.terminados} ya terminados,{" "}
                     <strong style={{ color: data.diagnostico.continuidad.abandono_1_2_pct >= 40 ? "#B4564E" : "inherit" }}>
                       {data.diagnostico.continuidad.abandono_1_2_pct}%
-                    </strong> no pasa de la sesión 2.
+                    </strong> no pasó de la sesión 2.{" "}
+                    {data.diagnostico.continuidad.fichas_sin_cita > 0 && (
+                      <>Las {data.diagnostico.continuidad.fichas_sin_cita} fichas clínicas sin cita (sobre todo el Excel de 2024 a feb 2026) ya no entran en esta curva.</>
+                    )}
                   </div>
                 </div>
                 <div>
@@ -7272,6 +7300,8 @@ function Ficha({ p, onBack, onEdit, onWhatsApp, onSubirAdjunto, onEliminarAdjunt
           </div>
         </>
       )}
+
+      <ContinuidadFicha pacienteId={p.id} showToast={showToast} />
 
       <h2 className="ca-secth" id="hc-historia">Historia clínica</h2>
       <div className="ca-card">

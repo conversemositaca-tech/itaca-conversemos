@@ -18,7 +18,7 @@ Sistema de gestión de **Ítaca Conversemos**, centro de psicología en Perú (s
 | `faro` | Tamizaje escolar (datos de menores, separado a propósito de `pacientes`) |
 | `correo` | Email 1.0 (Brevo), consentimiento como historial; banderas apagadas por defecto |
 
-La app `continuidad` (Dirección Clínica) vive en la rama `feat/direccion-clinica`, no en `main`.
+La app `continuidad` (Dirección Clínica fase 2: proceso con eventos, transiciones y motivos) acompaña a `core/continuidad.py`.
 
 ## Comandos
 
@@ -67,6 +67,7 @@ La app `continuidad` (Dirección Clínica) vive en la rama `feat/direccion-clini
 - `docs/dominios.md` — sitio y sistema en dominios separados (`core/dominios.py`).
 - `docs/marca-exportables.md` — identidad visual de Excel/PDF/Word que genera el sistema.
 - `docs/auditoria-continuidad.md` — auditoría de "Evaluar continuidad" (set 2026).
+- `docs/continuidad.md`, `docs/continuidad-estados.md`, `docs/continuidad-metricas.md`, `docs/direccion-clinica.md` — continuidad y Dirección Clínica (definiciones y cifras).
 - `docs/email-1.0.md`, `docs/email-1.0-operacion.md`, `docs/email-1.0-dns.md` — diseño, operación y DNS del correo.
 - `docs/SOFTWARE-FACTORY-AUDIT.md` + `docs/software-factory-audit/` (01–18) — auditoría de la fábrica de software.
 - `docs/SOFTWARE-FACTORY-PHASE-0.md` — fase 0 de la fábrica (verificación, hooks, rules).
