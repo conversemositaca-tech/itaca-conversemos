@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
-import { Activity, AlertTriangle, ArrowDown, ArrowUp, Award, BarChart3, Bell, BookUser, Building2, Cake, Calendar, Check, ChevronDown, ChevronLeft, ChevronRight, ClipboardList, Clock, Compass, Copy, DoorOpen, Download, ExternalLink, FileDown, FileSpreadsheet, FileText, FolderOpen, GraduationCap, Heart, HeartHandshake, HeartPulse, Home, KeyRound, Landmark, Leaf, Lightbulb, LogOut, MapPin, Megaphone, Menu, MessageCircle, Mic, Paperclip, Pencil, Phone, Pill, Play, Plus, Presentation, Receipt, RotateCcw, Search, Send, Shield, Smile, Sparkles, Target, Trash2, TrendingUp, Trophy, Upload, UserCog, UserPlus, UserRound, Users, X } from "lucide-react";
+import { Activity, AlertTriangle, ArrowDown, ArrowUp, Award, BarChart3, Bell, BookUser, Building2, Cake, Calendar, Check, ChevronDown, ChevronLeft, ChevronRight, ClipboardList, Clock, Compass, Copy, DoorOpen, Download, ExternalLink, FileDown, FileSpreadsheet, FileText, FolderOpen, GraduationCap, Heart, HeartHandshake, HeartPulse, Home, Info, KeyRound, Landmark, Leaf, Lightbulb, LogOut, MapPin, Megaphone, Menu, MessageCircle, Mic, Paperclip, Pencil, Phone, Pill, Play, Plus, Presentation, Receipt, RotateCcw, Search, Send, Shield, Smile, Sparkles, Target, Trash2, TrendingUp, Trophy, Upload, UserCog, UserPlus, UserRound, Users, X } from "lucide-react";
 import InputClave from "./InputClave";
 import { api } from "./api";
 import { origenGuardado } from "./origen";
@@ -10,6 +10,10 @@ import Login from "./Login";
 import Duplicados, { AvisoDuplicado } from "./Duplicados";
 import DireccionClinica from "./DireccionClinica";
 import ContinuidadFicha from "./ContinuidadFicha";
+import SugerenciaRiesgo from "./SugerenciaRiesgo";
+import Modal, { BotonGuardar } from "./ui/Modal";
+import { confirmar } from "./ui/confirmar";
+import { duracionDeAviso, textoDeAviso, tipoDeAviso } from "./ui/aviso";
 
 const TIPOS_DOC = [
   { v: "dni", l: "DNI" }, { v: "ce", l: "Carné de extranjería" },
@@ -643,7 +647,7 @@ export default function ClinicaApp() {
   const [editingPaciente, setEditingPaciente] = useState(null);
   const [posibleDuplicado, setPosibleDuplicado] = useState(null);
   const [registrandoSesion, setRegistrandoSesion] = useState(null);
-  const [toast, setToast] = useState("");
+  const [toast, setToast] = useState(null);
   // Directorio de psicólogos: hace falta para poder reasignar una cita.
   const [medicosDir, setMedicosDir] = useState([]);
 
@@ -850,7 +854,13 @@ export default function ClinicaApp() {
   const porConfirmar = citasHoy.filter((c) => c.estado === "agendada" || c.estado === "por_confirmar").length;
   const atendidas = citasHoy.filter((c) => c.estado === "atendida").length;
 
-  function showToast(msg) { setToast(msg); setTimeout(() => setToast(""), 2800); }
+  // showToast(texto) o showToast(texto, "success"|"info"|"warning"|"error").
+  // Un aviso viejo ya no borra a uno nuevo: cada uno lleva su id.
+  function showToast(msg, tipo) {
+    const aviso = { texto: msg, tipo: tipoDeAviso(msg, tipo), id: Date.now() + Math.random() };
+    setToast(aviso);
+    setTimeout(() => setToast((t) => (t && t.id === aviso.id ? null : t)), duracionDeAviso(aviso.tipo));
+  }
   function go(v) {
     // Al salir de Dirección Clínica, la URL deja de llevar sus filtros.
     if (v !== "direccion" && vistaDeUrl()) window.history.pushState(null, "", window.location.pathname);
@@ -1132,6 +1142,20 @@ export default function ClinicaApp() {
   }
 
   async function setEstadoCita(cita, estado) {
+    // Cancelar o marcar falta desde el desplegable era un solo cambio, sin
+    // vuelta atrás visible: se pide confirmación explícita.
+    const graves = {
+      cancelada: { titulo: "¿Cancelar esta sesión?", accion: "Sí, cancelar" },
+      no_asistio: { titulo: "¿Marcar que no asistió?", accion: "Sí, no asistió" },
+    };
+    if (graves[estado]) {
+      const ok = await confirmar({
+        titulo: graves[estado].titulo,
+        mensaje: `${cita.paciente || "Paciente"} · ${cita.fecha || ""} ${cita.hora || ""}. Si consumía una sesión de un paquete, se devuelve. Queda registrado quién lo hizo.`,
+        confirmarTexto: graves[estado].accion, cancelarTexto: "No, dejarla como está", peligro: true,
+      });
+      if (!ok) return;
+    }
     try {
       await api.setEstadoCita(cita.id, estado);
       const lbl = (ESTADOS_CITA.find((e) => e.v === estado) || {}).l || estado;
@@ -1618,6 +1642,8 @@ export default function ClinicaApp() {
           justify-content:center; flex-shrink:0; color:#fff; }
         .ca-toast.ok { border-color:#BFE6CE; } .ca-toast.ok .ca-toast-ic { background:#2F8F5B; }
         .ca-toast.err { border-color:#F0C4BF; } .ca-toast.err .ca-toast-ic { background:#C9453B; }
+        .ca-toast.warn { border-color:#F2DDB4; } .ca-toast.warn .ca-toast-ic { background:#B7791F; }
+        .ca-toast.info { border-color:#C9DDF0; } .ca-toast.info .ca-toast-ic { background:#3B6EA8; }
         @keyframes caUp { from { opacity:0; transform:translate(-50%,-14px) scale(.96); } to { opacity:1; transform:translate(-50%,0) scale(1); } }
         @media (prefers-reduced-motion: reduce) { .ca-toast { animation:none; } }
         @media (max-width:720px) {
@@ -1972,11 +1998,16 @@ export default function ClinicaApp() {
       {cambiarPass && <CambiarPasswordModal onClose={() => setCambiarPass(false)} onSave={cambiarMiPassword} />}
       {toast && createPortal(
         (() => {
-          const esError = /^error\b/i.test(toast);
+          const clase = { success: "ok", info: "info", warning: "warn", error: "err" }[toast.tipo];
+          const icono = {
+            success: <Check size={16} strokeWidth={3.2} />, info: <Info size={16} strokeWidth={2.6} />,
+            warning: <AlertTriangle size={16} strokeWidth={2.6} />, error: <X size={16} strokeWidth={3} />,
+          }[toast.tipo];
           return (
-            <div className={`ca-toast ${esError ? "err" : "ok"}`}>
-              <span className="ca-toast-ic">{esError ? <X size={16} strokeWidth={3} /> : <Check size={16} strokeWidth={3.2} />}</span>
-              <span>{toast.replace(/^Error:\s*/i, "").replace(/\s*✓\s*$/, "")}</span>
+            <div className={`ca-toast ${clase}`} role={toast.tipo === "error" ? "alert" : "status"}
+              aria-live={toast.tipo === "error" ? "assertive" : "polite"}>
+              <span className="ca-toast-ic">{icono}</span>
+              <span>{textoDeAviso(toast.texto)}</span>
             </div>
           );
         })(),
@@ -7063,6 +7094,7 @@ function Ficha({ p, onBack, onEdit, onWhatsApp, onSubirAdjunto, onEliminarAdjunt
             return r ? <span style={{ background: r[0], color: r[1], fontSize: 14, fontWeight: 600, padding: "5px 14px", borderRadius: 20 }}>{r[2]}</span>
               : <span style={{ color: "var(--muted)", fontSize: 13.5 }}>Sin evaluar</span>;
           })()}
+          <SugerenciaRiesgo pacienteId={p.id} puedeResolver={puedeEliminar && !soloLectura} showToast={showToast} onResuelta={onRefrescar} />
         </FichaCard>
         {/* El psicólogo VE el NPS (satisfacción de sus pacientes) pero no lo registra ni lo pide. */}
         <NpsPaciente pacienteId={p.id} puede={!esMedico && (puedeRegistrar || puedeCobrar)} showToast={showToast} />
@@ -12238,11 +12270,19 @@ function CobroModal({ prefill, pacientes, servicios, onClose, onSave }) {
   }
 
   const canSave = sel && monto && Number(monto) > 0;
-  function guardar() {
+  const [guardando, setGuardando] = useState(false);
+  const huella = JSON.stringify([sel?.id, servicio, monto, estado, medio, medioOtro, comprobante, compNumero, fecha, concepto]);
+  const [huellaInicial] = useState(huella);
+  async function guardar() {
+    if (guardando || !canSave) return;
+    setGuardando(true);
+    try { await enviar(); } finally { setGuardando(false); }
+  }
+  function enviar() {
     // "Otro" medio (giftcard, asumido por mkt/hub, etc.): el detalle se anota en el concepto.
     const detalleOtro = (estado === "pagado" && medio === "otro" && medioOtro.trim()) ? medioOtro.trim() : "";
     const conceptoFinal = detalleOtro ? `${concepto.trim() || "Cobro"} · ${detalleOtro}` : (concepto.trim() || undefined);
-    onSave({
+    return onSave({
       paciente: sel.id,
       cita: prefill?.citaId || null,
       servicio: servicio || null,
@@ -12255,12 +12295,12 @@ function CobroModal({ prefill, pacientes, servicios, onClose, onSave }) {
   }
 
   return (
-    <div className="ca-modal-bg" onClick={onClose}>
-      <div className="ca-modal" style={{ maxWidth: 400 }} onClick={(e) => e.stopPropagation()}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
-          <strong style={{ fontSize: 16 }}>Registrar cobro</strong>
-          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)" }}><X size={18} /></button>
-        </div>
+    <Modal titulo="Registrar cobro" tipo="formulario" ancho={400} sucio={huella !== huellaInicial}
+      ocupado={guardando} onCerrar={onClose}
+      pie={<>
+        <button type="button" className="ca-btn ghost" disabled={guardando} onClick={onClose}>Cancelar</button>
+        <BotonGuardar ocupado={guardando} listo={!!canSave} onClick={guardar}>Guardar cobro</BotonGuardar>
+      </>}>
 
         <div style={{ marginBottom: 13 }}>
           <div className="ca-label">Paciente</div>
@@ -12350,12 +12390,7 @@ function CobroModal({ prefill, pacientes, servicios, onClose, onSave }) {
           <input className="ca-input" value={concepto} onChange={(e) => setConcepto(e.target.value)} placeholder="Consulta / procedimiento…" />
         </div>
 
-        <div style={{ display: "flex", gap: 9, justifyContent: "flex-end" }}>
-          <button className="ca-btn ghost" onClick={onClose}>Cancelar</button>
-          <button className="ca-btn" style={{ opacity: canSave ? 1 : 0.5, pointerEvents: canSave ? "auto" : "none" }} onClick={guardar}>Guardar cobro</button>
-        </div>
-      </div>
-    </div>
+    </Modal>
   );
 }
 

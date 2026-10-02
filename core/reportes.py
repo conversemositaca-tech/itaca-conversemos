@@ -207,8 +207,8 @@ class ReporteSemanalViewSet(viewsets.ModelViewSet):
         })
 
     def _solo_admin(self):
-        if getattr(self.request.user, "rol", None) != Usuario.Rol.ADMIN:
-            raise PermissionDenied("Solo el gerente (admin) puede editar los reportes semanales.")
+        from core.politicas import es_admin, exigir
+        exigir(es_admin(self.request.user), "Solo el gerente (admin) puede editar los reportes semanales.")
 
     def perform_create(self, serializer):
         self._solo_admin()

@@ -4,6 +4,7 @@ from django.core.exceptions import ValidationError as DjangoValidationError
 from django.core.validators import URLValidator
 from django.utils import timezone
 from rest_framework import serializers
+from core.serializadores import RelacionesDelTenant
 
 from core import continuidad
 from core.permisos import oculta_contacto
@@ -11,6 +12,7 @@ from core.utils import fecha_corta
 
 from usuarios.models import Usuario
 
+from .models import ESTADOS_REALIZADA  # noqa: E402
 from .models import (
     Adjunto, AplicacionEscala, Atencion, BloqueoAgenda, Cita, ContactoProfesional,
     ObjetivoTerapeutico, Paciente, RespuestaNPS, Tarea, severidad_escala,
@@ -184,7 +186,7 @@ class PacienteSerializer(serializers.ModelSerializer):
             c.inicio and c.inicio >= ahora and c.estado != Cita.Estado.CANCELADA for c in citas
         )
         realizadas = sorted(
-            (c for c in citas if c.estado in (Cita.Estado.ATENDIDA, Cita.Estado.ASISTIO)),
+            (c for c in citas if c.estado in ESTADOS_REALIZADA),
             key=lambda c: c.inicio, reverse=True,
         )
         ultima_decision = realizadas[0].decision if realizadas else ""
@@ -355,7 +357,7 @@ class PacienteListSerializer(PacienteSerializer):
         return {"cobrado": float(cobrado), "pendiente": float(pendiente), "items": []}
 
 
-class CitaSerializer(serializers.ModelSerializer):
+class CitaSerializer(RelacionesDelTenant, serializers.ModelSerializer):
     pacienteId = serializers.PrimaryKeyRelatedField(
         source="paciente", queryset=Paciente.objects.all()
     )

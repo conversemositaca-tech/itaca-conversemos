@@ -13,7 +13,7 @@ from rest_framework.views import APIView
 from core import continuidad as continuidad_mod
 from core.tenant import get_clinica_actual
 from leads.models import Lead
-from pacientes.models import Cita, Paciente, RespuestaNPS
+from pacientes.models import ESTADOS_REALIZADA, Cita, Paciente, RespuestaNPS
 from usuarios.models import Profesional, Usuario
 
 DIAS = {1: "Lun", 2: "Mar", 3: "Mié", 4: "Jue", 5: "Vie", 6: "Sáb", 7: "Dom"}
@@ -61,7 +61,7 @@ class MiPanelView(APIView):
         fin = timezone.make_aware(datetime.combine(domingo, time.max), tz)
         sesiones_semana = Cita.objects.filter(
             clinica=clinica, medico=user,
-            estado__in=[Cita.Estado.ATENDIDA, Cita.Estado.ASISTIO],
+            estado__in=ESTADOS_REALIZADA,
             inicio__gte=ini, inicio__lte=fin,
         ).count()
         ocupacion = _pct(sesiones_semana, cupos)
@@ -112,7 +112,7 @@ class MiPanelView(APIView):
         from pacientes.models import Atencion
         sesiones_totales = Cita.objects.filter(
             clinica=clinica, medico=user,
-            estado__in=[Cita.Estado.ATENDIDA, Cita.Estado.ASISTIO],
+            estado__in=ESTADOS_REALIZADA,
         ).count()
         historias_totales = Atencion.objects.filter(
             clinica=clinica, medico=user, tipo=Atencion.Tipo.HISTORIA).count()

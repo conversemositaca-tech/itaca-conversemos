@@ -56,6 +56,7 @@ from mensajes.api import MensajeViewSet, PlantillaMensajeViewSet
 from mensajes.materiales import MaterialViewSet
 from mensajes.monitor_evolution import EvolutionEstadoView, EvolutionInstanciasView
 from mensajes.webhook_evolution import EvolutionWebhookView
+from pacientes.riesgo import SugerenciaRiesgoViewSet
 from pacientes.api import AdjuntoViewSet, AplicacionEscalaViewSet, AtencionViewSet, BloqueoAgendaViewSet, CitaViewSet, ContactoProfesionalViewSet, ObjetivoTerapeuticoViewSet, PacienteViewSet, RespuestaNPSViewSet, TareaViewSet, TranscribirView
 from faro.api import (AlertasView, AplicacionesView, AtenderAlertaView, AutorizacionView, EnviarInformesView,
                       CuestionarioView, PanelFaroView, ResultadosView)
@@ -99,6 +100,7 @@ router.register(r"tareas", TareaViewSet, basename="tarea")
 router.register(r"red-profesionales", ContactoProfesionalViewSet, basename="red-profesional")
 router.register(r"nps", RespuestaNPSViewSet, basename="nps")
 router.register(r"adjuntos", AdjuntoViewSet, basename="adjunto")
+router.register(r"sugerencias-riesgo", SugerenciaRiesgoViewSet, basename="sugerencia-riesgo")
 router.register(r"servicios", ServicioViewSet, basename="servicio")
 router.register(r"cobros", CobroViewSet, basename="cobro")
 router.register(r"paquetes", PaqueteViewSet, basename="paquete")

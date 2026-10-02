@@ -28,7 +28,7 @@ from finanzas.models import Cobro, Egreso
 from leads import embudo as embudo_mod
 from leads.models import Lead
 from mensajes.models import Mensaje
-from pacientes.models import Atencion, Cita, Paciente
+from pacientes.models import ESTADOS_CERRADA, ESTADOS_REALIZADA, Atencion, Cita, Paciente
 
 
 def _rango(periodo):
@@ -220,7 +220,7 @@ class HoyResumenView(APIView):
         ultima_decision = {}
         citas_realizadas = (
             Cita.objects.del_tenant_actual()
-            .filter(paciente_id__in=ids, estado__in=[Cita.Estado.ATENDIDA, Cita.Estado.ASISTIO])
+            .filter(paciente_id__in=ids, estado__in=ESTADOS_REALIZADA)
             .order_by("paciente_id", "-inicio").values("paciente_id", "decision")
         )
         for c in citas_realizadas:
@@ -1278,7 +1278,7 @@ class GerenciaResumenView(APIView):
         # Adopción del motivo de cierre (Cita.decision): de las citas del período
         # que ya tuvieron un desenlace, ¿cuántas quedaron con el motivo registrado?
         # Sin este dato nadie puede saber DESPUÉS por qué se perdió a un paciente.
-        TERMINALES = {E.ATENDIDA, E.ASISTIO, E.NO_ASISTIO, E.CANCELADA}
+        TERMINALES = set(ESTADOS_CERRADA)
         citas_terminales = [c for c in citas if c.estado in TERMINALES]
         con_decision = sum(1 for c in citas_terminales if c.decision)
         decision_adopcion = {

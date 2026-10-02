@@ -1,0 +1,25 @@
+{
+  "_nota": "Deuda de ESLint heredada (origen: 74/38 en ae759b8; bajada al pagar deuda en la Fase 1). Regla: ningún archivo puede tener MÁS errores que aquí; los avisos de más se reportan. Se baja a mano cuando se paga deuda; nunca se sube.",
+  "total": {
+    "errores": 74,
+    "avisos": 38
+  },
+  "archivos": {
+    "frontend/src/App.jsx": {
+      "errores": 71,
+      "avisos": 38
+    },
+    "frontend/src/InputClave.jsx": {
+      "errores": 1,
+      "avisos": 0
+    },
+    "frontend/src/Login.jsx": {
+      "errores": 1,
+      "avisos": 0
+    },
+    "frontend/vite.config.js": {
+      "errores": 1,
+      "avisos": 0
+    }
+  }
+}

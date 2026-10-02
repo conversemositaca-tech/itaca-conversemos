@@ -362,6 +362,19 @@ class Cita(ModeloTenant):
         return f"{self.paciente} · {timezone.localtime(self.inicio):%d/%m %H:%M}"
 
 
+# ── Qué significa el estado de una cita (UNA sola fuente) ───────────────────
+# "asistio" y "atendida" difieren solo en el camino (Atender con ficha clínica
+# frente al selector de la agenda o la importación); para todo cálculo son lo
+# mismo: la sesión OCURRIÓ. Úsalos en vez de repetir la lista.
+ESTADOS_REALIZADA = (Cita.Estado.ATENDIDA, Cita.Estado.ASISTIO)
+# Cita con desenlace registrado (ya no está pendiente).
+ESTADOS_CERRADA = ESTADOS_REALIZADA + (Cita.Estado.NO_ASISTIO, Cita.Estado.CANCELADA)
+
+
+def cita_realizada(cita):
+    return cita.estado in ESTADOS_REALIZADA
+
+
 class BloqueoAgenda(ModeloTenant):
     """Bloqueo de horario en la agenda, sin paciente (almuerzo, ausencia, viaje…).
 
@@ -1134,3 +1147,40 @@ class RevisionDuplicado(ModeloTenant):
 
     def __str__(self):
         return f"{self.paciente_a_id} ≠ {self.paciente_b_id}"
+
+
+class SugerenciaRiesgo(ModeloTenant):
+    """Nivel de riesgo que PROPONE la IA (p. ej. al estructurar una nota de Eli).
+
+    Una inferencia automática no es una determinación clínica: queda pendiente
+    hasta que un psicólogo del paciente o un admin la confirma, la modifica o
+    la rechaza. Solo entonces cambia `Paciente.riesgo`, que es el valor oficial
+    (y decide, por ejemplo, la exclusión de correos).
+    """
+
+    class Estado(models.TextChoices):
+        PENDIENTE = "pendiente", "Pendiente de revisión"
+        CONFIRMADA = "confirmada", "Confirmada"
+        MODIFICADA = "modificada", "Modificada"
+        RECHAZADA = "rechazada", "Rechazada"
+        REEMPLAZADA = "reemplazada", "Reemplazada por una sugerencia más nueva"
+
+    paciente = models.ForeignKey(Paciente, on_delete=models.CASCADE, related_name="sugerencias_riesgo")
+    valor_sugerido = models.CharField(max_length=12, choices=Paciente.Riesgo.choices)
+    fuente = models.CharField(max_length=40, default="eli_nota_voz")
+    atencion = models.ForeignKey(
+        "Atencion", on_delete=models.SET_NULL, null=True, blank=True, related_name="sugerencias_riesgo",
+    )
+    estado = models.CharField(max_length=12, choices=Estado.choices, default=Estado.PENDIENTE, db_index=True)
+    valor_final = models.CharField(max_length=12, choices=Paciente.Riesgo.choices, blank=True, default="")
+    revisado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+",
+    )
+    revisado_en = models.DateTimeField(null=True, blank=True)
+    creado_en = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-creado_en"]
+
+    def __str__(self):
+        return f"{self.paciente_id}: {self.valor_sugerido} ({self.estado})"

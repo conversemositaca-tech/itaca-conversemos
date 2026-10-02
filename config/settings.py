@@ -32,11 +32,15 @@ ALLOWED_HOSTS += [".trycloudflare.com"]
 _railway_domain = os.getenv("RAILWAY_PUBLIC_DOMAIN", "").strip()
 if _railway_domain:
     ALLOWED_HOSTS.append(_railway_domain)
-# Al agregar dominios propios, Railway puede cambiar RAILWAY_PUBLIC_DOMAIN al
-# dominio nuevo y la dirección .up.railway.app deja de estar permitida: el
-# 1 oct 2026 el sistema respondió 400 en todas las páginas por eso. Esta
-# dirección la siguen usando el equipo, los webhooks y los crones.
-ALLOWED_HOSTS.append(".up.railway.app")
+# Al agregar dominios propios, Railway cambia RAILWAY_PUBLIC_DOMAIN al dominio
+# nuevo y la dirección .up.railway.app dejó de estar permitida (1 oct 2026: 400
+# en todo el sistema). Esa dirección la siguen usando el equipo, Eli y los
+# crones, así que se fija aquí. Exacta, sin comodín: *.up.railway.app es de
+# todos los clientes de Railway y no debe ser un origen de confianza.
+RAILWAY_DOMINIO_SERVICIO = os.getenv(
+    "RAILWAY_DOMINIO_SERVICIO", "itaca-conversemos-production.up.railway.app").strip()
+if RAILWAY_DOMINIO_SERVICIO:
+    ALLOWED_HOSTS.append(RAILWAY_DOMINIO_SERVICIO)
 
 
 # --- Aplicaciones ---
@@ -201,6 +205,9 @@ REST_FRAMEWORK = {
         # de IP, pero no el correo de la persona a la que quiere entrar.
         "login_ip": "30/min",
         "login_cuenta": "8/min",
+        # Integraciones servidor a servidor (Eli, crones): holgado para el uso
+        # real, pero corta a quien pruebe tokens o vacíe datos en bucle.
+        "integracion": "120/min",
     },
     # Detrás del proxy de Railway, DRF vería SIEMPRE la IP del proxy y contaría a
     # todo el mundo en el mismo cubo: un atacante dejaría fuera a las coordinadoras.
@@ -219,13 +226,19 @@ CSRF_TRUSTED_ORIGINS = [
 CSRF_TRUSTED_ORIGINS += [o.strip() for o in os.getenv("DJANGO_CSRF_ORIGINS", "").split(",") if o.strip()]
 if _railway_domain:
     CSRF_TRUSTED_ORIGINS.append(f"https://{_railway_domain}")
-CSRF_TRUSTED_ORIGINS.append("https://*.up.railway.app")
+if RAILWAY_DOMINIO_SERVICIO:
+    CSRF_TRUSTED_ORIGINS.append(f"https://{RAILWAY_DOMINIO_SERVICIO}")
 
 # --- Integración con Eli (bot de WhatsApp): notas clínicas por voz ---
 # Token compartido (servidor-a-servidor) que Eli envía en la cabecera
 # X-Integracion-Token para guardar atenciones desde WhatsApp. Si queda vacío,
 # la integración está apagada (los endpoints /api/integraciones/* rechazan todo).
 ITACA_INTEGRACION_TOKEN = os.getenv("ITACA_INTEGRACION_TOKEN", "")
+# Tokens por alcance (core/integraciones.py). Vacío = ese alcance sigue
+# aceptando el compartido; con valor, el compartido deja de abrirlo.
+ITACA_TOKEN_ELI = os.getenv("ITACA_TOKEN_ELI", "")
+ITACA_TOKEN_TAREAS = os.getenv("ITACA_TOKEN_TAREAS", "")
+ITACA_TOKEN_RESPALDO = os.getenv("ITACA_TOKEN_RESPALDO", "")
 
 
 # --- Integración con el tablero financiero de Soto (Google Apps Script) ---
@@ -256,8 +269,15 @@ SITIO_URL_PUBLICA = os.getenv("SITIO_URL_PUBLICA", "")
 # GitHub— pasa de 60 por minuto y tests que no tienen nada que ver reciben 429.
 # Ningún test prueba ese límite; los del login no se tocan.
 import sys as _sys
-if len(_sys.argv) > 1 and _sys.argv[1] == "test":
+EJECUTANDO_TESTS = len(_sys.argv) > 1 and _sys.argv[1] == "test"
+if EJECUTANDO_TESTS:
     REST_FRAMEWORK["DEFAULT_THROTTLE_RATES"]["captacion"] = "100000/min"
+    REST_FRAMEWORK["DEFAULT_THROTTLE_RATES"]["integracion"] = "100000/min"
+    # El hasher de producción (PBKDF2, ~1 M iteraciones) tarda casi 1 s por
+    # contraseña: con cientos de usuarios de prueba la suite pasaba de 55 min.
+    # MD5 SOLO aquí: este bloque exige el comando `manage.py test`, que nunca
+    # corre en el servidor (gunicorn). core.tests_hasher lo comprueba.
+    PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]
 
 # Dominios separados: la landing en uno, el panel en otro (core/dominios.py).
 # Vacíos = todo sigue en el dominio por el que entre la visita, como siempre.

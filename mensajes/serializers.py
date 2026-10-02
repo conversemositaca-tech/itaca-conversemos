@@ -1,3 +1,5 @@
+import re
+
 from django.utils import timezone
 from rest_framework import serializers
 
@@ -47,3 +49,20 @@ class MensajeSerializer(serializers.ModelSerializer):
     def get_fecha(self, obj):
         local = timezone.localtime(obj.creado_en)
         return f"{fecha_corta(local)} · {local:%H:%M}"
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        req = self.context.get("request")
+        rol = getattr(getattr(req, "user", None), "rol", None)
+        # El enlace de firma lleva el token del consentimiento: con él se acepta
+        # en nombre del paciente. Solo lo ve quien envía esos enlaces.
+        if rol not in ROLES_ENVIAN_CONSENTIMIENTO and data.get("texto"):
+            data["texto"] = _ENLACE_CONSENTIMIENTO.sub(r"\1[enlace oculto]", data["texto"])
+        from core.permisos import oculta_contacto
+        if req is not None and oculta_contacto(req.user):
+            data["telefono"] = ""
+        return data
+
+
+ROLES_ENVIAN_CONSENTIMIENTO = ("admin", "asistente")
+_ENLACE_CONSENTIMIENTO = re.compile(r"(/consentimiento/)[A-Za-z0-9_\-]+")

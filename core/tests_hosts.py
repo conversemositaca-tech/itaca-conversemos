@@ -39,7 +39,10 @@ class HostsTests(SimpleTestCase):
     def test_railway_se_acepta_aunque_la_variable_sea_un_dominio_propio(self):
         hosts, origenes = _cargar(RAILWAY_PUBLIC_DOMAIN="www.conversemos.itaca.com.pe")
         self.assertTrue(validate_host(RAILWAY, hosts))
-        self.assertIn("https://*.up.railway.app", origenes)
+        self.assertIn(f"https://{RAILWAY}", origenes)
+        # Sin comodín: *.up.railway.app es de todos los clientes de Railway.
+        self.assertNotIn("https://*.up.railway.app", origenes)
+        self.assertFalse(validate_host("atacante.up.railway.app", hosts))
 
     def test_railway_se_acepta_sin_variable(self):
         hosts, _ = _cargar()

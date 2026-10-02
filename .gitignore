@@ -38,5 +38,10 @@ revision_continuidad_*.txt
 
 # Skills de marketing instaladas por el usuario (paquete externo de 51 carpetas).
 # El contexto de negocio SI se versiona: .claude/product-marketing.md
-.claude/skills/
+# Las skills de ingeniería de la Software Factory SÍ se versionan.
+.claude/skills/*
+!.claude/skills/feature/
+!.claude/skills/qa-browser/
+!.claude/skills/pr/
+!.claude/skills/security-review/
 skills-lock.json
