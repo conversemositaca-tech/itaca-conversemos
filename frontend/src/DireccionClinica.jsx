@@ -99,6 +99,7 @@ const ESTILOS = `
 .dc-kpi-cab { display:flex; align-items:center; gap:8px; color:var(--ink-soft); font-size:13px; font-weight:500; }
 .dc-kpi-cab svg { color:var(--accent); flex-shrink:0; }
 .dc-kpi-n { font-size:34px; font-weight:600; letter-spacing:-0.02em; line-height:1.1; margin-top:10px; font-variant-numeric:tabular-nums; color:var(--ink); }
+.dc-kpi-n.texto { font-size:21px; line-height:1.3; margin-top:14px; }
 .dc-kpi.atencion { border-color:#EBD9B5; background:#FFFBF2; }
 .dc-kpi.atencion .dc-kpi-cab svg { color:${AMBAR}; }
 .dc-kpi.atencion .dc-kpi-n { color:#8A5A10; }
@@ -126,6 +127,7 @@ const ESTILOS = `
 .dc-paso strong { font-size:15px; font-variant-numeric:tabular-nums; }
 .dc-paso .dc-sub { font-size:11px; }
 .dc-paso.sin { color:var(--muted); }
+.dc-paso-texto { font-size:12.5px !important; font-weight:500; }
 .dc-chips { display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; }
 .dc-chip { font-size:12.5px; border:1px solid var(--line); border-radius:8px; padding:5px 10px; background:var(--surface); color:var(--ink); }
 .dc-chip b { font-variant-numeric:tabular-nums; }
@@ -202,14 +204,24 @@ const ESTILOS = `
 
 // --- Formato -----------------------------------------------------------------
 
-const fechaCorta = (iso) => (iso ? iso.split("-").reverse().join("/") : "Sin datos");
-const num = (v) => (v === null || v === undefined ? "Sin datos" : v);
-// Un % sin dato puede ser "no evaluable" (nadie llegó al hito todavía) o
-// simplemente "sin datos". Se dice cuál, en vez de un guion.
-const pctTexto = (k) => {
-  if (k?.pct !== null && k?.pct !== undefined) return `${k.pct}%`;
-  return k && k.denominador === 0 ? "No evaluable" : "Sin datos";
-};
+const fechaCorta = (iso) => (iso ? iso.split("-").reverse().join("/") : "Sin información");
+const num = (v) => (v === null || v === undefined ? "Sin información" : v);
+// Un porcentaje vacío se explica según POR QUÉ está vacío (con los datos que ya
+// trae el KPI; no cambia ningún cálculo):
+//   - N = 0 → nadie entró a esa base (p. ej. «Sin procesos nuevos» en el período);
+//   - hay N pero 0 evaluables y alguno «aún en curso» → todavía no se resolvió;
+//   - hay N, 0 evaluables y ninguno en curso → `sinBase` (o «No evaluable»);
+//   - el KPI no vino → «Sin información».
+// Un 0 % real (hubo evaluables y el resultado fue cero) se muestra como 0 %.
+function textoKpi(k, { vacio = "Sin procesos nuevos", enCurso = "Aún en curso", sinBase = "No evaluable" } = {}) {
+  if (!k) return "Sin información";
+  if (k.pct !== null && k.pct !== undefined) return `${k.pct}%`;
+  if (!k.n) return vacio;
+  if (k.no_evaluables) return enCurso;
+  return sinBase;
+}
+// ¿El valor de una tarjeta es una frase y no una cifra? (va en tamaño menor)
+const esTexto = (v) => typeof v === "string" && !/^[\d.,]+%?$/.test(v);
 const pctCelda = (v) => (v === null || v === undefined ? "—" : `${v}%`);
 
 // Una tasa con su base: «43 de 56 evaluables · 2 aún en curso».
@@ -228,6 +240,7 @@ const TXT = {
   formal: "Estado registrado: lo que alguien registró en el proceso (pausa, alta, abandono confirmado, cierre). Los procesos anteriores al registro formal quedan «sin estado formal».",
   frecuencia: "Frecuencia esperada: cada cuánto se esperan las sesiones del proceso. Si el proceso no la tiene, se usa la anotada en la ficha (dato anterior).",
   revision: "Procesos con al menos una razón para revisarlos. Es información para coordinación: no envía mensajes ni cambia estados.",
+  continuidad: "Esta métrica analiza los procesos que comenzaron dentro del periodo seleccionado. Los procesos activos que empezaron antes no forman parte de este cálculo.",
 };
 
 // --- Piezas pequeñas ------------------------------------------------------------
@@ -267,12 +280,13 @@ function Mini({ valor, label, sub, extra }) {
   );
 }
 
-function MiniKpi({ label, k, enCurso }) {
-  return <Mini valor={pctTexto(k)} label={label} sub={baseDe(k, enCurso)} extra={k?.muestra_pequena ? <> <Muestra k={k} /></> : null} />;
+function MiniKpi({ label, k, enCurso, textos }) {
+  return <Mini valor={textoKpi(k, textos)} label={label} sub={k?.denominador ? baseDe(k, enCurso) : null}
+    extra={k?.muestra_pequena ? <> <Muestra k={k} /></> : null} />;
 }
 
 function MiniMediana({ label, e }) {
-  return <Mini valor={e?.n ? num(e.mediana) : "Sin datos"} label={label} sub={e?.n ? `mediana · media ${num(e.media)} · N ${e.n}` : null} />;
+  return <Mini valor={e?.n ? num(e.mediana) : "Sin casos"} label={label} sub={e?.n ? `mediana · media ${num(e.media)} · N ${e.n}` : null} />;
 }
 
 // Color de un indicador de CALIDAD del dato (no de desempeño clínico).
@@ -310,7 +324,7 @@ function KpiCard({ icono: Icono, titulo, valor, sub, tono, info }) {
   return (
     <div className={`dc-kpi${tono === "atencion" ? " atencion" : ""}`}>
       <div className="dc-kpi-cab"><Icono size={16} aria-hidden="true" /> {titulo}{info && <InfoTip texto={info} />}</div>
-      <div className="dc-kpi-n">{valor}</div>
+      <div className={`dc-kpi-n${esTexto(valor) ? " texto" : ""}`}>{valor}</div>
       {sub && <div className="dc-sub">{sub}</div>}
     </div>
   );
@@ -323,10 +337,12 @@ function Indicadores({ r, formal }) {
   return (
     <div className="dc-kpis">
       <KpiCard icono={Activity} titulo="Procesos activos" valor={r.procesos_activos_hoy}
-        sub={`hoy · ${r.procesos_iniciados} iniciados en el período`} />
-      <KpiCard icono={ArrowRight} titulo="Continuidad S1 → S2" valor={pctTexto(s12)} info={TXT.evaluables}
-        sub={<>{baseDe(s12)} {s12?.muestra_pequena && <Muestra k={s12} />}</>} />
-      <KpiCard icono={CalendarX} titulo="Sin próxima cita" valor={sinProxima ? sinProxima.numerador : "Sin datos"}
+        sub={`hoy · ${r.procesos_iniciados} iniciados en el periodo`} />
+      <KpiCard icono={ArrowRight} titulo="Continuidad S1 → S2" valor={textoKpi(s12)} info={TXT.continuidad}
+        sub={s12?.denominador ? <>{baseDe(s12)} {s12.muestra_pequena && <Muestra k={s12} />}</>
+          : !s12?.n ? "0 procesos iniciados en este periodo"
+            : `${s12.no_evaluables} procesos nuevos todavía no llegan a S2`} />
+      <KpiCard icono={CalendarX} titulo="Sin próxima cita" valor={sinProxima ? sinProxima.numerador : "Sin información"}
         tono={sinProxima?.numerador ? "atencion" : undefined}
         sub={sinProxima ? `de ${sinProxima.denominador} activos hoy` : null} />
       {/* Neutral a propósito: el detalle con tono de atención es «Atención hoy», justo debajo. */}
@@ -425,7 +441,7 @@ function ContinuidadFlujo({ data, N }) {
     <div className="dc-panel dc-panel-ancho">
       <h3>Continuidad del proceso <InfoTip texto={TXT.evaluables} /></h3>
       <div className="dc-sub" style={{ marginTop: 4 }}>
-        {r.procesos_iniciados} procesos iniciados en el período · {r.pacientes_nuevos} pacientes nuevos · {r.reingresos} reingresos
+        {r.procesos_iniciados} procesos iniciados en el periodo · {r.pacientes_nuevos} pacientes nuevos · {r.reingresos} reingresos
         {" "}· {r.activos_de_la_cohorte} aún activos · {r.terminados_de_la_cohorte} terminados
       </div>
       <div className="dc-flujo" role="list" aria-label="Procesos que llegan a cada sesión">
@@ -434,14 +450,14 @@ function ContinuidadFlujo({ data, N }) {
         ))}
       </div>
       <div className="dc-chips">
-        <span className="dc-chip" title={baseDe(kp.s1_s3)}>S1 → S3 <b>{pctTexto(kp.s1_s3)}</b> <Muestra k={kp.s1_s3} /></span>
-        <span className="dc-chip" title={baseDe(kp.s1_s6)}>Llegan a S6 <b>{pctTexto(kp.s1_s6)}</b> <Muestra k={kp.s1_s6} /></span>
+        <span className="dc-chip" title={baseDe(kp.s1_s3)}>S1 → S3 <b>{textoKpi(kp.s1_s3)}</b> <Muestra k={kp.s1_s3} /></span>
+        <span className="dc-chip" title={baseDe(kp.s1_s6)}>Llegan a S6 <b>{textoKpi(kp.s1_s6)}</b> <Muestra k={kp.s1_s6} /></span>
         <span className="dc-chip" title={`${baseDe(kp.abandono_inferido, "aún activos")} · sobre procesos terminados`}>
-          Abandono inferido <b>{pctTexto(kp.abandono_inferido)}</b> <InfoTip texto={TXT.inferido.replace("N días", `${N} días`)} />
+          Abandono inferido <b>{textoKpi(kp.abandono_inferido, { enCurso: "Ninguno terminado" })}</b> <InfoTip texto={TXT.inferido.replace("N días", `${N} días`)} />
         </span>
         {kp.abandono_confirmado && (
           <span className={`dc-chip${kp.abandono_confirmado.numerador ? "" : " cero"}`} title={`${baseDe(kp.abandono_confirmado, "aún activos")} · sobre procesos terminados`}>
-            Abandono confirmado <b>{pctTexto(kp.abandono_confirmado)}</b>
+            Abandono confirmado <b>{textoKpi(kp.abandono_confirmado, { enCurso: "Ninguno terminado" })}</b>
           </span>
         )}
       </div>
@@ -500,10 +516,10 @@ function FragmentoEtapa({ e }) {
       </div>
       {e.siguiente && (
         <div className={`dc-paso${k?.pct === null || k?.pct === undefined ? " sin" : ""}`}
-          title={`${e.etapa} → ${e.siguiente}: ${baseDe(k)}`} aria-label={`Pasan de ${e.etapa} a ${e.siguiente}: ${pctTexto(k)}, ${baseDe(k)}`}>
+          title={`${e.etapa} → ${e.siguiente}: ${baseDe(k)}`} aria-label={`Pasan de ${e.etapa} a ${e.siguiente}: ${textoKpi(k, { vacio: "sin procesos" })}, ${baseDe(k)}`}>
           <ArrowRight size={14} aria-hidden="true" />
-          <strong>{pctTexto(k)}</strong>
-          <span className="dc-sub">{k?.denominador ? `${k.numerador} de ${k.denominador}` : "0 evaluables"}</span>
+          <strong className={k?.pct === null || k?.pct === undefined ? "dc-paso-texto" : undefined}>{textoKpi(k, { vacio: "Sin procesos" })}</strong>
+          {k?.denominador > 0 && <span className="dc-sub">{k.numerador} de {k.denominador}</span>}
           {e.en_curso > 0 && <span className="dc-sub">{e.en_curso} en curso</span>}
           <Muestra k={k} />
         </div>
@@ -520,7 +536,8 @@ function RitmoSesiones({ data }) {
   return (
     <div className="dc-panel">
       <h3>Ritmo entre sesiones</h3>
-      <div className="dc-grande">{g?.n ? `Mediana: ${g.mediana} días` : "Sin datos"}</div>
+      <div className="dc-grande">{g?.n ? `Mediana: ${g.mediana} días`
+        : data.resumen.procesos_iniciados ? "Sin sesiones consecutivas todavía" : "Sin procesos nuevos"}</div>
       {g?.n > 0 && <div className="dc-sub">media {g.media} días · {g.n} intervalos entre sesiones seguidas</div>}
       <div style={{ marginTop: 10 }}>
         <Barras filas={data.distribuciones.dias_entre_sesiones} />
@@ -558,30 +575,34 @@ function EstadoRegistrado({ data }) {
     <div className="dc-panel">
       <h3>Estado registrado <InfoTip texto={TXT.formal} /></h3>
       <div className="dc-grande">{con.numerador} de {con.denominador}</div>
-      <div className="dc-sub">procesos del período tienen estado registrado · {con.denominador - con.numerador} sin estado formal</div>
+      <div className="dc-sub">procesos del periodo tienen estado registrado · {con.denominador - con.numerador} sin estado formal</div>
       <div className="dc-chips">
         {estados.map(([label, x]) => (
           <span key={label} className={`dc-chip${x.numerador ? "" : " cero"}`}>{label} <b>{x.numerador}</b></span>
         ))}
       </div>
       <div className="dc-sub" style={{ marginTop: 10 }}>
-        Desenlaces del período (registro o evidencia anterior): {r.altas_registradas} altas · {r.pausas ?? 0} pausas ·
+        Desenlaces del periodo (registro o evidencia anterior): {r.altas_registradas} altas · {r.pausas ?? 0} pausas ·
         {" "}{r.cierres_registrados} otros cierres · {r.reinicios} reinicios
       </div>
       <Detalle resumen="Ver detalle: motivos, reactivaciones y frecuencia">
         <div className="dc-mini-stats">
-          {estados.slice(1).map(([label, x]) => <MiniKpi key={label} label={label} k={x} enCurso="sin estado registrado" />)}
-          <MiniKpi label="Reactivados tras una salida" k={k.reactivacion} />
+          {estados.slice(1).map(([label, x]) => <MiniKpi key={label} label={label} k={x} enCurso="sin estado registrado"
+            textos={{ enCurso: "Sin estado registrado" }} />)}
+          <MiniKpi label="Reactivados tras una salida" k={k.reactivacion} textos={{ sinBase: "Sin salidas registradas" }} />
           <Mini valor={rd.pausa + rd.abandono + rd.alta_o_cierre} label="Reactivaciones por origen"
             sub={`${rd.pausa} desde pausa · ${rd.abandono} desde abandono · ${rd.alta_o_cierre} desde alta o cierre`} />
           <MiniKpi label="Con cambio de profesional" k={k.cambio_profesional} />
-          <MiniKpi label="Siguen en el centro tras el cambio" k={f.continuidad_centro_post_cambio.kpi} enCurso="aún sin sesión" />
-          <MiniKpi label="Dentro de su frecuencia esperada" k={k.frecuencia_cumplida} enCurso="sin frecuencia definida" />
-          <MiniKpi label="Registros con motivo conocido" k={k.motivos_conocidos} />
-          <MiniKpi label="Sin continuidad registrada" k={k.sin_continuidad_registrada} enCurso="aún activos" />
+          <MiniKpi label="Siguen en el centro tras el cambio" k={f.continuidad_centro_post_cambio.kpi} enCurso="aún sin sesión"
+            textos={{ vacio: "Sin cambios de profesional", enCurso: "Aún sin sesión" }} />
+          <MiniKpi label="Dentro de su frecuencia esperada" k={k.frecuencia_cumplida} enCurso="sin frecuencia definida"
+            textos={{ vacio: "Sin activos hoy", enCurso: "Sin frecuencia definida" }} />
+          <MiniKpi label="Registros con motivo conocido" k={k.motivos_conocidos} textos={{ vacio: "Sin registros con motivo" }} />
+          <MiniKpi label="Sin continuidad registrada" k={k.sin_continuidad_registrada} enCurso="aún activos"
+            textos={{ enCurso: "Ninguno terminado" }} />
         </div>
         <Nota>
-          Los porcentajes de estado son sobre los procesos del período que tienen un estado registrado; los demás («sin
+          Los porcentajes de estado son sobre los procesos del periodo que tienen un estado registrado; los demás («sin
           estado registrado») van aparte, no como abandono. «Sin continuidad registrada» junta el abandono confirmado y el
           inferido solo para dimensionar lo que no tiene un desenlace registrado: no es una tasa de abandono. Un cambio de
           profesional no es abandono del primero: se mide si la persona siguió en el centro
@@ -589,7 +610,7 @@ function EstadoRegistrado({ data }) {
         </Nota>
         <div className="dc-motivos" style={{ marginTop: 14 }}>
           <div style={{ fontWeight: 600, fontSize: 13 }}>Motivos registrados · N {mot.total}</div>
-          {!mot.total ? <div className="dc-sub" style={{ marginTop: 6 }}>Sin información: no hay registros con motivo en el período.</div> : (
+          {!mot.total ? <div className="dc-sub" style={{ marginTop: 6 }}>Sin información: no hay registros con motivo en el periodo.</div> : (
             <>
               <Barras filas={[...mot.por_categoria.filter((c) => c.n).map((c) => ({ label: c.label, n: c.n, p: c.pct_sobre_conocidos })),
                 { label: "Sin información", n: mot.desconocidos, p: pctDesconocidos }]}
@@ -624,7 +645,7 @@ function EstadoRegistrado({ data }) {
 
 const PESTANAS = [
   { id: "psicologo", label: "Psicólogo", campo: "por_psicologo", primera: "Psicólogo",
-    extra: [{ k: "sesiones_realizadas", t: "Sesiones en el período" }, { k: "carga_activos_hoy", t: "Carga activa hoy" }] },
+    extra: [{ k: "sesiones_realizadas", t: "Sesiones en el periodo" }, { k: "carga_activos_hoy", t: "Carga activa hoy" }] },
   { id: "sede", label: "Sede", campo: "por_sede", primera: "Sede", extra: [] },
   { id: "categoria", label: "Categoría", campo: "por_categoria", primera: "Categoría", extra: [] },
   { id: "modalidad", label: "Modalidad", campo: "por_modalidad", primera: "Modalidad", extra: [] },
@@ -632,18 +653,22 @@ const PESTANAS = [
 
 function notaDe(id, data) {
   if (id === "psicologo") {
-    return `En orden alfabético, sin ranking: sirve para ver patrones, no para calificar a nadie. Una diferencia entre psicólogos puede venir de la población que atiende, la sede, la categoría o de qué tan completo está su registro. «Procesos» y las tasas son de los procesos iniciados en el período (psicólogo de la S1); «Sesiones en el período» se atribuye a quien atendió cada sesión (${data.sesiones_sin_psicologo_periodo} sesiones sin psicólogo). Con menos de ${data.filtros.muestra_pequena} evaluables se marca «muestra pequeña».`;
+    return `En orden alfabético, sin ranking: sirve para ver patrones, no para calificar a nadie. Una diferencia entre psicólogos puede venir de la población que atiende, la sede, la categoría o de qué tan completo está su registro. «Procesos» y las tasas son de los procesos iniciados en el periodo (psicólogo de la S1); «Sesiones en el periodo» se atribuye a quien atendió cada sesión (${data.sesiones_sin_psicologo_periodo} sesiones sin psicólogo). Con menos de ${data.filtros.muestra_pequena} evaluables se marca «muestra pequeña».`;
   }
   if (id === "sede") return "Sedes en orden fijo. Una diferencia entre sedes no dice cuál es «mejor»: cambian la población, el equipo y el registro.";
   if (id === "categoria") return "La categoría es la de la cita de la S1. Muchas citas importadas no la traen («Sin categoría»).";
   return "Modalidad del proceso según sus sesiones: si todas dicen lo mismo, esa; si hay presenciales y virtuales, «Mixta». «Presencial» también es el valor por defecto de una cita que nadie marcó, así que el faltante real puede ser mayor.";
 }
 
-function KpiCelda({ k }) {
+// Celda de tasa: % arriba y su base abajo. Sin evaluables, en vez de «0/0» se
+// dice por qué: sin procesos en ese grupo o todavía en curso.
+function KpiCelda({ k, enCurso = "en curso" }) {
+  const vacio = k && !k.denominador;
+  const motivo = !k ? "Sin información" : !k.n ? "sin procesos" : k.no_evaluables ? `${k.no_evaluables} ${enCurso}` : "no evaluable";
   return (
-    <td className="num" title={k ? baseDe(k) : ""}>
-      {pctCelda(k?.pct)}
-      <span className="dc-celda-sub">{k ? `${k.numerador}/${k.denominador}` : ""}{k?.muestra_pequena ? " · m. pequeña" : ""}</span>
+    <td className="num" title={k ? (vacio ? motivo : baseDe(k)) : "Sin información"}>
+      {vacio ? <span style={{ color: "var(--muted)" }} aria-label={motivo}>—</span> : pctCelda(k?.pct)}
+      <span className="dc-celda-sub">{vacio ? motivo : k ? `${k.numerador}/${k.denominador}` : ""}{k?.muestra_pequena ? " · m. pequeña" : ""}</span>
     </td>
   );
 }
@@ -689,7 +714,7 @@ function TablaGrupo({ filas, primera, extra, completa }) {
               {extra.map((c) => <td key={c.k} className="num">{f[c.k] ?? "—"}</td>)}
               {completa && (
                 <>
-                  <KpiCelda k={f.kpis?.abandono_inferido} />
+                  <KpiCelda k={f.kpis?.abandono_inferido} enCurso="aún activos" />
                   <td className="num">{f.altas_o_cierres ?? f.altas + f.cierres_registrados}</td>
                   <td className="num">{f.pausas ?? 0}</td>
                   <td className="num">{f.abandono_confirmado ?? 0}</td>
@@ -752,30 +777,30 @@ function CalidadDato({ data }) {
   const cal = data.calidad, kc = cal.kpis, r = data.resumen, uni = data.universo;
   const cf = data.formal?.calidad;
   const indicadores = [
-    ["Psicólogo identificado", kc.sesiones_con_psicologo],
-    ["N° de sesión", kc.sesiones_con_numero],
-    ["Cierres con DP", kc.cierres_con_dp],
+    ["Psicólogo identificado", kc.sesiones_con_psicologo, "Sin sesiones"],
+    ["N° de sesión", kc.sesiones_con_numero, "Sin sesiones"],
+    ["Cierres con DP", kc.cierres_con_dp, "Sin cierres de bloque"],
   ];
   return (
     <section className="dc-seccion" aria-label="Calidad del dato">
       <div className="dc-panel">
         <div className="dc-calidad-barra">
           <strong>Calidad del dato</strong>
-          {indicadores.map(([label, k]) => (
+          {indicadores.map(([label, k, vacioCalidad]) => (
             <span key={label} title={baseDe(k)}>
-              {label}: <span className="dc-pct" style={{ color: colorCalidad(k.pct) }}>{pctTexto(k)}</span>
+              {label}: <span className="dc-pct" style={{ color: colorCalidad(k.pct) }}>{textoKpi(k, { vacio: vacioCalidad })}</span>
             </span>
           ))}
         </div>
         <Detalle resumen="Ver detalle de calidad del dato" id="dc-calidad">
           <div className="dc-stats-grid">
-            <Mini valor={pctTexto(kc.sesiones_con_psicologo)} label="Sesiones con psicólogo identificado"
+            <Mini valor={textoKpi(kc.sesiones_con_psicologo, { vacio: "Sin sesiones" })} label="Sesiones con psicólogo identificado"
               sub={`${cal.sesiones_sin_psicologo} de ${cal.sesiones_periodo} sesiones sin psicólogo`} />
-            <Mini valor={pctTexto(kc.sesiones_con_numero)} label="Sesiones con N° de sesión"
+            <Mini valor={textoKpi(kc.sesiones_con_numero, { vacio: "Sin sesiones" })} label="Sesiones con N° de sesión"
               sub={`${cal.sesiones_sin_numero} de ${cal.sesiones_periodo} sin número`} />
-            <Mini valor={pctTexto(kc.cierres_con_dp)} label="Cierres de bloque con DP"
+            <Mini valor={textoKpi(kc.cierres_con_dp, { vacio: "Sin cierres de bloque" })} label="Cierres de bloque con DP"
               sub={`${cal.cierres_sin_dp} de ${cal.cierres_bloque} sin DP (S6, S12…)`} />
-            <Mini valor={pctTexto(kc.terminados_solo_inferidos)} label="Terminados solo por inferencia"
+            <Mini valor={textoKpi(kc.terminados_solo_inferidos, { enCurso: "Ninguno terminado" })} label="Terminados solo por inferencia"
               sub={`${cal.terminados_solo_inferidos} de ${cal.procesos_terminados} terminados · ${cal.terminados_con_registro} con alta o cierre · ${cal.terminados_por_reinicio} por reinicio`} />
             <Mini valor={cal.procesos_sin_categoria} label="Procesos sin categoría" sub={`de ${r.procesos_iniciados} iniciados (categoría de la S1)`} />
             <Mini valor={cal.procesos_numeracion_inconsistente} label="Numeración inconsistente"
@@ -798,12 +823,12 @@ function CalidadDato({ data }) {
             <>
               <div style={{ fontWeight: 600, fontSize: 13, marginTop: 16 }}>Calidad del registro formal</div>
               <div className="dc-stats-grid">
-                <Mini valor={pctTexto(cf.procesos_sin_estado_formal)} label="Procesos sin estado registrado" sub={baseDe(cf.procesos_sin_estado_formal).replace(" evaluables", "")} />
+                <Mini valor={textoKpi(cf.procesos_sin_estado_formal)} label="Procesos sin estado registrado" sub={baseDe(cf.procesos_sin_estado_formal).replace(" evaluables", "")} />
                 <Mini valor={cf.procesos_solo_inferencia} label="Solo con inferencia" sub="sin estado y con abandono inferido" />
                 <Mini valor={cf.procesos_estado_legacy} label="Con estado de evidencia anterior" sub="DP o ficha, sin registro formal" />
                 <Mini valor={cf.procesos_estado_importado} label="Estados de la carga histórica" sub="registrados por la importación" />
-                <Mini valor={pctTexto(cf.vigentes_sin_frecuencia)} label="Activos sin frecuencia esperada" sub={baseDe(cf.vigentes_sin_frecuencia).replace(" evaluables", "")} />
-                <Mini valor={cf.motivos_desconocidos} label="Motivos «Sin información»" sub="en el período" />
+                <Mini valor={textoKpi(cf.vigentes_sin_frecuencia, { vacio: "Sin activos hoy" })} label="Activos sin frecuencia esperada" sub={baseDe(cf.vigentes_sin_frecuencia).replace(" evaluables", "")} />
+                <Mini valor={cf.motivos_desconocidos} label="Motivos «Sin información»" sub="en el periodo" />
                 <Mini valor={cf.cambios_sin_sesion_posterior} label="Cambios de profesional sin sesión posterior" sub="más de 14 días" />
                 <Mini valor={cf.requieren_revision} label="Procesos para revisar su identidad" sub="la reconciliación no los pudo ubicar" />
               </div>
@@ -814,7 +839,7 @@ function CalidadDato({ data }) {
             <div><strong>Fuente:</strong> {uni.fuente}</div>
             <div><strong>Primera sesión con cita en la base:</strong> {fechaCorta(uni.desde)} · {uni.procesos_totales} procesos en total ({uni.procesos_filtrados} con estos filtros, de cualquier fecha).</div>
             <div>
-              <strong>Procesos de este período:</strong> {uni.cohorte_agendapro} empezaron antes del {fechaCorta(uni.inicio_sistema_propio)}
+              <strong>Procesos de este periodo:</strong> {uni.cohorte_agendapro} empezaron antes del {fechaCorta(uni.inicio_sistema_propio)}
               {" "}(época AgendaPro) y {uni.cohorte_sistema_propio} en el sistema propio; {uni.cohorte_s1_importada} tienen su S1 marcada como importada.
             </div>
             <div style={{ marginTop: 6, color: "var(--ink-soft)" }}>
@@ -848,7 +873,7 @@ function Metodologia({ N, muestra }) {
         <p><strong>Estado registrado.</strong> Lo que alguien registró en el proceso (app de continuidad). Los procesos
           anteriores al registro formal quedan «sin estado formal»; la evidencia anterior (DP o ficha) se muestra como tal.</p>
         <p><strong>Psicólogo.</strong> El de la S1; si la cita no lo dice, el asignado en la ficha; si tampoco, «Sin asignar».
-          Las sesiones del período se atribuyen a quien atendió cada una.</p>
+          Las sesiones del periodo se atribuyen a quien atendió cada una.</p>
         <p><strong>Modalidad.</strong> La del proceso según sus sesiones («Mixta» si hay de las dos). «Presencial» es el valor
           por defecto de la cita, así que el faltante real puede ser mayor.</p>
         <p style={{ marginBottom: 0 }}><strong>Mediana.</strong> Es la cifra de referencia; la media y el N van al lado.
@@ -981,7 +1006,7 @@ export default function DireccionClinica({ showToast }) {
   // Qué filtros tiene aplicado lo mostrado (y lo impreso: una hoja sin esto no se puede leer).
   const etiquetaDe = (lista, c, todos) => (c ? (lista || []).find((x) => x.clave === c)?.label || c : todos);
   const filtrosTexto = data ? [
-    `Período: ${data.periodo.label}${data.periodo.desde ? ` (${fechaCorta(data.periodo.desde)} – ${fechaCorta(data.periodo.hasta)})` : ""}`,
+    `Periodo: ${data.periodo.label}${data.periodo.desde ? ` (${fechaCorta(data.periodo.desde)} – ${fechaCorta(data.periodo.hasta)})` : ""}`,
     `Sede: ${SEDES.find(([v]) => v === data.filtros.sede)?.[1] || "Todas"}`,
     `Psicólogo: ${etiquetaDe(op?.psicologos, data.filtros.psicologo, "Todos")}`,
     `Categoría: ${etiquetaDe(op?.categorias, data.filtros.categoria, "Todas")}`,
@@ -1029,7 +1054,7 @@ export default function DireccionClinica({ showToast }) {
       {/* --- Filtros --- */}
       <div className="dc-noprint">
         <div className="dc-filtros">
-          <div className="ca-seg" role="group" aria-label="Período">
+          <div className="ca-seg" role="group" aria-label="Periodo">
             {[...Object.entries(PERIODOS_CORTOS), ["rango", "Rango…"]].map(([v, l]) => (
               <button key={v} className={f.periodo === v ? "on" : ""} aria-pressed={f.periodo === v} onClick={() => elegirPeriodo(v)}>{l}</button>
             ))}
@@ -1078,7 +1103,7 @@ export default function DireccionClinica({ showToast }) {
       </div>
 
       {!data ? (
-        <div className="ca-empty" style={{ marginTop: 20 }}>{cargando ? "Cargando…" : errorApi || "Sin datos."}</div>
+        <div className="ca-empty" style={{ marginTop: 20 }}>{cargando ? "Cargando…" : errorApi || "Sin información."}</div>
       ) : (
         <div style={{ opacity: cargando ? 0.55 : 1, transition: "opacity .15s" }} aria-busy={cargando}>
           {errorApi && !cargando && (
@@ -1096,10 +1121,14 @@ export default function DireccionClinica({ showToast }) {
           {/* 3. Lectura rápida */}
           {data.vacio ? (
             <div className="dc-panel dc-seccion" style={{ textAlign: "center", padding: "28px 18px" }}>
-              <div style={{ fontWeight: 600 }}>No hay procesos que empiecen en este período con estos filtros.</div>
+              <div style={{ fontWeight: 600 }}>No hubo procesos nuevos en este periodo</div>
+              {r.procesos_activos_hoy > 0 && (
+                <div style={{ fontSize: 13.5, marginTop: 8 }}>
+                  Hay {r.procesos_activos_hoy} {r.procesos_activos_hoy === 1 ? "proceso activo que comenzó" : "procesos activos que comenzaron"} anteriormente.
+                </div>
+              )}
               <div className="dc-sub" style={{ marginTop: 6 }}>
-                Prueba un período más amplio o quita algún filtro. Procesos activos hoy con estos filtros
-                (empezaran cuando empezaran): {r.procesos_activos_hoy}.
+                Prueba un periodo más amplio o ajusta los filtros para analizar nuevas cohortes.
               </div>
               {!esDefecto(f) && (
                 <button className="ca-btn dc-noprint" style={{ marginTop: 14 }} onClick={limpiar}>
