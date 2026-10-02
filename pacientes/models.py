@@ -83,6 +83,11 @@ class Paciente(ModeloTenant):
     tutor_parentesco = models.CharField("Parentesco", max_length=40, blank=True, default="")
     tutor_telefono = models.CharField("Teléfono del tutor", max_length=40, blank=True, default="")
     tutor_documento = models.CharField("Documento del tutor", max_length=20, blank=True, default="")
+    # Correo del tutor: a él van los correos de un menor de 14 (Email 1.0). La
+    # ficha tiene un solo tutor, que es por definición el responsable de las
+    # comunicaciones; por eso no hace falta un modelo aparte.
+    tutor_correo = models.EmailField("Correo del tutor", blank=True, default="")
+    tutor_correo_verificado_en = models.DateTimeField(null=True, blank=True)
 
     # --- Antecedentes (datos permanentes de la historia clínica) ---
     alergias = models.TextField(blank=True, default="")

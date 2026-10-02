@@ -195,7 +195,7 @@ class AutorizacionView(APIView):
 
         # Una familia que reenvía el formulario corrige su respuesta, no crea
         # una segunda: la clave del estudiante es única por aplicación.
-        Autorizacion.objects.update_or_create(
+        autorizacion, _ = Autorizacion.objects.update_or_create(
             aplicacion=ap, clave=clave_estudiante(estudiante, grado, seccion),
             defaults={
                 "clinica": ap.clinica,
@@ -208,7 +208,17 @@ class AutorizacionView(APIView):
                 "autoriza": autoriza, "version_texto": self.VERSION,
                 "ip": (request.META.get("REMOTE_ADDR") or None),
             })
-        return Response({"ok": True, "autoriza": autoriza}, status=status.HTTP_201_CREATED)
+        # Casilla aparte y opcional: recibir comunicaciones de Ítaca. No tiene
+        # nada que ver con autorizar el tamizaje ni con recibir el informe.
+        from correo.models import ConsentimientoComunicacion
+        from correo.services import captura as captura_correo
+        from correo.services.destinatario import Destinatario
+        banderas = captura_correo.registrar(
+            Destinatario.de_autorizacion(autorizacion),
+            ConsentimientoComunicacion.Origen.AUTORIZACION_FARO,
+            request, captura_correo.marco_casilla(d))
+        return Response({"ok": True, "autoriza": autoriza, **banderas},
+                        status=status.HTTP_201_CREATED)
 
 
 class CuestionarioView(APIView):

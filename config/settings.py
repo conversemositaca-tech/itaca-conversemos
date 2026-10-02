@@ -32,6 +32,11 @@ ALLOWED_HOSTS += [".trycloudflare.com"]
 _railway_domain = os.getenv("RAILWAY_PUBLIC_DOMAIN", "").strip()
 if _railway_domain:
     ALLOWED_HOSTS.append(_railway_domain)
+# Al agregar dominios propios, Railway puede cambiar RAILWAY_PUBLIC_DOMAIN al
+# dominio nuevo y la dirección .up.railway.app deja de estar permitida: el
+# 1 oct 2026 el sistema respondió 400 en todas las páginas por eso. Esta
+# dirección la siguen usando el equipo, los webhooks y los crones.
+ALLOWED_HOSTS.append(".up.railway.app")
 
 
 # --- Aplicaciones ---
@@ -53,6 +58,7 @@ INSTALLED_APPS = [
     "finanzas",
     "espacios",
     "faro",
+    "correo",
     "continuidad",
 ]
 
@@ -68,6 +74,8 @@ MIDDLEWARE = [
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     # Fija la clínica activa del usuario logueado en cada request (aislamiento multitenant).
     "core.middleware.TenantActualMiddleware",
+    # Sitio público y sistema en dominios separados (inactivo sin las variables).
+    "core.dominios.DominiosSeparadosMiddleware",
 ]
 
 ROOT_URLCONF = "config.urls"
@@ -211,6 +219,7 @@ CSRF_TRUSTED_ORIGINS = [
 CSRF_TRUSTED_ORIGINS += [o.strip() for o in os.getenv("DJANGO_CSRF_ORIGINS", "").split(",") if o.strip()]
 if _railway_domain:
     CSRF_TRUSTED_ORIGINS.append(f"https://{_railway_domain}")
+CSRF_TRUSTED_ORIGINS.append("https://*.up.railway.app")
 
 # --- Integración con Eli (bot de WhatsApp): notas clínicas por voz ---
 # Token compartido (servidor-a-servidor) que Eli envía en la cabecera
@@ -242,6 +251,23 @@ SITIO_CLINICA_TOKEN = os.getenv("SITIO_CLINICA_TOKEN", "")
 # la reputacion entre las dos.
 SITIO_URL_PUBLICA = os.getenv("SITIO_URL_PUBLICA", "")
 
+# En las pruebas, el contador de "captacion" se arrastra de un test a otro (la
+# caché es una sola para toda la corrida). Si la suite corre rápido —como en
+# GitHub— pasa de 60 por minuto y tests que no tienen nada que ver reciben 429.
+# Ningún test prueba ese límite; los del login no se tocan.
+import sys as _sys
+if len(_sys.argv) > 1 and _sys.argv[1] == "test":
+    REST_FRAMEWORK["DEFAULT_THROTTLE_RATES"]["captacion"] = "100000/min"
+
+# Dominios separados: la landing en uno, el panel en otro (core/dominios.py).
+# Vacíos = todo sigue en el dominio por el que entre la visita, como siempre.
+SITIO_DOMINIO = os.getenv("SITIO_DOMINIO", "")
+SISTEMA_DOMINIO = os.getenv("SISTEMA_DOMINIO", "")
+for _d in (SITIO_DOMINIO, SISTEMA_DOMINIO):
+    if _d.strip():
+        ALLOWED_HOSTS.append(_d.strip())
+        CSRF_TRUSTED_ORIGINS.append(f"https://{_d.strip()}")
+
 # --- Correo saliente (informes de Faro a las familias) ---
 # Sin EMAIL_HOST el correo se imprime en la consola: en desarrollo se ve lo que
 # se mandaría. En producción, la vista de envío se niega a trabajar con ese
@@ -255,6 +281,30 @@ EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD", "")
 EMAIL_USE_TLS = os.getenv("EMAIL_USE_TLS", "1") == "1"
 EMAIL_TIMEOUT = 20
 DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "Ítaca Conversemos <conversemos.itaca@gmail.com>")
+
+# --- Email 1.0 (Brevo por API) ---
+# Envío individual por la API transaccional de Brevo: no se sincronizan
+# contactos ni listas. Sin BREVO_API_KEY el código existe pero no envía.
+# Las tres banderas vienen APAGADAS: desplegar no manda ningún correo. Se
+# encienden a mano en Railway cuando el dominio y la cuenta estén listos
+# (ver docs/email-1.0-operacion.md).
+BREVO_API_KEY = os.getenv("BREVO_API_KEY", "")
+BREVO_API_BASE_URL = os.getenv("BREVO_API_BASE_URL", "https://api.brevo.com/v3").rstrip("/")
+BREVO_REMITENTE_NOMBRE = os.getenv("BREVO_REMITENTE_NOMBRE", "Equipo Conversemos")
+BREVO_REMITENTE_EMAIL = os.getenv("BREVO_REMITENTE_EMAIL", "hola@conversemos.itaca.com.pe")
+BREVO_REPLY_TO = os.getenv("BREVO_REPLY_TO", "conversemos.itaca@gmail.com")
+BREVO_WEBHOOK_TOKEN = os.getenv("BREVO_WEBHOOK_TOKEN", "")
+BREVO_TIMEOUT = float(os.getenv("BREVO_TIMEOUT", "10"))
+CORREO_BASE_URL_PUBLICA = os.getenv("CORREO_BASE_URL_PUBLICA", "")
+CORREO_HABILITADO = env_bool("CORREO_HABILITADO", False)
+CORREO_RESERVA_HABILITADO = env_bool("CORREO_RESERVA_HABILITADO", False)
+CORREO_DP02_HABILITADO = env_bool("CORREO_DP02_HABILITADO", False)
+# Datos del responsable del tratamiento para el pie de los correos comerciales.
+# Pendientes de Mirai: mientras estén vacíos, el pie muestra el marcador.
+CORREO_RAZON_SOCIAL = os.getenv("CORREO_RAZON_SOCIAL", "")
+CORREO_DOMICILIO_LEGAL = os.getenv("CORREO_DOMICILIO_LEGAL", "")
+CORREO_CANAL_ARCO = os.getenv("CORREO_CANAL_ARCO", "")
+CORREO_URL_PRIVACIDAD = os.getenv("CORREO_URL_PRIVACIDAD", "")
 
 # --- WhatsApp vía Evolution API ---
 # URL y API key del servidor Evolution (en EasyPanel). La "instancia" es la conexión

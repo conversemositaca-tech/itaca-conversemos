@@ -333,7 +333,7 @@ class PacienteViewSet(viewsets.ModelViewSet):
         # NO sobrescribir los valores reales en la base (evita pérdida de datos).
         if _es_medico(self.request.user):
             for campo in ("telefono", "email", "direccion", "numero_documento",
-                          "tutor_telefono", "tutor_documento"):
+                          "tutor_telefono", "tutor_documento", "tutor_correo"):
                 serializer.validated_data.pop(campo, None)
         serializer.save()
 

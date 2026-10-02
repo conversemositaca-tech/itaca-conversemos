@@ -1197,3 +1197,18 @@ los feriados de Perú. Zona horaria por defecto: `America/Lima` (GMT-5).
      --check`, ESLint (App.jsx igual a la base) y QA en navegador 36/36 (fase 2) + 40/40
      (regresión fase 1.5) sobre `dc-continuidad-2.sqlite3` (datos ficticios,
      `itaca-demo-data/seed_continuidad_2.py`).
+49. ⏳ Email 1.0 (ramas `feat/email-1-modelos` … `feat/email-7-docs`, apiladas,
+   una por PR; mergear en orden). App nueva `correo`: consentimiento como
+   historial, preferencias con token UUID, bitácora, envíos programados,
+   envío individual por la API transaccional de Brevo (sin contactos ni
+   listas) y webhook. Flujos activos: confirmación de reserva web (SERVICE) y
+   secuencia DP-02 días 1/7/21 (MARKETING). Todo detrás de
+   `CORREO_HABILITADO`, `CORREO_RESERVA_HABILITADO` y `CORREO_DP02_HABILITADO`,
+   apagadas por defecto.
+   - El tutor sigue en la ficha: se agregó `Paciente.tutor_correo`; las filas
+     de correo usan `es_tutor`. Un menor de 14 nunca recibe directo.
+   - Un paciente y sus leads son una persona para el consentimiento y la baja.
+   - Datos clínicos solo como filtro de exclusión (`EXCLUSION_SEGURIDAD`).
+   - Docs: `docs/email-1.0.md`, `docs/email-1.0-operacion.md`,
+     `docs/email-1.0-dns.md`. Pendiente: razón social, domicilio y canal ARCO
+     para el pie, DNS y cuenta de Brevo.
