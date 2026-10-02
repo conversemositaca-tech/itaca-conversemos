@@ -82,6 +82,10 @@ class ConsentimientoViewSet(viewsets.ModelViewSet):
     `POST {id}/marcar-aceptado/` registra el OK que el paciente dio por WhatsApp."""
 
     serializer_class = ConsentimientoSerializer
+    # Sin PUT/PATCH/DELETE: un consentimiento se genera (o se reusa) y se
+    # acepta; su texto no se reescribe por la API una vez emitido, y menos
+    # después de firmado.
+    http_method_names = ["get", "post", "head", "options"]
 
     def get_queryset(self):
         from core.permisos import es_solo_lectura
@@ -169,6 +173,8 @@ class ConsentimientoViewSet(viewsets.ModelViewSet):
         c.registrado_por = request.user if request.user.is_authenticated else None
         c.save(update_fields=["aceptado", "aceptado_en", "aceptado_via", "firmante_nombre",
                               "firmante_documento", "registrado_por"])
+        from core.auditoria import auditar
+        auditar(request.user, "consentimiento.marcar_aceptado", c, {"aceptado": [False, True], "via": ["", via]})
         return Response(ConsentimientoSerializer(c, context=self.get_serializer_context()).data)
 
 
