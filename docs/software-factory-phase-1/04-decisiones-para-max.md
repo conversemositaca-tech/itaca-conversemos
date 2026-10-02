@@ -14,6 +14,8 @@ Cada una cambia cifras, la operación del equipo o una política. El código que
 
 ## D2 · KPI "asistencia %" de gerencia
 
+> **Actualización (release):** el PR #127 de Dirección Clínica ya aplica la fórmula propuesta (asistió + atendida) / (realizadas + no asistió + canceladas) y agrega `inasistencia_pct`. Queda resuelta allí.
+
 - **Hoy:** `core/gerencia.py` calcula atendidas / (atendidas + canceladas). **No cuenta `asistio`**, que es la mayoría de las citas (las marcadas desde la agenda y todas las importadas), y no incluye `no_asistio` en el denominador.
 - **Propuesta:** `ESTADOS_REALIZADA / (ESTADOS_REALIZADA + no_asistio + cancelada)`. Ya existe `ESTADOS_CERRADA`.
 - **Efecto:** el número que ve gerencia **cambia de forma notable**. Por eso no se tocó.
