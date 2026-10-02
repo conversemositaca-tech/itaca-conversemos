@@ -32,6 +32,11 @@ ALLOWED_HOSTS += [".trycloudflare.com"]
 _railway_domain = os.getenv("RAILWAY_PUBLIC_DOMAIN", "").strip()
 if _railway_domain:
     ALLOWED_HOSTS.append(_railway_domain)
+# Al agregar dominios propios, Railway puede cambiar RAILWAY_PUBLIC_DOMAIN al
+# dominio nuevo y la dirección .up.railway.app deja de estar permitida: el
+# 1 oct 2026 el sistema respondió 400 en todas las páginas por eso. Esta
+# dirección la siguen usando el equipo, los webhooks y los crones.
+ALLOWED_HOSTS.append(".up.railway.app")
 
 
 # --- Aplicaciones ---
@@ -213,6 +218,7 @@ CSRF_TRUSTED_ORIGINS = [
 CSRF_TRUSTED_ORIGINS += [o.strip() for o in os.getenv("DJANGO_CSRF_ORIGINS", "").split(",") if o.strip()]
 if _railway_domain:
     CSRF_TRUSTED_ORIGINS.append(f"https://{_railway_domain}")
+CSRF_TRUSTED_ORIGINS.append("https://*.up.railway.app")
 
 # --- Integración con Eli (bot de WhatsApp): notas clínicas por voz ---
 # Token compartido (servidor-a-servidor) que Eli envía en la cabecera
