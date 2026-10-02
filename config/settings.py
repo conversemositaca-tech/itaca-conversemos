@@ -59,6 +59,7 @@ INSTALLED_APPS = [
     "espacios",
     "faro",
     "correo",
+    "continuidad",
 ]
 
 MIDDLEWARE = [

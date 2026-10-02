@@ -198,3 +198,20 @@ class PuedeVerFaro(BasePermission):
 
     def has_permission(self, request, view):
         return puede_ver_faro(request.user)
+
+
+# Continuidad formal (fase 2, app `continuidad`). Registrar un estado del
+# proceso (pausa, alta, abandono confirmado, reactivación, cambio de
+# profesional, frecuencia) es lo mismo que hoy hace quien registra el DP en la
+# Agenda: coordinación y gerencia. La analista sigue de solo lectura (no
+# registra DP) y el psicólogo tampoco (CitaViewSet ya le descarta el DP).
+ROLES_REGISTRAN_CONTINUIDAD = ("admin", "asistente")
+# Ver el estado formal y su historia: quien ya ve la ficha del paciente. El
+# alcance (sede, pacientes propios) lo sigue poniendo pacientes_del_rol.
+ROLES_VEN_CONTINUIDAD = ("admin", "asistente", "analista", "medico")
+# La lista "para revisión de continuidad" es de gestión: no del psicólogo.
+ROLES_REVISAN_CONTINUIDAD = ("admin", "asistente", "analista")
+
+
+def puede_registrar_continuidad(user):
+    return getattr(user, "rol", None) in ROLES_REGISTRAN_CONTINUIDAD

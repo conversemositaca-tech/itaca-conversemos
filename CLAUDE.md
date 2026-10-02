@@ -1072,7 +1072,133 @@ los feriados de Perú. Zona horaria por defecto: `America/Lima` (GMT-5).
      cita correcta cuando el proceso se reinició, que queda firmado, que el
      psicólogo no puede y que se puede corregir un código equivocado. Build de
      Vite y ESLint idéntico a `main` (106 avisos en ambos).
-46. ⏳ Email 1.0 (ramas `feat/email-1-modelos` … `feat/email-7-docs`, apiladas,
+
+46. ⏳ Dirección Clínica · fase 1: continuidad y abandono inferido (rama
+   `feat/direccion-clinica`, 2026-09-30, SIN desplegar). Pedido de Mirai tras
+   la auditoría de datos del mismo día: explotar lo que ya existe, **sin
+   migraciones ni campos nuevos**, todo de solo lectura.
+   - **`core/direccion_clinica.py`** + `GET /api/direccion-clinica/` (admin y
+     analista; 403 al resto). NO reconstruye procesos por su cuenta: usa
+     `segmentar_procesos`, `senales_por_paciente`, `es_consulta` y
+     `cuantas_sesiones` de `core/continuidad.py`. Sesión = cita asistida/atendida
+     que no es consulta; S1, S2… = **orden** dentro del proceso (no `n_sesion`).
+   - **Abandono inferido** (nunca "abandono" a secas): última sesión hace más de
+     `dias_abandono` días (45 por defecto, 15–365), sin próxima cita y sin alta ni
+     cierre registrado (DP-10 / otros DP de cierre / ficha "alta" o "en pausa").
+     Un proceso anterior cortado por un reinicio rápido es `reinicio`, no abandono.
+   - **Embudo S1→S6 sin castigar a los recientes**: cada paso se calcula sobre los
+     procesos con el paso ya resuelto (llegaron a la siguiente o ya terminaron);
+     los activos que aún no llegan van aparte como "aún en curso".
+   - Filtros: período (30d/90d/180d/365d/todo o desde/hasta), sede, psicólogo,
+     categoría, etapa. Por psicólogo (S1; si falta, el asignado en la ficha; si
+     no, "Sin asignar" visible), **en orden alfabético y sin ranking**. Por sede y
+     por categoría. Bloque **Calidad del dato** arriba de todo y bloque de universo
+     y fuente (cuántas fichas sin cita quedan fuera).
+   - **Gerencia corregida**: retención y curva de continuidad salen de citas
+     asistidas sin consulta (antes de `Atencion`, que la mayoría de sesiones no
+     tiene); la curva es por **proceso** y su "% que no pasa de S2" solo sobre
+     procesos terminados. `% asistencia` = (asistió + atendida) / (realizadas + no
+     asistió + canceladas), con `inasistencia_pct` nuevo. El Excel exportado usa
+     la misma fórmula. **Cambia el universo**: las sesiones del Excel 2024 – feb
+     2026 solo existen como ficha sin cita y ya no entran en la curva (se dice en
+     pantalla cuántas son).
+   - Frontend: `frontend/src/DireccionClinica.jsx` (ítem de menú "Dirección
+     Clínica", admin y analista) + `api.direccionClinica`. Botón **Imprimir /
+     PDF** (`window.print()`): estilos `@media print` acotados con
+     `body:has(.dc-pagina)` —no tocan la impresión de otras pantallas— que sacan
+     el menú y el scroll interno, ponen arriba los filtros aplicados y la fecha,
+     y no parten filas. Sede y categoría van una debajo de la otra (lado a lado
+     la de categoría se cortaba).
+   - Verificado: 16 tests nuevos (`core/tests_direccion_clinica.py`), suites de
+     core/pacientes/finanzas/leads/usuarios/mensajes, build de Vite, ESLint igual
+     a `main` (111 en ambos) y 16/16 en navegador real con datos sintéticos
+     (base aislada en el scratchpad, no `db.sqlite3`).
+   - **Fase 2 (no hecha a propósito)**: historial de estados de cita, motivo de
+     cancelación/inasistencia, estado formal del proceso, motivo de consulta
+     codificado, `Cita.profesional` para el histórico, NPS por sesión, encuestas
+     de utilidad y progreso.
+47. ⏳ Dirección Clínica · fase 1.5: cifras con su base (rama `feat/continuidad-1-5`,
+   2026-10-01, SIN desplegar; PR contra `feat/direccion-clinica`, no contra main).
+   Extiende el ítem 46 **sin modelos ni migraciones**: los procesos siguen saliendo
+   de `segmentar_procesos`. Definiciones completas en **`docs/direccion-clinica.md`**.
+   - **KPI = numerador + denominador + N** (`kpi()` en `core/direccion_clinica.py`):
+     cada tasa trae numerador, denominador (los **evaluables**), N, no evaluables
+     («aún en curso») y `muestra_pequena` (regla técnica: <10 evaluables, rótulo gris
+     neutro, sin colorear). Viene en el embudo (`kpi`, `kpi_caida`), en
+     `resumen.kpis` (S1→S2, S1→S3, S1→S6, abandono inferido), en cada fila de tabla
+     y en `calidad.kpis`.
+   - **Cambio de denominador**: la tasa de abandono inferido pasó a calcularse sobre
+     los procesos **ya terminados** (antes, sobre todos los iniciados, activos
+     incluidos). En la base demo: 74,4 % → 85,9 % a 12 meses y 20 % → 75 % a 3 meses.
+   - **Medianas**: `estadistica()` = media, mediana y N para sesiones por proceso
+     (todos y terminados), días entre sesiones y días de S1 a abandono inferido; la
+     pantalla destaca la mediana. Distribuciones por tramo (1 · 2–3 · 4–6 · 7–12 ·
+     13+; 0–7 … 61+ días), solo conteos.
+   - **Modalidad** (`Cita.modalidad`, sin campo nuevo): presencial / virtual /
+     mixta / sin información, filtro + tabla. OJO: «presencial» es el default del
+     campo, así que el faltante real está subestimado (se dice en pantalla).
+   - **Rango personalizado** validado (formato o `desde > hasta` → 400) y **filtros
+     en la URL** (`/gestion?vista=direccion&…`): `App.jsx` abre la vista desde
+     `?vista=direccion`, limpia la URL al salir y reacciona a «atrás»; la pantalla
+     sigue siendo solo admin/analista. «Limpiar filtros» y estado vacío explícito.
+   - **Calidad del dato** sobre el recorte filtrado: sin modalidad, sin categoría,
+     numeración inconsistente (de `segmentar_procesos`), cierres sin DP, sesiones
+     importadas de AgendaPro (por la marca `MARCADOR_IMPORTADO_AGENDAPRO`, anotada
+     en la consulta, sin traer notas). Sede/categoría/modalidad en **orden fijo**.
+   - Verificado: 23 tests nuevos (`core/tests_direccion_clinica_1_5.py`, incluido
+     que las consultas no crecen con pacientes ni psicólogos) + los 16 del ítem 46;
+     ESLint de `App.jsx` idéntico a la base (109) y `DireccionClinica.jsx` limpio;
+     40/40 en navegador real (8032, base demo `dc-continuidad-1-5.sqlite3`): períodos,
+     rango, combinaciones, URL + recarga + atrás, reset, vacío, PDF, móvil 390 px sin
+     scroll horizontal, admin/analista ven y coordinación recibe 403.
+   - **Fase 2 / dependencia de modelo** (no hecho): modalidad sin default, estado
+     formal del proceso, motivos de cancelación/inasistencia/cierre, `Cita.profesional`
+     para el histórico, cambio de psicólogo y reactivación como eventos.
+48. ⏳ Continuidad · fase 2: estado formal del proceso (rama `feat/continuidad-2-modelo`,
+   worktree `C:\projects\itaca-continuidad-2`, 2026-10-01, SIN desplegar; PR contra
+   `feat/direccion-clinica`). Nueva app **`continuidad`** (sin migraciones en
+   `pacientes`, para no chocar con Email). Docs: `docs/continuidad.md`,
+   `docs/continuidad-estados.md`, `docs/continuidad-metricas.md`.
+   - **Modelos**: `ProcesoContinuidad` (UUID estable + `cita_inicio` como ancla, estado
+     formal sin_registro/activo/pausa/alta/abandono/cerrado, frecuencia esperada,
+     marca de revisión), `EventoContinuidad` (append-only: save/delete bloqueados,
+     admin de solo lectura, motivo PROTECT, clave de idempotencia única por clínica) y
+     `MotivoContinuidad` (catálogo operativo por clínica, 7 categorías / 30 motivos,
+     se desactiva, no se borra). Sin restricciones únicas sobre `paciente`: la fusión de
+     duplicados los mueve sola.
+   - **Fuente de verdad**: el estado vive en `continuidad`. `Paciente.frecuencia` =
+     alta / en_pausa es **evidencia legacy** (carga histórica y respaldo para procesos
+     sin registro); no se escribe ni se limpia. El psicólogo asignado sigue en
+     `Paciente.profesional`: el cambio formal lo actualiza y el evento guarda antes/después.
+   - **Frontera**: `GestionContinuidad` sigue siendo gestión operativa de un caso; no se
+     duplica ni cambia el estado formal.
+   - **Reconciliación** (`continuidad/reconciliacion.py`): tramo de `segmentar_procesos`
+     ↔ proceso por ancla; respaldo por fecha ±14 días; fusión/división/ambigüedad/sin
+     tramo quedan marcadas para revisión, nunca se fusiona ni borra. Corre al guardar o
+     borrar citas (`on_commit`, si falla solo loguea), antes de cada registro y en la carga
+     histórica. Un proceso nace ACTIVO (evento de inicio) si su S1 ≥
+     la fecha de corte de la clínica (`ConfiguracionContinuidad`, la fija sola la migración
+     `continuidad.0003` el día del despliegue; sin variable que configurar); antes, sin estado.
+   - **Transiciones** (`continuidad/servicios.py`): una sola vía, atómica, con
+     `select_for_update`, estado esperado (409) e idempotencia (doble clic = mismo evento).
+     Reactivación y cambio de profesional son eventos (el proceso queda ACTIVO); pausa→alta
+     no sin reactivar; corrección de motivo = evento nuevo.
+   - **Abandono**: confirmado (registrado) e inferido (`continuidad/inferencia.py`, cálculo)
+     nunca se suman; el combinado solo como «sin continuidad registrada».
+   - **Permisos**: registran admin y coordinación (quienes registran el DP); analista y
+     psicólogo solo leen (alcance `pacientes_del_rol`); lista de revisión sin psicólogo.
+   - **Pantallas**: sección «Continuidad» en la ficha (`ContinuidadFicha.jsx`) y bloque
+     «Estado registrado» + calidad + lista para revisión en Dirección Clínica.
+   - **Carga histórica**: `manage.py migrar_continuidad_historica` (audita; `--aplicar`
+     registra). Solo DP-10, DP-12 y ficha alta/pausa sin contradicciones; DP-09, DP-11 y
+     días sin venir NO. En la base demo: 7 registrables, 4 DP-09 omitidos, 79 sin evidencia.
+     **En producción: correr primero sin `--aplicar`.**
+   - Verificado: 71 tests (`continuidad/tests/`, incluidos fecha de corte y aislamiento
+     entre clínicas), suite completa, `makemigrations
+     --check`, ESLint (App.jsx igual a la base) y QA en navegador 36/36 (fase 2) + 40/40
+     (regresión fase 1.5) sobre `dc-continuidad-2.sqlite3` (datos ficticios,
+     `itaca-demo-data/seed_continuidad_2.py`).
+49. ⏳ Email 1.0 (ramas `feat/email-1-modelos` … `feat/email-7-docs`, apiladas,
    una por PR; mergear en orden). App nueva `correo`: consentimiento como
    historial, preferencias con token UUID, bitácora, envíos programados,
    envío individual por la API transaccional de Brevo (sin contactos ni
