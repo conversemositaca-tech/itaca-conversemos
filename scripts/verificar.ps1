@@ -184,7 +184,14 @@ if (-not ($hayNode -and $hayModulos)) {
     }
 }
 
-# --- 5. Build del frontend -----------------------------------------------------------
+# --- 5. Tests y build del frontend -----------------------------------------------------
+if ($Modo -ne "FAST" -and $hayNode) {
+    $t = Get-Date
+    $rc = Correr "tests-frontend" "node --test `"src/**/*.test.js`"" (Join-Path $raiz "frontend")
+    $resumenFront = (Select-String -Path (Join-Path $logs "tests-frontend.log") -Pattern "^. tests \d+" -ErrorAction SilentlyContinue | Select-Object -Last 1).Line
+    if ($rc -eq 0) { Registrar "tests frontend" "OK" ((Get-Date) - $t).TotalSeconds "$resumenFront" }
+    else { Registrar "tests frontend" "FALLA" ((Get-Date) - $t).TotalSeconds (Ultimas "tests-frontend" 12) }
+}
 if ($Modo -ne "FAST") {
     $t = Get-Date
     if (-not ($hayNode -and $hayModulos)) {

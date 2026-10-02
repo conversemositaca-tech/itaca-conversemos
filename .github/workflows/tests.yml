@@ -129,6 +129,9 @@ jobs:
       - name: Instalar dependencias
         run: npm ci
 
+      - name: Tests de frontend (runner nativo de Node, sin dependencias)
+        run: node --test "src/**/*.test.js"
+
       - name: Compilar la app
         # Un error de JSX no lo ve ningún test de Python, pero el Dockerfile
         # compila el front al desplegar: si no compila, no hay despliegue.
