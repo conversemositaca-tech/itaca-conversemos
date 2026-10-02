@@ -4,9 +4,10 @@ name: Tests
 # (✅ o ❌) aparece en el PR, que es donde Mirai aprueba desde el celular: si la
 # liquidación o la agenda se rompen, se ve ANTES del merge y no en producción.
 #
-# Tres jobs en paralelo (ninguno depende del otro):
-#   test       — backend completo (el nombre se conserva: puede ser un check requerido)
-#   seguridad  — regresión P0-S + matriz rol × endpoint: rápido y con nombre propio
+# Cuatro jobs en paralelo (ninguno depende del otro):
+#   test       — backend completo en SQLite (el nombre se conserva: puede ser un check requerido)
+#   seguridad  — regresión de seguridad, matriz rol × endpoint y campos por rol
+#   postgres   — suite completa en PostgreSQL 17, incluidas las carreras de concurrencia
 #   frontend   — build + ESLint sin deuda nueva (scripts/eslint-baseline.json)
 #
 # No usa la API de Anthropic, así que no consume créditos.
@@ -73,6 +74,42 @@ jobs:
         run: >
           python manage.py test --noinput
           core.tests_seguridad_p0 core.tests_matriz_permisos core.tests_hasher
+          core.tests_campos_por_rol core.tests_fuentes_unicas core.tests_auditoria_ia_respaldo
+          finanzas.tests_cobros_seguridad
+
+  postgres:
+    name: postgres (suite completa en el motor de producción)
+    # SQLite no reproduce concurrencia, locks (select_for_update, SKIP LOCKED)
+    # ni constraints exactos de Postgres. Producción es Postgres: aquí corre la
+    # suite entera, incluidas las carreras (doble cobro, paquete, correo) que
+    # en SQLite se saltan.
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: itaca
+          POSTGRES_PASSWORD: itaca
+          POSTGRES_DB: itaca
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U itaca"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgres://itaca:itaca@localhost:5432/itaca
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+
+      - name: Pruebas en PostgreSQL
+        run: python manage.py test --noinput --timing
 
   frontend:
     name: frontend (build y ESLint sin deuda nueva)
