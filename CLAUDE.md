@@ -1073,8 +1073,8 @@ los feriados de Perú. Zona horaria por defecto: `America/Lima` (GMT-5).
      psicólogo no puede y que se puede corregir un código equivocado. Build de
      Vite y ESLint idéntico a `main` (106 avisos en ambos).
 
-46. ⏳ Dirección Clínica · fase 1: continuidad y abandono inferido (rama
-   `feat/direccion-clinica`, 2026-09-30, SIN desplegar). Pedido de Mirai tras
+46. ✓ Dirección Clínica · fase 1: continuidad y abandono inferido (rama
+   `feat/direccion-clinica`, 2026-09-30; **desplegado el 2026-10-01**, PR #127). Pedido de Mirai tras
    la auditoría de datos del mismo día: explotar lo que ya existe, **sin
    migraciones ni campos nuevos**, todo de solo lectura.
    - **`core/direccion_clinica.py`** + `GET /api/direccion-clinica/` (admin y
@@ -1117,8 +1117,8 @@ los feriados de Perú. Zona horaria por defecto: `America/Lima` (GMT-5).
      cancelación/inasistencia, estado formal del proceso, motivo de consulta
      codificado, `Cita.profesional` para el histórico, NPS por sesión, encuestas
      de utilidad y progreso.
-47. ⏳ Dirección Clínica · fase 1.5: cifras con su base (rama `feat/continuidad-1-5`,
-   2026-10-01, SIN desplegar; PR contra `feat/direccion-clinica`, no contra main).
+47. ✓ Dirección Clínica · fase 1.5: cifras con su base (rama `feat/continuidad-1-5`,
+   2026-10-01; PR #128, **desplegado el 2026-10-01** con el #127).
    Extiende el ítem 46 **sin modelos ni migraciones**: los procesos siguen saliendo
    de `segmentar_procesos`. Definiciones completas en **`docs/direccion-clinica.md`**.
    - **KPI = numerador + denominador + N** (`kpi()` en `core/direccion_clinica.py`):
@@ -1154,7 +1154,7 @@ los feriados de Perú. Zona horaria por defecto: `America/Lima` (GMT-5).
    - **Fase 2 / dependencia de modelo** (no hecho): modalidad sin default, estado
      formal del proceso, motivos de cancelación/inasistencia/cierre, `Cita.profesional`
      para el histórico, cambio de psicólogo y reactivación como eventos.
-48. ⏳ Continuidad · fase 2: estado formal del proceso (rama `feat/continuidad-2-modelo`,
+48. ✓ Continuidad · fase 2: estado formal del proceso (rama `feat/continuidad-2-modelo`,
    worktree `C:\projects\itaca-continuidad-2`, 2026-10-01, SIN desplegar; PR contra
    `feat/direccion-clinica`). Nueva app **`continuidad`** (sin migraciones en
    `pacientes`, para no chocar con Email). Docs: `docs/continuidad.md`,
@@ -1198,6 +1198,14 @@ los feriados de Perú. Zona horaria por defecto: `America/Lima` (GMT-5).
      --check`, ESLint (App.jsx igual a la base) y QA en navegador 36/36 (fase 2) + 40/40
      (regresión fase 1.5) sobre `dc-continuidad-2.sqlite3` (datos ficticios,
      `itaca-demo-data/seed_continuidad_2.py`).
+   - **Desplegado el 2026-10-01** (PRs #139, #140 y #127; `main` = `7eda3f1`). Migraciones
+     `continuidad` 0001-0003 aplicadas; fecha de corte creada sola: **2026-10-01**.
+     Carga histórica (auditada y aplicada con autorización): 1.399 procesos detectados;
+     **11 registrados** (8 altas: 7 DP-10 + 1 ficha; 3 pausas de ficha, motivo «Sin
+     información»), 19 procesos y 11 eventos creados, origen «Carga histórica». Omitidos:
+     1.366 sin evidencia, 19 DP-09, 2 DP-11, 1 pausa con próxima cita. Segunda corrida:
+     0 nuevos (idempotente). Validado: sin duplicados, sin cruces de clínica, estado =
+     último evento. El CI corre en SQLite: el bloqueo de filas no está probado contra PostgreSQL.
 49. ⏳ Email 1.0 (ramas `feat/email-1-modelos` … `feat/email-7-docs`, apiladas,
    una por PR; mergear en orden). App nueva `correo`: consentimiento como
    historial, preferencias con token UUID, bitácora, envíos programados,
