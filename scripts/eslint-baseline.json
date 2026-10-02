@@ -1,5 +1,5 @@
 {
-  "_nota": "Deuda de ESLint heredada (origin/main ae759b8, 1 oct 2026). Regla: ningún archivo puede tener MÁS errores que aquí; los avisos de más se reportan. Se baja a mano cuando se paga deuda; nunca se sube.",
+  "_nota": "Deuda de ESLint heredada (origen: 74/38 en ae759b8; bajada al pagar deuda en la Fase 1). Regla: ningún archivo puede tener MÁS errores que aquí; los avisos de más se reportan. Se baja a mano cuando se paga deuda; nunca se sube.",
   "total": {
     "errores": 74,
     "avisos": 38
