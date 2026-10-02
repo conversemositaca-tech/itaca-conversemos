@@ -12,6 +12,7 @@ from rest_framework.views import APIView
 
 from core import continuidad as continuidad_mod
 from core import estructurar_nota, gcalendar, transcripcion
+from core.auditoria import auditar
 from core.politicas import acotar_clinico, es_comercial, es_psicologo, exigir, ficha_de, puede_editar_historia
 from core.tenant import get_clinica_actual
 from mensajes.models import Mensaje, PlantillaMensaje
@@ -89,13 +90,25 @@ def sincronizar_paquete(cita):
 
     Devuelve el estado del paquete para mostrarlo, o None si no hubo cambio.
     """
+    from django.db import transaction
+
+    with transaction.atomic():
+        # Bloquea la cita: dos peticiones a la vez (Atender + selector, doble
+        # clic) ya no ven las dos "sin paquete" y descuentan dos sesiones.
+        bloqueada = Cita.objects.select_for_update().filter(pk=cita.pk).first()
+        if bloqueada is not None:
+            cita.paquete_id = bloqueada.paquete_id
+        return _sincronizar_paquete(cita)
+
+
+def _sincronizar_paquete(cita):
     from finanzas.models import Paquete
 
     realizada = cita.estado in ESTADOS_REALIZADA
 
     # Ya no ocurrió (se canceló, se reprogramó, faltó): se devuelve la sesión.
     if cita.paquete_id and not realizada:
-        paq = cita.paquete
+        paq = Paquete.objects.select_for_update().get(pk=cita.paquete_id)
         paq.devolver()
         cita.paquete = None
         cita.save(update_fields=["paquete"])
@@ -109,6 +122,7 @@ def sincronizar_paquete(cita):
 
     paq = (
         Paquete.objects.del_tenant_actual()
+        .select_for_update()         # dos citas del mismo paquete no se pisan
         .filter(paciente=cita.paciente, estado=Paquete.Estado.ACTIVO)
         .order_by("fecha")           # se gasta primero el paquete más antiguo
         .first()
@@ -730,8 +744,10 @@ class CitaViewSet(viewsets.ModelViewSet):
     def cancelar(self, request, pk=None):
         """Marca la cita como cancelada (no se borra: queda el registro)."""
         cita = self.get_object()
+        antes = cita.estado
         cita.estado = Cita.Estado.CANCELADA
         cita.save(update_fields=["estado"])
+        auditar(request.user, "cita.estado", cita, {"estado": [antes, cita.estado]})
         gcalendar.eliminar_cita(cita)  # quita el evento del calendario
         sincronizar_paquete(cita)  # si consumía una sesión del paquete, se devuelve
         return Response(CitaSerializer(cita).data)
@@ -752,8 +768,11 @@ class CitaViewSet(viewsets.ModelViewSet):
         nuevo = request.data.get("estado")
         if nuevo not in dict(Cita.Estado.choices):
             return Response({"detail": "Estado no válido."}, status=status.HTTP_400_BAD_REQUEST)
+        antes = cita.estado
         cita.estado = nuevo
         cita.save(update_fields=["estado"])
+        if antes != nuevo:
+            auditar(request.user, "cita.estado", cita, {"estado": [antes, nuevo]})
         # Sincroniza o quita el evento del calendario según el estado.
         if nuevo == Cita.Estado.CANCELADA:
             gcalendar.eliminar_cita(cita)
@@ -982,6 +1001,8 @@ class AdjuntoViewSet(viewsets.ModelViewSet):
         return super().destroy(request, *args, **kwargs)
 
     def perform_destroy(self, instance):
+        auditar(self.request.user, "adjunto.eliminar", instance,
+                {"nombre": [instance.nombre, None], "paciente": [instance.paciente_id, None]})
         instance.archivo.delete(save=False)  # borra también el archivo del disco
         instance.delete()
 

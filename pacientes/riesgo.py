@@ -86,8 +86,12 @@ class SugerenciaRiesgoViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, 
             sugerencia.revisado_por = request.user
             sugerencia.revisado_en = timezone.now()
             sugerencia.save(update_fields=["estado", "valor_final", "revisado_por", "revisado_en"])
+            paciente = sugerencia.paciente
+            antes = paciente.riesgo
             if final:
-                paciente = sugerencia.paciente
                 paciente.riesgo = final
                 paciente.save(update_fields=["riesgo"])
+            from core.auditoria import auditar
+            auditar(request.user, "riesgo.resolver", paciente,
+                    {"riesgo": [antes, paciente.riesgo], "decision": [sugerencia.valor_sugerido, decision]})
         return Response(self.get_serializer(sugerencia).data)

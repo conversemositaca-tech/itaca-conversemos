@@ -365,9 +365,12 @@ class PaqueteViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["post"])
     def anular(self, request, pk=None):
         """Anula el paquete (no borra). No revierte el cobro automáticamente."""
+        exigir(puede_anular_pago(request.user), "Solo coordinación o gerencia anulan paquetes.")
         paquete = self.get_object()
+        antes = paquete.estado
         paquete.estado = Paquete.Estado.ANULADO
         paquete.save(update_fields=["estado"])
+        auditar(request.user, "paquete.anular", paquete, {"estado": [antes, paquete.estado]})
         return Response(PaqueteSerializer(paquete).data)
 
 

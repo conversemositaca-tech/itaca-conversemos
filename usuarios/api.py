@@ -196,7 +196,14 @@ class UsuarioViewSet(viewsets.ModelViewSet):
             se_desactiva = request.data.get("is_active") is False
             if quita_admin or se_desactiva:
                 return Response({"detail": "No puedes cambiar tu propio rol ni desactivarte."}, status=status.HTTP_400_BAD_REQUEST)
-        return super().update(request, *args, **kwargs)
+        antes = {"rol": user.rol, "is_active": user.is_active, "sede": user.sede}
+        respuesta = super().update(request, *args, **kwargs)
+        user.refresh_from_db()
+        cambios = {k: [v, getattr(user, k)] for k, v in antes.items() if getattr(user, k) != v}
+        if cambios:
+            from core.auditoria import auditar
+            auditar(request.user, "usuario.permisos", user, cambios)
+        return respuesta
 
     def destroy(self, request, *args, **kwargs):
         user = self.get_object()
