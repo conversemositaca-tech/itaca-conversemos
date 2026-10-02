@@ -362,6 +362,19 @@ class Cita(ModeloTenant):
         return f"{self.paciente} · {timezone.localtime(self.inicio):%d/%m %H:%M}"
 
 
+# ── Qué significa el estado de una cita (UNA sola fuente) ───────────────────
+# "asistio" y "atendida" difieren solo en el camino (Atender con ficha clínica
+# frente al selector de la agenda o la importación); para todo cálculo son lo
+# mismo: la sesión OCURRIÓ. Úsalos en vez de repetir la lista.
+ESTADOS_REALIZADA = (Cita.Estado.ATENDIDA, Cita.Estado.ASISTIO)
+# Cita con desenlace registrado (ya no está pendiente).
+ESTADOS_CERRADA = ESTADOS_REALIZADA + (Cita.Estado.NO_ASISTIO, Cita.Estado.CANCELADA)
+
+
+def cita_realizada(cita):
+    return cita.estado in ESTADOS_REALIZADA
+
+
 class BloqueoAgenda(ModeloTenant):
     """Bloqueo de horario en la agenda, sin paciente (almuerzo, ausencia, viaje…).
 

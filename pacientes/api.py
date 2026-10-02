@@ -72,7 +72,7 @@ def _normaliza_enlace(valor):
 
 # Estados en los que la sesión SÍ ocurrió y por tanto consume una sesión del
 # paquete. Son los mismos que la liquidación cuenta como sesión realizada.
-ESTADOS_REALIZADA = ("atendida", "asistio")
+from .models import ESTADOS_REALIZADA  # noqa: E402  (una sola fuente)
 
 
 def sincronizar_paquete(cita):

@@ -12,6 +12,7 @@ from core.utils import fecha_corta
 
 from usuarios.models import Usuario
 
+from .models import ESTADOS_REALIZADA  # noqa: E402
 from .models import (
     Adjunto, AplicacionEscala, Atencion, BloqueoAgenda, Cita, ContactoProfesional,
     ObjetivoTerapeutico, Paciente, RespuestaNPS, Tarea, severidad_escala,
@@ -185,7 +186,7 @@ class PacienteSerializer(serializers.ModelSerializer):
             c.inicio and c.inicio >= ahora and c.estado != Cita.Estado.CANCELADA for c in citas
         )
         realizadas = sorted(
-            (c for c in citas if c.estado in (Cita.Estado.ATENDIDA, Cita.Estado.ASISTIO)),
+            (c for c in citas if c.estado in ESTADOS_REALIZADA),
             key=lambda c: c.inicio, reverse=True,
         )
         ultima_decision = realizadas[0].decision if realizadas else ""
