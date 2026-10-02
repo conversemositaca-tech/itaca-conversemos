@@ -12,6 +12,7 @@ from rest_framework.views import APIView
 
 from core import continuidad as continuidad_mod
 from core import estructurar_nota, gcalendar, transcripcion
+from core.politicas import acotar_clinico, es_comercial, es_psicologo, exigir, ficha_de, puede_editar_historia
 from core.tenant import get_clinica_actual
 from mensajes.models import Mensaje, PlantillaMensaje
 from mensajes.services import plantilla_por_clave, registrar_y_enviar
@@ -187,22 +188,11 @@ def texto_recordatorio(cita):
     )
 
 
-def _es_medico(user):
-    """True si el usuario es psicólogo (rol médico). El admin NO se acota."""
-    from usuarios.models import Usuario
-    return getattr(user, "rol", None) == Usuario.Rol.MEDICO
-
-
-def _ficha_de(user):
-    """Ficha del directorio (Profesional) enlazada a este usuario, o None."""
-    from usuarios.models import Profesional
-    return Profesional.objects.filter(usuario=user).first()
-
-
-def _es_comercial(user):
-    """El rol Comercial no accede a datos clínicos (pacientes, agenda, historias)."""
-    from usuarios.models import Usuario
-    return getattr(user, "rol", None) == Usuario.Rol.COMERCIAL
+# Políticas de acceso: core/politicas.py. Los alias conservan los nombres de
+# siempre en este módulo.
+_es_medico = es_psicologo
+_ficha_de = ficha_de
+_es_comercial = es_comercial
 
 
 class PacienteViewSet(viewsets.ModelViewSet):
@@ -257,12 +247,8 @@ class PacienteViewSet(viewsets.ModelViewSet):
                     "cobros", "seguimientos", "paquetes",
                 )
             )
-        if _es_comercial(self.request.user):
-            return qs.none()
         # El psicólogo solo ve a los pacientes de su ficha del directorio.
-        if _es_medico(self.request.user):
-            ficha = _ficha_de(self.request.user)
-            qs = qs.filter(profesional=ficha) if ficha else qs.none()
+        qs = acotar_clinico(qs, self.request.user, campo="profesional")
         prof = self.request.query_params.get("profesional")
         if prof:
             qs = qs.filter(profesional_id=prof)
@@ -872,21 +858,15 @@ class AtencionViewSet(viewsets.ModelViewSet):
             .select_related("paciente", "medico", "registrado_por")
             .prefetch_related("ediciones__editado_por")
         )
-        if _es_comercial(self.request.user):
-            return qs.none()
         # El psicólogo solo ve las historias de SUS pacientes.
-        if _es_medico(self.request.user):
-            ficha = _ficha_de(self.request.user)
-            qs = qs.filter(paciente__profesional=ficha) if ficha else qs.none()
+        qs = acotar_clinico(qs, self.request.user, campo="paciente__profesional")
         pid = self.request.query_params.get("paciente")
         if pid:
             qs = qs.filter(paciente_id=pid)
         return qs.order_by("-fecha")
 
     def _solo_clinico(self):
-        from usuarios.models import Usuario
-        if getattr(self.request.user, "rol", None) not in (Usuario.Rol.MEDICO, Usuario.Rol.ADMIN):
-            raise PermissionDenied("Solo psicólogos y administradores pueden editar la historia clínica.")
+        exigir(puede_editar_historia(self.request.user), "Solo psicólogos y administradores pueden editar la historia clínica.")
 
     def perform_update(self, serializer):
         self._solo_clinico()
@@ -939,24 +919,14 @@ class AdjuntoViewSet(viewsets.ModelViewSet):
             .select_related("paciente", "subido_por")
             .order_by("-creado_en")
         )
-        if _es_comercial(self.request.user):
-            return qs.none()
-        if _es_medico(self.request.user):
-            ficha = _ficha_de(self.request.user)
-            qs = qs.filter(paciente__profesional=ficha) if ficha else qs.none()
+        qs = acotar_clinico(qs, self.request.user, campo="paciente__profesional")
         pid = self.request.query_params.get("paciente")
         if pid:
             qs = qs.filter(paciente_id=pid)
         return qs
 
     def _pacientes_alcanzables(self):
-        qs = Paciente.objects.del_tenant_actual()
-        if _es_comercial(self.request.user):
-            return qs.none()
-        if _es_medico(self.request.user):
-            ficha = _ficha_de(self.request.user)
-            return qs.filter(profesional=ficha) if ficha else qs.none()
-        return qs
+        return acotar_clinico(Paciente.objects.del_tenant_actual(), self.request.user, campo="profesional")
 
     def create(self, request, *args, **kwargs):
         if _es_comercial(request.user):
@@ -1036,11 +1006,7 @@ class AplicacionEscalaViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         qs = AplicacionEscala.objects.del_tenant_actual().select_related("paciente", "registrado_por")
-        if _es_comercial(self.request.user):
-            return qs.none()
-        if _es_medico(self.request.user):
-            ficha = _ficha_de(self.request.user)
-            qs = qs.filter(paciente__profesional=ficha) if ficha else qs.none()
+        qs = acotar_clinico(qs, self.request.user, campo="paciente__profesional")
         paciente = self.request.query_params.get("paciente")
         if paciente:
             qs = qs.filter(paciente_id=paciente)
@@ -1050,9 +1016,7 @@ class AplicacionEscalaViewSet(viewsets.ModelViewSet):
         return qs.order_by("fecha", "id")
 
     def _solo_clinico(self):
-        from usuarios.models import Usuario
-        if getattr(self.request.user, "rol", None) not in (Usuario.Rol.MEDICO, Usuario.Rol.ADMIN):
-            raise PermissionDenied("Solo psicólogos y administradores registran escalas.")
+        exigir(puede_editar_historia(self.request.user), "Solo psicólogos y administradores registran escalas.")
 
     def create(self, request, *args, **kwargs):
         self._solo_clinico()
@@ -1094,20 +1058,14 @@ class _HijoPacienteViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         qs = self.modelo.objects.del_tenant_actual()
-        if _es_comercial(self.request.user):
-            return qs.none()
-        if _es_medico(self.request.user):
-            ficha = _ficha_de(self.request.user)
-            qs = qs.filter(paciente__profesional=ficha) if ficha else qs.none()
+        qs = acotar_clinico(qs, self.request.user, campo="paciente__profesional")
         paciente = self.request.query_params.get("paciente")
         if paciente:
             qs = qs.filter(paciente_id=paciente)
         return qs
 
     def _solo_clinico(self):
-        from usuarios.models import Usuario
-        if getattr(self.request.user, "rol", None) not in (Usuario.Rol.MEDICO, Usuario.Rol.ADMIN):
-            raise PermissionDenied("Solo psicólogos y administradores pueden gestionar esto.")
+        exigir(puede_editar_historia(self.request.user), "Solo psicólogos y administradores pueden gestionar esto.")
 
     def _paciente_valido(self, request):
         return Paciente.objects.del_tenant_actual().filter(pk=request.data.get("paciente")).first()

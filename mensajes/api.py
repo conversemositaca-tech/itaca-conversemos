@@ -56,8 +56,9 @@ class PlantillaMensajeViewSet(viewsets.ModelViewSet):
 
     def _solo_admin(self):
         # Gerencia y coordinación (asistente) pueden crear/editar plantillas.
-        if getattr(self.request.user, "rol", None) not in ("admin", "asistente"):
-            raise PermissionDenied("Solo gerencia o coordinación pueden editar las plantillas.")
+        from core.permisos import puede_contactar_pacientes
+        from core.politicas import exigir
+        exigir(puede_contactar_pacientes(self.request.user), "Solo gerencia o coordinación pueden editar las plantillas.")
 
     def perform_create(self, serializer):
         self._solo_admin()

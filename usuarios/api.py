@@ -262,8 +262,8 @@ class ProfesionalViewSet(viewsets.ModelViewSet):
         return Profesional.objects.del_tenant_actual().order_by("orden", "nombre")
 
     def _solo_admin(self):
-        if getattr(self.request.user, "rol", None) != Usuario.Rol.ADMIN:
-            raise PermissionDenied("Solo el gerente (admin) puede editar el directorio de profesionales.")
+        from core.politicas import es_admin, exigir
+        exigir(es_admin(self.request.user), "Solo el gerente (admin) puede editar el directorio de profesionales.")
 
     def perform_create(self, serializer):
         self._solo_admin()
@@ -352,8 +352,8 @@ class DocumentoLegalViewSet(viewsets.ModelViewSet):
     serializer_class = DocumentoLegalSerializer
 
     def _solo_admin(self):
-        if getattr(self.request.user, "rol", None) != Usuario.Rol.ADMIN:
-            raise PermissionDenied("Solo el gerente (admin) puede gestionar documentos legales.")
+        from core.politicas import es_admin, exigir
+        exigir(es_admin(self.request.user), "Solo el gerente (admin) puede gestionar documentos legales.")
 
     def get_queryset(self):
         from core.permisos import es_solo_lectura

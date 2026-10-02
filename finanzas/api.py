@@ -30,9 +30,7 @@ def _push_soto_ingreso(cobro):
 from .serializers import CobroSerializer, EgresoSerializer, PaqueteSerializer, ServicioSerializer
 
 
-def _es_admin(user):
-    from usuarios.models import Usuario
-    return getattr(user, "rol", None) == Usuario.Rol.ADMIN
+from core.politicas import es_admin as _es_admin  # noqa: E402
 
 
 def _rango(periodo):

@@ -22,9 +22,7 @@ from core.tenant import get_clinica_actual
 log = logging.getLogger(__name__)
 
 
-def _es_admin(user):
-    from usuarios.models import Usuario
-    return getattr(user, "rol", None) == Usuario.Rol.ADMIN
+from core.politicas import es_admin as _es_admin  # noqa: E402
 
 
 def _texto_del_mensaje(msg):

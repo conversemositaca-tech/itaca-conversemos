@@ -44,8 +44,8 @@ class MetricaMensualViewSet(viewsets.ModelViewSet):
         return qs.order_by("anio", "mes", "sede")
 
     def _solo_admin(self):
-        if getattr(self.request.user, "rol", None) != Usuario.Rol.ADMIN:
-            raise PermissionDenied("Solo el gerente (admin) puede editar el histórico.")
+        from core.politicas import es_admin, exigir
+        exigir(es_admin(self.request.user), "Solo el gerente (admin) puede editar el histórico.")
 
     def perform_create(self, serializer):
         self._solo_admin()
