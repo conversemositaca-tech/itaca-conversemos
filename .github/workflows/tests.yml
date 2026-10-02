@@ -5,7 +5,7 @@ name: Tests
 # liquidación o la agenda se rompen, se ve ANTES del merge y no en producción.
 #
 # Cuatro jobs en paralelo (ninguno depende del otro):
-#   test       — backend completo en SQLite (el nombre se conserva: puede ser un check requerido)
+#   test       — backend completo en SQLite (check REQUERIDO por el ruleset de main: no renombrar)
 #   seguridad  — regresión de seguridad, matriz rol × endpoint y campos por rol
 #   postgres   — suite completa en PostgreSQL 17, incluidas las carreras de concurrencia
 #   frontend   — build + ESLint sin deuda nueva (scripts/eslint-baseline.json)
@@ -28,7 +28,9 @@ env:
 
 jobs:
   test:
-    name: test (backend completo)
+    # El nombre del check DEBE ser exactamente "test": es el check requerido
+    # por el ruleset "Protección de main". Un `name:` distinto lo deja colgado.
+    name: test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
