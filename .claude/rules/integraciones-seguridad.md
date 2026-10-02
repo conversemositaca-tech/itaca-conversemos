@@ -24,4 +24,9 @@ paths:
 - Endpoints públicos (captación, agendar, sitio, embudo) con token en la URL o sin sesión: siempre con throttle propio y fijando `clinica` desde el token, nunca desde el body.
 - Secretos solo por variables de entorno; **no leas `.env`**; `.env.example` documenta nombres, no valores.
 
+- **Políticas** en `core/politicas.py`: `acotar_clinico`, `ficha_de`, `ve_contacto`, `puede_registrar_pago`, `exigir(...)`, `SoloRoles.de(...)`. No escribas `rol == "..."` en vistas nuevas.
+- **Entrada**: endpoints que escriben validan con un serializer vía `core.serializadores.validar()`; FK escribibles con `RelacionesDelTenant` (si no, aceptan ids de otra clínica).
+- **Auditoría**: acciones sensibles (dinero, estados de cita, consentimiento, riesgo, archivos, roles) llaman `core.auditoria.auditar(actor, accion, objeto, {campo: [antes, después]})`.
+- **Visibilidad por campo**: `core/tests_campos_por_rol.py`; un campo sensible nuevo entra a esa tabla.
+
 Más contexto: `docs/software-factory-audit/` (01, 13, 15) y ítems 9, 12, 18 del archivo histórico.

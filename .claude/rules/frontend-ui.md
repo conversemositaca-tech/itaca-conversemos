@@ -17,4 +17,9 @@ paths:
 - **Una sola vía por acción** y un solo estado por concepto (no `asistio` y `atendida`); una sola fuente de tokens de diseño (marca turquesa `#0A7D92`; ver `docs/marca-exportables.md`).
 - **Permisos y "hoy" vienen del servidor** (`/api/auth/me/`, fecha del backend); no deducir rol ni fecha en el cliente. Nada de datos de pacientes en `localStorage`.
 
+**Piezas base (`frontend/src/ui/`) — úsalas en vez de repetir el patrón:**
+- `Modal` (tipos informativo / descartable / formulario / destructivo; `sucio`, `ocupado`) y `BotonGuardar`.
+- `confirmar({ titulo, mensaje, confirmarTexto, peligro })` → `Promise<boolean>`; nunca `window.confirm` en código nuevo.
+- `showToast(texto, tipo?)` con tipo `success|info|warning|error` (`ui/aviso.js`, con tests en `aviso.test.js`, `node --test`).
+
 ESLint: ninguna deuda nueva contra `scripts/eslint-baseline.json`. QA en navegador con el recorrido del rol, registrado en el PR.
