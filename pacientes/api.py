@@ -97,7 +97,11 @@ def sincronizar_paquete(cita):
         # clic) ya no ven las dos "sin paquete" y descuentan dos sesiones.
         bloqueada = Cita.objects.select_for_update().filter(pk=cita.pk).first()
         if bloqueada is not None:
+            # Estado y paquete tal como quedaron en la base, no en memoria: un
+            # "atendida" y un "cancelada" casi simultáneos no dejan la sesión
+            # descontada en una cita cancelada.
             cita.paquete_id = bloqueada.paquete_id
+            cita.estado = bloqueada.estado
         return _sincronizar_paquete(cita)
 
 

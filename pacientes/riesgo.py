@@ -81,6 +81,10 @@ class SugerenciaRiesgoViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, 
                             status=status.HTTP_400_BAD_REQUEST)
 
         with transaction.atomic():
+            # Dos revisiones a la vez: solo la primera encuentra 'pendiente'.
+            sugerencia = SugerenciaRiesgo.objects.select_for_update().get(pk=sugerencia.pk)
+            if sugerencia.estado != SugerenciaRiesgo.Estado.PENDIENTE:
+                return Response({"detail": "Esta sugerencia ya fue revisada."}, status=status.HTTP_409_CONFLICT)
             sugerencia.estado = estado
             sugerencia.valor_final = final
             sugerencia.revisado_por = request.user

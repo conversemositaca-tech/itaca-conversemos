@@ -36,7 +36,9 @@ class CobroEntradaSerializer(serializers.Serializer):
             error_messages={"does_not_exist": "Paciente no encontrado."})
         for nombre, modelo in (("cita", Cita), ("atencion", Atencion), ("servicio", Servicio)):
             self.fields[nombre] = serializers.PrimaryKeyRelatedField(
-                queryset=acotar_al_tenant(modelo.objects.all()), required=False, allow_null=True)
+                queryset=acotar_al_tenant(modelo.objects.all()), required=False, allow_null=True,
+                error_messages={"does_not_exist": f"No existe ese registro ({nombre}).",
+                                "incorrect_type": f"Valor inválido para {nombre}."})
 
     monto = MontoField()
     estado = serializers.ChoiceField(choices=Cobro.Estado.choices, default=Cobro.Estado.PENDIENTE)
@@ -45,7 +47,15 @@ class CobroEntradaSerializer(serializers.Serializer):
                                                allow_blank=True, default="")
     comprobante_numero = serializers.CharField(max_length=40, required=False, allow_blank=True, default="")
     concepto = serializers.CharField(max_length=200, required=False, allow_blank=True, default="")
-    fecha = serializers.DateField(required=False, allow_null=True)
+    fecha = serializers.DateField(required=False, allow_null=True,
+                                  error_messages={"invalid": "Fecha inválida (usa AAAA-MM-DD)."})
+
+    def to_internal_value(self, data):
+        # El formulario manda "" cuando se borra la fecha: significa "hoy",
+        # como antes de validar con serializer.
+        if hasattr(data, "get") and data.get("fecha") == "":
+            data = {**data, "fecha": None}
+        return super().to_internal_value(data)
 
     def validate(self, datos):
         paciente = datos["paciente"]

@@ -77,7 +77,7 @@ jobs:
           python manage.py test --noinput
           core.tests_seguridad_p0 core.tests_matriz_permisos core.tests_hasher
           core.tests_campos_por_rol core.tests_fuentes_unicas core.tests_auditoria_ia_respaldo
-          finanzas.tests_cobros_seguridad
+          finanzas.tests_cobros_seguridad core.tests_release_revision
 
   postgres:
     name: postgres (suite completa en el motor de producción)
