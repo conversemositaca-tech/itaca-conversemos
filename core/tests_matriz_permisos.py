@@ -17,7 +17,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, override_settings
 
 from core.models import Clinica
-from finanzas.models import Egreso
+from finanzas.models import Cobro, Egreso
 from pacientes.models import Adjunto, Atencion, Consentimiento, Paciente, SugerenciaRiesgo
 from usuarios.models import Profesional, Usuario
 
@@ -53,6 +53,12 @@ ENDPOINTS = {
     "faro.alertas": ("get", "/api/faro/panel/alertas/", None),
     "leads.lista": ("get", "/api/leads/", None),
     "integraciones.respaldo_sin_token": ("get", "/api/integraciones/respaldo/?resumen=1", None),
+    "consentimientos.editar": ("patch", "/api/consentimientos/{consentimiento_ajeno}/", {"texto": "x"}),
+    "cobros.lista": ("get", "/api/cobros/", None),
+    "cobros.crear": ("post", "/api/cobros/", {}),
+    "cobros.corregir_monto_ajeno": ("patch", "/api/cobros/{cobro_ajeno}/", {"monto": "1"}),
+    "cobros.eliminar": ("delete", "/api/cobros/999999/", None),
+    "paquetes.anular": ("post", "/api/paquetes/999999/anular/", {}),
 }
 
 def _fila(*codigos):
@@ -91,6 +97,13 @@ MATRIZ = {
     # BRECHA CONOCIDA (fase 1): el psicólogo recibe el contacto de los leads.
     "leads.lista": _fila(403, 200, 200, 200, 200, 200),
     "integraciones.respaldo_sin_token": _fila(403, 403, 403, 403, 403, 403),
+    # Fase 1: consentimiento inmutable por API; cobros con alcance por rol.
+    "consentimientos.editar": _fila(403, 405, 405, 405, 405, 403),
+    "cobros.lista": _fila(403, 200, 200, 200, 200, 200),             # psicólogo: solo sus pacientes; comercial: vacía
+    "cobros.crear": _fila(403, 400, 400, 403, 403, 403),             # 400 = autorizado (cuerpo vacío)
+    "cobros.corregir_monto_ajeno": _fila(403, 200, 403, 404, 404, 403),  # monto: solo gerencia
+    "cobros.eliminar": _fila(403, 404, 404, 403, 403, 403),          # 404 = autorizado (id inexistente)
+    "paquetes.anular": _fila(403, 404, 404, 403, 403, 403),
 }
 
 
@@ -125,6 +138,7 @@ class MatrizDePermisosTests(TestCase):
             "sugerencia_ajena": SugerenciaRiesgo.objects.create(
                 clinica=cls.clinica, paciente=ajeno, valor_sugerido="alto").id,
             "egreso": Egreso.objects.create(clinica=cls.clinica, concepto="Luz", monto=10).id,
+            "cobro_ajeno": Cobro.objects.create(clinica=cls.clinica, paciente=ajeno, monto=50, concepto="Sesión").id,
         }
 
     def _codigo(self, rol, clave):
@@ -156,4 +170,4 @@ class MatrizDePermisosTests(TestCase):
         self.assertFalse(faltan, f"Endpoints sin fila en MATRIZ: {faltan}")
 
     def test_cobertura(self):
-        self.assertGreaterEqual(len(MATRIZ) * len(ROLES), 150)
+        self.assertGreaterEqual(len(MATRIZ) * len(ROLES), 200)
