@@ -1,4 +1,4 @@
-// node --test src/ui/   (runner nativo de Node, sin dependencias)
+// Desde frontend/: node --test   (runner nativo de Node 20+, sin dependencias)
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { tipoDeAviso, textoDeAviso, duracionDeAviso } from "./aviso.js";

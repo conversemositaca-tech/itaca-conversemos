@@ -130,7 +130,10 @@ jobs:
         run: npm ci
 
       - name: Tests de frontend (runner nativo de Node, sin dependencias)
-        run: node --test "src/**/*.test.js"
+        # Sin argumentos: descubre los *.test.js de forma recursiva (excluye
+        # node_modules). Un glob como "src/**/*.test.js" solo funciona desde
+        # Node 21; el CI y el Dockerfile usan Node 20.
+        run: node --test
 
       - name: Compilar la app
         # Un error de JSX no lo ve ningún test de Python, pero el Dockerfile
