@@ -65,7 +65,9 @@ Ensayo local (`ensayo/dc-mas-sf`): fusionar esta rama sobre `feat/direccion-clin
 - **suite completa en Postgres**: ver el resultado en el PR;
 - ESLint sin deuda nueva.
 
-**Orden recomendado:**
+**Resultado:** #127 se mergeó primero (2 oct 2026, `7eda3f1`) y esta rama lo integró con un merge que reproduce la resolución del ensayo.
+
+**Orden que se recomendó (y se siguió):**
 
 1. **#127 Dirección Clínica**;
 2. **luego esta rama**, rebasada sobre el `main` resultante con la misma resolución ya probada.
