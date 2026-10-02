@@ -9,12 +9,12 @@ cerrada. Con CORREO_HABILITADO apagado responde sin tocar nada.
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from core.integraciones import TokenIntegracion
+from core.integraciones import LimiteAntesDelPermiso, TokenIntegracion
 
 from .services import programacion
 
 
-class ProcesarPendientesView(APIView):
+class ProcesarPendientesView(LimiteAntesDelPermiso, APIView):
     authentication_classes = []
     permission_classes = [TokenIntegracion]
     alcance_integracion = "tareas"

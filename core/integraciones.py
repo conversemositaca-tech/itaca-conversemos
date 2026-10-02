@@ -95,12 +95,28 @@ def _paciente_payload(p):
     }
 
 
-class _Base(APIView):
+class LimiteAntesDelPermiso:
+    """DRF evalúa el permiso antes que el límite: un token inválido recibía 403
+    sin contar, y probar tokens no tenía freno. Aquí el límite va primero (una
+    sola vez por petición)."""
+
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "integracion"
+
+    def initial(self, request, *args, **kwargs):
+        super().check_throttles(request)
+        request._limite_contado = True
+        super().initial(request, *args, **kwargs)
+
+    def check_throttles(self, request):
+        if not getattr(request, "_limite_contado", False):
+            super().check_throttles(request)
+
+
+class _Base(LimiteAntesDelPermiso, APIView):
     authentication_classes = []          # servidor-a-servidor: sin sesión ni CSRF
     permission_classes = [TokenIntegracion]
     alcance_integracion = "eli"
-    throttle_classes = [ScopedRateThrottle]
-    throttle_scope = "integracion"
 
 
 class PsicologoView(_Base):
@@ -415,8 +431,6 @@ class ResumenDiarioView(_Base):
 
 
 class RecordatoriosView(_Base):
-    alcance_integracion = "tareas"
-
     """Dispara el envío de los recordatorios de las citas del día.
 
     Existe para que un cron en la nube (kira-bot) los mande cada mañana, en vez
@@ -429,6 +443,8 @@ class RecordatoriosView(_Base):
     Es seguro llamarlo de más: solo toma las citas que aún no fueron recordadas,
     así que una segunda llamada el mismo día no reenvía nada.
     """
+
+    alcance_integracion = "tareas"
 
     def post(self, request):
         d = request.data if isinstance(request.data, dict) else {}
@@ -443,8 +459,6 @@ class RecordatoriosView(_Base):
 
 
 class RespaldoView(_Base):
-    alcance_integracion = "respaldo"
-
     """Entrega un volcado completo de los datos, comprimido, para que un cron de
     afuera lo guarde. Así Itaca no necesita credenciales de almacenamiento.
 
@@ -453,6 +467,8 @@ class RespaldoView(_Base):
 
     OJO: el archivo lleva datos de pacientes. Debe quedar en un lugar PRIVADO.
     """
+
+    alcance_integracion = "respaldo"
 
     def get(self, request):
         from django.http import HttpResponse

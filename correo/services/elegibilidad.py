@@ -52,7 +52,8 @@ def exclusion_clinica(dest):
 
     Motivos: última respuesta NPS 0–6 (detractor), alguna DP-16
     (inconformidad), alta o pausa (por frecuencia o por la última decisión
-    registrada), riesgo moderado o alto.
+    registrada), riesgo moderado o alto — oficial o SUGERIDO por la IA y aún
+    sin revisar: mientras una persona no lo descarta, se trata como cierto.
     """
     p = dest.paciente_relacionado()
     if p is None:
@@ -60,6 +61,12 @@ def exclusion_clinica(dest):
     from pacientes.models import Cita, Paciente, RespuestaNPS
 
     if p.riesgo in (Paciente.Riesgo.MODERADO, Paciente.Riesgo.ALTO):
+        return True
+    from pacientes.models import SugerenciaRiesgo
+    if SugerenciaRiesgo.objects.filter(
+        paciente=p, estado=SugerenciaRiesgo.Estado.PENDIENTE,
+        valor_sugerido__in=(Paciente.Riesgo.MODERADO, Paciente.Riesgo.ALTO),
+    ).exists():
         return True
     if p.frecuencia in (Paciente.Frecuencia.ALTA, Paciente.Frecuencia.EN_PAUSA):
         return True
