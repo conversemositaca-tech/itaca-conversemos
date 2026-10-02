@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from django.utils import timezone
 from rest_framework import serializers
 from core.serializadores import RelacionesDelTenant
@@ -13,7 +15,7 @@ class MontoField(serializers.DecimalField):
     def __init__(self, **kw):
         kw.setdefault("max_digits", 8)
         kw.setdefault("decimal_places", 2)
-        kw.setdefault("min_value", 0.01)
+        kw.setdefault("min_value", Decimal("0.01"))
         kw.setdefault("error_messages", {"min_value": "El monto debe ser mayor a 0.",
                                          "invalid": "Escribe el monto como número (80 u 80,50)."})
         super().__init__(**kw)
