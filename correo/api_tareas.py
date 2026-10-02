@@ -1,6 +1,6 @@
 """Tarea programada: despachar los correos vencidos.
 
-POST /api/correo/tareas/procesar-pendientes/  (cada 15 minutos, desde un cron externo)
+POST /api/correo/tareas/procesar-pendientes/  (cada 5 minutos, desde un cron externo)
 
 Mismo patrón que /api/integraciones/recordatorios/: servidor a servidor, con
 la cabecera X-Integracion-Token. Sin token configurado, la puerta queda

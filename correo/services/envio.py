@@ -13,7 +13,7 @@ from django.db import IntegrityError, transaction
 from django.utils import timezone
 
 from correo.models import Categoria, CorreoEnviado, PlantillaCorreo
-from correo.services import brevo, preferencias, render
+from correo.services import brevo, preferencias, render, urls_publicas
 from correo.services.elegibilidad import evaluar_elegibilidad_correo
 
 log = logging.getLogger(__name__)
@@ -84,6 +84,15 @@ def enviar_correo(*, plantilla_clave, destinatario, contexto, origen, forzar_cat
             fila.estado = CorreoEnviado.Estado.CANCELADO_ELEGIBILIDAD
             fila.error_codigo = resultado.codigo
             fila.save()
+            return fila
+        if not urls_publicas.base(request).startswith(("https://", "http://")):
+            # Sin dirección pública, el logo y los enlaces de preferencias y
+            # baja saldrían relativos: imagen rota y una baja que no funciona.
+            # No sale nada hasta configurar CORREO_BASE_URL_PUBLICA.
+            fila.estado = CorreoEnviado.Estado.ERROR
+            fila.error_codigo = "SIN_URL_PUBLICA"
+            fila.save()
+            fila.reintentable = False
             return fila
         fila.estado = CorreoEnviado.Estado.ENVIANDO
         fila.envio_iniciado_en = timezone.now()

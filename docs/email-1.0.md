@@ -100,10 +100,11 @@ correo sigue siendo opcional en la reserva.
 
 ## Flujos
 
-**Confirmación de reserva** (`flujos/reserva.py`). Sale cuando la cita web
-queda agendada o confirmada: al reservar si ya era paciente; si es una persona
-nueva, cuando coordinación confirma la cita. Va a quien reservó. Una vez por
-cita.
+**Confirmación de reserva** (`flujos/reserva.py`). Se programa cuando la cita
+web queda agendada o confirmada: al reservar si ya era paciente; si es una
+persona nueva, cuando coordinación confirma la cita. La despacha la tarea
+programada en su siguiente ciclo: la reserva nunca espera a Brevo. Va a quien
+reservó. Una vez por cita.
 
 **DP-02** (`flujos/dp02.py`). Al registrar una DP-02 en la Agenda se programan
 tres correos desde la fecha de registro. Solo DP-02 de las últimas 48 horas.
@@ -114,7 +115,8 @@ reservada, la DP-02 cambia o el lead pasa a "inició proceso".
 
 - `POST /api/correo/webhooks/brevo/` con `Authorization: Bearer`. Correlaciona
   por message-id y luego por la etiqueta; nunca por dirección. Rebote duro
-  bloquea; rebote suave no; bloqueado no se convierte en rebote duro; baja y
+  bloquea **esa dirección** (si la persona corrige su correo, se le puede
+  volver a escribir); rebote suave no; bloqueado no se convierte en rebote duro; baja y
   spam revocan MARKETING; el clic guarda URL y fecha sin puntaje.
 - `/preferencias/correo/<uuid>/`: correo enmascarado y la casilla.
 - `POST /api/correo/baja/<token>/`: RFC 8058, sin confirmación, idempotente,
@@ -124,6 +126,11 @@ reservada, la DP-02 cambia o el lead pasa a "inició proceso".
   enlaces no lo disparen.
 
 ## Panel interno
+
+Además de la ficha del paciente: sección "Correo" en el modal del **lead**
+(gerencia y coordinación de su sede) y, en el detalle de una aplicación de
+**Faro**, la lista de apoderados con su permiso y la opción de revocarlo (solo
+gerencia, correo enmascarado).
 
 En la ficha del paciente, sección "Correo", solo para gerencia y coordinación:
 estado del consentimiento comercial, último cambio y origen, rebote duro,
@@ -135,7 +142,8 @@ ya no veían el contacto.
 
 `correo/templates/correo/base.html`, según el manual de marca:
 
-- Logo oficial horizontal (`frontend/public/itaca-logo-h.png`) a 200 px; el
+- Logo oficial horizontal (`frontend/public/itaca-logo-h.png`, servido en
+  `/static/itaca-logo-h.png`: en `/itaca-logo-h.png` responde la app) a 200 px; el
   manual pide mínimo 170 px. Sin redibujarlo ni alterarlo.
 - Paleta oficial: `#00B8D8`, `#D7F4FA`, `#6E6E6E`, `#343434`, `#FFFFFF`.
 - Montserrat con respaldo `Arial, Helvetica, sans-serif`.
@@ -154,3 +162,5 @@ ya no veían el contacto.
 | Virtual: `Acceso: {enlace}` | Si aún no hay enlace: "te enviaremos el enlace antes de la cita" | La reserva web no tiene enlace todavía. |
 | Reintento de timeouts | Solo el de conexión | En un timeout de respuesta Brevo pudo haberlo enviado; reintentar lo duplicaría. |
 | Baja desde el pie | Página con `?baja=1` | Un GET al endpoint lo dispararían los escáneres de enlaces. |
+| Envío en la petición de reserva | Se programa y lo despacha la tarea | La reserva no espera a Brevo; la confirmación llega en el siguiente ciclo del cron. |
+| Rebote duro por persona | Por dirección | Corregir el correo levanta el bloqueo. |

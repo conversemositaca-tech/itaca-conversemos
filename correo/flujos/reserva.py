@@ -10,6 +10,10 @@ A quién: a quien reservó (el lead de la reserva, con el correo que dejó). Si
 la ficha es de un menor de 14, el servicio central lo redirige a su tutor.
 
 Una vez por cita: la clave de idempotencia es la cita.
+
+Fuera del hilo de la petición: aquí solo se PROGRAMA para ya. Lo despacha la
+tarea programada (cada pocos minutos), así una reserva o el guardado de una
+cita nunca esperan a Brevo.
 """
 from django.conf import settings
 from django.utils import timezone
@@ -47,7 +51,7 @@ def _grupo(cita_id):
 
 
 def programar_confirmacion(cita_id):
-    """Programa (una vez) y despacha ya la confirmación de esta cita."""
+    """Programa (una vez) la confirmación de esta cita para el próximo ciclo de la tarea."""
     from pacientes.models import Cita
     cita = Cita.objects.select_related("paciente").filter(id=cita_id).first()
     if cita is None or not corresponde(cita):
@@ -57,12 +61,10 @@ def programar_confirmacion(cita_id):
     lead = _lead_de(cita)
     if lead is None:
         return None
-    envio, creado = programacion.programar(
+    envio, _ = programacion.programar(
         plantilla_clave=PLANTILLA, destinatario=Destinatario.de_lead(lead),
         ejecutar_en=timezone.now(), clave_idempotencia=f"reserva:{cita.id}:confirmacion",
         grupo=_grupo(cita.id))
-    if creado:
-        programacion.procesar_ahora(envio)
     return envio
 
 
