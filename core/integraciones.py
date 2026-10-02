@@ -179,15 +179,33 @@ def _autoalimentar_perfil(paciente, est, atencion=None, fuente="eli_ia"):
     crea los objetivos terapéuticos. Es el 'documento madre' (pedido de Emma).
 
     El riesgo NO se escribe: la IA solo deja una SugerenciaRiesgo pendiente que
-    un psicólogo del paciente o un admin confirma, modifica o rechaza."""
+    un psicólogo del paciente o un admin confirma, modifica o rechaza.
+
+    Resumen clínico y objetivo principal: la IA solo COMPLETA un campo vacío.
+    Lo que ya escribió una persona no se pisa; si la IA propone otro texto,
+    queda en RegistroAuditoria (accion "ia.propuesta_no_aplicada") para que
+    el psicólogo lo vea si quiere, sin perder el original."""
+    from core.auditoria import auditar
+
     cambios = []
-    if est.get("resumen_clinico"):
-        paciente.resumen_clinico = est["resumen_clinico"][:4000]
-        cambios.append("resumen_clinico")
+    propuestas = {}
+    resumen = (est.get("resumen_clinico") or "")[:4000]
+    if resumen:
+        if not (paciente.resumen_clinico or "").strip():
+            paciente.resumen_clinico = resumen
+            cambios.append("resumen_clinico")
+        elif resumen.strip() != paciente.resumen_clinico.strip():
+            propuestas["resumen_clinico"] = [paciente.resumen_clinico, resumen]
     lineas = [l.strip(" -•\t") for l in (est.get("objetivos") or "").splitlines() if l.strip(" -•\t")]
     if lineas:
-        paciente.objetivo_principal = lineas[0][:200]
-        cambios.append("objetivo_principal")
+        objetivo = lineas[0][:200]
+        if not (paciente.objetivo_principal or "").strip():
+            paciente.objetivo_principal = objetivo
+            cambios.append("objetivo_principal")
+        elif objetivo.strip() != paciente.objetivo_principal.strip():
+            propuestas["objetivo_principal"] = [paciente.objetivo_principal, objetivo]
+    if propuestas:
+        auditar(None, "ia.propuesta_no_aplicada", paciente, {**propuestas, "fuente": [None, fuente]})
     riesgo = _norm_riesgo(est.get("riesgo"))
     if riesgo:
         sugerir_riesgo(paciente, riesgo, atencion=atencion, fuente=fuente)
