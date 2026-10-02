@@ -232,7 +232,9 @@ class CobroViewSet(viewsets.ModelViewSet):
     def marcar_pagado(self, request, pk=None):
         self._exigir_caja()
         with transaction.atomic():
-            cobro = self.get_queryset().select_for_update().filter(pk=pk).first()
+            # of=self: en Postgres no se puede bloquear el lado nulo de un LEFT JOIN
+            # (select_related de registrado_por/servicio).
+            cobro = self.get_queryset().select_for_update(of=("self",)).filter(pk=pk).first()
             if cobro is None:
                 return Response({"detail": "No encontrado."}, status=status.HTTP_404_NOT_FOUND)
             if cobro.estado != Cobro.Estado.PENDIENTE:

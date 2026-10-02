@@ -42,6 +42,10 @@ def _a_la_vez(n, funcion):
 
 @unittest.skipUnless(connection.vendor == "postgresql", "Solo en PostgreSQL (concurrencia real).")
 class ConcurrenciaCobrosTests(TransactionTestCase):
+    # Igual que correo.tests.test_concurrencia_pg: sin esto, el vaciado de la
+    # base regenera content types y el siguiente test serializado los duplica.
+    serialized_rollback = True
+
     def setUp(self):
         self.clinica = Clinica.objects.create(nombre="Conversemos", slug="pg-cobros")
         self.coord = Usuario.objects.create_user(email="c@pg.pe", password="x", clinica=self.clinica, rol="asistente")
