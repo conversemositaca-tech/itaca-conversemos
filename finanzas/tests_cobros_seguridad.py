@@ -122,3 +122,44 @@ class AislamientoEntreClinicasTests(_Base):
         r = self.como(self.coord).patch(f"/api/leads/{lead.id}/", {"medico": self.medico_otra.id},
                                         content_type="application/json")
         self.assertEqual(r.status_code, 400)
+
+
+class EntradaDeCobroTests(_Base):
+    """POST /api/cobros/ valida con CobroEntradaSerializer (core.serializadores.validar)."""
+
+    def _post(self, **cuerpo):
+        base = {"paciente": self.mio.id, "monto": "80", "estado": "pendiente"}
+        return self.como(self.coord).post("/api/cobros/", {**base, **cuerpo}, content_type="application/json")
+
+    def test_acepta_coma_decimal(self):
+        r = self._post(monto="80,50")
+        self.assertEqual(r.status_code, 201)
+        self.assertEqual(r.json()["monto"], "80.50")
+
+    def test_rechaza_con_mensaje_legible(self):
+        casos = [
+            ({"monto": "-1"}, "El monto debe ser mayor a 0."),
+            ({"monto": "ochenta"}, "Escribe el monto como número"),
+            ({"estado": "regalado"}, "estado:"),
+            ({"estado": "pagado", "medio_pago": ""}, "Elige el medio de pago."),
+        ]
+        for cuerpo, texto in casos:
+            with self.subTest(cuerpo=cuerpo):
+                r = self._post(**cuerpo)
+                self.assertEqual(r.status_code, 400)
+                self.assertIn(texto, r.json()["detail"])
+        self.assertEqual(Cobro.objects.count(), 0)
+
+    def test_paciente_de_otra_clinica_no_existe(self):
+        otra = Clinica.objects.create(nombre="Otra", slug="otra-entrada")
+        ajena = Paciente.objects.create(clinica=otra, nombre="Ajena")
+        r = self._post(paciente=ajena.id)
+        self.assertEqual((r.status_code, r.json()["detail"]), (400, "paciente: Paciente no encontrado."))
+
+    def test_solo_caja_vende_paquetes(self):
+        cuerpo = {"paciente": self.mio.id, "sesiones_total": 4, "monto": "200"}
+        for u in (self.psico, self.comercial):
+            r = self.como(u).post("/api/paquetes/", cuerpo, content_type="application/json")
+            self.assertEqual(r.status_code, 403)
+        r = self.como(self.coord).post("/api/paquetes/", cuerpo, content_type="application/json")
+        self.assertEqual(r.status_code, 201)

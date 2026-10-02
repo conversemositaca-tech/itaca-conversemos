@@ -29,7 +29,8 @@ def _push_soto_ingreso(cobro):
             soto.push_ingreso(cobro)
     except Exception:  # noqa: BLE001 — la integración jamás debe tumbar el cobro
         pass
-from .serializers import CobroSerializer, EgresoSerializer, PaqueteSerializer, ServicioSerializer
+from core.serializadores import validar
+from .serializers import CobroEntradaSerializer, CobroSerializer, EgresoSerializer, PaqueteSerializer, ServicioSerializer
 
 
 from core.politicas import es_admin as _es_admin  # noqa: E402
@@ -158,34 +159,18 @@ class CobroViewSet(viewsets.ModelViewSet):
     def create(self, request, *args, **kwargs):
         self._exigir_caja()
         clinica = get_clinica_actual()
-        d = request.data
-        paciente = Paciente.objects.del_tenant_actual().filter(pk=d.get("paciente")).first()
-        if paciente is None:
-            return Response({"detail": "Paciente no encontrado."}, status=status.HTTP_400_BAD_REQUEST)
-        monto = _dec(d.get("monto"))
-        if monto is None or monto <= 0:
-            return Response({"detail": "El monto debe ser mayor a 0."}, status=status.HTTP_400_BAD_REQUEST)
-
-        servicio = Servicio.objects.del_tenant_actual().filter(pk=d.get("servicio")).first() if d.get("servicio") else None
-        cita = Cita.objects.del_tenant_actual().filter(pk=d.get("cita")).first() if d.get("cita") else None
-        atencion = Atencion.objects.del_tenant_actual().filter(pk=d.get("atencion")).first() if d.get("atencion") else None
-        estado = d.get("estado") if d.get("estado") in dict(Cobro.Estado.choices) else Cobro.Estado.PENDIENTE
-        medio = d.get("medio_pago") if d.get("medio_pago") in dict(Cobro.Medio.choices) else ""
-        concepto = (str(d.get("concepto") or "").strip() or (servicio.nombre if servicio else "Cobro"))[:200]
-        comprobante = d.get("comprobante_tipo") if d.get("comprobante_tipo") in dict(Cobro.Comprobante.choices) else ""
+        v = validar(CobroEntradaSerializer, request.data)
+        paciente, cita, atencion, servicio = v["paciente"], v.get("cita"), v.get("atencion"), v.get("servicio")
+        monto, estado, medio, comprobante = v["monto"], v["estado"], v["medio_pago"], v["comprobante_tipo"]
+        concepto = (v["concepto"].strip() or (servicio.nombre if servicio else "Cobro"))[:200]
+        d = {"comprobante_numero": v["comprobante_numero"]}
 
         # Fecha del pago editable, para cargar pagos ANTIGUOS (migración de AgendaPro).
         # Si no viene, queda la de hoy (default del modelo).
         campos_fecha = {}
-        fecha = _parse_fecha(d.get("fecha"))
-        if fecha:
+        if v.get("fecha"):
             campos_fecha["fecha"] = timezone.make_aware(
-                datetime.combine(fecha, time(12, 0)), timezone.get_current_timezone())
-
-        if cita is not None and cita.paciente_id != paciente.id:
-            return Response({"detail": "La cita no es de este paciente."}, status=status.HTTP_400_BAD_REQUEST)
-        if atencion is not None and atencion.paciente_id != paciente.id:
-            return Response({"detail": "La atención no es de este paciente."}, status=status.HTTP_400_BAD_REQUEST)
+                datetime.combine(v["fecha"], time(12, 0)), timezone.get_current_timezone())
 
         # Una cita se cobra una vez. Doble clic, dos pestañas o un reintento de
         # red no pueden generar dos cobros: se bloquea la fila de la cita y se
@@ -331,6 +316,7 @@ class PaqueteViewSet(viewsets.ModelViewSet):
         return qs
 
     def create(self, request, *args, **kwargs):
+        exigir(puede_registrar_pago(request.user), "Solo coordinación o gerencia venden paquetes.")
         clinica = get_clinica_actual()
         d = request.data
         paciente = Paciente.objects.del_tenant_actual().filter(pk=d.get("paciente")).first()

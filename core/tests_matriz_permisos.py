@@ -59,6 +59,7 @@ ENDPOINTS = {
     "cobros.corregir_monto_ajeno": ("patch", "/api/cobros/{cobro_ajeno}/", {"monto": "1"}),
     "cobros.eliminar": ("delete", "/api/cobros/999999/", None),
     "paquetes.anular": ("post", "/api/paquetes/999999/anular/", {}),
+    "paquetes.vender": ("post", "/api/paquetes/", {}),
 }
 
 def _fila(*codigos):
@@ -104,6 +105,7 @@ MATRIZ = {
     "cobros.corregir_monto_ajeno": _fila(403, 200, 403, 404, 404, 403),  # monto: solo gerencia
     "cobros.eliminar": _fila(403, 404, 404, 403, 403, 403),          # 404 = autorizado (id inexistente)
     "paquetes.anular": _fila(403, 404, 404, 403, 403, 403),
+    "paquetes.vender": _fila(403, 400, 400, 403, 403, 403),           # genera un cobro pagado: caja
 }
 
 
