@@ -71,4 +71,5 @@ La app `continuidad` (Dirección Clínica) vive en la rama `feat/direccion-clini
 - `docs/SOFTWARE-FACTORY-AUDIT.md` + `docs/software-factory-audit/` (01–18) — auditoría de la fábrica de software.
 - `docs/SOFTWARE-FACTORY-PHASE-0.md` — fase 0 de la fábrica (verificación, hooks, rules).
 - `docs/historial/` — bitácora archivada (obsoleta en partes; no se carga).
+- `.claude/skills/` (feature, qa-browser, pr, security-review) y `.claude/agents/` (domain-explorer, security-data-reviewer, ux-reviewer, regression-reviewer) — método de trabajo; flujo en `docs/factory/` y en el repo de la fábrica.
 - `.claude/rules/` — reglas por dominio: historia-clinica, identidad-duplicados, continuidad, mensajeria, sitio-rutas, finanzas, integraciones-seguridad, frontend-ui.
