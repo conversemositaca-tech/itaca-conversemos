@@ -1,6 +1,19 @@
 # Release · Software Factory v1 + Security Hardening
 
-Rama `chore/software-factory-phase-0` → `main` (`9ed776c`). 34 commits, 112 archivos, +9.652 / −1.285.
+PR #143, rama `chore/software-factory-phase-0` → `main`. 44 commits, 115 archivos, +10.053 / −1.415.
+
+## Resultado final (2 oct 2026)
+
+| | |
+|---|---|
+| Merge | `687b3b5` (merge commit sobre `23264cd`, que trae #127 y #144) · 17:26 UTC |
+| CI del merge | `test` 1.249 OK (4 skipped) · `postgres` 1.249 OK sin skips · `seguridad` 60 OK · `frontend` build + 5/5 + ESLint 74/38 (= línea base) |
+| Deploy | Railway, exitoso a los ~45 s del merge |
+| Migraciones | `core.0021_registro_auditoria` y `pacientes.0039_sugerencia_riesgo` aplicadas al arrancar, sin errores |
+| Smoke anónimo | `/api/hora/` y home 200 · pacientes, cobros, sugerencias, leads y Dirección Clínica sin sesión → 403 · integraciones con token falso → 403 · logs sin 500 ni tracebacks |
+| Rollback | `git revert -m 1 687b3b5` |
+
+Pendiente de operación (no de código): tokens por alcance en Railway y en los consumidores (Eli y `mia`, ya preparados para caer al token compartido mientras el propio no esté) y el QA de datos con `scripts/qa_prod_readonly.py`.
 
 ## Diff clasificado
 

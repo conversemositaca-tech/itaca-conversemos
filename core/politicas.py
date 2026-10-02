@@ -7,9 +7,8 @@ Capas, de afuera hacia adentro:
 3. Propiedad del recurso: `ficha_de` y `es_paciente_propio`. El psicólogo
    trabaja con los pacientes de SU ficha del directorio (`Paciente.profesional`).
 4. Alcance de lectura: `acotar_clinico`. Qué filas de datos clínicos ve cada rol.
-5. Visibilidad de campos: `ve_contacto`, `ve_token_consentimiento`, `ve_finanzas`…
-6. Acciones: `puede_editar_historia`, `puede_resolver_sugerencia_ia`,
-   `puede_registrar_pago`, `puede_anular_pago`…
+5. Visibilidad de campos: `ve_contacto`, `ve_finanzas`…
+6. Acciones: `puede_editar_historia`, `puede_registrar_pago`, `puede_anular_pago`…
 
 Las listas de roles y las clases de permiso de DRF siguen en `core/permisos.py`;
 este módulo responde preguntas sobre un usuario y un recurso concretos.
@@ -20,7 +19,6 @@ from rest_framework.exceptions import PermissionDenied
 from rest_framework.permissions import BasePermission
 
 from core.permisos import (
-    ROLES_CONTACTAN_PACIENTES,
     ROLES_VEN_FINANZAS,
     es_solo_lectura,
     oculta_contacto,
@@ -119,22 +117,9 @@ def ve_contacto(user):
     return not oculta_contacto(user)
 
 
-def ve_token_consentimiento(user):
-    """El token de firma permite aceptar en nombre del paciente: solo lo
-    recibe quien envía el enlace."""
-    return rol_de(user) in ROLES_CONTACTAN_PACIENTES
-
-
 def ve_finanzas(user):
     """Cifras de dinero de la clínica: caja, ingresos, egresos."""
     return rol_de(user) in ROLES_VEN_FINANZAS
-
-
-def ve_cobros_de_la_clinica(user):
-    """Listado de cobros de todos los pacientes. Coordinación cobra y concilia;
-    gerencia y Dirección Clínica miran las cifras. El psicólogo ve la cuenta de
-    sus pacientes en la ficha, no la caja; comercial, nada."""
-    return rol_de(user) in (ADMIN, COORDINACION, ANALISTA)
 
 
 # ── 6. Acciones ─────────────────────────────────────────────────────────────
@@ -146,12 +131,6 @@ def puede_editar_historia(user, paciente=None):
     if not es_psicologo(user):
         return False
     return paciente is None or es_paciente_propio(user, paciente)
-
-
-def puede_resolver_sugerencia_ia(user, paciente):
-    """Confirmar, modificar o rechazar lo que propuso la IA es una decisión
-    clínica: el psicólogo del paciente o un admin."""
-    return es_admin(user) or (es_psicologo(user) and es_paciente_propio(user, paciente))
 
 
 def puede_registrar_pago(user):
