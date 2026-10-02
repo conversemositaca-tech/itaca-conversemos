@@ -2,6 +2,7 @@ from datetime import timedelta
 
 from django.utils import timezone
 from rest_framework import serializers
+from core.serializadores import RelacionesDelTenant
 
 from core.utils import fecha_corta
 
@@ -22,7 +23,7 @@ class AnuncioSerializer(serializers.ModelSerializer):
         return obj.leads.count()
 
 
-class LeadSerializer(serializers.ModelSerializer):
+class LeadSerializer(RelacionesDelTenant, serializers.ModelSerializer):
     fuente_label = serializers.SerializerMethodField()
     estado_label = serializers.CharField(source="get_estado_display", read_only=True)
     sede_label = serializers.CharField(source="get_sede_display", read_only=True)

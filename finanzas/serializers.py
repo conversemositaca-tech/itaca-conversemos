@@ -1,5 +1,6 @@
 from django.utils import timezone
 from rest_framework import serializers
+from core.serializadores import RelacionesDelTenant
 
 from core.utils import fecha_corta
 
@@ -23,7 +24,7 @@ class ServicioSerializer(serializers.ModelSerializer):
         return data
 
 
-class PaqueteSerializer(serializers.ModelSerializer):
+class PaqueteSerializer(RelacionesDelTenant, serializers.ModelSerializer):
     paciente_nombre = serializers.CharField(source="paciente.nombre", read_only=True)
     estado_label = serializers.CharField(source="get_estado_display", read_only=True)
     sesiones_restantes = serializers.IntegerField(read_only=True)
@@ -63,7 +64,7 @@ class EgresoSerializer(serializers.ModelSerializer):
         return str(obj.registrado_por) if obj.registrado_por_id else ""
 
 
-class CobroSerializer(serializers.ModelSerializer):
+class CobroSerializer(RelacionesDelTenant, serializers.ModelSerializer):
     paciente_nombre = serializers.CharField(source="paciente.nombre", read_only=True)
     estado_label = serializers.CharField(source="get_estado_display", read_only=True)
     medio_label = serializers.CharField(source="get_medio_pago_display", read_only=True)

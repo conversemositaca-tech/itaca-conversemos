@@ -14,6 +14,7 @@ from rest_framework.decorators import action
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from core.serializadores import RelacionesDelTenant
 
 from core.tenant import get_clinica_actual
 
@@ -27,7 +28,7 @@ def _ip(request):
     return request.META.get("REMOTE_ADDR") or None
 
 
-class ConsentimientoSerializer(serializers.ModelSerializer):
+class ConsentimientoSerializer(RelacionesDelTenant, serializers.ModelSerializer):
     tipo_label = serializers.CharField(source="get_tipo_display", read_only=True)
     paciente_nombre = serializers.CharField(source="paciente.nombre", read_only=True)
     url = serializers.SerializerMethodField()
