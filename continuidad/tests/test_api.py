@@ -95,3 +95,50 @@ class ApiTests(Base):
         for u, code in ((self.admin, 200), (self.coord, 200), (self.analista, 200), (self.u_ana, 403)):
             self.client.force_login(u)
             self.assertEqual(self.client.get("/api/continuidad/revision/").status_code, code, u.rol)
+
+
+@REGISTRO_DESDE_SIEMPRE
+class AislamientoEntreClinicasTests(Base):
+    """IDOR: con ids o uuid de OTRA clínica no se ve ni se escribe nada."""
+
+    def setUp(self):
+        super().setUp()
+        from core.models import Clinica
+        from usuarios.models import Usuario
+        self.p = self.paciente(profesional=self.ana)
+        self.sesiones(self.p, [30, 23])
+        self.proc = self.proceso(self.p)
+        self.otra = Clinica.objects.create(nombre="Otra clínica", slug="otra-idor")
+        self.admin_otra = Usuario.objects.create_user(
+            email="admin-otra@test.pe", password="x", clinica=self.otra, rol=Usuario.Rol.ADMIN)
+        self.client.force_login(self.admin_otra)
+
+    def test_no_ve_ni_registra_en_pacientes_de_otra_clinica(self):
+        self.assertEqual(self.client.get(url(self.p)).status_code, 404)
+        r = self.client.post(url(self.p, "transicion"), {"proceso": str(self.proc.uuid), "evento": T.ALTA},
+                             content_type="application/json")
+        self.assertEqual(r.status_code, 404)
+        self.assertEqual(self.proc.eventos.count(), 1)  # solo el inicio
+
+    def test_listas_no_mezclan_clinicas(self):
+        from continuidad.models import MotivoContinuidad
+        revision = self.client.get("/api/continuidad/revision/").json()
+        self.assertEqual(revision["items"], [])
+        motivos = self.client.get("/api/continuidad/motivos/").json()
+        self.assertNotIn("Ana Ruiz", [p["nombre"] for p in motivos.get("profesionales", [])])
+        # Cada clínica tiene su catálogo: los motivos que ve son de la suya.
+        self.assertTrue(MotivoContinuidad.objects.filter(clinica=self.otra).exists())
+        self.assertEqual(len(motivos["motivos"]),
+                         MotivoContinuidad.objects.filter(clinica=self.otra, activo=True).count())
+
+    def test_no_corrige_eventos_ni_usa_profesionales_ajenos(self):
+        from usuarios.models import Profesional
+        # Coordinación de la clínica A intenta usar un profesional de la B.
+        self.client.force_login(self.coord)
+        ajeno = Profesional.objects.create(clinica=self.otra, nombre="Ajeno")
+        r = self.client.post(url(self.p, "transicion"), {"evento": T.CAMBIO_PROFESIONAL,
+                                                         "profesional_nuevo": ajeno.pk},
+                             content_type="application/json")
+        self.assertEqual(r.status_code, 400)
+        self.p.refresh_from_db()
+        self.assertEqual(self.p.profesional, self.ana)

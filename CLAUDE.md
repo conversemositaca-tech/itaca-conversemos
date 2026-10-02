@@ -1193,7 +1193,8 @@ los feriados de Perú. Zona horaria por defecto: `America/Lima` (GMT-5).
      registra). Solo DP-10, DP-12 y ficha alta/pausa sin contradicciones; DP-09, DP-11 y
      días sin venir NO. En la base demo: 7 registrables, 4 DP-09 omitidos, 79 sin evidencia.
      **En producción: correr primero sin `--aplicar`.**
-   - Verificado: 65 tests nuevos (`continuidad/tests/`), suite completa, `makemigrations
+   - Verificado: 71 tests (`continuidad/tests/`, incluidos fecha de corte y aislamiento
+     entre clínicas), suite completa, `makemigrations
      --check`, ESLint (App.jsx igual a la base) y QA en navegador 36/36 (fase 2) + 40/40
      (regresión fase 1.5) sobre `dc-continuidad-2.sqlite3` (datos ficticios,
      `itaca-demo-data/seed_continuidad_2.py`).
