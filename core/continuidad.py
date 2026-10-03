@@ -14,7 +14,7 @@ RIESGO_ABANDONO_S3 = "riesgo_abandono_s3"
 FIN_BLOQUE_SIN_DECISION = "fin_bloque_sin_decision"
 
 # Estados que cuentan como "la sesión ocurrió de verdad" (no agendada, no cancelada).
-_ESTADOS_ASISTIDOS = ("asistio", "atendida")
+from pacientes.models import ESTADOS_REALIZADA as _ESTADOS_ASISTIDOS  # noqa: E402
 
 
 # ---------------------------------------------------------------------------

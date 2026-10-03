@@ -35,10 +35,10 @@ class CuestionarioTests(TestCase):
         return self.client.post(self.url, data=json.dumps(cuerpo),
                                 content_type="application/json")
 
-    def test_entrega_los_treinta_y_ocho_items_con_su_escala(self):
+    def test_entrega_los_sesenta_items_con_su_escala(self):
         d = self.client.get(self.url).json()
         self.assertEqual(d["institucion"], "I.E. San Martín")
-        self.assertEqual(len(d["items"]), 38)
+        self.assertEqual(len(d["items"]), 60)
         primero = d["items"][0]
         self.assertTrue(primero["texto"])
         self.assertEqual(len(primero["escala"]), 5)  # EBIPQ va de 0 a 4

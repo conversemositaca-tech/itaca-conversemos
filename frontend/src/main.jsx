@@ -2,7 +2,8 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
 import App, { ConsentimientoPublico, AgendarPublico, sincronizarReloj } from './App.jsx'
-import { PanelFaro, SitioPublico, TamizajeFaro } from './Sitio.jsx'
+import { AutorizacionFaro, PanelFaro, SitioPublico, TamizajeFaro } from './Sitio.jsx'
+import PreferenciasCorreo from './PreferenciasCorreo.jsx'
 import { esRutaSitio } from './rutas'
 import { recordarOrigen } from './origen'
 import { PASOS, registrar } from './embudo'
@@ -10,7 +11,9 @@ import { PASOS, registrar } from './embudo'
 // Qué se monta según el path, EN ESTE ORDEN:
 //  /consentimiento/<token>  → firma del consentimiento (público)
 //  /agendar/<token>         → auto-agendamiento de cita (público)
+//  /preferencias/correo/<token> → preferencias y baja de correo (público)
 //  /faro/t/<token>          → cuestionario del estudiante (público)
+//  /faro/a/<token>          → autorización de la familia (público)
 //  /faro/<token>            → panel del colegio (público, sin cuenta)
 //  /gestion[/...]           → sistema interno de gestión (pide login)
 //  /, /quienes-somos, /psicologos, /terapias-online, /preguntas → sitio público
@@ -20,12 +23,14 @@ import { PASOS, registrar } from './embudo'
 const RUTA = window.location.pathname
 const cons = RUTA.match(/^\/consentimiento\/([^/]+)/)
 const agen = RUTA.match(/^\/agendar\/([^/]+)/)
+const prefCorreo = RUTA.match(/^\/preferencias\/correo\/([^/]+)/)
 // El del aula va PRIMERO: con el otro patrón, /faro/t/xxx leeria "t" como
 // el token del colegio y le abriria el panel a un alumno.
 const faroT = RUTA.match(/^\/faro\/t\/([^/]+)/)
-const faro = !faroT && RUTA.match(/^\/faro\/([^/]+)/)
+const faroA = !faroT && RUTA.match(/^\/faro\/a\/([^/]+)/)
+const faro = !faroT && !faroA && RUTA.match(/^\/faro\/([^/]+)/)
 const gestion = /^\/gestion(\/|$)/.test(RUTA)
-const sitio = !cons && !agen && !faro && !faroT && !gestion && esRutaSitio(RUTA)
+const sitio = !cons && !agen && !prefCorreo && !faro && !faroT && !faroA && !gestion && esRutaSitio(RUTA)
 
 // De dónde llegó la visita (campaña, anuncio, sitio que refirió). Se guarda al
 // entrar porque la reserva ocurre después, cuando la URL ya no lleva nada.
@@ -42,7 +47,9 @@ function arrancar() {
     <StrictMode>
       {cons ? <ConsentimientoPublico token={cons[1]} />
         : agen ? <AgendarPublico token={agen[1]} />
+          : prefCorreo ? <PreferenciasCorreo token={prefCorreo[1]} />
           : faroT ? <TamizajeFaro token={faroT[1]} />
+          : faroA ? <AutorizacionFaro token={faroA[1]} />
             : faro ? <PanelFaro token={faro[1]} />
             : gestion ? <App />
               : sitio ? <SitioPublico />

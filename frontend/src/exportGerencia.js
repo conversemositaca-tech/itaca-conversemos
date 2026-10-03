@@ -104,8 +104,8 @@ export function modeloReporte(data, opts = {}) {
     id: "operacion", titulo: "Operación",
     kpis: [
       kpi("Sesiones en el período", op.citas ?? 0, { num: op.citas ?? 0, sub: deltaTxt(op.citas, ant.citas) }),
-      kpi("Atendidas", op.atendidas ?? 0, { num: op.atendidas ?? 0 }),
-      kpi("% Asistencia", pctS(op.asistencia_pct), { num: (op.asistencia_pct ?? 0) / 100, fmt: "pct", sub: `${op.cancelacion_pct ?? 0}% canceladas` }),
+      kpi("Realizadas", op.atendidas ?? 0, { num: op.atendidas ?? 0, sub: "asistió + atendida" }),
+      kpi("% Asistencia", pctS(op.asistencia_pct), { num: (op.asistencia_pct ?? 0) / 100, fmt: "pct", sub: `${op.inasistencia_pct ?? 0}% no asistió · ${op.cancelacion_pct ?? 0}% canceladas` }),
       kpi("Recordatorios enviados", op.recordatorios ?? 0, { num: op.recordatorios ?? 0 }),
     ],
     series: serieDia("sesiones_dia", "Sesiones por día", op.por_dia, "citas", MARCA.celeste),
@@ -148,7 +148,7 @@ export function modeloReporte(data, opts = {}) {
         kpi("% en abandono", pctS(ret.rojo_pct), { num: (ret.rojo_pct ?? 0) / 100, fmt: "pct" }),
       ],
       series: [], tablas: [],
-      notas: [`Sobre ${ret.con_sesiones} pacientes con al menos una sesión registrada. Regla: verde <8 días · amarillo 8–15 · rojo >15.`],
+      notas: [`Sobre ${ret.con_sesiones} pacientes con al menos una sesión realizada (cita asistida, sin la consulta inicial). Regla: verde <8 días · amarillo 8–15 · rojo >15.`],
     });
   }
   const dinero = {
@@ -174,12 +174,13 @@ export function modeloReporte(data, opts = {}) {
         kpi("Sesiones con motivo de cierre", pctS(dc.pct), { num: (dc.pct ?? 0) / 100, fmt: "pct", sub: `${dc.con_motivo} de ${dc.citas_terminadas} terminadas` }),
       ],
       series: [
-        { id: "continuidad", titulo: "Continuidad · sesiones por paciente", tipo: "barras", datos: c.por_sesiones || [], color: MARCA.celeste },
+        { id: "continuidad", titulo: "Continuidad · sesiones por proceso", tipo: "barras", datos: c.por_sesiones || [], color: MARCA.celeste },
         { id: "medio_pago", titulo: "Ingresos por medio de pago", tipo: "barras", datos: mp.por_medio || [], color: MARCA.celesteMedio, fmt: "soles" },
       ],
       tablas: [],
       notas: [
-        `Sobre ${c.con_historia} pacientes con historia clínica: ${c.abandono_1_2_pct}% no pasa de la sesión 2.`,
+        `Sobre ${c.procesos} procesos con citas asistidas (sin la consulta inicial). De los ${c.terminados} ya terminados, ${c.abandono_1_2_pct}% no pasó de la sesión 2.` +
+          (c.fichas_sin_cita > 0 ? ` Las ${c.fichas_sin_cita} fichas clínicas sin cita (Excel 2024 – feb 2026) no entran.` : ""),
         mp.total > 0 ? `${mp.sin_medio_pct}% de lo cobrado no tiene medio de pago registrado.` : "Sin cobros en el período.",
       ],
     });
@@ -444,12 +445,15 @@ function excelGerencia(modelo, L) {
     const ws = hoja("Operación", "Operación");
     let r = cabecera(ws, 4, ["Concepto", "Cantidad"]);
     r = fila(ws, r, ["Sesiones en el período", op.citas ?? 0]);
-    const rA = r; r = fila(ws, r, ["Atendidas", op.atendidas ?? 0]);
+    const rA = r; r = fila(ws, r, ["Realizadas (asistió + atendida)", op.atendidas ?? 0]);
+    const rN = r; r = fila(ws, r, ["No asistió", op.no_asistio ?? 0]);
     const rC = r; r = fila(ws, r, ["Canceladas", op.canceladas ?? 0]);
     r = fila(ws, r, ["Confirmadas", op.confirmadas ?? 0]);
     r = fila(ws, r, ["Por confirmar", op.por_confirmar ?? 0]);
-    r = fila(ws, r, ["% Asistencia", pctF(`B${rA}`, `(B${rA}+B${rC})`, (op.asistencia_pct ?? 0) / 100)]);
-    r = fila(ws, r, ["% Cancelación", pctF(`B${rC}`, `(B${rA}+B${rC})`, (op.cancelacion_pct ?? 0) / 100)]);
+    const base = `(B${rA}+B${rN}+B${rC})`;
+    r = fila(ws, r, ["% Asistencia", pctF(`B${rA}`, base, (op.asistencia_pct ?? 0) / 100)]);
+    r = fila(ws, r, ["% Inasistencia", pctF(`B${rN}`, base, (op.inasistencia_pct ?? 0) / 100)]);
+    r = fila(ws, r, ["% Cancelación", pctF(`B${rC}`, base, (op.cancelacion_pct ?? 0) / 100)]);
     r = fila(ws, r, ["Recordatorios enviados", op.recordatorios ?? 0]);
     if (op.por_dia && op.por_dia.length) {
       r += 1; r = cabecera(ws, r, ["Sesiones por día", "Sesiones"]);

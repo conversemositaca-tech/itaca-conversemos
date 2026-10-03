@@ -20,6 +20,8 @@ from core.integraciones import (
     RespaldoView,
     RecordatoriosView, ResumenDiarioView,
 )
+from core.direccion_clinica import DireccionClinicaView
+from continuidad.api import MotivosView, ProcesosPacienteView, RevisionView, TransicionView
 from core.metricas import MetricaMensualViewSet
 from core.ocupacion import OcupacionView
 from core.reloj import HoraServidorView
@@ -54,8 +56,9 @@ from mensajes.api import MensajeViewSet, PlantillaMensajeViewSet
 from mensajes.materiales import MaterialViewSet
 from mensajes.monitor_evolution import EvolutionEstadoView, EvolutionInstanciasView
 from mensajes.webhook_evolution import EvolutionWebhookView
+from pacientes.riesgo import SugerenciaRiesgoViewSet
 from pacientes.api import AdjuntoViewSet, AplicacionEscalaViewSet, AtencionViewSet, BloqueoAgendaViewSet, CitaViewSet, ContactoProfesionalViewSet, ObjetivoTerapeuticoViewSet, PacienteViewSet, RespuestaNPSViewSet, TareaViewSet, TranscribirView
-from faro.api import (AlertasView, AplicacionesView, AtenderAlertaView,
+from faro.api import (AlertasView, AplicacionesView, AtenderAlertaView, AutorizacionView, EnviarInformesView,
                       CuestionarioView, PanelFaroView, ResultadosView)
 from core.sitio import SitioFaroView, SitioFotoView, SitioVideoView, SitioInfoView
 from pacientes.api_duplicados import (
@@ -97,6 +100,7 @@ router.register(r"tareas", TareaViewSet, basename="tarea")
 router.register(r"red-profesionales", ContactoProfesionalViewSet, basename="red-profesional")
 router.register(r"nps", RespuestaNPSViewSet, basename="nps")
 router.register(r"adjuntos", AdjuntoViewSet, basename="adjunto")
+router.register(r"sugerencias-riesgo", SugerenciaRiesgoViewSet, basename="sugerencia-riesgo")
 router.register(r"servicios", ServicioViewSet, basename="servicio")
 router.register(r"cobros", CobroViewSet, basename="cobro")
 router.register(r"paquetes", PaqueteViewSet, basename="paquete")
@@ -131,6 +135,10 @@ urlpatterns = [
     path("api/transcribir/", TranscribirView.as_view(), name="transcribir"),
     path("api/hoy/", HoyResumenView.as_view(), name="hoy-resumen"),
     path("api/continuidad/pendientes/", ContinuidadPendientesView.as_view(), name="continuidad-pendientes"),
+    path("api/continuidad/paciente/<int:pk>/procesos/", ProcesosPacienteView.as_view(), name="continuidad-procesos"),
+    path("api/continuidad/paciente/<int:pk>/transicion/", TransicionView.as_view(), name="continuidad-transicion"),
+    path("api/continuidad/motivos/", MotivosView.as_view(), name="continuidad-motivos"),
+    path("api/continuidad/revision/", RevisionView.as_view(), name="continuidad-revision"),
     path("api/continuidad/caso/<int:pk>/", ContinuidadCasoView.as_view(), name="continuidad-caso"),
     path("api/continuidad/caso/<int:pk>/gestion/", ContinuidadGestionView.as_view(), name="continuidad-gestion"),
     # Contacto por WhatsApp del caso. La ruta específica va ANTES de la general.
@@ -146,6 +154,7 @@ urlpatterns = [
     path("api/duplicados/descartar/", DuplicadoDescartarView.as_view(), name="duplicados-descartar"),
     path("api/clinica/", ClinicaConfigView.as_view(), name="clinica-config"),
     path("api/gerencia/resumen/", GerenciaResumenView.as_view(), name="gerencia-resumen"),
+    path("api/direccion-clinica/", DireccionClinicaView.as_view(), name="direccion-clinica"),
     path("api/finanzas/caja/", CajaView.as_view(), name="finanzas-caja"),
     path("api/finanzas/liquidacion/", LiquidacionView.as_view(), name="finanzas-liquidacion"),
     # WhatsApp Cloud API (Meta): configuración (admin) + webhook público de Meta.
@@ -196,17 +205,22 @@ urlpatterns = [
     # El cuestionario va ANTES del comodin del panel: si no, "cuestionario"
     # se leeria como un token.
     path("api/faro/cuestionario/<str:token>/", CuestionarioView.as_view(), name="faro-cuestionario"),
+    # Va antes del catch-all api/faro/<token>/, que si no se la come.
+    path("api/faro/autorizacion/<str:token>/", AutorizacionView.as_view(), name="faro-autorizacion"),
     # Panel interno del psicologo. Van antes del comodin por la misma razon.
     path("api/faro/panel/aplicaciones/", AplicacionesView.as_view(), name="faro-aplicaciones"),
     path("api/faro/panel/alertas/", AlertasView.as_view(), name="faro-alertas"),
     path("api/faro/panel/alertas/<int:pk>/", AtenderAlertaView.as_view(), name="faro-atender"),
     path("api/faro/panel/resultados/<int:pk>/", ResultadosView.as_view(), name="faro-resultados"),
+    path("api/faro/panel/enviar/<int:pk>/", EnviarInformesView.as_view(), name="faro-enviar"),
     path("api/faro/<str:token>/", PanelFaroView.as_view(), name="faro-panel"),
     path("api/sitio/faro/", SitioFaroView.as_view(), name="sitio-faro"),
     path("api/sitio/foto/<int:pk>/", SitioFotoView.as_view(), name="sitio-foto"),
     path("api/sitio/video/<int:pk>/", SitioVideoView.as_view(), name="sitio-video"),
     path("api/sitio/", SitioInfoView.as_view(), name="sitio-info"),
 
+    # Email 1.0: panel, preferencias, baja, webhook del proveedor y tarea programada.
+    path("api/correo/", include("correo.urls")),
     path("api/", include(router.urls)),
     # Lo que leen los buscadores. Van ANTES del comodín: hasta ahora
     # /robots.txt y /sitemap.xml caían en él y devolvían la app de React, así

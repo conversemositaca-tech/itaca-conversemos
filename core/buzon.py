@@ -40,8 +40,8 @@ class SugerenciaViewSet(viewsets.ModelViewSet):
     serializer_class = SugerenciaSerializer
 
     def _es_admin(self):
-        from usuarios.models import Usuario
-        return getattr(self.request.user, "rol", None) == Usuario.Rol.ADMIN
+        from core.politicas import es_admin
+        return es_admin(self.request.user)
 
     def get_queryset(self):
         if not self._es_admin():

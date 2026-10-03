@@ -29,10 +29,7 @@ EVENTOS_REQUERIDOS = ["MESSAGES_UPSERT", "MESSAGES_UPDATE", "CONNECTION_UPDATE"]
 TIMEOUT = 8
 
 
-def _es_admin(user):
-    from usuarios.models import Usuario
-
-    return getattr(user, "rol", None) == Usuario.Rol.ADMIN
+from core.politicas import es_admin as _es_admin  # noqa: E402
 
 
 def _ctx(request):

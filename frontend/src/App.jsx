@@ -1,12 +1,19 @@
-import React, { useState, useMemo, useEffect, useRef } from "react";
+import React, { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
-import { Activity, AlertTriangle, ArrowDown, ArrowUp, Award, BarChart3, Bell, BookUser, Building2, Cake, Calendar, Check, ChevronDown, ChevronLeft, ChevronRight, ClipboardList, Clock, Compass, Copy, DoorOpen, Download, ExternalLink, FileDown, FileSpreadsheet, FileText, FolderOpen, GraduationCap, Heart, HeartHandshake, HeartPulse, Home, KeyRound, Landmark, Leaf, Lightbulb, LogOut, MapPin, Megaphone, Menu, MessageCircle, Mic, Paperclip, Pencil, Phone, Pill, Play, Plus, Presentation, Receipt, RotateCcw, Search, Send, Shield, Smile, Sparkles, Target, Trash2, TrendingUp, Trophy, Upload, UserCog, UserPlus, UserRound, Users, X } from "lucide-react";
+import { Activity, AlertTriangle, ArrowDown, ArrowUp, Award, BarChart3, Bell, BookUser, Building2, Cake, Calendar, Check, ChevronDown, ChevronLeft, ChevronRight, ClipboardList, Clock, Compass, Copy, DoorOpen, Download, ExternalLink, FileDown, FileSpreadsheet, FileText, FolderOpen, GraduationCap, Heart, HeartHandshake, HeartPulse, Home, Info, KeyRound, Landmark, Leaf, Lightbulb, LogOut, MapPin, Megaphone, Menu, MessageCircle, Mic, Paperclip, Pencil, Phone, Pill, Play, Plus, Presentation, Receipt, RotateCcw, Search, Send, Shield, Smile, Sparkles, Target, Trash2, TrendingUp, Trophy, Upload, UserCog, UserPlus, UserRound, Users, X } from "lucide-react";
+import InputClave from "./InputClave";
 import { api } from "./api";
 import { origenGuardado } from "./origen";
 import { MENU_SITIO, SITE_ROUTES, propsEnlace, normalizarRuta } from "./rutas";
 import { modeloReporte, modeloTabla, exportarExcel, exportarWord, exportarPowerPoint, exportarPDF, exportarCSV } from "./exportGerencia";
 import Login from "./Login";
 import Duplicados, { AvisoDuplicado } from "./Duplicados";
+import DireccionClinica from "./DireccionClinica";
+import ContinuidadFicha from "./ContinuidadFicha";
+import SugerenciaRiesgo from "./SugerenciaRiesgo";
+import Modal, { BotonGuardar } from "./ui/Modal";
+import { confirmar } from "./ui/confirmar";
+import { duracionDeAviso, textoDeAviso, tipoDeAviso } from "./ui/aviso";
 
 const TIPOS_DOC = [
   { v: "dni", l: "DNI" }, { v: "ce", l: "Carné de extranjería" },
@@ -590,8 +597,12 @@ function coincideBusqueda(texto, busqueda) {
   });
 }
 
+// Dirección Clínica guarda sus filtros en la URL (?vista=direccion&sede=…):
+// al recargar o abrir un enlace compartido se vuelve a esa pantalla.
+const vistaDeUrl = () => (new URLSearchParams(window.location.search).get("vista") === "direccion" ? "direccion" : null);
+
 export default function ClinicaApp() {
-  const [view, setView] = useState("hoy");
+  const [view, setView] = useState(() => vistaDeUrl() || "hoy");
   const [pacientes, setPacientes] = useState([]);
   const [citas, setCitas] = useState([]);
   const [bloqueos, setBloqueos] = useState([]);
@@ -636,7 +647,7 @@ export default function ClinicaApp() {
   const [editingPaciente, setEditingPaciente] = useState(null);
   const [posibleDuplicado, setPosibleDuplicado] = useState(null);
   const [registrandoSesion, setRegistrandoSesion] = useState(null);
-  const [toast, setToast] = useState("");
+  const [toast, setToast] = useState(null);
   // Directorio de psicólogos: hace falta para poder reasignar una cita.
   const [medicosDir, setMedicosDir] = useState([]);
 
@@ -792,6 +803,8 @@ export default function ClinicaApp() {
     { id: "mentalidad", label: "Mentalidad Ítaca", icon: Compass },
     // Indicadores (Gerencia, Histórico, Reporte, Ocupación): gerencia y la analista (lectura).
     ...((usuario?.rol === "admin" || esAnalista) ? [{ id: "gerencia", label: "Gerencia", icon: BarChart3 }] : []),
+    // Dirección Clínica: continuidad y abandono inferido. Mismo alcance que Gerencia.
+    ...((usuario?.rol === "admin" || esAnalista) ? [{ id: "direccion", label: "Dirección Clínica", icon: HeartPulse }] : []),
     ...((usuario?.rol === "admin" || esAnalista) ? [{ id: "historico", label: "Histórico", icon: Activity }] : []),
     ...((usuario?.rol === "admin" || esAnalista) ? [{ id: "reporte", label: "Reporte", icon: FileText }] : []),
     ...((usuario?.rol === "admin" || esAnalista) ? [{ id: "ocupacion", label: "Ocupación", icon: Clock }] : []),
@@ -841,8 +854,24 @@ export default function ClinicaApp() {
   const porConfirmar = citasHoy.filter((c) => c.estado === "agendada" || c.estado === "por_confirmar").length;
   const atendidas = citasHoy.filter((c) => c.estado === "atendida").length;
 
-  function showToast(msg) { setToast(msg); setTimeout(() => setToast(""), 2800); }
-  function go(v) { setView(v); setSelectedId(null); }
+  // showToast(texto) o showToast(texto, "success"|"info"|"warning"|"error").
+  // Un aviso viejo ya no borra a uno nuevo: cada uno lleva su id.
+  function showToast(msg, tipo) {
+    const aviso = { texto: msg, tipo: tipoDeAviso(msg, tipo), id: Date.now() + Math.random() };
+    setToast(aviso);
+    setTimeout(() => setToast((t) => (t && t.id === aviso.id ? null : t)), duracionDeAviso(aviso.tipo));
+  }
+  function go(v) {
+    // Al salir de Dirección Clínica, la URL deja de llevar sus filtros.
+    if (v !== "direccion" && vistaDeUrl()) window.history.pushState(null, "", window.location.pathname);
+    setView(v); setSelectedId(null);
+  }
+  // «Atrás» hacia un enlace de Dirección Clínica vuelve a abrir esa pantalla.
+  useEffect(() => {
+    const alVolver = () => { if (vistaDeUrl()) { setView("direccion"); setSelectedId(null); } };
+    window.addEventListener("popstate", alVolver);
+    return () => window.removeEventListener("popstate", alVolver);
+  }, []);
   function openFicha(id) { if (!id) return; setView("pacientes"); setSelectedId(id); setDetalle(null); cargarDetalle(id); }
 
   // `HOY_ISO` se fija al cargar la página (con el reloj del SERVIDOR). Si dejan la
@@ -966,6 +995,7 @@ export default function ClinicaApp() {
       ...(data.tutor_parentesco !== undefined ? { tutor_parentesco: data.tutor_parentesco } : {}),
       ...(data.tutor_telefono !== undefined ? { tutor_telefono: data.tutor_telefono } : {}),
       ...(data.tutor_documento !== undefined ? { tutor_documento: data.tutor_documento } : {}),
+      ...(data.tutor_correo !== undefined ? { tutor_correo: data.tutor_correo } : {}),
       ...(data.n_sesion !== undefined ? { n_sesion: data.n_sesion } : {}),
       ...(data.proceso !== undefined ? { proceso: data.proceso } : {}),
     };
@@ -1112,6 +1142,20 @@ export default function ClinicaApp() {
   }
 
   async function setEstadoCita(cita, estado) {
+    // Cancelar o marcar falta desde el desplegable era un solo cambio, sin
+    // vuelta atrás visible: se pide confirmación explícita.
+    const graves = {
+      cancelada: { titulo: "¿Cancelar esta sesión?", accion: "Sí, cancelar" },
+      no_asistio: { titulo: "¿Marcar que no asistió?", accion: "Sí, no asistió" },
+    };
+    if (graves[estado]) {
+      const ok = await confirmar({
+        titulo: graves[estado].titulo,
+        mensaje: `${cita.paciente || "Paciente"} · ${cita.fecha || ""} ${cita.hora || ""}. Si consumía una sesión de un paquete, se devuelve. Queda registrado quién lo hizo.`,
+        confirmarTexto: graves[estado].accion, cancelarTexto: "No, dejarla como está", peligro: true,
+      });
+      if (!ok) return;
+    }
     try {
       await api.setEstadoCita(cita.id, estado);
       const lbl = (ESTADOS_CITA.find((e) => e.v === estado) || {}).l || estado;
@@ -1598,6 +1642,8 @@ export default function ClinicaApp() {
           justify-content:center; flex-shrink:0; color:#fff; }
         .ca-toast.ok { border-color:#BFE6CE; } .ca-toast.ok .ca-toast-ic { background:#2F8F5B; }
         .ca-toast.err { border-color:#F0C4BF; } .ca-toast.err .ca-toast-ic { background:#C9453B; }
+        .ca-toast.warn { border-color:#F2DDB4; } .ca-toast.warn .ca-toast-ic { background:#B7791F; }
+        .ca-toast.info { border-color:#C9DDF0; } .ca-toast.info .ca-toast-ic { background:#3B6EA8; }
         @keyframes caUp { from { opacity:0; transform:translate(-50%,-14px) scale(.96); } to { opacity:1; transform:translate(-50%,0) scale(1); } }
         @media (prefers-reduced-motion: reduce) { .ca-toast { animation:none; } }
         @media (max-width:720px) {
@@ -1830,6 +1876,11 @@ export default function ClinicaApp() {
 
         {view === "gerencia" && <Gerencia showToast={showToast} clinica={usuario?.clinica?.nombre} />}
 
+        {view === "direccion" && (usuario?.rol === "admin" || esAnalista) && <DireccionClinica showToast={showToast} />}
+        {view === "direccion" && usuario && usuario.rol !== "admin" && !esAnalista && (
+          <div className="ca-empty">Esta sección es solo para gerencia y Dirección Clínica.</div>
+        )}
+
         {view === "historico" && <Historico showToast={showToast} esAdmin={usuario?.rol === "admin"} />}
 
         {view === "reporte" && <ReporteSemanal showToast={showToast} esAdmin={usuario?.rol === "admin"} />}
@@ -1947,11 +1998,16 @@ export default function ClinicaApp() {
       {cambiarPass && <CambiarPasswordModal onClose={() => setCambiarPass(false)} onSave={cambiarMiPassword} />}
       {toast && createPortal(
         (() => {
-          const esError = /^error\b/i.test(toast);
+          const clase = { success: "ok", info: "info", warning: "warn", error: "err" }[toast.tipo];
+          const icono = {
+            success: <Check size={16} strokeWidth={3.2} />, info: <Info size={16} strokeWidth={2.6} />,
+            warning: <AlertTriangle size={16} strokeWidth={2.6} />, error: <X size={16} strokeWidth={3} />,
+          }[toast.tipo];
           return (
-            <div className={`ca-toast ${esError ? "err" : "ok"}`}>
-              <span className="ca-toast-ic">{esError ? <X size={16} strokeWidth={3} /> : <Check size={16} strokeWidth={3.2} />}</span>
-              <span>{toast.replace(/^Error:\s*/i, "").replace(/\s*✓\s*$/, "")}</span>
+            <div className={`ca-toast ${clase}`} role={toast.tipo === "error" ? "alert" : "status"}
+              aria-live={toast.tipo === "error" ? "assertive" : "polite"}>
+              <span className="ca-toast-ic">{icono}</span>
+              <span>{textoDeAviso(toast.texto)}</span>
             </div>
           );
         })(),
@@ -2422,8 +2478,8 @@ function Gerencia({ showToast, clinica }) {
           <h2 className="ca-secth" style={{ marginTop: 26 }}>Operación</h2>
           <div className="ca-stats">
             <StatCard label="Sesiones en el período" valor={op.citas} sub={data.anterior ? deltaTxt(op.citas, data.anterior.citas) : undefined} />
-            <StatCard label="Atendidas" valor={op.atendidas} color="#4F8A77" />
-            <StatCard label="% Asistencia" valor={`${op.asistencia_pct}%`} sub={`${op.cancelacion_pct}% canceladas`} color={op.asistencia_pct >= 80 ? "#4F8A77" : "#B4564E"} />
+            <StatCard label="Realizadas" valor={op.atendidas} sub="asistió + atendida" color="#4F8A77" />
+            <StatCard label="% Asistencia" valor={`${op.asistencia_pct}%`} sub={`${op.inasistencia_pct ?? 0}% no asistió · ${op.cancelacion_pct}% canceladas`} color={op.asistencia_pct >= 80 ? "#4F8A77" : "#B4564E"} />
             <StatCard label="Recordatorios enviados" valor={op.recordatorios} />
             {op.recordatorios_sin_confirmar > 0 && (
               <StatCard label="Pendientes de confirmación" valor={op.recordatorios_sin_confirmar}
@@ -2543,7 +2599,7 @@ function Gerencia({ showToast, clinica }) {
                 <StatCard label="% en abandono" valor={`${data.retencion.rojo_pct}%`} color={data.retencion.rojo_pct >= 50 ? "#B4564E" : "#C9923A"} />
               </div>
               <div style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 6 }}>
-                Sobre {data.retencion.con_sesiones} pacientes con al menos una sesión registrada. Regla de la clínica: verde &lt;8 días · amarillo 8–15 · rojo &gt;15.
+                Sobre {data.retencion.con_sesiones} pacientes con al menos una sesión realizada (cita asistida, sin contar la consulta inicial). Regla de la clínica: verde &lt;8 días · amarillo 8–15 · rojo &gt;15.
               </div>
             </>
           )}
@@ -2594,13 +2650,18 @@ function Gerencia({ showToast, clinica }) {
 
               <div className="ca-demo" style={{ marginTop: 20 }}>
                 <div>
-                  <div className="ca-label" style={{ marginBottom: 8 }}>Continuidad · sesiones por paciente</div>
+                  <div className="ca-label" style={{ marginBottom: 8 }}>Continuidad · sesiones por proceso</div>
                   <div className="ca-card"><BarrasH data={data.diagnostico.continuidad.por_sesiones} color="#6E86A8" /></div>
                   <div style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 6 }}>
-                    Sobre {data.diagnostico.continuidad.con_historia} pacientes con historia clínica.{" "}
+                    Sobre {data.diagnostico.continuidad.procesos} procesos con citas asistidas desde el{" "}
+                    {(data.diagnostico.continuidad.desde || "").split("-").reverse().join("/")}, sin contar la consulta inicial.{" "}
+                    De los {data.diagnostico.continuidad.terminados} ya terminados,{" "}
                     <strong style={{ color: data.diagnostico.continuidad.abandono_1_2_pct >= 40 ? "#B4564E" : "inherit" }}>
                       {data.diagnostico.continuidad.abandono_1_2_pct}%
-                    </strong> no pasa de la sesión 2.
+                    </strong> no pasó de la sesión 2.{" "}
+                    {data.diagnostico.continuidad.fichas_sin_cita > 0 && (
+                      <>Las {data.diagnostico.continuidad.fichas_sin_cita} fichas clínicas sin cita (sobre todo el Excel de 2024 a feb 2026) ya no entran en esta curva.</>
+                    )}
                   </div>
                 </div>
                 <div>
@@ -6801,6 +6862,179 @@ function CalendarioAsistencia({ citas }) {
   );
 }
 
+// ── Email 1.0 · correo del paciente en su ficha ─────────────────────────
+// Solo gerencia y coordinación (el psicólogo y Dirección Clínica no ven el
+// contacto). Muestra el estado del consentimiento comercial, los bloqueos y la
+// bitácora, y deja registrar o revocar UNA persona a la vez, con confirmación
+// explícita de cómo dio su OK. Nada masivo.
+const ESTADO_CONSENT_COLOR = { OTORGADO: "#2F6B4F", REVOCADO: "#9C4646", NO_OTORGADO: "var(--muted)" };
+
+function CorreoPersona({ titulo, persona, guardar: guardarEnApi, grupo: grupoRadio, bloqueadoMenor, confirmaciones, onCambio, showToast }) {
+  const [accion, setAccion] = useState(null); // "otorgar" | "revocar"
+  const [origen, setOrigen] = useState("");
+  const [confirmo, setConfirmo] = useState(false);
+  const [guardando, setGuardando] = useState(false);
+  const m = persona.marketing || {};
+  const b = persona.bloqueos || {};
+  const fecha = m.fecha ? new Date(m.fecha).toLocaleString("es-PE", { dateStyle: "short", timeStyle: "short" }) : "";
+  const grupo = `correo-origen-${grupoRadio}`;
+
+  function abrir(a) { setAccion(a); setOrigen(""); setConfirmo(false); }
+  async function guardar() {
+    setGuardando(true);
+    try {
+      await guardarEnApi({ accion, origen, confirmo: confirmo === true });
+      showToast?.(accion === "otorgar" ? "Consentimiento registrado" : "Consentimiento revocado");
+      setAccion(null);
+      onCambio();
+    } catch (e) {
+      showToast?.(e.message || "No se pudo guardar");
+    } finally { setGuardando(false); }
+  }
+
+  return (
+    <div style={{ flex: "1 1 280px", border: "1px solid var(--line)", borderRadius: 10, padding: 14 }}>
+      <div className="ca-label" style={{ marginBottom: 6 }}>{titulo}</div>
+      <div style={{ fontSize: 14, marginBottom: 8, wordBreak: "break-all" }}>
+        {persona.correo || <span style={{ color: "var(--muted)" }}>Sin correo en la ficha</span>}
+      </div>
+      <div style={{ fontSize: 13.5, lineHeight: 1.6 }}>
+        <div>Consentimiento comercial: <strong style={{ color: ESTADO_CONSENT_COLOR[m.estado] }}>{m.estado_label || "No otorgado"}</strong></div>
+        {fecha && <div style={{ color: "var(--ink-soft)" }}>Último cambio: {fecha}{m.origen_label ? ` · ${m.origen_label}` : ""}</div>}
+        {(b.rebote_duro || b.spam || b.marketing) && (
+          <div style={{ color: "#9C4646", marginTop: 4 }}>
+            {[b.rebote_duro && "Rebote duro", b.spam && "Marcó spam", b.marketing && "Comerciales bloqueados"].filter(Boolean).join(" · ")}
+          </div>
+        )}
+      </div>
+      {!accion && (
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
+          {!bloqueadoMenor && m.estado !== "OTORGADO" && persona.correo && (
+            <button className="ca-btn ghost" onClick={() => abrir("otorgar")}>Registrar consentimiento</button>
+          )}
+          {m.estado === "OTORGADO" && <button className="ca-btn ghost" onClick={() => abrir("revocar")}>Revocar</button>}
+          {persona.preferencias_url && (
+            <a className="ca-btn ghost" href={persona.preferencias_url} target="_blank" rel="noreferrer" style={{ textDecoration: "none" }}>
+              Abrir preferencias
+            </a>
+          )}
+        </div>
+      )}
+      {bloqueadoMenor && <div style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 8 }}>Es menor de 14: el consentimiento lo da su tutor.</div>}
+      {accion && (
+        <div style={{ marginTop: 10, background: "var(--hover, #F3F1EC)", borderRadius: 8, padding: 12, fontSize: 13.5 }}>
+          <div style={{ marginBottom: 8 }}>{accion === "otorgar" ? "¿Cómo dio su aceptación?" : "¿Cómo pidió retirarlo?"}</div>
+          <label style={{ display: "block", marginBottom: 4 }}>
+            <input type="radio" name={grupo} checked={origen === "PANEL_WHATSAPP"}
+              onChange={() => { setOrigen("PANEL_WHATSAPP"); setConfirmo(false); }} /> Por WhatsApp
+          </label>
+          <label style={{ display: "block", marginBottom: 8 }}>
+            <input type="radio" name={grupo} checked={origen === "PANEL_PRESENCIAL"}
+              onChange={() => { setOrigen("PANEL_PRESENCIAL"); setConfirmo(false); }} /> De forma presencial
+          </label>
+          {accion === "otorgar" && origen && (
+            <label style={{ display: "flex", gap: 8, alignItems: "flex-start", marginBottom: 8 }}>
+              <input type="checkbox" checked={confirmo} onChange={(e) => setConfirmo(e.target.checked)} style={{ marginTop: 3 }} />
+              <span>{confirmaciones?.[origen]}</span>
+            </label>
+          )}
+          <div style={{ display: "flex", gap: 8 }}>
+            <button className="ca-btn" disabled={guardando || !origen || (accion === "otorgar" && !confirmo)} onClick={guardar}>
+              {guardando ? "Guardando…" : "Guardar"}
+            </button>
+            <button className="ca-btn ghost" onClick={() => setAccion(null)}>Cancelar</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function BitacoraCorreo({ filas }) {
+  const [abierto, setAbierto] = useState(false);
+  const celda = { padding: "6px 8px" };
+  return (
+    <>
+      <button className="ca-btn ghost" style={{ marginTop: 10 }} onClick={() => setAbierto((x) => !x)}>
+        {abierto ? "Ocultar bitácora de correos" : `Ver bitácora de correos (${filas.length})`}
+      </button>
+      {abierto && (filas.length === 0 ? (
+        <div style={{ fontSize: 13, color: "var(--muted)", marginTop: 8 }}>Todavía no se le ha enviado ningún correo.</div>
+      ) : (
+        <div style={{ overflowX: "auto", marginTop: 8 }}>
+          <table style={{ width: "100%", fontSize: 13, borderCollapse: "collapse" }}>
+            <thead>
+              <tr style={{ textAlign: "left", color: "var(--muted)" }}>
+                <th style={celda}>Fecha</th><th style={celda}>Plantilla</th><th style={celda}>Categoría</th>
+                <th style={celda}>Asunto</th><th style={celda}>Estado</th><th style={celda}>Último evento</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filas.map((c) => (
+                <tr key={c.id} style={{ borderTop: "1px solid var(--line)" }}>
+                  <td style={{ ...celda, whiteSpace: "nowrap" }}>{new Date(c.fecha).toLocaleString("es-PE", { dateStyle: "short", timeStyle: "short" })}</td>
+                  <td style={celda}>{c.plantilla}{c.para_tutor ? " · tutor" : ""}</td>
+                  <td style={celda}>{c.categoria_label}</td>
+                  <td style={celda}>{c.asunto}</td>
+                  <td style={celda}>{c.estado_label}</td>
+                  <td style={celda}>{c.ultimo_evento || "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ))}
+    </>
+  );
+}
+
+function CorreoFicha({ pacienteId, showToast }) {
+  const [d, setD] = useState(null);
+  const cargar = useCallback(() => {
+    api.correoPaciente(pacienteId).then(setD).catch(() => setD(false));
+  }, [pacienteId]);
+  useEffect(() => { cargar(); }, [cargar]);
+  if (!d) return null;
+  const comun = { confirmaciones: d.confirmaciones, onCambio: cargar, showToast };
+  return (
+    <section style={{ marginBottom: 22 }}>
+      <div className="ca-label" style={{ marginBottom: 8 }}>Correo</div>
+      <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+        <CorreoPersona titulo="Paciente" persona={d.paciente} grupo="paciente" bloqueadoMenor={d.es_menor}
+          guardar={(x) => api.correoConsentimiento(pacienteId, { ...x, para_tutor: false })} {...comun} />
+        {d.tutor && <CorreoPersona titulo="Tutor" persona={d.tutor} grupo="tutor" bloqueadoMenor={false}
+          guardar={(x) => api.correoConsentimiento(pacienteId, { ...x, para_tutor: true })} {...comun} />}
+      </div>
+      <BitacoraCorreo filas={d.bitacora} />
+    </section>
+  );
+}
+
+// Correo de un prospecto, dentro del modal del lead. Solo gerencia y
+// coordinación: para los demás la API responde 403 y la sección no aparece.
+function CorreoLead({ leadId, showToast }) {
+  const [d, setD] = useState(null);
+  const cargar = useCallback(() => {
+    api.correoLead(leadId).then(setD).catch(() => setD(false));
+  }, [leadId]);
+  useEffect(() => { cargar(); }, [cargar]);
+  if (!d) return null;
+  return (
+    <section style={{ marginTop: 14 }}>
+      <div className="ca-label" style={{ marginBottom: 8 }}>Comunicaciones por correo</div>
+      <CorreoPersona titulo="Prospecto" persona={d.lead} grupo={`lead-${leadId}`} bloqueadoMenor={d.es_menor}
+        guardar={(x) => api.correoLeadConsentimiento(leadId, x)}
+        confirmaciones={d.confirmaciones} onCambio={cargar} showToast={showToast} />
+      {d.paciente_id ? (
+        <div style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 6 }}>
+          Ya es paciente: el permiso y la baja valen para su ficha también.
+        </div>
+      ) : null}
+      <BitacoraCorreo filas={d.bitacora} />
+    </section>
+  );
+}
+
 function Ficha({ p, onBack, onEdit, onWhatsApp, onSubirAdjunto, onEliminarAdjunto, puedeEliminar, clinica, onAgendar, onRegistrarSesion, puedeRegistrar, onVenderPaquete, puedeVenderPaquete, onRegistrarPago, puedeCobrar, esMedico, soloLectura = false, ocultaContacto = false, showToast, onRefrescar }) {
   const alertas = (p.alertas || "").split(",").map((s) => s.trim()).filter(Boolean);
   const ultimaEvo = (p.historial || [])[0];
@@ -6860,6 +7094,7 @@ function Ficha({ p, onBack, onEdit, onWhatsApp, onSubirAdjunto, onEliminarAdjunt
             return r ? <span style={{ background: r[0], color: r[1], fontSize: 14, fontWeight: 600, padding: "5px 14px", borderRadius: 20 }}>{r[2]}</span>
               : <span style={{ color: "var(--muted)", fontSize: 13.5 }}>Sin evaluar</span>;
           })()}
+          <SugerenciaRiesgo pacienteId={p.id} puedeResolver={puedeEliminar && !soloLectura} showToast={showToast} onResuelta={onRefrescar} />
         </FichaCard>
         {/* El psicólogo VE el NPS (satisfacción de sus pacientes) pero no lo registra ni lo pide. */}
         <NpsPaciente pacienteId={p.id} puede={!esMedico && (puedeRegistrar || puedeCobrar)} showToast={showToast} />
@@ -6901,6 +7136,8 @@ function Ficha({ p, onBack, onEdit, onWhatsApp, onSubirAdjunto, onEliminarAdjunt
           {p.tutor_nombre && <div className="ca-field"><Users size={15} strokeWidth={1.9} style={{ color: "var(--muted)" }} /> Tutor: {p.tutor_nombre}{p.tutor_parentesco ? ` (${p.tutor_parentesco})` : ""}{p.tutor_telefono ? ` · ${p.tutor_telefono}` : ""}</div>}
         </div>
       )}
+
+      {!ocultaContacto && !soloLectura && <CorreoFicha pacienteId={p.id} showToast={showToast} />}
 
       <BrujulaClinica p={p} puede={puedeRegistrar} onRefrescar={onRefrescar} showToast={showToast} />
 
@@ -7063,6 +7300,8 @@ function Ficha({ p, onBack, onEdit, onWhatsApp, onSubirAdjunto, onEliminarAdjunt
           </div>
         </>
       )}
+
+      <ContinuidadFicha pacienteId={p.id} showToast={showToast} />
 
       <h2 className="ca-secth" id="hc-historia">Historia clínica</h2>
       <div className="ca-card">
@@ -9417,6 +9656,7 @@ function CrearLeadModal({ lead, medicos, anuncios, sedePropia, onClose, onSave }
             </div>
           )}
           <div><div className="ca-label">Correo <span style={{ color: "var(--muted)", fontWeight: 400 }}>(opcional)</span></div><input className="ca-input" value={f.email} onChange={set("email")} placeholder="correo@ejemplo.com" inputMode="email" /></div>
+          {lead?.id ? <CorreoLead leadId={lead.id} /> : null}
         </div>
 
         {/* ── De dónde vino ────────────────────────────────────────── */}
@@ -9681,7 +9921,7 @@ function NumeroWaCard({ numero, esNuevo, onSaved, onCancel, showToast }) {
 
       <div style={{ marginBottom: 16 }}>
         <div className="ca-label">Access Token <span style={{ color: "#B4564E" }}>*</span></div>
-        <input className="ca-input" type="password" value={token} onChange={(e) => setToken(e.target.value)}
+        <InputClave className="ca-input" value={token} onChange={(e) => setToken(e.target.value)}
           placeholder={numero?.token_set ? "•••••••• (guardado · escribe uno nuevo para cambiarlo)" : "Pega el token permanente de este número"} />
       </div>
 
@@ -12030,11 +12270,19 @@ function CobroModal({ prefill, pacientes, servicios, onClose, onSave }) {
   }
 
   const canSave = sel && monto && Number(monto) > 0;
-  function guardar() {
+  const [guardando, setGuardando] = useState(false);
+  const huella = JSON.stringify([sel?.id, servicio, monto, estado, medio, medioOtro, comprobante, compNumero, fecha, concepto]);
+  const [huellaInicial] = useState(huella);
+  async function guardar() {
+    if (guardando || !canSave) return;
+    setGuardando(true);
+    try { await enviar(); } finally { setGuardando(false); }
+  }
+  function enviar() {
     // "Otro" medio (giftcard, asumido por mkt/hub, etc.): el detalle se anota en el concepto.
     const detalleOtro = (estado === "pagado" && medio === "otro" && medioOtro.trim()) ? medioOtro.trim() : "";
     const conceptoFinal = detalleOtro ? `${concepto.trim() || "Cobro"} · ${detalleOtro}` : (concepto.trim() || undefined);
-    onSave({
+    return onSave({
       paciente: sel.id,
       cita: prefill?.citaId || null,
       servicio: servicio || null,
@@ -12047,12 +12295,12 @@ function CobroModal({ prefill, pacientes, servicios, onClose, onSave }) {
   }
 
   return (
-    <div className="ca-modal-bg" onClick={onClose}>
-      <div className="ca-modal" style={{ maxWidth: 400 }} onClick={(e) => e.stopPropagation()}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
-          <strong style={{ fontSize: 16 }}>Registrar cobro</strong>
-          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)" }}><X size={18} /></button>
-        </div>
+    <Modal titulo="Registrar cobro" tipo="formulario" ancho={400} sucio={huella !== huellaInicial}
+      ocupado={guardando} onCerrar={onClose}
+      pie={<>
+        <button type="button" className="ca-btn ghost" disabled={guardando} onClick={onClose}>Cancelar</button>
+        <BotonGuardar ocupado={guardando} listo={!!canSave} onClick={guardar}>Guardar cobro</BotonGuardar>
+      </>}>
 
         <div style={{ marginBottom: 13 }}>
           <div className="ca-label">Paciente</div>
@@ -12142,12 +12390,7 @@ function CobroModal({ prefill, pacientes, servicios, onClose, onSave }) {
           <input className="ca-input" value={concepto} onChange={(e) => setConcepto(e.target.value)} placeholder="Consulta / procedimiento…" />
         </div>
 
-        <div style={{ display: "flex", gap: 9, justifyContent: "flex-end" }}>
-          <button className="ca-btn ghost" onClick={onClose}>Cancelar</button>
-          <button className="ca-btn" style={{ opacity: canSave ? 1 : 0.5, pointerEvents: canSave ? "auto" : "none" }} onClick={guardar}>Guardar cobro</button>
-        </div>
-      </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -12283,6 +12526,71 @@ const MODALIDADES = [
 // quién le falta llamar hoy. Por eso lo pendiente va arriba y grande, el resto
 // queda debajo, y el único acento fuerte de la pantalla es el rojo de los casos
 // sin atender. Si todo estuviera resaltado, nada lo estaría.
+// Email 1.0 · permiso de comunicaciones de los apoderados de una aplicación.
+// Solo gerencia (la API responde 403 a los demás y la sección no aparece).
+// Solo se revoca: el permiso lo da la familia en su formulario.
+function CorreoApoderadosFaro({ aplicacionId, showToast }) {
+  const [d, setD] = useState(null);
+  const [revocando, setRevocando] = useState(null); // id de la autorización
+  const [origen, setOrigen] = useState("");
+  const cargar = useCallback(() => {
+    api.correoFaroAplicacion(aplicacionId).then(setD).catch(() => setD(false));
+  }, [aplicacionId]);
+  useEffect(() => { cargar(); }, [cargar]);
+  if (!d) return null;
+  const conPermiso = d.apoderados.filter((a) => a.marketing?.estado === "OTORGADO").length;
+  async function revocar(id) {
+    try {
+      await api.correoFaroRevocar(id, { origen });
+      showToast?.("Permiso revocado");
+      setRevocando(null); setOrigen(""); cargar();
+    } catch (e) { showToast?.(e.message || "No se pudo revocar"); }
+  }
+  const celda = { padding: "6px 8px" };
+  return (
+    <details style={{ marginTop: 12 }}>
+      <summary style={{ cursor: "pointer", fontSize: 13.5 }}>
+        Comunicaciones por correo: {conPermiso} de {d.apoderados.length} apoderados dieron permiso
+      </summary>
+      <div style={{ overflowX: "auto", marginTop: 8 }}>
+        <table style={{ width: "100%", fontSize: 13, borderCollapse: "collapse" }}>
+          <thead>
+            <tr style={{ textAlign: "left", color: "var(--muted)" }}>
+              <th style={celda}>Estudiante</th><th style={celda}>Apoderado</th><th style={celda}>Correo</th>
+              <th style={celda}>Permiso</th><th style={celda}></th>
+            </tr>
+          </thead>
+          <tbody>
+            {d.apoderados.map((a) => (
+              <tr key={a.id} style={{ borderTop: "1px solid var(--line)" }}>
+                <td style={celda}>{a.estudiante}</td>
+                <td style={celda}>{a.apoderado}</td>
+                <td style={celda}>{a.correo || "—"}</td>
+                <td style={celda}>{a.marketing?.estado_label || "No otorgado"}</td>
+                <td style={celda}>
+                  {a.marketing?.estado === "OTORGADO" && (revocando === a.id ? (
+                    <span style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
+                      <select className="ca-input" style={{ padding: "4px 6px", width: "auto" }} value={origen} onChange={(e) => setOrigen(e.target.value)}>
+                        <option value="">¿Cómo lo pidió?</option>
+                        <option value="PANEL_WHATSAPP">Por WhatsApp</option>
+                        <option value="PANEL_PRESENCIAL">Presencial</option>
+                      </select>
+                      <button className="ca-btn" disabled={!origen} onClick={() => revocar(a.id)}>Revocar</button>
+                      <button className="ca-btn ghost" onClick={() => setRevocando(null)}>Cancelar</button>
+                    </span>
+                  ) : (
+                    <button className="ca-btn ghost" onClick={() => { setRevocando(a.id); setOrigen(""); }}>Revocar</button>
+                  ))}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </details>
+  );
+}
+
 function Faro({ showToast }) {
   const [alertas, setAlertas] = useState(null);
   const [aplicaciones, setAplicaciones] = useState([]);
@@ -12331,6 +12639,25 @@ function Faro({ showToast }) {
       await cargar();
     } catch (e) { showToast("Error: " + e.message); }
     finally { setCreando(false); }
+  }
+
+  const [enviandoInformes, setEnviandoInformes] = useState(false);
+  async function enviarInformes() {
+    if (!resultados) return;
+    setEnviandoInformes(true);
+    try {
+      const r = await api.faroEnviarInformes(resultados.id);
+      const o = r.omitidos || {};
+      const partes = [`${r.enviados} enviados`];
+      if (r.errores) partes.push(`${r.errores} con error`);
+      if (o.rojo_pendiente) partes.push(`${o.rojo_pendiente} rojos esperan su alerta`);
+      if (o.sin_autorizacion) partes.push(`${o.sin_autorizacion} sin autorización emparejada`);
+      if (o.sin_correo) partes.push(`${o.sin_correo} sin correo`);
+      if (o.ya_enviado) partes.push(`${o.ya_enviado} ya enviados`);
+      showToast(partes.join(" · "));
+    } catch (e) {
+      showToast(e.message || "No se pudieron enviar los informes");
+    } finally { setEnviandoInformes(false); }
   }
 
   async function verResultados(ap) {
@@ -12473,6 +12800,8 @@ function Faro({ showToast }) {
                     <button className="ca-link" onClick={() => copiar(ap.enlace_estudiante)}>Para el aula</button>
                     {" · "}
                     <button className="ca-link" onClick={() => copiar(ap.enlace_colegio)}>Para la dirección</button>
+                    {" · "}
+                    <button className="ca-link" onClick={() => copiar(ap.enlace_apoderado)}>Para las familias</button>
                   </td>
                   <td><button className="ca-btn ghost" onClick={() => verResultados(ap)}>Resultados</button></td>
                 </tr>
@@ -12557,14 +12886,16 @@ function Faro({ showToast }) {
           <div className="ca-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 620 }}>
             <h2 className="ca-secth">{recien.institucion}</h2>
             <p className="ca-muted" style={{ marginTop: -6, fontSize: 13.5 }}>
-              Son dos enlaces distintos a propósito. No se cambian ni vencen, así que el del aula
-              se puede dejar impreso o en la pizarra.
+              Son tres enlaces distintos a propósito. No se cambian ni vencen: el del aula se puede
+              dejar impreso o en la pizarra, y el de las familias se manda por el canal del colegio.
             </p>
 
             {[["Para el aula", recien.enlace_estudiante,
                "Lo abre cada estudiante y responde el tamizaje. No muestra resultados de nadie."],
               ["Para la dirección", recien.enlace_colegio,
-               "Panel del colegio. Solo cifras del conjunto: nunca un nombre."]].map(
+               "Panel del colegio: la lista por grado y sección con el nivel de cada estudiante. Nunca las respuestas."],
+              ["Para las familias", recien.enlace_apoderado,
+               "Lo abre el apoderado, lee el consentimiento y autoriza o no. Ahí deja el correo al que le llega el informe."]].map(
               ([titulo, enlace, nota]) => (
                 <div key={titulo} style={{ marginTop: 14, padding: "12px 14px",
                   background: "var(--bg)", borderRadius: 8 }}>
@@ -12628,20 +12959,29 @@ function Faro({ showToast }) {
                 titulo={`Faro · ${resultados.institucion}`}
                 contexto={resultados.ciudad}
                 headers={["Estudiante", "Grado", "Sección", "Código", "Nivel", "PHQ-A", "GAD-7",
-                          "ASQ positivo", "Rol EBIPQ", "Completa", "Por qué", "Fecha"]}
+                          "ASQ positivo", "Rol EBIPQ", "Rol ECIP-Q", "Completa", "Por qué", "Fecha"]}
                 filas={resultados.filas.map((f) => [f.estudiante, f.grado, f.seccion, f.codigo,
-                  f.nivel, f.phq_total, f.gad_total, f.asq_positivo, f.ebipq_rol, f.completa,
+                  f.nivel, f.phq_total, f.gad_total, f.asq_positivo, f.ebipq_rol, f.ciber_rol, f.completa,
                   f.motivos, f.fecha])}
                 showToast={showToast}
               />
             </div>
             <p className="ca-muted" style={{ fontSize: 12.5 }}>
-              Esta hoja lleva nombres y es para el equipo clínico. <b>El colegio no la recibe</b>:
-              a la institución se le entrega el informe agregado por grado y sección, según el
-              convenio firmado.
+              Esta hoja es para el equipo clínico: lleva los motivos de cada nivel. <b>El colegio
+              no la recibe</b>: en su panel ve el nivel y los puntajes de cada estudiante, nunca
+              los motivos ni las respuestas.
             </p>
-            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 14 }}>
+            <p className="ca-muted" style={{ fontSize: 12.5 }}>
+              <b>Informes a las familias.</b> Se envían por correo, con PDF, a los apoderados que
+              autorizaron y dejaron correo. Un rojo no sale hasta que su alerta esté atendida, y
+              cada familia lo recibe una sola vez.
+            </p>
+            <CorreoApoderadosFaro aplicacionId={resultados.id} showToast={showToast} />
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 9, marginTop: 14 }}>
               <button className="ca-btn ghost" onClick={() => setResultados(null)}>Cerrar</button>
+              <button className="ca-btn" onClick={enviarInformes} disabled={enviandoInformes}>
+                {enviandoInformes ? "Enviando…" : "Enviar informes a las familias"}
+              </button>
             </div>
           </div>
         </div>
@@ -13679,15 +14019,15 @@ function CambiarPasswordModal({ onClose, onSave }) {
         </div>
         <div style={{ marginBottom: 12 }}>
           <div className="ca-label">Contraseña actual</div>
-          <input className="ca-input" type="password" value={actual} onChange={(e) => setActual(e.target.value)} autoFocus />
+          <InputClave className="ca-input" value={actual} onChange={(e) => setActual(e.target.value)} autoFocus />
         </div>
         <div style={{ marginBottom: 12 }}>
           <div className="ca-label">Nueva contraseña</div>
-          <input className="ca-input" type="password" value={nueva} onChange={(e) => setNueva(e.target.value)} placeholder="mínimo 6 caracteres" />
+          <InputClave className="ca-input" value={nueva} onChange={(e) => setNueva(e.target.value)} placeholder="mínimo 6 caracteres" />
         </div>
         <div style={{ marginBottom: 14 }}>
           <div className="ca-label">Repetir nueva contraseña</div>
-          <input className="ca-input" type="password" value={rep} onChange={(e) => setRep(e.target.value)} />
+          <InputClave className="ca-input" value={rep} onChange={(e) => setRep(e.target.value)} />
         </div>
         {error && <div style={{ fontSize: 13, color: "#B4564E", marginBottom: 12 }}>{error}</div>}
         <div style={{ display: "flex", gap: 9, justifyContent: "flex-end" }}>
@@ -13903,6 +14243,7 @@ function PacienteModal({ paciente, onClose, onSave, esMedico }) {
   const [tutorParentesco, setTutorParentesco] = useState(paciente?.tutor_parentesco || "");
   const [tutorTel, setTutorTel] = useState(paciente?.tutor_telefono || "");
   const [tutorDoc, setTutorDoc] = useState(paciente?.tutor_documento || "");
+  const [tutorCorreo, setTutorCorreo] = useState(paciente?.tutor_correo || "");
   const [sede, setSede] = useState(paciente?.sede || "");
   const [profId, setProfId] = useState(paciente?.profesional || "");
   const [frecuencia, setFrecuencia] = useState(paciente?.frecuencia || "");
@@ -14095,6 +14436,12 @@ function PacienteModal({ paciente, onClose, onSave, esMedico }) {
           </div>
         </div>
         )}
+        {!esMedico && (
+          <div style={{ marginBottom: 14 }}>
+            <div className="ca-label">Correo del tutor <span style={{ color: "var(--muted)", fontWeight: 400 }}>(a él van los correos de un menor de 14)</span></div>
+            <input className="ca-input" value={tutorCorreo} onChange={(e) => setTutorCorreo(e.target.value)} placeholder="correo@ejemplo.com" inputMode="email" />
+          </div>
+        )}
 
         <div className="ca-secth" style={{ margin: "4px 0 12px" }}>Antecedentes relevantes</div>
         <div style={{ marginBottom: 13 }}>
@@ -14140,11 +14487,37 @@ function PacienteModal({ paciente, onClose, onSave, esMedico }) {
         <div style={{ display: "flex", gap: 9, justifyContent: "flex-end" }}>
           <button className="ca-btn ghost" onClick={onClose}>Cancelar</button>
           <button className="ca-btn" style={{ opacity: canSave ? 1 : 0.5, pointerEvents: canSave ? "auto" : "none" }}
-            onClick={() => onSave({ ...(paciente?.id ? { id: paciente.id } : {}), nombre: nombre.trim(), fecha_nacimiento: fechaNac || null, especialidad: esp, sede, profesional: profId ? Number(profId) : null, frecuencia, modalidad: modalidadP, n_sesion: Number(nSesion) || 0, proceso, alergias: alergias.trim(), antecedentes: antecedentes.trim(), medicacion_habitual: medicacion.trim(), sesiones_proceso: Number(sesionesProceso) || 0, resumen_clinico: resumenClinico.trim(), objetivo_principal: objetivoPrincipal.trim(), riesgo, alertas: alertas.trim(), notas_internas: notasInternas.trim(), antecedentes_medicos: antMedicos.trim(), antecedentes_familiares: antFamiliares.trim(), antecedentes_otros: antOtros.trim(), ...(!esMedico ? { tel: tel.trim(), email: email.trim(), tipo_documento: tipoDoc, numero_documento: numDoc.trim(), direccion: direccion.trim(), genero, tutor_nombre: tutorNombre.trim(), tutor_parentesco: tutorParentesco.trim(), tutor_telefono: tutorTel.trim(), tutor_documento: tutorDoc.trim() } : {}) })}>
+            onClick={() => onSave({ ...(paciente?.id ? { id: paciente.id } : {}), nombre: nombre.trim(), fecha_nacimiento: fechaNac || null, especialidad: esp, sede, profesional: profId ? Number(profId) : null, frecuencia, modalidad: modalidadP, n_sesion: Number(nSesion) || 0, proceso, alergias: alergias.trim(), antecedentes: antecedentes.trim(), medicacion_habitual: medicacion.trim(), sesiones_proceso: Number(sesionesProceso) || 0, resumen_clinico: resumenClinico.trim(), objetivo_principal: objetivoPrincipal.trim(), riesgo, alertas: alertas.trim(), notas_internas: notasInternas.trim(), antecedentes_medicos: antMedicos.trim(), antecedentes_familiares: antFamiliares.trim(), antecedentes_otros: antOtros.trim(), ...(!esMedico ? { tel: tel.trim(), email: email.trim(), tipo_documento: tipoDoc, numero_documento: numDoc.trim(), direccion: direccion.trim(), genero, tutor_nombre: tutorNombre.trim(), tutor_parentesco: tutorParentesco.trim(), tutor_telefono: tutorTel.trim(), tutor_documento: tutorDoc.trim(), tutor_correo: tutorCorreo.trim() } : {}) })}>
             {esNuevo ? "Guardar" : "Guardar cambios"}
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// Casilla OPCIONAL de comunicaciones por correo (Email 1.0). Siempre empieza
+// desmarcada, va separada de cualquier otra aceptación y nunca bloquea lo que
+// la persona vino a hacer. El texto es el de la versión EMAIL-MKT-2026-01: si
+// cambia aquí, cambia también en correo/textos.py (y sube la versión).
+export const TEXTO_CONSENTIMIENTO_CORREO = "Quiero recibir por correo contenidos, novedades, talleres y comunicaciones de Ítaca Conversemos. Puedo retirar mi consentimiento en cualquier momento.";
+
+export function CasillaComunicaciones({ form, setForm, campo = "acepta_comunicaciones", correo = "email" }) {
+  const marcada = form[campo] === true;
+  // correo=null: el formulario no pide correo (se usa el de la ficha).
+  const sinCorreo = correo !== null && marcada && !String(form[correo] || "").trim();
+  return (
+    <div style={{ margin: "4px 0 14px" }}>
+      <label style={{ display: "flex", gap: 10, alignItems: "flex-start", cursor: "pointer", fontSize: 14, lineHeight: 1.45 }}>
+        <input type="checkbox" checked={marcada} style={{ marginTop: 3, flexShrink: 0 }}
+          onChange={(e) => setForm((p) => ({ ...p, [campo]: e.target.checked }))} />
+        <span>{TEXTO_CONSENTIMIENTO_CORREO} <span style={{ color: "var(--muted, #6E6E6E)" }}>(opcional)</span></span>
+      </label>
+      {sinCorreo ? (
+        <p style={{ margin: "6px 0 0 26px", fontSize: 13, color: "var(--muted, #6E6E6E)" }}>
+          Para recibir comunicaciones necesitamos un correo. Puedes seguir sin él.
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -14194,13 +14567,14 @@ export function ConsentimientoPublico({ token }) {
   const [documento, setDocumento] = useState("");
   const [enviando, setEnviando] = useState(false);
   const [hecho, setHecho] = useState(null);
+  const [comunic, setComunic] = useState({ acepta_comunicaciones: false });
 
   useEffect(() => { api.consentimientoPublico(token).then(setDoc).catch((e) => setErr(e.message)); }, [token]);
 
   async function aceptar() {
     if (nombre.trim().length < 3) return;
     setEnviando(true); setErr("");
-    try { setHecho(await api.aceptarConsentimiento(token, { nombre: nombre.trim(), documento: documento.trim() })); }
+    try { setHecho(await api.aceptarConsentimiento(token, { nombre: nombre.trim(), documento: documento.trim(), acepta_comunicaciones: comunic.acepta_comunicaciones === true })); }
     catch (e) { setErr(e.message); } finally { setEnviando(false); }
   }
 
@@ -14231,6 +14605,11 @@ export function ConsentimientoPublico({ token }) {
             style={{ marginTop: 12, padding: "11px 18px", borderRadius: 10, border: "1px solid #3E7A65", background: "#fff", color: "#2F6B4F", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>
             ⬇︎ Descargar mi copia
           </button>
+          {hecho?.consentimiento_sin_correo ? (
+            <div style={{ fontSize: 12.5, marginTop: 10, color: "#6B675F" }}>
+              Para recibir comunicaciones por correo necesitamos tu correo: compártelo con coordinación cuando quieras.
+            </div>
+          ) : null}
           <div style={{ fontSize: 12.5, marginTop: 10, color: "#6B675F" }}>
             Guarda o imprime tu copia. Ya puedes cerrar esta página. ¡Gracias! 🌿
           </div>
@@ -14240,6 +14619,9 @@ export function ConsentimientoPublico({ token }) {
           <div style={{ fontSize: 13, marginBottom: 6 }}>Para aceptar, escribe tu <strong>nombre completo</strong>:</div>
           <input style={inp} value={nombre} onChange={(e) => setNombre(e.target.value)} placeholder="Nombre y apellidos" />
           <input style={inp} value={documento} onChange={(e) => setDocumento(e.target.value)} placeholder="DNI (opcional)" />
+          {doc.tipo === "consentimiento" ? (
+            <CasillaComunicaciones form={comunic} setForm={setComunic} correo={null} />
+          ) : null}
           {err ? <div style={{ color: "#9C4646", fontSize: 13, marginBottom: 10 }}>{err}</div> : null}
           <button onClick={aceptar} disabled={enviando || nombre.trim().length < 3}
             style={{ width: "100%", padding: "13px", borderRadius: 10, border: "none", background: "#3E7A65", color: "#fff", fontSize: 15, fontWeight: 600, cursor: "pointer", opacity: (enviando || nombre.trim().length < 3) ? 0.5 : 1 }}>
@@ -15091,7 +15473,7 @@ export function AgendarPublico({ token }) {
   const [verVideo, setVerVideo] = useState(false); // si ya pidió ver la presentación
   const [slotsData, setSlotsData] = useState(null);
   const [slot, setSlot] = useState(null);          // {inicio, hora, diaLabel}
-  const [form, setForm] = useState({ nombre: "", telefono: "", documento: "", email: "", servicio: "", modalidad: "presencial", mensaje: "" });
+  const [form, setForm] = useState({ nombre: "", telefono: "", documento: "", email: "", servicio: "", modalidad: "presencial", mensaje: "", acepta_comunicaciones: false });
   const [enviando, setEnviando] = useState(false);
   const [hecho, setHecho] = useState(null);
   const setF = (k) => (e) => setForm((p) => ({ ...p, [k]: e.target.value }));
@@ -15139,6 +15521,7 @@ export function AgendarPublico({ token }) {
         profesional_id: prof.id, inicio: slot.inicio,
         nombre: form.nombre.trim(), telefono: form.telefono.trim(),
         documento: form.documento.trim(), email: form.email.trim(),
+        acepta_comunicaciones: form.acepta_comunicaciones === true,
         servicio: form.servicio, modalidad: form.modalidad, mensaje: form.mensaje.trim(),
         categoria: via === "ayuda" ? categoria : "", ayuda: via === "ayuda",
         // De dónde vino esta consulta: se guardó al entrar al sitio.
@@ -15198,9 +15581,11 @@ export function AgendarPublico({ token }) {
         sede, categoria, turno, modalidad: modoPref, tipo: tipoSesion,
         nombre: form.nombre.trim(), telefono: form.telefono.trim(),
         email: form.email.trim(), mensaje: form.mensaje.trim(),
+        acepta_comunicaciones: form.acepta_comunicaciones === true,
         atribucion: origenGuardado(),
       });
-      setHecho({ solicitud: true, tipo: r.tipo || tipoSesion, sede, nombre: form.nombre.trim() });
+      setHecho({ solicitud: true, tipo: r.tipo || tipoSesion, sede, nombre: form.nombre.trim(),
+                 consentimiento_sin_correo: !!r.consentimiento_sin_correo });
     } catch (e) {
       setErr(e.message);
     } finally { setEnviando(false); }
@@ -15217,6 +15602,12 @@ export function AgendarPublico({ token }) {
             <h1 className="ag-h1 ag-h1-sm">
               {hecho.solicitud ? "Recibimos tu solicitud" : "Tu hora quedó apartada"}
             </h1>
+            {hecho.consentimiento_sin_correo ? (
+              <p className="ag-nota-suave" role="status">
+                Marcaste que quieres recibir comunicaciones por correo, pero no dejaste uno.
+                Si quieres recibirlas, compártenos tu correo cuando hablemos.
+              </p>
+            ) : null}
             <p className="ag-lead">
               {hecho.solicitud
                 ? (hecho.tipo === "brujula"
@@ -15604,6 +15995,7 @@ export function AgendarPublico({ token }) {
               <input className="ag-input" value={form.email} onChange={setF("email")}
                 inputMode="email" autoComplete="email" />
             </label>
+            <CasillaComunicaciones form={form} setForm={setForm} />
 
             <label className="ag-campo">
               <span className="ag-label">¿Qué te gustaría trabajar? <span className="ag-opt">opcional</span></span>
@@ -15746,6 +16138,7 @@ export function AgendarPublico({ token }) {
                 <input className="ag-input" value={form.email} onChange={setF("email")} inputMode="email" autoComplete="email" />
               </label>
             </div>
+            <CasillaComunicaciones form={form} setForm={setForm} />
 
             {/* Ya se eligió en su propio paso: aquí solo se recuerda, con salida
                 para cambiarlo sin perder lo que ya escribió. */}

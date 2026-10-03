@@ -138,6 +138,15 @@ export function propsEnlace(href, externo = false) {
     }
     return { href };
   }
+  // Interceptar el clic solo sirve si quien lo recibe escucha los cambios de
+  // ruta, y el ÚNICO que lo hace es el sitio público (ver `alCambiarRuta` en
+  // Sitio.jsx). En /agendar/<token> y en el panel del colegio hay montada otra
+  // app, y las tres comparten esta cabecera: ahí el pushState cambiaba la barra
+  // de direcciones y no pasaba nada más. El enlace se quedaba muerto.
+  if (typeof window !== "undefined" && !esRutaSitio(window.location.pathname)) {
+    return { href };
+  }
+
   return {
     href,
     onClick: (e) => {

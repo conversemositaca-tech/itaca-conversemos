@@ -114,6 +114,11 @@ export const api = {
   eliminarAdjunto: (id) => req(`/api/adjuntos/${id}/`, { method: "DELETE" }),
   urlAdjunto: (id) => `/api/adjuntos/${id}/descargar/`,
 
+  // Riesgo propuesto por la IA, pendiente de revisión clínica
+  sugerenciasRiesgo: (pacienteId) => req(`/api/sugerencias-riesgo/?paciente=${pacienteId}&estado=pendiente`),
+  resolverSugerenciaRiesgo: (id, decision, valor) =>
+    req(`/api/sugerencias-riesgo/${id}/resolver/`, { method: "POST", body: JSON.stringify({ decision, valor }) }),
+
   // Mensajes (WhatsApp)
   mensajes: () => req("/api/mensajes/"),
   enviarMensajePaciente: (id, texto, tipo, plantillaId, citaId) =>
@@ -129,6 +134,17 @@ export const api = {
   consentimientos: (pacienteId) => req(`/api/consentimientos/?paciente=${pacienteId}`),
   crearConsentimiento: (paciente, tipo) => req("/api/consentimientos/", { method: "POST", body: JSON.stringify({ paciente, tipo }) }),
   consentimientoPublico: (token) => req(`/api/consentimiento/${token}/`),
+  // Email 1.0 · panel de correo del paciente (solo gerencia y coordinación).
+  // Email 1.0 · páginas públicas por token (sin login).
+  correoPreferencias: (token) => req(`/api/correo/preferencias/${token}/`),
+  correoGuardarPreferencias: (token, data) => req(`/api/correo/preferencias/${token}/`, { method: "POST", body: JSON.stringify(data) }),
+  correoBaja: (token) => req(`/api/correo/baja/${token}/`, { method: "POST", body: "{}" }),
+  correoPaciente: (id) => req(`/api/correo/pacientes/${id}/`),
+  correoConsentimiento: (id, data) => req(`/api/correo/pacientes/${id}/consentimiento/`, { method: "POST", body: JSON.stringify(data) }),
+  correoLead: (id) => req(`/api/correo/leads/${id}/`),
+  correoFaroAplicacion: (id) => req(`/api/correo/faro/aplicaciones/${id}/`),
+  correoFaroRevocar: (id, data) => req(`/api/correo/faro/autorizaciones/${id}/revocar/`, { method: "POST", body: JSON.stringify(data) }),
+  correoLeadConsentimiento: (id, data) => req(`/api/correo/leads/${id}/consentimiento/`, { method: "POST", body: JSON.stringify(data) }),
   aceptarConsentimiento: (token, data) => req(`/api/consentimiento/${token}/aceptar/`, { method: "POST", body: JSON.stringify(data) }),
   // El paciente dio su OK por WhatsApp (o en consulta) y el equipo lo registra.
   marcarConsentimientoAceptado: (id, via) => req(`/api/consentimientos/${id}/marcar-aceptado/`, { method: "POST", body: JSON.stringify({ via: via || "whatsapp" }) }),
@@ -151,6 +167,9 @@ export const api = {
   faroAplicaciones: () => req("/api/faro/panel/aplicaciones/"),
   faroCrearAplicacion: (data) => req("/api/faro/panel/aplicaciones/", { method: "POST", body: JSON.stringify(data) }),
   faroResultados: (id) => req(`/api/faro/panel/resultados/${id}/`),
+  faroEnviarInformes: (id) => req(`/api/faro/panel/enviar/${id}/`, { method: "POST" }),
+  faroAutorizacion: (token) => req(`/api/faro/autorizacion/${token}/`),
+  faroAutorizar: (token, data) => req(`/api/faro/autorizacion/${token}/`, { method: "POST", body: JSON.stringify(data) }),
   agendaInfo: (token) => req(`/api/agendamiento/${token}/`),
   agendaSlots: (token, profId, dias = 14) => req(`/api/agendamiento/${token}/slots/?profesional=${profId}&dias=${dias}`),
   agendaReservar: (token, data) => req(`/api/agendamiento/${token}/reservar/`, { method: "POST", body: JSON.stringify(data) }),
@@ -244,6 +263,17 @@ export const api = {
   retirarMaterial: (id) => req(`/api/materiales/${id}/`, { method: "DELETE" }),
   marcarEliminacionRevisada: (id) => req(`/api/eliminaciones/${id}/revisar/`, { method: "POST" }),
   marcarTodasEliminacionesRevisadas: () => req("/api/eliminaciones/revisar-todas/", { method: "POST" }),
+  // Dirección Clínica: continuidad y abandono inferido (solo lectura).
+  direccionClinica: (filtros = {}) => {
+    const qs = new URLSearchParams(Object.entries(filtros).filter(([, v]) => v !== "" && v != null)).toString();
+    return req(`/api/direccion-clinica/${qs ? `?${qs}` : ""}`);
+  },
+  // Continuidad formal (fase 2): estado e historia del proceso, sin datos clínicos.
+  continuidadProcesos: (pacienteId) => req(`/api/continuidad/paciente/${pacienteId}/procesos/`),
+  continuidadTransicion: (pacienteId, data) =>
+    req(`/api/continuidad/paciente/${pacienteId}/transicion/`, { method: "POST", body: JSON.stringify(data) }),
+  continuidadMotivos: () => req("/api/continuidad/motivos/"),
+  continuidadRevision: (sede) => req(`/api/continuidad/revision/${sede ? `?sede=${sede}` : ""}`),
   gerenciaResumen: (periodo, sede) => req(`/api/gerencia/resumen/?periodo=${periodo || "mes"}${sede ? `&sede=${sede}` : ""}`),
 
   // Datos de la clínica (editar solo admin)

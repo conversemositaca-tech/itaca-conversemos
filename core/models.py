@@ -455,3 +455,26 @@ class InstanciaEvolution(ModeloTenant):
     @property
     def es_oficial(self):
         return self.entorno == self.Entorno.OFICIAL
+
+
+class RegistroAuditoria(ModeloTenant):
+    """Rastro de acciones sensibles: quién, cuándo, qué y valor antes/después.
+
+    Append-only (solo se crea). Se escribe con `core.auditoria.auditar()`.
+    Nunca guardar secretos ni tokens en `cambios`.
+    """
+
+    actor = models.ForeignKey(
+        "usuarios.Usuario", on_delete=models.SET_NULL, null=True, blank=True, related_name="+",
+    )
+    accion = models.CharField(max_length=60, db_index=True)
+    modelo = models.CharField(max_length=60)
+    objeto_id = models.CharField(max_length=40, db_index=True)
+    cambios = models.JSONField(default=dict, blank=True)
+    creado_en = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ["-creado_en"]
+
+    def __str__(self):
+        return f"{self.accion} {self.modelo}#{self.objeto_id}"

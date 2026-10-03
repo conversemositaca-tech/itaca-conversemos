@@ -13,7 +13,9 @@ from rest_framework.views import APIView
 from rest_framework.permissions import SAFE_METHODS
 
 from core import soto
+from core.auditoria import auditar
 from core.permisos import ve_finanzas
+from core.politicas import acotar_clinico, es_admin, exigir, puede_anular_pago, puede_registrar_pago
 from core.tenant import get_clinica_actual
 from pacientes.models import Atencion, Cita, Paciente
 
@@ -27,12 +29,11 @@ def _push_soto_ingreso(cobro):
             soto.push_ingreso(cobro)
     except Exception:  # noqa: BLE001 — la integración jamás debe tumbar el cobro
         pass
-from .serializers import CobroSerializer, EgresoSerializer, PaqueteSerializer, ServicioSerializer
+from core.serializadores import validar
+from .serializers import CobroEntradaSerializer, CobroSerializer, EgresoSerializer, PaqueteSerializer, ServicioSerializer
 
 
-def _es_admin(user):
-    from usuarios.models import Usuario
-    return getattr(user, "rol", None) == Usuario.Rol.ADMIN
+from core.politicas import es_admin as _es_admin  # noqa: E402
 
 
 def _rango(periodo):
@@ -113,12 +114,20 @@ class ServicioViewSet(viewsets.ModelViewSet):
 
 
 class CobroViewSet(viewsets.ModelViewSet):
-    """Cobros/pagos. Filtra por ?periodo= y ?estado=. Acciones: marcar_pagado, resumen."""
+    """Cobros/pagos. Filtra por ?periodo= y ?estado=. Acciones: marcar_pagado, resumen.
+
+    Ver: coordinación, gerencia y analista, todos; el psicólogo, los de sus
+    pacientes; comercial, ninguno. Registrar, cobrar y anular: coordinación y
+    gerencia. Corregir monto, estado o medio: solo gerencia (hoja de edición).
+    Paciente, cita, atención y servicio no se reasignan después de creado.
+    """
 
     serializer_class = CobroSerializer
+    CAMPOS_COORDINACION = {"concepto", "comprobante_tipo", "comprobante_numero"}
 
     def get_queryset(self):
         qs = Cobro.objects.del_tenant_actual().select_related("paciente", "registrado_por", "servicio")
+        qs = acotar_clinico(qs, self.request.user)
         estado = self.request.query_params.get("estado")
         q = self.request.query_params
         if estado:
@@ -131,50 +140,71 @@ class CobroViewSet(viewsets.ModelViewSet):
             qs = qs.filter(paciente__sede=sede)
         return qs.order_by("-fecha")
 
-    def create(self, request, *args, **kwargs):
-        clinica = get_clinica_actual()
-        d = request.data
-        paciente = Paciente.objects.del_tenant_actual().filter(pk=d.get("paciente")).first()
-        if paciente is None:
-            return Response({"detail": "Paciente no encontrado."}, status=status.HTTP_400_BAD_REQUEST)
-        monto = _dec(d.get("monto"))
-        if monto is None or monto <= 0:
-            return Response({"detail": "El monto debe ser mayor a 0."}, status=status.HTTP_400_BAD_REQUEST)
+    def _exigir_caja(self):
+        exigir(puede_registrar_pago(self.request.user), "Solo coordinación o gerencia registran pagos.")
 
-        servicio = Servicio.objects.del_tenant_actual().filter(pk=d.get("servicio")).first() if d.get("servicio") else None
-        cita = Cita.objects.del_tenant_actual().filter(pk=d.get("cita")).first() if d.get("cita") else None
-        atencion = Atencion.objects.del_tenant_actual().filter(pk=d.get("atencion")).first() if d.get("atencion") else None
-        estado = d.get("estado") if d.get("estado") in dict(Cobro.Estado.choices) else Cobro.Estado.PENDIENTE
-        medio = d.get("medio_pago") if d.get("medio_pago") in dict(Cobro.Medio.choices) else ""
-        concepto = (str(d.get("concepto") or "").strip() or (servicio.nombre if servicio else "Cobro"))[:200]
-        comprobante = d.get("comprobante_tipo") if d.get("comprobante_tipo") in dict(Cobro.Comprobante.choices) else ""
+    def perform_update(self, serializer):
+        self._exigir_caja()
+        for campo in ("paciente", "cita", "atencion", "servicio"):
+            serializer.validated_data.pop(campo, None)
+        if not es_admin(self.request.user):
+            fuera = set(serializer.validated_data) - self.CAMPOS_COORDINACION
+            exigir(not fuera, "Solo gerencia corrige monto, estado, medio o fecha de un pago.")
+        antes = {c: str(getattr(serializer.instance, c)) for c in serializer.validated_data}
+        cobro = serializer.save()
+        cambios = {c: [antes[c], str(getattr(cobro, c))] for c in antes if antes[c] != str(getattr(cobro, c))}
+        if cambios:
+            auditar(self.request.user, "cobro.editar", cobro, cambios)
+
+    def create(self, request, *args, **kwargs):
+        self._exigir_caja()
+        clinica = get_clinica_actual()
+        v = validar(CobroEntradaSerializer, request.data)
+        paciente, cita, atencion, servicio = v["paciente"], v.get("cita"), v.get("atencion"), v.get("servicio")
+        monto, estado, medio, comprobante = v["monto"], v["estado"], v["medio_pago"], v["comprobante_tipo"]
+        concepto = (v["concepto"].strip() or (servicio.nombre if servicio else "Cobro"))[:200]
+        d = {"comprobante_numero": v["comprobante_numero"]}
 
         # Fecha del pago editable, para cargar pagos ANTIGUOS (migración de AgendaPro).
         # Si no viene, queda la de hoy (default del modelo).
         campos_fecha = {}
-        fecha = _parse_fecha(d.get("fecha"))
-        if fecha:
+        if v.get("fecha"):
             campos_fecha["fecha"] = timezone.make_aware(
-                datetime.combine(fecha, time(12, 0)), timezone.get_current_timezone())
+                datetime.combine(v["fecha"], time(12, 0)), timezone.get_current_timezone())
 
-        cobro = Cobro.objects.create(
-            clinica=clinica, paciente=paciente, servicio=servicio, cita=cita, atencion=atencion,
-            concepto=concepto, monto=monto, estado=estado,
-            medio_pago=medio if estado == Cobro.Estado.PAGADO else "",
-            comprobante_tipo=comprobante,
-            comprobante_numero=str(d.get("comprobante_numero") or "").strip()[:40],
-            registrado_por=request.user, **campos_fecha,
-        )
+        # Una cita se cobra una vez. Doble clic, dos pestañas o un reintento de
+        # red no pueden generar dos cobros: se bloquea la fila de la cita y se
+        # mira si ya tiene un cobro vigente (no anulado).
+        with transaction.atomic():
+            if cita is not None:
+                Cita.objects.select_for_update().filter(pk=cita.pk).first()
+                previo = Cobro.objects.filter(cita=cita).exclude(estado=Cobro.Estado.ANULADO).first()
+                if previo is not None:
+                    return Response(
+                        {"detail": "Esta cita ya tiene un cobro registrado.", "cobro": CobroSerializer(previo).data},
+                        status=status.HTTP_409_CONFLICT,
+                    )
+            cobro = Cobro.objects.create(
+                clinica=clinica, paciente=paciente, servicio=servicio, cita=cita, atencion=atencion,
+                concepto=concepto, monto=monto, estado=estado,
+                medio_pago=medio if estado == Cobro.Estado.PAGADO else "",
+                comprobante_tipo=comprobante,
+                comprobante_numero=str(d.get("comprobante_numero") or "").strip()[:40],
+                registrado_por=request.user, **campos_fecha,
+            )
+            auditar(request.user, "cobro.crear", cobro, {"monto": [None, str(monto)], "estado": [None, estado]})
         _push_soto_ingreso(cobro)
         return Response(CobroSerializer(cobro).data, status=status.HTTP_201_CREATED)
 
     def destroy(self, request, *args, **kwargs):
         """Elimina un pago y deja constancia para gerencia. Solo coordinación/gerencia."""
-        if getattr(request.user, "rol", None) not in ("asistente", "admin"):
+        if not puede_anular_pago(request.user):
             return Response({"detail": "No tienes permiso para eliminar pagos."},
                             status=status.HTTP_403_FORBIDDEN)
         from pacientes.models import RegistroEliminacion
         cobro = self.get_object()
+        auditar(request.user, "cobro.eliminar", cobro,
+                {"monto": [str(cobro.monto), None], "estado": [cobro.estado, None]})
         RegistroEliminacion.objects.create(
             clinica=get_clinica_actual(), tipo=RegistroEliminacion.Tipo.PAGO,
             paciente_nombre=cobro.paciente.nombre if cobro.paciente_id else "",
@@ -185,7 +215,19 @@ class CobroViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["post"])
     def marcar_pagado(self, request, pk=None):
-        cobro = self.get_object()
+        self._exigir_caja()
+        with transaction.atomic():
+            # of=self: en Postgres no se puede bloquear el lado nulo de un LEFT JOIN
+            # (select_related de registrado_por/servicio).
+            cobro = self.get_queryset().select_for_update(of=("self",)).filter(pk=pk).first()
+            if cobro is None:
+                return Response({"detail": "No encontrado."}, status=status.HTTP_404_NOT_FOUND)
+            if cobro.estado != Cobro.Estado.PENDIENTE:
+                return Response({"detail": "Este cobro ya está " + cobro.get_estado_display().lower() + "."},
+                                status=status.HTTP_409_CONFLICT)
+            return self._marcar_pagado(request, cobro)
+
+    def _marcar_pagado(self, request, cobro):
         medio = request.data.get("medio_pago")
         if medio not in dict(Cobro.Medio.choices):
             return Response({"detail": "Elige un medio de pago."}, status=status.HTTP_400_BAD_REQUEST)
@@ -206,7 +248,9 @@ class CobroViewSet(viewsets.ModelViewSet):
             cobro.comprobante_numero = str(request.data.get("comprobante_numero") or "").strip()[:40]
             campos += ["comprobante_tipo", "comprobante_numero"]
         cobro.save(update_fields=campos)
-        _push_soto_ingreso(cobro)
+        auditar(request.user, "cobro.marcar_pagado", cobro,
+                {"estado": ["pendiente", "pagado"], "medio_pago": ["", medio]})
+        transaction.on_commit(lambda: _push_soto_ingreso(cobro))
         return Response(CobroSerializer(cobro).data)
 
     @action(detail=False, methods=["get"])
@@ -272,6 +316,7 @@ class PaqueteViewSet(viewsets.ModelViewSet):
         return qs
 
     def create(self, request, *args, **kwargs):
+        exigir(puede_registrar_pago(request.user), "Solo coordinación o gerencia venden paquetes.")
         clinica = get_clinica_actual()
         d = request.data
         paciente = Paciente.objects.del_tenant_actual().filter(pk=d.get("paciente")).first()
@@ -308,9 +353,12 @@ class PaqueteViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["post"])
     def anular(self, request, pk=None):
         """Anula el paquete (no borra). No revierte el cobro automáticamente."""
+        exigir(puede_anular_pago(request.user), "Solo coordinación o gerencia anulan paquetes.")
         paquete = self.get_object()
+        antes = paquete.estado
         paquete.estado = Paquete.Estado.ANULADO
         paquete.save(update_fields=["estado"])
+        auditar(request.user, "paquete.anular", paquete, {"estado": [antes, paquete.estado]})
         return Response(PaqueteSerializer(paquete).data)
 
 
