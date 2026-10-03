@@ -29,8 +29,8 @@ autenticación  → DRF (sesión) ............................ sin cambios
 rol            → core.politicas.rol_de / es_admin / es_psicologo / es_comercial
 propiedad      → core.politicas.ficha_de / es_paciente_propio
 alcance        → core.politicas.acotar_clinico(qs, user, campo)
-campos         → core.politicas.ve_contacto / ve_token_consentimiento / ve_finanzas / ve_cobros_de_la_clinica
-acciones       → core.politicas.puede_editar_historia / puede_resolver_sugerencia_ia / puede_registrar_pago / puede_anular_pago
+campos         → core.politicas.ve_contacto / ve_finanzas
+acciones       → core.politicas.puede_editar_historia / puede_registrar_pago / puede_anular_pago
 declarativo    → core.politicas.SoloRoles.de("admin", "asistente")
 listas de roles y clases DRF → core.permisos (sin cambios)
 contrato       → core/tests_matriz_permisos.py (210 celdas) + core/tests_campos_por_rol.py
