@@ -153,8 +153,21 @@ cierre) y todo lo que solo tenga días sin venir. Idempotente (clave
 `hist:<uuid>`), origen «Carga histórica», sin usuario.
 
 Auditoría sobre la base demo (90 procesos): 7 DP-10 registrables, 4 DP-09
-omitidos por ambiguos, 79 sin evidencia. **En producción hay que correr
-primero el modo auditoría** y revisar los conteos antes de `--aplicar`.
+omitidos por ambiguos, 79 sin evidencia. **Se corre siempre primero en modo
+auditoría** y se revisan los conteos antes de `--aplicar`.
+
+**Corrida en producción (2026-10-01, aplicada con autorización):** 1.399
+procesos detectados y **11 registrados** — 8 altas (7 por DP-10 y 1 por
+ficha) y 3 pausas de ficha con motivo «Sin información» —, con 19 procesos y
+11 eventos creados, origen «Carga histórica». Omitidos: 1.366 sin evidencia,
+19 DP-09, 2 DP-11 y 1 pausa con próxima cita. La segunda corrida registró 0
+nuevos: la idempotencia quedó comprobada contra datos reales, no solo en
+tests. Validado además sin duplicados, sin cruces de clínica y con el estado
+igual al último evento.
+
+Que de 1.399 procesos solo 11 tengan estado formal no es un fallo de la
+carga: es la medida del ~95 % de cierres sin DP. Lo anterior al registro
+formal queda «sin estado formal» a propósito (ver §9).
 
 ## 9. Limitaciones conocidas
 
