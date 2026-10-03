@@ -57,7 +57,7 @@ class LiquidacionView(APIView):
             montos[(s.nombre or "").strip().lower()] = s.monto_terapeuta or Decimal("0")
 
         # Sesiones realizadas = atendidas (con nota) o marcadas "asistió" (el paciente vino).
-        REALIZADAS = [Cita.Estado.ATENDIDA, Cita.Estado.ASISTIO]
+        from pacientes.models import ESTADOS_REALIZADA as REALIZADAS
         citas = (
             Cita.objects
             .filter(clinica=clinica, estado__in=REALIZADAS, inicio__gte=ini, inicio__lte=fin)

@@ -15,7 +15,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from core.tenant import get_clinica_actual
-from pacientes.models import Cita
+from pacientes.models import ESTADOS_REALIZADA, Cita
 from usuarios.models import Profesional
 
 SEDE_LABEL = dict(Profesional.Sede.choices)
@@ -65,7 +65,7 @@ def ocupacion_por_sede(clinica, anio, mes, semana):
     # Sesiones realizadas = atendidas (con nota) o marcadas "asistió" (el paciente vino).
     citas = (
         Cita.objects
-        .filter(clinica=clinica, estado__in=[Cita.Estado.ATENDIDA, Cita.Estado.ASISTIO],
+        .filter(clinica=clinica, estado__in=ESTADOS_REALIZADA,
                 inicio__gte=ini, inicio__lte=fin)
         .select_related("paciente", "medico")
     )

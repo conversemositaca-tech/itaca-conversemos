@@ -12,6 +12,8 @@ from rest_framework.views import APIView
 
 from core import continuidad as continuidad_mod
 from core import estructurar_nota, gcalendar, transcripcion
+from core.auditoria import auditar
+from core.politicas import acotar_clinico, es_comercial, es_psicologo, exigir, ficha_de, puede_editar_historia
 from core.tenant import get_clinica_actual
 from mensajes.models import Mensaje, PlantillaMensaje
 from mensajes.services import plantilla_por_clave, registrar_y_enviar
@@ -71,7 +73,7 @@ def _normaliza_enlace(valor):
 
 # Estados en los que la sesión SÍ ocurrió y por tanto consume una sesión del
 # paquete. Son los mismos que la liquidación cuenta como sesión realizada.
-ESTADOS_REALIZADA = ("atendida", "asistio")
+from .models import ESTADOS_REALIZADA  # noqa: E402  (una sola fuente)
 
 
 def sincronizar_paquete(cita):
@@ -88,13 +90,29 @@ def sincronizar_paquete(cita):
 
     Devuelve el estado del paquete para mostrarlo, o None si no hubo cambio.
     """
+    from django.db import transaction
+
+    with transaction.atomic():
+        # Bloquea la cita: dos peticiones a la vez (Atender + selector, doble
+        # clic) ya no ven las dos "sin paquete" y descuentan dos sesiones.
+        bloqueada = Cita.objects.select_for_update().filter(pk=cita.pk).first()
+        if bloqueada is not None:
+            # Estado y paquete tal como quedaron en la base, no en memoria: un
+            # "atendida" y un "cancelada" casi simultáneos no dejan la sesión
+            # descontada en una cita cancelada.
+            cita.paquete_id = bloqueada.paquete_id
+            cita.estado = bloqueada.estado
+        return _sincronizar_paquete(cita)
+
+
+def _sincronizar_paquete(cita):
     from finanzas.models import Paquete
 
     realizada = cita.estado in ESTADOS_REALIZADA
 
     # Ya no ocurrió (se canceló, se reprogramó, faltó): se devuelve la sesión.
     if cita.paquete_id and not realizada:
-        paq = cita.paquete
+        paq = Paquete.objects.select_for_update().get(pk=cita.paquete_id)
         paq.devolver()
         cita.paquete = None
         cita.save(update_fields=["paquete"])
@@ -108,6 +126,7 @@ def sincronizar_paquete(cita):
 
     paq = (
         Paquete.objects.del_tenant_actual()
+        .select_for_update()         # dos citas del mismo paquete no se pisan
         .filter(paciente=cita.paciente, estado=Paquete.Estado.ACTIVO)
         .order_by("fecha")           # se gasta primero el paquete más antiguo
         .first()
@@ -187,22 +206,11 @@ def texto_recordatorio(cita):
     )
 
 
-def _es_medico(user):
-    """True si el usuario es psicólogo (rol médico). El admin NO se acota."""
-    from usuarios.models import Usuario
-    return getattr(user, "rol", None) == Usuario.Rol.MEDICO
-
-
-def _ficha_de(user):
-    """Ficha del directorio (Profesional) enlazada a este usuario, o None."""
-    from usuarios.models import Profesional
-    return Profesional.objects.filter(usuario=user).first()
-
-
-def _es_comercial(user):
-    """El rol Comercial no accede a datos clínicos (pacientes, agenda, historias)."""
-    from usuarios.models import Usuario
-    return getattr(user, "rol", None) == Usuario.Rol.COMERCIAL
+# Políticas de acceso: core/politicas.py. Los alias conservan los nombres de
+# siempre en este módulo.
+_es_medico = es_psicologo
+_ficha_de = ficha_de
+_es_comercial = es_comercial
 
 
 class PacienteViewSet(viewsets.ModelViewSet):
@@ -257,12 +265,8 @@ class PacienteViewSet(viewsets.ModelViewSet):
                     "cobros", "seguimientos", "paquetes",
                 )
             )
-        if _es_comercial(self.request.user):
-            return qs.none()
         # El psicólogo solo ve a los pacientes de su ficha del directorio.
-        if _es_medico(self.request.user):
-            ficha = _ficha_de(self.request.user)
-            qs = qs.filter(profesional=ficha) if ficha else qs.none()
+        qs = acotar_clinico(qs, self.request.user, campo="profesional")
         prof = self.request.query_params.get("profesional")
         if prof:
             qs = qs.filter(profesional_id=prof)
@@ -333,7 +337,7 @@ class PacienteViewSet(viewsets.ModelViewSet):
         # NO sobrescribir los valores reales en la base (evita pérdida de datos).
         if _es_medico(self.request.user):
             for campo in ("telefono", "email", "direccion", "numero_documento",
-                          "tutor_telefono", "tutor_documento"):
+                          "tutor_telefono", "tutor_documento", "tutor_correo"):
                 serializer.validated_data.pop(campo, None)
         serializer.save()
 
@@ -744,8 +748,10 @@ class CitaViewSet(viewsets.ModelViewSet):
     def cancelar(self, request, pk=None):
         """Marca la cita como cancelada (no se borra: queda el registro)."""
         cita = self.get_object()
+        antes = cita.estado
         cita.estado = Cita.Estado.CANCELADA
         cita.save(update_fields=["estado"])
+        auditar(request.user, "cita.estado", cita, {"estado": [antes, cita.estado]})
         gcalendar.eliminar_cita(cita)  # quita el evento del calendario
         sincronizar_paquete(cita)  # si consumía una sesión del paquete, se devuelve
         return Response(CitaSerializer(cita).data)
@@ -766,8 +772,11 @@ class CitaViewSet(viewsets.ModelViewSet):
         nuevo = request.data.get("estado")
         if nuevo not in dict(Cita.Estado.choices):
             return Response({"detail": "Estado no válido."}, status=status.HTTP_400_BAD_REQUEST)
+        antes = cita.estado
         cita.estado = nuevo
         cita.save(update_fields=["estado"])
+        if antes != nuevo:
+            auditar(request.user, "cita.estado", cita, {"estado": [antes, nuevo]})
         # Sincroniza o quita el evento del calendario según el estado.
         if nuevo == Cita.Estado.CANCELADA:
             gcalendar.eliminar_cita(cita)
@@ -872,21 +881,15 @@ class AtencionViewSet(viewsets.ModelViewSet):
             .select_related("paciente", "medico", "registrado_por")
             .prefetch_related("ediciones__editado_por")
         )
-        if _es_comercial(self.request.user):
-            return qs.none()
         # El psicólogo solo ve las historias de SUS pacientes.
-        if _es_medico(self.request.user):
-            ficha = _ficha_de(self.request.user)
-            qs = qs.filter(paciente__profesional=ficha) if ficha else qs.none()
+        qs = acotar_clinico(qs, self.request.user, campo="paciente__profesional")
         pid = self.request.query_params.get("paciente")
         if pid:
             qs = qs.filter(paciente_id=pid)
         return qs.order_by("-fecha")
 
     def _solo_clinico(self):
-        from usuarios.models import Usuario
-        if getattr(self.request.user, "rol", None) not in (Usuario.Rol.MEDICO, Usuario.Rol.ADMIN):
-            raise PermissionDenied("Solo psicólogos y administradores pueden editar la historia clínica.")
+        exigir(puede_editar_historia(self.request.user), "Solo psicólogos y administradores pueden editar la historia clínica.")
 
     def perform_update(self, serializer):
         self._solo_clinico()
@@ -925,21 +928,35 @@ class AtencionViewSet(viewsets.ModelViewSet):
 class AdjuntoViewSet(viewsets.ModelViewSet):
     """Archivos clínicos (laboratorios, ecografías, PDFs, imágenes).
 
-    Subir y listar es para cualquier usuario de la clínica; eliminar queda para
+    Mismo alcance que la historia clínica (AtencionViewSet): comercial no ve
+    ninguno y el psicólogo solo los de SUS pacientes; eliminar queda para
     médico/admin. La descarga pasa por la acción `descargar`, siempre autenticada
-    y con scope de clínica: nunca se expone una URL pública (Ley 29733).
+    y con este mismo alcance: nunca se expone una URL pública (Ley 29733).
     """
 
     serializer_class = AdjuntoSerializer
 
     def get_queryset(self):
-        return (
+        qs = (
             Adjunto.objects.del_tenant_actual()
             .select_related("paciente", "subido_por")
             .order_by("-creado_en")
         )
+        qs = acotar_clinico(qs, self.request.user, campo="paciente__profesional")
+        pid = self.request.query_params.get("paciente")
+        if pid:
+            qs = qs.filter(paciente_id=pid)
+        return qs
+
+    def _pacientes_alcanzables(self):
+        return acotar_clinico(Paciente.objects.del_tenant_actual(), self.request.user, campo="profesional")
 
     def create(self, request, *args, **kwargs):
+        if _es_comercial(request.user):
+            return Response(
+                {"detail": "Los archivos clínicos no están disponibles para este rol."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
         clinica = get_clinica_actual()
         archivo = request.FILES.get("archivo")
         if archivo is None:
@@ -956,14 +973,14 @@ class AdjuntoViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        paciente = Paciente.objects.del_tenant_actual().filter(pk=request.data.get("paciente")).first()
+        paciente = self._pacientes_alcanzables().filter(pk=request.data.get("paciente")).first()
         if paciente is None:
             return Response({"detail": "Paciente no encontrado."}, status=status.HTTP_400_BAD_REQUEST)
 
         atencion = None
         atencion_id = request.data.get("atencion")
         if atencion_id:
-            atencion = Atencion.objects.del_tenant_actual().filter(pk=atencion_id).first()
+            atencion = Atencion.objects.del_tenant_actual().filter(pk=atencion_id, paciente=paciente).first()
 
         nombre = (request.data.get("nombre") or archivo.name).strip()[:255]
         adjunto = Adjunto.objects.create(
@@ -988,12 +1005,14 @@ class AdjuntoViewSet(viewsets.ModelViewSet):
         return super().destroy(request, *args, **kwargs)
 
     def perform_destroy(self, instance):
+        auditar(self.request.user, "adjunto.eliminar", instance,
+                {"nombre": [instance.nombre, None], "paciente": [instance.paciente_id, None]})
         instance.archivo.delete(save=False)  # borra también el archivo del disco
         instance.delete()
 
     @action(detail=True, methods=["get"])
     def descargar(self, request, pk=None):
-        adjunto = self.get_object()  # get_queryset ya filtra por clínica
+        adjunto = self.get_object()  # get_queryset ya filtra por clínica y por rol
         return FileResponse(
             adjunto.archivo.open("rb"),
             as_attachment=True,
@@ -1012,11 +1031,7 @@ class AplicacionEscalaViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         qs = AplicacionEscala.objects.del_tenant_actual().select_related("paciente", "registrado_por")
-        if _es_comercial(self.request.user):
-            return qs.none()
-        if _es_medico(self.request.user):
-            ficha = _ficha_de(self.request.user)
-            qs = qs.filter(paciente__profesional=ficha) if ficha else qs.none()
+        qs = acotar_clinico(qs, self.request.user, campo="paciente__profesional")
         paciente = self.request.query_params.get("paciente")
         if paciente:
             qs = qs.filter(paciente_id=paciente)
@@ -1026,9 +1041,7 @@ class AplicacionEscalaViewSet(viewsets.ModelViewSet):
         return qs.order_by("fecha", "id")
 
     def _solo_clinico(self):
-        from usuarios.models import Usuario
-        if getattr(self.request.user, "rol", None) not in (Usuario.Rol.MEDICO, Usuario.Rol.ADMIN):
-            raise PermissionDenied("Solo psicólogos y administradores registran escalas.")
+        exigir(puede_editar_historia(self.request.user), "Solo psicólogos y administradores registran escalas.")
 
     def create(self, request, *args, **kwargs):
         self._solo_clinico()
@@ -1070,20 +1083,14 @@ class _HijoPacienteViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         qs = self.modelo.objects.del_tenant_actual()
-        if _es_comercial(self.request.user):
-            return qs.none()
-        if _es_medico(self.request.user):
-            ficha = _ficha_de(self.request.user)
-            qs = qs.filter(paciente__profesional=ficha) if ficha else qs.none()
+        qs = acotar_clinico(qs, self.request.user, campo="paciente__profesional")
         paciente = self.request.query_params.get("paciente")
         if paciente:
             qs = qs.filter(paciente_id=paciente)
         return qs
 
     def _solo_clinico(self):
-        from usuarios.models import Usuario
-        if getattr(self.request.user, "rol", None) not in (Usuario.Rol.MEDICO, Usuario.Rol.ADMIN):
-            raise PermissionDenied("Solo psicólogos y administradores pueden gestionar esto.")
+        exigir(puede_editar_historia(self.request.user), "Solo psicólogos y administradores pueden gestionar esto.")
 
     def _paciente_valido(self, request):
         return Paciente.objects.del_tenant_actual().filter(pk=request.data.get("paciente")).first()

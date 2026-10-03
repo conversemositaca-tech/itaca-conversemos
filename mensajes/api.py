@@ -20,11 +20,17 @@ class MensajeViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
         # lectura (que no ve contacto de pacientes) no la recibe.
         if es_solo_lectura(self.request.user):
             return Mensaje.objects.none()
-        return (
+        qs = (
             Mensaje.objects.del_tenant_actual()
             .select_related("paciente", "enviado_por")
             .order_by("-creado_en")
         )
+        # El psicólogo solo ve lo que se habló con SUS pacientes.
+        from usuarios.models import Profesional, Usuario
+        if getattr(self.request.user, "rol", None) == Usuario.Rol.MEDICO:
+            ficha = Profesional.objects.filter(usuario=self.request.user).first()
+            qs = qs.filter(paciente__profesional=ficha) if ficha else qs.none()
+        return qs
 
 
 class PlantillaMensajeViewSet(viewsets.ModelViewSet):
@@ -50,8 +56,9 @@ class PlantillaMensajeViewSet(viewsets.ModelViewSet):
 
     def _solo_admin(self):
         # Gerencia y coordinación (asistente) pueden crear/editar plantillas.
-        if getattr(self.request.user, "rol", None) not in ("admin", "asistente"):
-            raise PermissionDenied("Solo gerencia o coordinación pueden editar las plantillas.")
+        from core.permisos import puede_contactar_pacientes
+        from core.politicas import exigir
+        exigir(puede_contactar_pacientes(self.request.user), "Solo gerencia o coordinación pueden editar las plantillas.")
 
     def perform_create(self, serializer):
         self._solo_admin()

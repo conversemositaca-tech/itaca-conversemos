@@ -11,6 +11,7 @@ sale la clínica, y TODO se filtra/crea con esa clínica explícitamente (aislam
 multitenant · Ley 29733). No dependemos del middleware de tenant porque estas
 rutas no tienen usuario logueado.
 """
+import hmac
 import re
 from datetime import date, timedelta
 
@@ -19,6 +20,7 @@ from django.db.models import Q
 from rest_framework import status
 from rest_framework.permissions import BasePermission
 from rest_framework.response import Response
+from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
 from django.utils import timezone
@@ -33,22 +35,43 @@ def _solo_digitos(s):
     return "".join(ch for ch in (s or "") if ch.isdigit())
 
 
-def _token_esperado():
-    return (getattr(settings, "ITACA_INTEGRACION_TOKEN", "") or "").strip()
+# Cada consumidor tiene su propio alcance y, opcionalmente, su propio token.
+# Mientras un alcance no tenga token propio, acepta el token compartido
+# (ITACA_INTEGRACION_TOKEN) para no cortar a Eli ni a los crones al desplegar.
+# En cuanto se configura el token propio, el compartido deja de abrir ese
+# alcance: así el volcado de la base deja de depender del token que usa Eli.
+TOKEN_POR_ALCANCE = {
+    "eli": "ITACA_TOKEN_ELI",
+    "tareas": "ITACA_TOKEN_TAREAS",
+    "respaldo": "ITACA_TOKEN_RESPALDO",
+}
+
+
+def _leer(nombre):
+    return (getattr(settings, nombre, "") or "").strip()
+
+
+def tokens_validos(alcance):
+    propio = _leer(TOKEN_POR_ALCANCE[alcance])
+    if propio:
+        return [propio]
+    compartido = _leer("ITACA_INTEGRACION_TOKEN")
+    return [compartido] if compartido else []
 
 
 class TokenIntegracion(BasePermission):
-    """Permite el acceso solo si la cabecera trae el token compartido correcto.
-    Si no hay token configurado en el servidor, la integración queda apagada."""
+    """Permite el acceso solo si la cabecera trae un token válido para el
+    alcance de la vista (`alcance_integracion`). Sin token configurado, la
+    integración queda apagada. La comparación es en tiempo constante."""
 
     message = "Token de integración inválido."
 
     def has_permission(self, request, view):
-        esperado = _token_esperado()
-        if not esperado:
+        alcance = getattr(view, "alcance_integracion", "eli")
+        enviado = (request.headers.get("X-Integracion-Token") or "").strip().encode()
+        if not enviado:
             return False
-        enviado = (request.headers.get("X-Integracion-Token") or "").strip()
-        return bool(enviado) and enviado == esperado
+        return any(hmac.compare_digest(enviado, t.encode()) for t in tokens_validos(alcance))
 
 
 def _psicologo_por_telefono(telefono):
@@ -72,9 +95,28 @@ def _paciente_payload(p):
     }
 
 
-class _Base(APIView):
+class LimiteAntesDelPermiso:
+    """DRF evalúa el permiso antes que el límite: un token inválido recibía 403
+    sin contar, y probar tokens no tenía freno. Aquí el límite va primero (una
+    sola vez por petición)."""
+
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "integracion"
+
+    def initial(self, request, *args, **kwargs):
+        super().check_throttles(request)
+        request._limite_contado = True
+        super().initial(request, *args, **kwargs)
+
+    def check_throttles(self, request):
+        if not getattr(request, "_limite_contado", False):
+            super().check_throttles(request)
+
+
+class _Base(LimiteAntesDelPermiso, APIView):
     authentication_classes = []          # servidor-a-servidor: sin sesión ni CSRF
     permission_classes = [TokenIntegracion]
+    alcance_integracion = "eli"
 
 
 class PsicologoView(_Base):
@@ -148,21 +190,41 @@ def _contexto_paciente(paciente):
     return "\n".join(partes).strip()
 
 
-def _autoalimentar_perfil(paciente, est):
-    """Historia clínica → alimenta las tarjetas del perfil (resumen, objetivo, riesgo)
-    y crea los objetivos terapéuticos. Es el 'documento madre' (pedido de Emma)."""
+def _autoalimentar_perfil(paciente, est, atencion=None, fuente="eli_ia"):
+    """Historia clínica → alimenta las tarjetas del perfil (resumen, objetivo) y
+    crea los objetivos terapéuticos. Es el 'documento madre' (pedido de Emma).
+
+    El riesgo NO se escribe: la IA solo deja una SugerenciaRiesgo pendiente que
+    un psicólogo del paciente o un admin confirma, modifica o rechaza.
+
+    Resumen clínico y objetivo principal: la IA solo COMPLETA un campo vacío.
+    Lo que ya escribió una persona no se pisa; si la IA propone otro texto,
+    queda en RegistroAuditoria (accion "ia.propuesta_no_aplicada") para que
+    el psicólogo lo vea si quiere, sin perder el original."""
+    from core.auditoria import auditar
+
     cambios = []
-    if est.get("resumen_clinico"):
-        paciente.resumen_clinico = est["resumen_clinico"][:4000]
-        cambios.append("resumen_clinico")
+    propuestas = {}
+    resumen = (est.get("resumen_clinico") or "")[:4000]
+    if resumen:
+        if not (paciente.resumen_clinico or "").strip():
+            paciente.resumen_clinico = resumen
+            cambios.append("resumen_clinico")
+        elif resumen.strip() != paciente.resumen_clinico.strip():
+            propuestas["resumen_clinico"] = [paciente.resumen_clinico, resumen]
     lineas = [l.strip(" -•\t") for l in (est.get("objetivos") or "").splitlines() if l.strip(" -•\t")]
     if lineas:
-        paciente.objetivo_principal = lineas[0][:200]
-        cambios.append("objetivo_principal")
+        objetivo = lineas[0][:200]
+        if not (paciente.objetivo_principal or "").strip():
+            paciente.objetivo_principal = objetivo
+            cambios.append("objetivo_principal")
+        elif objetivo.strip() != paciente.objetivo_principal.strip():
+            propuestas["objetivo_principal"] = [paciente.objetivo_principal, objetivo]
+    if propuestas:
+        auditar(None, "ia.propuesta_no_aplicada", paciente, {**propuestas, "fuente": [None, fuente]})
     riesgo = _norm_riesgo(est.get("riesgo"))
     if riesgo:
-        paciente.riesgo = riesgo
-        cambios.append("riesgo")
+        sugerir_riesgo(paciente, riesgo, atencion=atencion, fuente=fuente)
     if cambios:
         paciente.save(update_fields=cambios)
     if lineas:
@@ -171,6 +233,20 @@ def _autoalimentar_perfil(paciente, est):
             if l.strip().lower() not in existentes:
                 ObjetivoTerapeutico.objects.create(clinica=paciente.clinica, paciente=paciente, texto=l[:200])
                 existentes.add(l.strip().lower())
+
+
+def sugerir_riesgo(paciente, valor, atencion=None, fuente="eli_nota_voz"):
+    """Deja el riesgo propuesto por la IA pendiente de revisión humana. Una
+    sugerencia pendiente anterior queda como reemplazada (no se borra)."""
+    from pacientes.models import SugerenciaRiesgo
+
+    SugerenciaRiesgo.objects.filter(
+        paciente=paciente, estado=SugerenciaRiesgo.Estado.PENDIENTE,
+    ).update(estado=SugerenciaRiesgo.Estado.REEMPLAZADA)
+    return SugerenciaRiesgo.objects.create(
+        clinica=paciente.clinica, paciente=paciente, valor_sugerido=valor,
+        fuente=fuente, atencion=atencion,
+    )
 
 
 class ContextoView(_Base):
@@ -368,6 +444,8 @@ class RecordatoriosView(_Base):
     así que una segunda llamada el mismo día no reenvía nada.
     """
 
+    alcance_integracion = "tareas"
+
     def post(self, request):
         d = request.data if isinstance(request.data, dict) else {}
         f = (d.get("fecha") or "").strip()
@@ -389,6 +467,8 @@ class RespaldoView(_Base):
 
     OJO: el archivo lleva datos de pacientes. Debe quedar en un lugar PRIVADO.
     """
+
+    alcance_integracion = "respaldo"
 
     def get(self, request):
         from django.http import HttpResponse
@@ -438,6 +518,7 @@ class NotaVozView(_Base):
         campos_guiados = d.get("campos") if isinstance(d.get("campos"), dict) else None
         est = None
         extracto = {}
+        fuente_riesgo = "eli_ia"
 
         if campos_guiados:
             # Registro GUIADO desde Eli: cada campo va a su lugar (sin IA).
@@ -451,6 +532,7 @@ class NotaVozView(_Base):
                 campos["indicaciones"] = cg("recomendaciones")
                 # Alimenta el perfil (resumen, objetivo, riesgo) como el documento madre.
                 est = {"resumen_clinico": cg("resumen"), "objetivos": cg("objetivos"), "riesgo": cg("riesgo")}
+                fuente_riesgo = "eli_guiado"
                 extracto = {"resumen": cg("resumen"), "riesgo": _norm_riesgo(cg("riesgo"))}
             else:
                 partes = []
@@ -513,11 +595,12 @@ class NotaVozView(_Base):
 
         atencion = Atencion.objects.create(**campos)
         if tipo == Atencion.Tipo.HISTORIA and est:
-            _autoalimentar_perfil(paciente, est)
+            _autoalimentar_perfil(paciente, est, atencion=atencion, fuente=fuente_riesgo)
 
         return Response(
             {"ok": True, "atencion_id": atencion.id, "paciente": paciente.nombre,
              "tipo": atencion.get_tipo_display(), "extracto": extracto,
-             "perfil_actualizado": bool(tipo == Atencion.Tipo.HISTORIA and est)},
+             "perfil_actualizado": bool(tipo == Atencion.Tipo.HISTORIA and est),
+             "riesgo_pendiente_de_revision": bool(extracto.get("riesgo"))},
             status=status.HTTP_201_CREATED,
         )

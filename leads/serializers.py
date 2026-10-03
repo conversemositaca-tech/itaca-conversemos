@@ -2,6 +2,7 @@ from datetime import timedelta
 
 from django.utils import timezone
 from rest_framework import serializers
+from core.serializadores import RelacionesDelTenant
 
 from core.utils import fecha_corta
 
@@ -22,7 +23,7 @@ class AnuncioSerializer(serializers.ModelSerializer):
         return obj.leads.count()
 
 
-class LeadSerializer(serializers.ModelSerializer):
+class LeadSerializer(RelacionesDelTenant, serializers.ModelSerializer):
     fuente_label = serializers.SerializerMethodField()
     estado_label = serializers.CharField(source="get_estado_display", read_only=True)
     sede_label = serializers.CharField(source="get_sede_display", read_only=True)
@@ -56,15 +57,15 @@ class LeadSerializer(serializers.ModelSerializer):
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
-        # El rol de solo lectura (analista) ve el embudo de captación pero no el
-        # contacto del lead: mismo criterio que con los pacientes. Solo ese rol:
-        # el psicólogo no entra a captación, y cambiarle los datos sería un
-        # efecto colateral que nadie pidió.
+        # Ver el lead no es ver su contacto. Los roles sin contacto (psicólogo
+        # y analista, core.permisos.ROLES_SIN_CONTACTO) ven el embudo pero no
+        # teléfono, correo, ubicación ni el teléfono de la persona de contacto.
+        # El psicólogo no tiene captación en el menú, pero la API se lo daba.
         import re
-        from core.permisos import es_solo_lectura
+        from core.politicas import ve_contacto
         req = self.context.get("request")
-        if req is not None and es_solo_lectura(req.user):
-            for k in ("telefono", "email", "ubicacion"):
+        if req is not None and not ve_contacto(req.user):
+            for k in ("telefono", "email", "ubicacion", "contacto_telefono"):
                 if k in data:
                     data[k] = ""
             # Los leads que entran por WhatsApp sin nombre de perfil se guardan

@@ -4,6 +4,7 @@ from django.core.exceptions import ValidationError as DjangoValidationError
 from django.core.validators import URLValidator
 from django.utils import timezone
 from rest_framework import serializers
+from core.serializadores import RelacionesDelTenant
 
 from core import continuidad
 from core.permisos import oculta_contacto
@@ -11,6 +12,7 @@ from core.utils import fecha_corta
 
 from usuarios.models import Usuario
 
+from .models import ESTADOS_REALIZADA  # noqa: E402
 from .models import (
     Adjunto, AplicacionEscala, Atencion, BloqueoAgenda, Cita, ContactoProfesional,
     ObjetivoTerapeutico, Paciente, RespuestaNPS, Tarea, severidad_escala,
@@ -116,7 +118,7 @@ class PacienteSerializer(serializers.ModelSerializer):
             "id", "nombre", "fecha_nacimiento", "edad", "tel", "email",
             "tipo_documento", "tipo_documento_label", "numero_documento", "direccion",
             "genero", "genero_label",
-            "tutor_nombre", "tutor_parentesco", "tutor_telefono", "tutor_documento",
+            "tutor_nombre", "tutor_parentesco", "tutor_telefono", "tutor_documento", "tutor_correo",
             "sede", "sede_label", "profesional", "profesional_nombre", "profesional_medico_id", "codigo",
             "n_sesion", "sesiones_proceso", "proceso", "proceso_label", "seguimiento",
             "provisional",
@@ -142,7 +144,7 @@ class PacienteSerializer(serializers.ModelSerializer):
         req = self.context.get("request")
         if req is not None and oculta_contacto(req.user):
             for k in ("tel", "email", "direccion", "numero_documento",
-                      "tutor_telefono", "tutor_documento"):
+                      "tutor_telefono", "tutor_documento", "tutor_correo"):
                 if k in data:
                     data[k] = ""
         return data
@@ -184,7 +186,7 @@ class PacienteSerializer(serializers.ModelSerializer):
             c.inicio and c.inicio >= ahora and c.estado != Cita.Estado.CANCELADA for c in citas
         )
         realizadas = sorted(
-            (c for c in citas if c.estado in (Cita.Estado.ATENDIDA, Cita.Estado.ASISTIO)),
+            (c for c in citas if c.estado in ESTADOS_REALIZADA),
             key=lambda c: c.inicio, reverse=True,
         )
         ultima_decision = realizadas[0].decision if realizadas else ""
@@ -326,7 +328,7 @@ SOLO_EN_LA_FICHA = (
     "brujula_motivo", "brujula_hipotesis", "brujula_objetivos", "brujula_fortalezas",
     "brujula_factores_protectores", "brujula_factores_riesgo", "brujula_barreras",
     "brujula_plan",
-    "tutor_nombre", "tutor_parentesco", "tutor_telefono", "tutor_documento",
+    "tutor_nombre", "tutor_parentesco", "tutor_telefono", "tutor_documento", "tutor_correo",
 )
 # `direccion` se queda: la exportación de pacientes la lleva como columna.
 
@@ -355,7 +357,7 @@ class PacienteListSerializer(PacienteSerializer):
         return {"cobrado": float(cobrado), "pendiente": float(pendiente), "items": []}
 
 
-class CitaSerializer(serializers.ModelSerializer):
+class CitaSerializer(RelacionesDelTenant, serializers.ModelSerializer):
     pacienteId = serializers.PrimaryKeyRelatedField(
         source="paciente", queryset=Paciente.objects.all()
     )

@@ -25,15 +25,16 @@ def resp(**kw):
 
 
 class CatalogoTests(SimpleTestCase):
-    def test_estan_los_treinta_y_ocho_items(self):
+    def test_estan_los_sesenta_items(self):
         self.assertEqual(len(ins.EBIPQ), 14)
+        self.assertEqual(len(ins.CIBER), 22)
         self.assertEqual(len(ins.PHQ_A), 9)
         self.assertEqual(len(ins.GAD_7), 7)
         self.assertEqual(len(ins.ASQ), 4)
         self.assertEqual(len(ins.CONTEXTUALES), 4)
-        # 38 y no 42: los cuatro ítems extra del PHQ-A quedan fuera a
+        # 60 y no 64: los cuatro ítems extra del PHQ-A quedan fuera a
         # propósito (dos duplican el ASQ). Ver instrumentos.py.
-        self.assertEqual(len(ins.ORDEN), 38)
+        self.assertEqual(len(ins.ORDEN), 60)
 
     def test_ningun_identificador_se_repite(self):
         ids = [i["id"] for i in ins.ORDEN]
@@ -197,3 +198,59 @@ class ClasificarTests(SimpleTestCase):
         d = ins.clasificar({"phq1": "2", "gad1": "3", "asq1": "1", "ebipq1": "2"})
         self.assertEqual(d["phq_a"]["total"], 2)
         self.assertEqual(d["nivel"], ins.ROJO)
+
+
+class CiberacosoTests(SimpleTestCase):
+    """ECIP-Q: 11 de victimización y 11 de agresión, pegados al presencial."""
+
+    def test_van_los_veintidos_items_justo_despues_del_presencial(self):
+        ids = [i["id"] for i in ins.ORDEN]
+        self.assertEqual(len(ins.CIBER_VICTIMIZACION), 11)
+        self.assertEqual(len(ins.CIBER_AGRESION), 11)
+        self.assertEqual(ids[14:36], [f"ciber{n}" for n in range(1, 23)])
+
+    def test_sufrirlo_una_o_dos_veces_al_mes_ya_es_ambar(self):
+        d = ins.clasificar({"ciber3": ins.UMBRAL_ROL})
+        self.assertEqual(d["nivel"], ins.AMBAR)
+        self.assertEqual(d["ciber"]["rol"], "Cibervíctima")
+        self.assertIn("Ciberacoso: reporta sufrirlo", " ".join(d["motivos"]))
+
+    def test_ejercerlo_marca_agresor_sin_tocar_el_presencial(self):
+        d = ins.clasificar({"ciber15": 4})
+        self.assertEqual(d["ciber"]["rol"], "Ciberagresor")
+        self.assertEqual(d["ebipq"]["rol"], "No involucrado")
+        self.assertIn("Ciberacoso: reporta ejercerlo", " ".join(d["motivos"]))
+
+    def test_una_o_dos_veces_en_dos_meses_no_basta(self):
+        # Mismo corte que el presencial: por debajo de UMBRAL_ROL no hay rol.
+        d = ins.clasificar({"ciber1": 1, "ciber12": 1})
+        self.assertEqual(d["ciber"]["rol"], "No involucrado")
+        self.assertEqual(d["nivel"], ins.VERDE)
+        self.assertNotIn("Ciberacoso", " ".join(d["motivos"]))
+
+    def test_el_umbral_es_el_mismo_para_los_dos_instrumentos(self):
+        # Vive en una constante para que ajustar el corte del presencial mueva
+        # también el del ciber. Con dos literales sueltos, el día que se afine
+        # uno el otro se queda atrás y nadie lo nota.
+        self.assertEqual(ins.UMBRAL_ROL, 2)
+        self.assertFalse(ins.puntuar_ebipq({"ebipq1": ins.UMBRAL_ROL - 1})["es_victima"])
+        self.assertTrue(ins.puntuar_ebipq({"ebipq1": ins.UMBRAL_ROL})["es_victima"])
+
+    def test_la_clasificación_no_asume_bloques_simétricos(self):
+        # El EBIPQ es 7 y 7, pero el instrumento que entre puede no serlo. Se
+        # prueba la función interna porque es el criterio que va a recibir los
+        # ítems reales, y tiene que estar bien antes de que lleguen.
+        vic = ins._rol_por_frecuencia({"x2": 3}, "x", 2, 3, ins.ROLES_CIBER)
+        self.assertTrue(vic["es_victima"])
+        self.assertFalse(vic["es_agresor"])
+        self.assertEqual(vic["rol"], "Cibervíctima")
+
+        agr = ins._rol_por_frecuencia({"x4": 4}, "x", 2, 3, ins.ROLES_CIBER)
+        self.assertFalse(agr["es_victima"])
+        self.assertTrue(agr["es_agresor"])
+        self.assertEqual(agr["rol"], "Ciberagresor")
+
+    def test_el_rol_ciber_se_nombra_distinto_del_presencial(self):
+        # En el informe del psicólogo «Víctima» y «Cibervíctima» son casos que
+        # se atienden distinto; que compartan etiqueta los volvería el mismo.
+        self.assertNotEqual(ins.ROLES_CIBER["victima"], ins.ROLES_PRESENCIAL["victima"])

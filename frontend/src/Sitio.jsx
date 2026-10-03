@@ -22,7 +22,7 @@ const ICONOS_SERVICIO = {
 
 import {
   AGENDA_CSS, AGENDA_SEDES, AGENDA_SITIO, AgendaDuda, AgendaPie, AgendaTop, AgendaWa, agendaFaq,
-  agendaWhatsapp,
+  agendaWhatsapp, CasillaComunicaciones,
 } from "./App.jsx";
 import datosDePaginas from "./paginas.json";
 import { PASOS as PASOS_EMBUDO, registrar } from "./embudo";
@@ -438,6 +438,22 @@ const SW_CSS = `
   background:rgba(0,120,140,.06); border:1px solid var(--b);
 }
 .fa-aviso p { margin:0; font-size:14.5px; line-height:1.65; color:var(--t2); }
+.fa-grados { display:grid; gap:12px; margin-top:18px; }
+.fa-grado { border:1px solid #E3E8EC; border-radius:14px; padding:14px 16px; }
+.fa-grado-cab { display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; font-size:15px; }
+.fa-grado-cab b { font-weight:600; color:var(--t); }
+.fa-grado-cab span, .fa-seccion span { font-size:14px; color:var(--t2); }
+.fa-seccion { display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; padding:8px 0 0; border-top:1px dashed #E3E8EC; margin-top:8px; }
+.fa-pt { display:inline-block; width:9px; height:9px; border-radius:50%; margin:0 4px 0 2px; vertical-align:middle; }
+.fa-pt.v { background:#2E8B57; } .fa-pt.a { background:#D89B1B; } .fa-pt.r { background:#B3261E; }
+.fa-tabla-wrap { overflow-x:auto; margin-top:16px; }
+.fa-tabla { width:100%; border-collapse:collapse; font-size:14px; }
+.fa-tabla th, .fa-tabla td { text-align:left; padding:9px 10px; border-bottom:1px solid #E3E8EC; white-space:nowrap; }
+.fa-tabla th { font-size:12.5px; font-weight:600; color:var(--t2); text-transform:uppercase; letter-spacing:0.04em; }
+.fa-nivel { display:inline-block; padding:3px 10px; border-radius:999px; font-size:12.5px; font-weight:600; }
+.fa-nivel.verde { background:#E4F3EA; color:#1F5F43; }
+.fa-nivel.ambar { background:#FBF0D6; color:#7A5A0D; }
+.fa-nivel.rojo { background:#F9E1DE; color:#8C1D15; }
 .fa-aviso b { color:var(--t); }
 
 .sw-video-btn {
@@ -1195,7 +1211,7 @@ function PaginaFaro() {
 export function TamizajeFaro({ token }) {
   const [info, setInfo] = useState(null);
   const [err, setErr] = useState("");
-  const [paso, setPaso] = useState(-1);            // -1 presentación · 0..n-1 ítems · n final
+  const [paso, setPaso] = useState(-3);            // -3..-1 presentación · 0..n-1 ítems · n final
   const [datos, setDatos] = useState({ nombre: "", grado: "", seccion: "" });
   const [resp, setResp] = useState({});
   const [enviando, setEnviando] = useState(false);
@@ -1248,7 +1264,7 @@ export function TamizajeFaro({ token }) {
     } finally { setEnviando(false); }
   }
 
-  // Elegir una opción pasa sola a la siguiente: son 38 preguntas y obligar a un
+  // Elegir una opción pasa sola a la siguiente: son 60 preguntas y obligar a un
   // segundo toque en cada una es medio centenar de toques de más en un celular.
   //
   // Dos excepciones deliberadas:
@@ -1265,35 +1281,116 @@ export function TamizajeFaro({ token }) {
   }
 
   // ── Presentación y datos ──
+  // El texto es el que aprobó el equipo, palabra por palabra. Acá está solo
+  // maquetado: partido en tres pantallas por donde el propio texto se corta, y
+  // con los títulos que ya venían marcados como tales. Es texto de
+  // consentimiento —es lo que se le promete al estudiante—, así que no se
+  // cambia una palabra sin que lo revise el equipo de psicólogos.
+
+  if (paso === -3) return marco(
+    <div className="fa-q-wrap">
+      <h1 className="fa-h2" style={{ marginBottom: 10 }}>Queremos Escucharte</h1>
+      <p className="fa-lead" style={{ marginTop: 0, marginBottom: 34 }}>
+        Un espacio para conocer cómo estás.
+      </p>
+
+      <p className="fa-p">Hola.</p>
+      <p className="fa-p">En el colegio vivimos distintas experiencias.</p>
+      <p className="fa-p">
+        Hay cosas que son fáciles de contar y otras que pueden ser difíciles de
+        expresar. A veces necesitamos ayuda y no sabemos cómo pedirla. Otras veces
+        vemos que alguien está pasando por una situación difícil y no sabemos qué
+        hacer.
+      </p>
+      <p className="fa-p">
+        En Ítaca Conversemos, junto con tu colegio, queremos conocer cómo estás,
+        cómo te sientes en tu entorno y qué podemos hacer para que los estudiantes
+        se sientan más seguros y acompañados.
+      </p>
+      <p className="fa-p">
+        Te haremos algunas preguntas. No hay respuestas correctas o incorrectas, y
+        no tienes que responder lo que crees que los demás esperan de ti. Queremos
+        conocer tu experiencia.
+      </p>
+
+      <p className="fa-p" style={{ color: "var(--t)", fontWeight: 600, margin: "26px 0" }}>
+        Tu bienestar importa. Tu voz también.
+      </p>
+
+      <p className="fa-p">
+        Antes de comenzar, te explicaremos cómo se utilizará la información y qué
+        sucederá si identificamos que tú o alguien más necesita ayuda.
+      </p>
+
+      <button className="fa-enviar" onClick={() => setPaso(-2)}>
+        Continuar <ArrowRight size={17} strokeWidth={2.2} aria-hidden="true" />
+      </button>
+    </div>
+  );
+
+  if (paso === -2) return marco(
+    <div className="fa-q-wrap">
+      <h1 className="fa-h2" style={{ marginBottom: 10 }}>Lo que necesitas saber:</h1>
+      <p className="fa-lead" style={{ marginTop: 0 }}>
+        Queremos que respondas con confianza
+      </p>
+
+      <ul className="fa-limites" style={{ marginTop: 34 }}>
+        <li>
+          <span>
+            <b>No hay respuestas correctas o incorrectas.</b><br />
+            Queremos conocer tu experiencia, no evaluarte ni calificarte.
+          </span>
+        </li>
+        <li>
+          <span>
+            <b>Esto no es un examen.</b><br />
+            Tu participación no tiene nota y no afecta tus calificaciones.
+          </span>
+        </li>
+        <li>
+          <span>
+            <b>Tómate tu tiempo.</b><br />
+            Puedes detenerte si necesitas una pausa, de acuerdo con las condiciones
+            de participación.
+          </span>
+        </li>
+        <li>
+          <span>
+            <b>Tu información será tratada con cuidado.</b><br />
+            Te explicaremos quién puede acceder a tus respuestas y cómo se utilizarán.
+          </span>
+        </li>
+      </ul>
+
+      <div className="fa-q-botones" style={{ marginTop: 34 }}>
+        <button className="fa-q-atras" onClick={() => setPaso(-3)}>Atrás</button>
+        <button className="fa-enviar" style={{ marginTop: 0 }} onClick={() => setPaso(-1)}>
+          Continuar <ArrowRight size={17} strokeWidth={2.2} aria-hidden="true" />
+        </button>
+      </div>
+    </div>
+  );
+
   if (paso === -1) return marco(
     <div className="fa-q-wrap">
-      <h1 className="fa-h2">Antes de empezar, queremos que sepas de qué se trata</h1>
-      {/* Lo primero que se pregunta un chico de 14 no es qué es esto, sino por qué
-          unos adultos que no conoce le están preguntando. Eso se responde en la
-          primera línea: el colegio nos llamó. El nombre del programa va después,
-          porque a él no le dice nada y presentarlo primero suena a vendedor. */}
-      <p className="fa-p">
-        Somos psicólogos de Ítaca Conversemos y tu colegio nos pidió ayuda para saber
-        cómo están sus estudiantes. A ese programa le pusimos Faro. Te vamos a hacer
-        unas preguntas sobre cómo te has sentido en los últimos meses. Antes de decidir
-        si quieres responderlas, lee esto.
-      </p>
-      <ul className="fa-limites">
-        <li>No hay respuestas correctas ni incorrectas.</li>
-        <li>No tiene nota y no afecta tus calificaciones.</li>
-        <li>Tus profesores y tus compañeros no ven tus respuestas.</li>
-        <li>Puedes parar cuando quieras.</li>
-      </ul>
-      <div className="fa-card" style={{ marginTop: 22 }}>
+      <h1 className="fa-h2">Si algo te está haciendo daño, queremos ayudarte:</h1>
+
+      <div className="fa-card">
         <p className="fa-p" style={{ margin: 0 }}>
-          <b>Y algo importante, porque no te vamos a mentir:</b> si nos contestas algo que
-          nos hace pensar que estás en peligro o que alguien te está haciendo daño, vamos a
-          buscar ayudarte. Eso significa que un adulto se va a enterar. Antes de hacer nada,
-          un psicólogo va a conversar contigo en privado.
+          Queremos ser honestos contigo: la información que compartas será tratada
+          con cuidado, pero si identificamos una situación que requiere ayuda o
+          protección, un psicólogo conversará contigo en privado para comprender
+          mejor lo que sucede y ayudarte.
         </p>
       </div>
 
-      <div className="fa-form" style={{ marginTop: 28 }}>
+      <p className="fa-p" style={{ marginTop: 26 }}>
+        No tendrás que afrontar una situación difícil sin apoyo. Estamos aquí para
+        ti, eres importante. Queremos escucharte.
+      </p>
+
+      <div className="fa-form" style={{ marginTop: 34 }}>
         <label className="fa-campo">
           <span>Tu nombre completo</span>
           <input value={datos.nombre} onChange={(e) => setDatos((p) => ({ ...p, nombre: e.target.value }))}
@@ -1310,10 +1407,14 @@ export function TamizajeFaro({ token }) {
             placeholder="B" />
         </label>
       </div>
-      <button className="fa-enviar" onClick={() => setPaso(0)}
-        disabled={datos.nombre.trim().length < 3}>
-        Empezar <ArrowRight size={17} strokeWidth={2.2} aria-hidden="true" />
-      </button>
+
+      <div className="fa-q-botones" style={{ marginTop: 30 }}>
+        <button className="fa-q-atras" onClick={() => setPaso(-2)}>Atrás</button>
+        <button className="fa-enviar" style={{ marginTop: 0 }} onClick={() => setPaso(0)}
+          disabled={datos.nombre.trim().length < 3}>
+          Empezar <ArrowRight size={17} strokeWidth={2.2} aria-hidden="true" />
+        </button>
+      </div>
     </div>
   );
 
@@ -1390,6 +1491,8 @@ export function TamizajeFaro({ token }) {
 // SIEMPRE agregado: ni un estudiante identificado, ni un dato que permita
 // deducir quién es quién. Esa regla está firmada en el consentimiento de los
 // apoderados y en el convenio de la institución.
+const NIVEL_LABEL = { verde: "Verde", ambar: "Ámbar", rojo: "Rojo" };
+
 export function PanelFaro({ token }) {
   const [d, setD] = useState(null);
   const [err, setErr] = useState("");
@@ -1457,20 +1560,71 @@ export function PanelFaro({ token }) {
       <section className="fa-sec" style={{ paddingTop: 0 }}>
         <div className="fa-wrap">
           {d.hay_datos ? (
-            <div className="fa-card fa-vacio">
-              <h2>Panorama por grado</h2>
-              <p>
-                El detalle por grado y sección se publica aquí junto con el informe institucional.
-                {d.fecha_informe ? ` Entregado el ${d.fecha_informe}.` : " Está en preparación."}
-              </p>
-              <div className="fa-aviso">
+            <>
+              <div className="fa-card fa-vacio">
+                <h2>Panorama por grado</h2>
                 <p>
-                  <b>Este panel no muestra estudiantes.</b> Los casos que requieren atención se
-                  comunican con la familia y con el psicólogo del colegio, según el protocolo
-                  firmado. La institución recibe el panorama, nunca nombres junto a resultados.
+                  Cuántos estudiantes quedaron en cada nivel de atención, por grado y por sección.
+                  {d.fecha_informe ? ` Informe institucional entregado el ${d.fecha_informe}.` : ""}
                 </p>
+                <div className="fa-grados">
+                  {(d.grados || []).map((g) => (
+                    <div key={g.grado} className="fa-grado">
+                      <div className="fa-grado-cab">
+                        <b>{g.grado}</b>
+                        <span>
+                          {g.evaluados} evaluados · <i className="fa-pt v" />{g.verde} verde
+                          · <i className="fa-pt a" />{g.ambar} ámbar · <i className="fa-pt r" />{g.rojo} rojo
+                        </span>
+                      </div>
+                      {(g.secciones || []).map((sec) => (
+                        <div key={sec.seccion} className="fa-seccion">
+                          <span>Sección {sec.seccion}</span>
+                          <span>{sec.evaluados} evaluados · {sec.verde} verde · {sec.ambar} ámbar · {sec.rojo} rojo</span>
+                        </div>
+                      ))}
+                    </div>
+                  ))}
+                </div>
               </div>
-            </div>
+
+              <div className="fa-card fa-vacio">
+                <h2>Resultado por estudiante</h2>
+                <p>
+                  El nivel de atención y los puntajes de cada cuestionario. No aparecen las respuestas
+                  una por una: eso queda en el equipo clínico de Ítaca Conversemos.
+                </p>
+                <div className="fa-tabla-wrap">
+                  <table className="fa-tabla">
+                    <thead><tr>
+                      <th>Estudiante</th><th>Grado</th><th>Sección</th><th>Nivel</th>
+                      <th>Ánimo</th><th>Ansiedad</th><th>Riesgo</th><th>Acoso</th><th>Ciberacoso</th><th>Completo</th>
+                    </tr></thead>
+                    <tbody>
+                      {(d.estudiantes || []).map((e, i) => (
+                        <tr key={i}>
+                          <td>{e.nombre}</td><td>{e.grado}</td><td>{e.seccion}</td>
+                          <td><span className={`fa-nivel ${e.nivel}`}>{NIVEL_LABEL[e.nivel] || e.nivel}</span></td>
+                          <td>{e.phq_total}/27</td><td>{e.gad_total}/21</td>
+                          <td>{e.asq_positivo ? "Con señales" : "Sin señales"}</td>
+                          <td>{e.ebipq_rol || "—"}</td><td>{e.ciber_rol || "—"}</td>
+                          <td>{e.completa ? "Sí" : "No"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="fa-aviso">
+                  <p>
+                    <b>Cómo leerlo.</b> Verde: sin indicadores relevantes. Ámbar: conviene seguimiento,
+                    y el caso llega al psicólogo del colegio. Rojo: se atendió el mismo día según el
+                    protocolo y la familia ya fue contactada. Esta información es para acompañar: el
+                    convenio no permite archivarla en el registro académico ni usarla para decisiones
+                    de matrícula o sanción.
+                  </p>
+                </div>
+              </div>
+            </>
           ) : (
             <div className="fa-card fa-vacio">
               <h2>Todavía no hay resultados</h2>
@@ -1480,7 +1634,7 @@ export function PanelFaro({ token }) {
               </p>
               <ol>
                 <li><b>Convenio y protocolo firmados.</b> El protocolo define quién responde ante una alerta y en cuánto tiempo. Sin él no se aplica nada.</li>
-                <li><b>Autorizaciones recogidas.</b> Le entregamos los formatos de consentimiento y asentimiento listos para repartir.</li>
+                <li><b>Autorizaciones recogidas.</b> Las familias autorizan desde el enlace en línea que le entregamos, o en papel con los formatos de consentimiento y asentimiento.</li>
                 <li><b>Aplicación por aulas</b>, en horario de tutoría, con el tutor presente.</li>
                 <li><b>Informe y reunión de devolución</b> dentro de los quince días hábiles.</li>
               </ol>
@@ -1768,6 +1922,205 @@ export function SitioPublico() {
       <main>{pagina}</main>
       <AgendaPie />
       <AgendaWa />
+    </div>
+  );
+}
+
+// ── Autorización de la familia · /faro/a/<token> ─────────────────────────────
+// Reemplaza la hoja de papel del consentimiento. El apoderado lee lo mismo que
+// dice el documento (la API devuelve qué versión es), deja sus datos y decide.
+// El "no" también se envía: el colegio necesita saber cuántas familias se
+// negaron, y una que no responde no es una que dijo que no.
+export function AutorizacionFaro({ token }) {
+  const [info, setInfo] = useState(null);
+  const [err, setErr] = useState("");
+  const [d, setD] = useState({ estudiante: "", grado: "", seccion: "", apoderado: "",
+    documento: "", parentesco: "madre", correo: "", celular: "", acepta_comunicaciones: false });
+  const [enviando, setEnviando] = useState(false);
+  const [hecho, setHecho] = useState(null);
+
+  useEffect(() => {
+    api.faroAutorizacion(token).then(setInfo).catch((e) => setErr(e.message));
+    const prev = document.title;
+    document.title = "Faro · Autorización";
+    return () => { document.title = prev; };
+  }, [token]);
+
+  const marco = (hijos) => (
+    <div className="ag sw-sitio sw-tema">
+      <style>{AGENDA_CSS}{SW_CSS}</style>
+      <div className="fa">{hijos}</div>
+    </div>
+  );
+  const campo = (k, etiqueta, extra = {}) => (
+    <label className="fa-campo">
+      <span>{etiqueta}</span>
+      <input value={d[k]} onChange={(e) => setD((p) => ({ ...p, [k]: e.target.value }))} {...extra} />
+    </label>
+  );
+
+  async function decidir(autoriza) {
+    setEnviando(true); setErr("");
+    try {
+      await api.faroAutorizar(token, { ...d, autoriza, acepta_comunicaciones: d.acepta_comunicaciones === true });
+      setHecho({ autoriza });
+      window.scrollTo(0, 0);
+    } catch (e) {
+      setErr(e.message || "No pudimos registrar su respuesta. Inténtelo de nuevo.");
+    } finally { setEnviando(false); }
+  }
+
+  if (err && !info) return marco(
+    <div className="fa-q-wrap">
+      <h1 className="fa-h2">Este enlace no está disponible</h1>
+      <p className="fa-p">Pídale al colegio que le reenvíe el enlace correcto.</p>
+    </div>
+  );
+  if (!info) return marco(<div className="fa-q-wrap"><p className="fa-p">Cargando…</p></div>);
+  if (!info.abierto) return marco(
+    <div className="fa-q-wrap">
+      <h1 className="fa-h2">Este tamizaje ya cerró</h1>
+      <p className="fa-p">Si necesita una copia de lo que autorizó, escríbanos a {AGENDA_SITIO.correo}.</p>
+    </div>
+  );
+  if (hecho) return marco(
+    <div className="fa-q-wrap">
+      <h1 className="fa-h2">{hecho.autoriza ? "Gracias, quedó registrada su autorización" : "Quedó registrada su decisión"}</h1>
+      {hecho.autoriza ? (
+        <>
+          <p className="fa-p">
+            El resultado de {d.estudiante} le llegará a <b>{d.correo}</b> en un informe que explica
+            qué significa cada indicador. Si apareciera una señal que requiere acompañamiento, el
+            psicólogo responsable lo llama antes de que le llegue ese correo.
+          </p>
+          <p className="fa-p">
+            Guardamos la fecha y la versión exacta del texto que leyó ({info.version}). Puede pedirnos
+            una copia cuando quiera, y también retirar su autorización, escribiendo a {AGENDA_SITIO.correo}.
+          </p>
+        </>
+      ) : (
+        <p className="fa-p">
+          {d.estudiante} no participará en el tamizaje. No hay ninguna consecuencia: no afecta sus
+          notas, su matrícula ni su relación con el colegio. Si cambia de opinión, puede volver a
+          abrir este enlace.
+        </p>
+      )}
+    </div>
+  );
+
+  const listo = d.estudiante.trim().length >= 3 && d.apoderado.trim().length >= 3;
+  return marco(
+    <div className="fa-q-wrap">
+      <p className="fa-q-marco">Ítaca Conversemos · Programa Faro</p>
+      <h1 className="fa-h2" style={{ marginBottom: 6 }}>Autorización para el tamizaje de bienestar emocional</h1>
+      <p className="fa-lead" style={{ marginTop: 0 }}>{[info.institucion, info.ciudad].filter(Boolean).join(" · ")}</p>
+
+      <p className="fa-p">
+        El colegio de su hijo o hija nos invitó a realizar Faro, nuestro programa de tamizaje
+        preventivo de bienestar emocional, con los estudiantes de secundaria. Antes de aplicarlo
+        necesitamos su autorización, y queremos que la dé sabiendo exactamente en qué consiste.
+      </p>
+
+      <h2 className="fa-h2" style={{ fontSize: 20, marginTop: 30 }}>Qué es un tamizaje, y qué no es</h2>
+      <p className="fa-p">
+        Un tamizaje es una primera mirada: un cuestionario breve que ayuda a identificar si un
+        estudiante podría estar pasando por una dificultad emocional que merezca atención.
+      </p>
+      <p className="fa-p">
+        <b>No es un diagnóstico.</b> No dice que su hijo o hija tenga un trastorno ni reemplaza una
+        evaluación individual. <b>Tampoco es un examen:</b> no tiene nota, no influye en las
+        calificaciones y no queda en el registro académico.
+      </p>
+
+      <h2 className="fa-h2" style={{ fontSize: 20, marginTop: 30 }}>Qué se le va a preguntar</h2>
+      <ul className="fa-limites">
+        <li><b>Convivencia escolar:</b> si ha vivido o presenciado situaciones de maltrato entre compañeros, en persona o por internet, redes sociales y mensajes.</li>
+        <li><b>Estado de ánimo:</b> cómo se ha sentido en las últimas dos semanas.</li>
+        <li><b>Ansiedad:</b> preocupación, nerviosismo, dificultad para relajarse.</li>
+        <li><b>Señales de riesgo:</b> algunas preguntas directas sobre pensamientos de hacerse daño.</li>
+        <li><b>Cómo se siente en el colegio:</b> si tiene a quién acudir, cómo percibe el ambiente de su salón y si se siente seguro.</li>
+      </ul>
+      <p className="fa-p">
+        Se lo decimos con claridad porque preferimos que lo sepa antes y no después: sí, se le
+        pregunta de forma directa. Preguntar no induce esos pensamientos; le da a quien los tiene
+        una ocasión de decirlo.
+      </p>
+      <p className="fa-p">
+        Se aplican cinco cuestionarios breves de uso profesional, validados para adolescentes:
+        EBIPQ y ECIP-Q (convivencia, en persona y por internet), PHQ-A (estado de ánimo), GAD-7
+        (ansiedad) y ASQ (riesgo). En total son 60 preguntas y toma alrededor de veinte minutos,
+        en horario de tutoría, con el tutor presente y acompañado por personal de Ítaca Conversemos.
+      </p>
+
+      <h2 className="fa-h2" style={{ fontSize: 20, marginTop: 30 }}>Quién ve los resultados</h2>
+      <ul className="fa-limites">
+        <li><b>El colegio:</b> el resultado de su hijo o hija con su nombre, el nivel de atención que le corresponde y los puntajes de cada cuestionario, más el panorama por sección y grado. No recibe las respuestas una por una, y se compromete por convenio a usar esto solo para acompañar.</li>
+        <li><b>Usted:</b> el resultado individual, por correo electrónico y en un informe que explica qué significa cada indicador. Si aparece una señal que requiere acompañamiento, el psicólogo responsable lo llama antes de que le llegue ese informe.</li>
+        <li><b>El equipo de Ítaca Conversemos:</b> el único con acceso al detalle de las respuestas.</li>
+        <li><b>Profesores y tutores:</b> solo el panorama de su sección, sin nombres, salvo el tutor que la dirección designe por escrito.</li>
+        <li><b>Otros estudiantes:</b> nada, en ningún caso.</li>
+      </ul>
+
+      <h2 className="fa-h2" style={{ fontSize: 20, marginTop: 30 }}>Si aparece una señal de riesgo</h2>
+      <p className="fa-p">
+        Actuamos el mismo día: el psicólogo responsable conversa con el estudiante de manera privada
+        y luego se comunica con usted para orientarle sobre los pasos a seguir. Hay una excepción:
+        si las respuestas sugieren que el riesgo proviene del propio entorno familiar, la normativa
+        peruana de protección de la niñez nos obliga a comunicar el caso a las autoridades
+        competentes antes que a la familia.
+      </p>
+
+      <h2 className="fa-h2" style={{ fontSize: 20, marginTop: 30 }}>Qué pasa con los datos</h2>
+      <p className="fa-p">
+        Son datos sensibles, tratados conforme a la Ley N.° 29733. Se usan únicamente para este
+        tamizaje y el acompañamiento que derive de él; no se venden ni se comparten. Se conservan
+        en un sistema de acceso restringido por un máximo de dos años, y luego se eliminan los que
+        identifican al estudiante. Sus propios datos (nombre, documento, correo y celular) sirven
+        solo para entregarle el informe y comunicarnos con usted.
+      </p>
+      <p className="fa-p">
+        <b>La participación es voluntaria.</b> Puede no autorizar sin dar explicaciones y sin
+        consecuencias, retirar su autorización en cualquier momento, y su hijo o hija también
+        decide: se le pide su propio asentimiento y puede dejar de responder cuando quiera.
+      </p>
+
+      <div className="fa-form" style={{ marginTop: 30 }}>
+        {campo("estudiante", "Nombre completo del estudiante", { autoComplete: "off" })}
+        {campo("grado", "Grado", { placeholder: "3.° secundaria" })}
+        {campo("seccion", "Sección", { placeholder: "B" })}
+        {campo("apoderado", "Su nombre completo", { autoComplete: "name" })}
+        <label className="fa-campo">
+          <span>Usted es</span>
+          <select value={d.parentesco} onChange={(e) => setD((p) => ({ ...p, parentesco: e.target.value }))}>
+            <option value="madre">Madre</option>
+            <option value="padre">Padre</option>
+            <option value="apoderado">Apoderado/a</option>
+          </select>
+        </label>
+        {campo("documento", "Su documento de identidad", { inputMode: "numeric" })}
+        {campo("correo", "Su correo (ahí le llega el informe)", { type: "email", autoComplete: "email" })}
+        {campo("celular", "Su celular", { inputMode: "tel", autoComplete: "tel" })}
+      </div>
+      {/* Aparte y opcional: no tiene que ver con autorizar el tamizaje ni con el informe. */}
+      <div style={{ marginTop: 18 }}>
+        <CasillaComunicaciones form={d} setForm={setD} correo="correo" />
+      </div>
+
+      <p className="fa-p" style={{ marginTop: 22 }}>
+        Al elegir una opción declara que leyó este texto (versión {info.version}), que entendió en
+        qué consiste el tamizaje, quién verá los resultados y qué ocurre si aparece una señal de
+        riesgo. Queda registrada la fecha y la versión exacta que leyó.
+      </p>
+      {err ? <p className="fa-error" role="alert">{err}</p> : null}
+      <div className="fa-q-botones" style={{ marginTop: 18 }}>
+        <button className="fa-q-atras" disabled={!listo || enviando} onClick={() => decidir(false)}>
+          No autorizo
+        </button>
+        <button className="fa-enviar" style={{ marginTop: 0 }} disabled={!listo || enviando}
+          onClick={() => decidir(true)}>
+          {enviando ? "Registrando…" : "Sí autorizo"}
+        </button>
+      </div>
     </div>
   );
 }

@@ -1,0 +1,326 @@
+"""Regresión de los riesgos P0-S de la auditoría Software Factory (1 oct 2026).
+
+Cada clase fija un riesgo cerrado; si alguno vuelve a abrirse, el CI falla.
+
+    python manage.py test core.tests_seguridad_p0
+"""
+import json
+import shutil
+import subprocess
+import sys
+import tempfile
+from unittest import mock
+
+from django.conf import settings
+from django.core.files.uploadedfile import SimpleUploadedFile
+from django.test import SimpleTestCase, TestCase, override_settings
+
+from core.models import Clinica
+from mensajes.models import Mensaje
+from pacientes.models import Adjunto, Consentimiento, Paciente, SugerenciaRiesgo
+from usuarios.models import Profesional, Usuario
+
+
+class _Clinica(TestCase):
+    """Una clínica con un usuario por rol y dos pacientes: uno del psicólogo
+    `psico` y otro del psicólogo `otro_psico`."""
+
+    def setUp(self):
+        self.clinica = Clinica.objects.create(nombre="Conversemos", slug="conversemos-p0s")
+        crear = Usuario.objects.create_user
+        self.admin = crear(email="admin@p0s.pe", password="x", clinica=self.clinica, rol=Usuario.Rol.ADMIN)
+        self.asistente = crear(email="asis@p0s.pe", password="x", clinica=self.clinica, rol=Usuario.Rol.ASISTENTE)
+        self.comercial = crear(email="com@p0s.pe", password="x", clinica=self.clinica, rol=Usuario.Rol.COMERCIAL)
+        self.analista = crear(email="ana@p0s.pe", password="x", clinica=self.clinica, rol=Usuario.Rol.ANALISTA)
+        self.psico = crear(email="psico@p0s.pe", password="x", clinica=self.clinica, rol=Usuario.Rol.MEDICO,
+                           telefono="987000111")
+        self.otro_psico = crear(email="psico2@p0s.pe", password="x", clinica=self.clinica, rol=Usuario.Rol.MEDICO)
+        self.ficha = Profesional.objects.create(clinica=self.clinica, usuario=self.psico, nombre="Psico Uno")
+        self.otra_ficha = Profesional.objects.create(clinica=self.clinica, usuario=self.otro_psico, nombre="Psico Dos")
+        self.mio = Paciente.objects.create(clinica=self.clinica, nombre="Ana Mía", profesional=self.ficha,
+                                           telefono="987222333")
+        self.ajeno = Paciente.objects.create(clinica=self.clinica, nombre="Luis Ajeno", profesional=self.otra_ficha,
+                                             telefono="987444555")
+
+    def como(self, usuario):
+        self.client.force_login(usuario)
+        return self.client
+
+
+_MEDIA = tempfile.mkdtemp(prefix="itaca-p0s-")
+
+
+@override_settings(MEDIA_ROOT=_MEDIA)
+class AdjuntosClinicosTests(_Clinica):
+    """P0-S1: nadie descarga adjuntos clínicos fuera de su alcance."""
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(_MEDIA, ignore_errors=True)
+        super().tearDownClass()
+
+    def setUp(self):
+        super().setUp()
+        self.adj_mio = Adjunto.objects.create(
+            clinica=self.clinica, paciente=self.mio, nombre="eco.pdf", tipo="pdf",
+            archivo=SimpleUploadedFile("eco.pdf", b"%PDF-mio"))
+        self.adj_ajeno = Adjunto.objects.create(
+            clinica=self.clinica, paciente=self.ajeno, nombre="lab.pdf", tipo="pdf",
+            archivo=SimpleUploadedFile("lab.pdf", b"%PDF-ajeno"))
+
+    def _ids(self, usuario):
+        r = self.como(usuario).get("/api/adjuntos/")
+        self.assertEqual(r.status_code, 200)
+        return {a["id"] for a in r.json()}
+
+    def test_comercial_no_ve_ni_descarga_ninguno(self):
+        self.assertEqual(self._ids(self.comercial), set())
+        for adj in (self.adj_mio, self.adj_ajeno):
+            self.assertEqual(self.client.get(f"/api/adjuntos/{adj.id}/descargar/").status_code, 404)
+            self.assertEqual(self.client.get(f"/api/adjuntos/{adj.id}/").status_code, 404)
+
+    def test_psicologo_solo_los_de_sus_pacientes(self):
+        self.assertEqual(self._ids(self.psico), {self.adj_mio.id})
+        self.assertEqual(self.client.get(f"/api/adjuntos/{self.adj_ajeno.id}/descargar/").status_code, 404)
+        r = self.client.get(f"/api/adjuntos/{self.adj_mio.id}/descargar/")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(b"".join(r.streaming_content), b"%PDF-mio")
+
+    def test_psicologo_no_borra_el_de_otro(self):
+        self.como(self.psico)
+        self.assertEqual(self.client.delete(f"/api/adjuntos/{self.adj_ajeno.id}/").status_code, 404)
+        self.assertTrue(Adjunto.objects.filter(pk=self.adj_ajeno.pk).exists())
+
+    def test_subir_queda_dentro_del_alcance(self):
+        archivo = SimpleUploadedFile("x.pdf", b"%PDF", content_type="application/pdf")
+        r = self.como(self.psico).post("/api/adjuntos/", {"archivo": archivo, "paciente": self.ajeno.id})
+        self.assertEqual(r.status_code, 400)
+        archivo = SimpleUploadedFile("x.pdf", b"%PDF", content_type="application/pdf")
+        r = self.como(self.comercial).post("/api/adjuntos/", {"archivo": archivo, "paciente": self.mio.id})
+        self.assertEqual(r.status_code, 403)
+
+    def test_coordinacion_y_admin_conservan_el_acceso(self):
+        for u in (self.admin, self.asistente):
+            self.assertEqual(self._ids(u), {self.adj_mio.id, self.adj_ajeno.id})
+
+
+class TokensDeConsentimientoTests(_Clinica):
+    """P0-S2: el token de firma solo llega a quien envía el enlace."""
+
+    def setUp(self):
+        super().setUp()
+        self.doc_ajeno = Consentimiento.objects.create(
+            clinica=self.clinica, paciente=self.ajeno, texto="t", token=Consentimiento.nuevo_token())
+
+    def test_crear_como_psicologo_no_devuelve_el_token(self):
+        r = self.como(self.psico).post("/api/consentimientos/", {"paciente": self.mio.id},
+                                       content_type="application/json")
+        self.assertIn(r.status_code, (200, 201))
+        self.assertEqual(r.json()["token"], "")
+        self.assertEqual(r.json()["url"], "")
+
+    def test_psicologo_no_genera_ni_lista_los_de_pacientes_ajenos(self):
+        r = self.como(self.psico).post("/api/consentimientos/", {"paciente": self.ajeno.id},
+                                       content_type="application/json")
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(self.client.get(f"/api/consentimientos/?paciente={self.ajeno.id}").json(), [])
+
+    def test_comercial_no_recibe_ninguno(self):
+        self.assertEqual(self.como(self.comercial).get("/api/consentimientos/").json(), [])
+
+    def test_coordinacion_si_recibe_el_enlace_para_enviarlo(self):
+        r = self.como(self.asistente).post("/api/consentimientos/", {"paciente": self.mio.id},
+                                           content_type="application/json")
+        self.assertTrue(r.json()["token"])
+        self.assertTrue(r.json()["url"].startswith("/consentimiento/"))
+
+    def test_la_bitacora_de_mensajes_no_filtra_el_enlace(self):
+        texto = f"Léelo aquí: https://x.pe/consentimiento/{self.doc_ajeno.token}"
+        Mensaje.objects.create(clinica=self.clinica, paciente=self.mio, telefono="51987222333", texto=texto)
+        Mensaje.objects.create(clinica=self.clinica, paciente=self.ajeno, telefono="51987444555", texto=texto)
+
+        filas = self.como(self.psico).get("/api/mensajes/").json()
+        self.assertEqual([f["paciente"] for f in filas], [self.mio.id])
+        self.assertNotIn(self.doc_ajeno.token, json.dumps(filas))
+        self.assertEqual(filas[0]["telefono"], "")
+
+        filas = self.como(self.comercial).get("/api/mensajes/").json()
+        self.assertNotIn(self.doc_ajeno.token, json.dumps(filas))
+
+        filas = self.como(self.asistente).get("/api/mensajes/").json()
+        self.assertIn(self.doc_ajeno.token, json.dumps(filas))
+
+
+class TokenDeIntegracionTests(_Clinica):
+    """P0-S3: cada consumidor con su alcance; el token de Eli no vacía la base."""
+
+    RESPALDO = "/api/integraciones/respaldo/?resumen=1"
+    ELI = "/api/integraciones/psicologo/?telefono=51987000111"
+
+    def _get(self, url, token):
+        return self.client.get(url, HTTP_X_INTEGRACION_TOKEN=token).status_code
+
+    def test_sin_tokens_todo_cerrado(self):
+        with self.settings(ITACA_INTEGRACION_TOKEN="", ITACA_TOKEN_ELI="", ITACA_TOKEN_RESPALDO=""):
+            self.assertEqual(self._get(self.RESPALDO, ""), 403)
+            self.assertEqual(self._get(self.ELI, "algo"), 403)
+
+    def test_compatibilidad_el_compartido_sigue_abriendo_mientras_no_haya_propio(self):
+        with self.settings(ITACA_INTEGRACION_TOKEN="comp", ITACA_TOKEN_ELI="", ITACA_TOKEN_RESPALDO=""):
+            self.assertEqual(self._get(self.ELI, "comp"), 200)
+            self.assertEqual(self._get(self.RESPALDO, "comp"), 200)
+
+    def test_con_token_propio_el_compartido_ya_no_abre_el_respaldo(self):
+        with self.settings(ITACA_INTEGRACION_TOKEN="comp", ITACA_TOKEN_RESPALDO="resp", ITACA_TOKEN_ELI=""):
+            self.assertEqual(self._get(self.RESPALDO, "comp"), 403)
+            self.assertEqual(self._get(self.RESPALDO, "resp"), 200)
+            self.assertEqual(self._get(self.ELI, "comp"), 200)
+            self.assertEqual(self._get(self.ELI, "resp"), 403)
+
+    def test_el_token_de_eli_no_abre_tareas_ni_respaldo(self):
+        with self.settings(ITACA_INTEGRACION_TOKEN="", ITACA_TOKEN_ELI="eli",
+                           ITACA_TOKEN_TAREAS="tar", ITACA_TOKEN_RESPALDO="resp"):
+            self.assertEqual(self._get(self.RESPALDO, "eli"), 403)
+            r = self.client.post("/api/integraciones/recordatorios/", {"dry": True},
+                                 content_type="application/json", HTTP_X_INTEGRACION_TOKEN="eli")
+            self.assertEqual(r.status_code, 403)
+            r = self.client.post("/api/correo/tareas/procesar-pendientes/", {},
+                                 content_type="application/json", HTTP_X_INTEGRACION_TOKEN="eli")
+            self.assertEqual(r.status_code, 403)
+
+    def test_la_comparacion_es_en_tiempo_constante(self):
+        with mock.patch("core.integraciones.hmac.compare_digest", return_value=False) as cmp_, \
+                self.settings(ITACA_INTEGRACION_TOKEN="comp"):
+            self.assertEqual(self._get(self.ELI, "comp"), 403)
+        self.assertTrue(cmp_.called)
+
+
+class RiesgoClinicoDeEliTests(_Clinica):
+    """P0-S4: la IA sugiere; el riesgo oficial lo decide una persona."""
+
+    URL = "/api/integraciones/nota-voz/"
+
+    def _nota_guiada(self, riesgo="Alto"):
+        with self.settings(ITACA_INTEGRACION_TOKEN="comp", ITACA_TOKEN_ELI=""):
+            return self.client.post(self.URL, {
+                "telefono": "51987000111", "paciente_id": self.mio.id, "tipo": "historia",
+                "campos": {"resumen": "Consulta por ansiedad", "objetivos": "Dormir mejor", "riesgo": riesgo},
+            }, content_type="application/json", HTTP_X_INTEGRACION_TOKEN="comp")
+
+    def test_eli_no_cambia_el_riesgo_oficial(self):
+        self.mio.riesgo = Paciente.Riesgo.BAJO
+        self.mio.save(update_fields=["riesgo"])
+        r = self._nota_guiada("Alto")
+        self.assertEqual(r.status_code, 201)
+        self.assertTrue(r.json()["riesgo_pendiente_de_revision"])
+        self.mio.refresh_from_db()
+        self.assertEqual(self.mio.riesgo, Paciente.Riesgo.BAJO)
+        s = SugerenciaRiesgo.objects.get(paciente=self.mio)
+        self.assertEqual((s.valor_sugerido, s.estado, s.fuente), ("alto", "pendiente", "eli_guiado"))
+        self.assertIsNotNone(s.atencion_id)
+
+    def test_estructurar_con_ia_tambien_queda_como_sugerencia(self):
+        est = {"resumen_clinico": "r", "objetivos": "o", "riesgo": "moderado", "motivo": "m"}
+        with mock.patch("core.estructurar_nota.estructurar", return_value=est), \
+                self.settings(ITACA_INTEGRACION_TOKEN="comp", ITACA_TOKEN_ELI=""):
+            r = self.client.post(self.URL, {
+                "telefono": "51987000111", "paciente_id": self.mio.id, "tipo": "historia", "contenido": "dictado",
+            }, content_type="application/json", HTTP_X_INTEGRACION_TOKEN="comp")
+        self.assertEqual(r.status_code, 201)
+        self.mio.refresh_from_db()
+        self.assertEqual(self.mio.riesgo, "")
+        self.assertEqual(SugerenciaRiesgo.objects.get(paciente=self.mio).fuente, "eli_ia")
+
+    def test_una_sugerencia_nueva_reemplaza_a_la_pendiente(self):
+        self._nota_guiada("Alto")
+        self._nota_guiada("Bajo")
+        estados = dict(SugerenciaRiesgo.objects.values_list("valor_sugerido", "estado"))
+        self.assertEqual(estados, {"alto": "reemplazada", "bajo": "pendiente"})
+
+    def _resolver(self, usuario, s, **cuerpo):
+        return self.como(usuario).post(f"/api/sugerencias-riesgo/{s.id}/resolver/", cuerpo,
+                                       content_type="application/json")
+
+    def test_solo_el_psicologo_del_paciente_o_admin_resuelven(self):
+        self._nota_guiada("Alto")
+        s = SugerenciaRiesgo.objects.get()
+        self.assertEqual(self._resolver(self.asistente, s, decision="confirmar").status_code, 403)
+        self.assertEqual(self._resolver(self.analista, s, decision="confirmar").status_code, 403)
+        self.assertEqual(self._resolver(self.comercial, s, decision="confirmar").status_code, 403)
+        self.assertEqual(self._resolver(self.otro_psico, s, decision="confirmar").status_code, 404)
+        self.mio.refresh_from_db()
+        self.assertEqual(self.mio.riesgo, "")
+
+    def test_confirmar_modificar_y_rechazar(self):
+        self._nota_guiada("Alto")
+        s = SugerenciaRiesgo.objects.get()
+        r = self._resolver(self.psico, s, decision="modificar", valor="moderado")
+        self.assertEqual(r.status_code, 200)
+        self.mio.refresh_from_db()
+        self.assertEqual(self.mio.riesgo, "moderado")
+        s.refresh_from_db()
+        self.assertEqual((s.estado, s.valor_final, s.revisado_por_id), ("modificada", "moderado", self.psico.id))
+        self.assertEqual(self._resolver(self.psico, s, decision="confirmar").status_code, 409)
+
+        self._nota_guiada("Bajo")
+        s2 = SugerenciaRiesgo.objects.get(estado="pendiente")
+        self.assertEqual(self._resolver(self.admin, s2, decision="rechazar").status_code, 200)
+        self.mio.refresh_from_db()
+        self.assertEqual(self.mio.riesgo, "moderado")
+
+        self._nota_guiada("Alto")
+        s3 = SugerenciaRiesgo.objects.get(estado="pendiente")
+        self.assertEqual(self._resolver(self.psico, s3, decision="confirmar").status_code, 200)
+        self.mio.refresh_from_db()
+        self.assertEqual(self.mio.riesgo, "alto")
+
+    def test_comercial_no_ve_sugerencias(self):
+        self._nota_guiada("Alto")
+        self.assertEqual(self.como(self.comercial).get("/api/sugerencias-riesgo/").json(), [])
+        self.assertEqual(self.como(self.otro_psico).get("/api/sugerencias-riesgo/").json(), [])
+        self.assertEqual(len(self.como(self.psico).get("/api/sugerencias-riesgo/").json()), 1)
+
+
+_SCRIPT_HOSTS = (
+    "import json, sys; sys.argv = ['gunicorn']; "
+    "import config.settings as s; "
+    "print(json.dumps([s.ALLOWED_HOSTS, s.CSRF_TRUSTED_ORIGINS]))"
+)
+
+
+def _hosts(**entorno):
+    """Carga config.settings en un proceso aparte con este entorno."""
+    import os
+    limpio = {k: v for k, v in os.environ.items()
+              if k not in ("RAILWAY_PUBLIC_DOMAIN", "SITIO_DOMINIO", "SISTEMA_DOMINIO", "DJANGO_ALLOWED_HOSTS",
+                           "DJANGO_CSRF_ORIGINS", "RAILWAY_DOMINIO_SERVICIO")}
+    salida = subprocess.run([sys.executable, "-c", _SCRIPT_HOSTS], cwd=settings.BASE_DIR,
+                            env={**limpio, **entorno}, capture_output=True, text=True, timeout=60, check=True)
+    return json.loads(salida.stdout.strip().splitlines()[-1])
+
+
+class HostsDeRailwayTests(SimpleTestCase):
+    """P0-S5: la dirección de Railway se acepta siempre, sin abrir *.up.railway.app."""
+
+    RAILWAY = "itaca-conversemos-production.up.railway.app"
+
+    def test_railway_aunque_la_variable_sea_un_dominio_propio(self):
+        from django.http.request import validate_host
+        hosts, origenes = _hosts(RAILWAY_PUBLIC_DOMAIN="www.conversemos.itaca.com.pe")
+        self.assertTrue(validate_host(self.RAILWAY, hosts))
+        self.assertIn(f"https://{self.RAILWAY}", origenes)
+
+    def test_sin_comodines_del_dominio_compartido(self):
+        from django.http.request import validate_host
+        hosts, origenes = _hosts()
+        self.assertFalse(validate_host("atacante.up.railway.app", hosts))
+        self.assertFalse(any("*.up.railway.app" in o for o in origenes))
+
+    def test_dominios_del_sitio_y_del_sistema(self):
+        from django.http.request import validate_host
+        hosts, origenes = _hosts(SITIO_DOMINIO="www.conversemos.itaca.com.pe",
+                                 SISTEMA_DOMINIO="sistema.conversemos.itaca.com.pe")
+        for d in ("www.conversemos.itaca.com.pe", "sistema.conversemos.itaca.com.pe"):
+            self.assertTrue(validate_host(d, hosts), d)
+            self.assertIn(f"https://{d}", origenes)
+        self.assertFalse(validate_host("evil.example.com", hosts))

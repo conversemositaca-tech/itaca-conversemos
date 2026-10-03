@@ -196,7 +196,14 @@ class UsuarioViewSet(viewsets.ModelViewSet):
             se_desactiva = request.data.get("is_active") is False
             if quita_admin or se_desactiva:
                 return Response({"detail": "No puedes cambiar tu propio rol ni desactivarte."}, status=status.HTTP_400_BAD_REQUEST)
-        return super().update(request, *args, **kwargs)
+        antes = {"rol": user.rol, "is_active": user.is_active, "sede": user.sede}
+        respuesta = super().update(request, *args, **kwargs)
+        user.refresh_from_db()
+        cambios = {k: [v, getattr(user, k)] for k, v in antes.items() if getattr(user, k) != v}
+        if cambios:
+            from core.auditoria import auditar
+            auditar(request.user, "usuario.permisos", user, cambios)
+        return respuesta
 
     def destroy(self, request, *args, **kwargs):
         user = self.get_object()
@@ -262,8 +269,8 @@ class ProfesionalViewSet(viewsets.ModelViewSet):
         return Profesional.objects.del_tenant_actual().order_by("orden", "nombre")
 
     def _solo_admin(self):
-        if getattr(self.request.user, "rol", None) != Usuario.Rol.ADMIN:
-            raise PermissionDenied("Solo el gerente (admin) puede editar el directorio de profesionales.")
+        from core.politicas import es_admin, exigir
+        exigir(es_admin(self.request.user), "Solo el gerente (admin) puede editar el directorio de profesionales.")
 
     def perform_create(self, serializer):
         self._solo_admin()
@@ -352,8 +359,8 @@ class DocumentoLegalViewSet(viewsets.ModelViewSet):
     serializer_class = DocumentoLegalSerializer
 
     def _solo_admin(self):
-        if getattr(self.request.user, "rol", None) != Usuario.Rol.ADMIN:
-            raise PermissionDenied("Solo el gerente (admin) puede gestionar documentos legales.")
+        from core.politicas import es_admin, exigir
+        exigir(es_admin(self.request.user), "Solo el gerente (admin) puede gestionar documentos legales.")
 
     def get_queryset(self):
         from core.permisos import es_solo_lectura

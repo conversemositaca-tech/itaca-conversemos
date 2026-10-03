@@ -9,7 +9,7 @@ from calendar import monthrange
 from datetime import datetime, time, timedelta
 from decimal import Decimal, InvalidOperation
 
-from django.db.models import Count, Max, Sum
+from django.db.models import Max, Sum
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.response import Response
@@ -18,6 +18,7 @@ from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated
 
 from core import continuidad as continuidad_mod
+from core import direccion_clinica as dc_mod
 from core.permisos import (
     PuedeContactarPacientes,
     PuedeGestionarContinuidad, es_solo_lectura, puede_gestionar_continuidad, ve_finanzas,
@@ -27,7 +28,7 @@ from finanzas.models import Cobro, Egreso
 from leads import embudo as embudo_mod
 from leads.models import Lead
 from mensajes.models import Mensaje
-from pacientes.models import Atencion, Cita, Paciente
+from pacientes.models import ESTADOS_CERRADA, ESTADOS_REALIZADA, Atencion, Cita, Paciente
 
 
 def _rango(periodo):
@@ -219,7 +220,7 @@ class HoyResumenView(APIView):
         ultima_decision = {}
         citas_realizadas = (
             Cita.objects.del_tenant_actual()
-            .filter(paciente_id__in=ids, estado__in=[Cita.Estado.ATENDIDA, Cita.Estado.ASISTIO])
+            .filter(paciente_id__in=ids, estado__in=ESTADOS_REALIZADA)
             .order_by("paciente_id", "-inicio").values("paciente_id", "decision")
         )
         for c in citas_realizadas:
@@ -1010,9 +1011,15 @@ class GerenciaResumenView(APIView):
         # --- Operación (agenda) ---
         E = Cita.Estado
         citas = list(fpac(Cita.objects.del_tenant_actual().filter(inicio__gte=ini, inicio__lt=fin)).select_related("medico"))
-        atendidas = sum(1 for c in citas if c.estado == E.ATENDIDA)
+        # Realizada = "asistió" o "atendida": las dos dicen que la sesión
+        # ocurrió (la primera la marca coordinación, la segunda el psicólogo al
+        # dejar su ficha). Contar solo "atendida" dejaba fuera la mayoría de
+        # las sesiones reales, y sin "no asistió" en la base las inasistencias
+        # no bajaban el porcentaje: solo lo hacían las cancelaciones.
+        atendidas = sum(1 for c in citas if c.estado in (E.ATENDIDA, E.ASISTIO))
+        no_asistio = sum(1 for c in citas if c.estado == E.NO_ASISTIO)
         canceladas = sum(1 for c in citas if c.estado == E.CANCELADA)
-        cerradas = atendidas + canceladas
+        cerradas = atendidas + no_asistio + canceladas
         # Recordatorios CONFIRMADOS: los que WhatsApp acusó de alguna forma.
         # El filtro era `estado=ENVIADO` a secas, y eso dejaba fuera a los
         # entregados y a los leídos — es decir, a los que mejor salieron. No se
@@ -1037,11 +1044,13 @@ class GerenciaResumenView(APIView):
         por_dia_citas = [{"fecha": k, "citas": v} for k, v in sorted(cit_dia.items())]
         operacion = {
             "citas": len(citas),
-            "atendidas": atendidas,
+            "atendidas": atendidas,  # realizadas: asistió + atendida
+            "no_asistio": no_asistio,
             "canceladas": canceladas,
             "confirmadas": sum(1 for c in citas if c.estado == E.CONFIRMADA),
             "por_confirmar": sum(1 for c in citas if c.estado == E.POR_CONFIRMAR),
             "asistencia_pct": round(atendidas / cerradas * 100) if cerradas else 0,
+            "inasistencia_pct": round(no_asistio / cerradas * 100) if cerradas else 0,
             "cancelacion_pct": round(canceladas / cerradas * 100) if cerradas else 0,
             "recordatorios": recordatorios,
             "recordatorios_sin_confirmar": recordatorios_sin_confirmar,
@@ -1140,12 +1149,17 @@ class GerenciaResumenView(APIView):
 
         # --- Retención (semáforo por días desde la última sesión) ---
         # Regla de la clínica (hoja SEG): verde <8 días, amarillo 8–15, rojo >15
-        # (abandono → llamar). Sobre los pacientes con al menos una atención.
+        # (abandono → llamar). Sobre los pacientes con al menos una sesión
+        # REALIZADA: cita asistida que no sea la consulta inicial. Antes salía
+        # de las fichas clínicas (Atencion), y la mayoría de las sesiones se
+        # cierra sin ficha: quien venía cada semana sin ficha aparecía en rojo.
         hoy_d = timezone.localdate()
         ret = {"verde": 0, "amarillo": 0, "rojo": 0}
         ultimas = (
-            fpac(Atencion.objects.del_tenant_actual())
-            .values("paciente_id").annotate(ultima=Max("fecha"))
+            fpac(Cita.objects.del_tenant_actual())
+            .filter(estado__in=continuidad_mod._ESTADOS_ASISTIDOS, paciente__provisional=False)
+            .exclude(especialidad__icontains=continuidad_mod.MARCA_CONSULTA)
+            .values("paciente_id").annotate(ultima=Max("inicio"))
         )
         for row in ultimas:
             dias = (hoy_d - timezone.localtime(row["ultima"]).date()).days
@@ -1160,6 +1174,7 @@ class GerenciaResumenView(APIView):
             "con_sesiones": con_sesiones,
             "verde": ret["verde"], "amarillo": ret["amarillo"], "rojo": ret["rojo"],
             "rojo_pct": round(ret["rojo"] / con_sesiones * 100) if con_sesiones else 0,
+            "fuente": "Última cita asistida (Asistió o Atendida), sin contar la consulta inicial.",
         }
 
         # --- Productividad por médico ---
@@ -1230,28 +1245,40 @@ class GerenciaResumenView(APIView):
             ],
         }
 
-        # Curva de continuidad: de TODOS los pacientes con historia clínica (no
-        # depende del período elegido, igual que Retención más arriba), cuántas
-        # atenciones acumula cada uno. Muestra dónde se concentra el abandono.
-        conteo_atenciones = (
-            fpac(Atencion.objects.del_tenant_actual())
-            .values("paciente_id").annotate(n=Count("id"))
-        )
+        # Curva de continuidad: de TODOS los procesos (no depende del período
+        # elegido, igual que Retención más arriba), cuántas sesiones realizadas
+        # tiene cada uno. Los procesos salen de la misma reconstrucción que usa
+        # Dirección Clínica (core/direccion_clinica.py → segmentar_procesos), y
+        # las sesiones son citas asistidas sin la consulta inicial. Antes
+        # contaba fichas clínicas (Atencion) por paciente: la mayoría de las
+        # sesiones no deja ficha, así que la curva se cargaba a 1-2 sesiones.
+        #
+        # El % que "no pasa de la sesión 2" se calcula solo sobre procesos ya
+        # TERMINADOS: un proceso que empezó la semana pasada y va en S2 no
+        # dejó de venir, todavía no tuvo tiempo.
+        procesos = dc_mod.construir_procesos(fsede(Paciente.objects.del_tenant_actual()))
         buckets = {"1": 0, "2": 0, "3": 0, "4": 0, "5+": 0}
-        for row in conteo_atenciones:
-            clave = str(row["n"]) if row["n"] <= 4 else "5+"
-            buckets[clave] += 1
-        con_historia = sum(buckets.values())
+        for p in procesos:
+            buckets[str(p["n"]) if p["n"] <= 4 else "5+"] += 1
+        terminados = [p for p in procesos if p["estado"] != dc_mod.ESTADO_ACTIVO]
+        cortos = sum(1 for p in terminados if p["n"] <= 2)
+        primera = min((p["s1"] for p in procesos), default=None)
         continuidad_curva = {
-            "con_historia": con_historia,
+            "procesos": len(procesos),
+            "terminados": len(terminados),
             "por_sesiones": [{"label": k, "valor": v} for k, v in buckets.items()],
-            "abandono_1_2_pct": round((buckets["1"] + buckets["2"]) / con_historia * 100) if con_historia else 0,
+            "abandono_1_2_pct": round(cortos / len(terminados) * 100) if terminados else 0,
+            "desde": primera.isoformat() if primera else None,
+            "fuente": "Procesos reconstruidos de las citas asistidas (Asistió o Atendida), sin contar la consulta inicial.",
+            # Las sesiones del Excel (2024 – feb 2026) solo existen como ficha
+            # clínica, sin cita: ya no entran en esta curva. Se dice cuántas.
+            "fichas_sin_cita": fpac(Atencion.objects.del_tenant_actual()).filter(cita__isnull=True).count(),
         }
 
         # Adopción del motivo de cierre (Cita.decision): de las citas del período
         # que ya tuvieron un desenlace, ¿cuántas quedaron con el motivo registrado?
         # Sin este dato nadie puede saber DESPUÉS por qué se perdió a un paciente.
-        TERMINALES = {E.ATENDIDA, E.ASISTIO, E.NO_ASISTIO, E.CANCELADA}
+        TERMINALES = set(ESTADOS_CERRADA)
         citas_terminales = [c for c in citas if c.estado in TERMINALES]
         con_decision = sum(1 for c in citas_terminales if c.decision)
         decision_adopcion = {
