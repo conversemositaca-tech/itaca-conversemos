@@ -67,6 +67,7 @@ La app `continuidad` (Dirección Clínica fase 2: proceso con eventos, transicio
 - `docs/dominios.md` — sitio y sistema en dominios separados (`core/dominios.py`).
 - `docs/marca-exportables.md` — identidad visual de Excel/PDF/Word que genera el sistema.
 - `docs/auditoria-continuidad.md` — auditoría de "Evaluar continuidad" (set 2026).
+- `docs/captacion-web.md` — qué significa `agendado_web`, la limpieza de las 217 citas mal marcadas y qué NO se puede deducir de los datos de captación.
 - `docs/continuidad.md`, `docs/continuidad-estados.md`, `docs/continuidad-metricas.md`, `docs/direccion-clinica.md` — continuidad y Dirección Clínica (definiciones y cifras).
 - `docs/email-1.0.md`, `docs/email-1.0-operacion.md`, `docs/email-1.0-dns.md` — diseño, operación y DNS del correo.
 - `docs/SOFTWARE-FACTORY-AUDIT.md` + `docs/software-factory-audit/` (01–18) — auditoría de la fábrica de software.
